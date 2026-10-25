@@ -1,13 +1,13 @@
 ---
 id: TASK-042
 title: Opt-in parallel tasks (PO request only)
-status: in-progress
+status: done
 depends: TASK-041, TASK-038
 scope: src/omi/__init__.py, src/omi/template/**, .claude/skills/omi-task/**, tests/**, AGENTS.md
 role: omi-agent-engineer
 skills: []  # step build adds omi-skill-lean-implementation
 workflow: omi-flow-feature
-step:
+step: accept
 ---
 ## Goal
 Run independent tasks in parallel only when the PO asks, with conflicts caught by code.
@@ -20,13 +20,36 @@ Run independent tasks in parallel only when the PO asks, with conflicts caught b
 - Tests: `python3 tests/test_omi.py`; cases: disjoint scopes ok, overlapping globs fail with both globs, depends fail, status done fail.
 
 ## Acceptance criteria
-- [ ] `omi-task <ID> <ID>` (or a PO request) starts several tasks only when their `depends` and `scope` globs do not overlap; overlap fails with the paths.
-- [ ] Each task gets its own worktree, container name and usage record; `omi clean` removes them all.
-- [ ] Default stays one task at a time; AGENTS.md grows by at most 1 line.
-- [ ] `python tests/test_omi.py` passes, including an overlap test.
+- [x] `omi-task <ID> <ID>` (or a PO request) starts several tasks only when their `depends` and `scope` globs do not overlap; overlap fails with the paths.
+- [x] Each task gets its own worktree, container name and usage record; `omi clean` removes them all.
+- [x] Default stays one task at a time; AGENTS.md grows by at most 1 line.
+- [x] `python tests/test_omi.py` passes, including an overlap test.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
-Next: TASK-039
+Done: omi parallel (+usage), SKILL.md, AGENTS.md; review round 1 fixes: worktrees/usage/clean tests (clean label test already in test_clean_and_old_images), main wiring tests, if/exit in main, duplicate id check + test
+Not done: -
+Tests: python3 tests/test_omi.py ok
+Next: review
+
+## Steps
+- plan started 2026-10-25 22:51
+- plan done 2026-10-25 22:51
+- build started 2026-10-25 22:51
+- build done 2026-10-25 22:53
+- review started 2026-10-25 22:53
+- review failed 2026-10-25 22:54
+- build started 2026-10-25 22:54
+- build done 2026-10-25 22:55
+- review started 2026-10-25 22:55
+- review done 2026-10-25 22:56
+- accept started 2026-10-25 22:56
+PO approval accept: Chấp nhận, merge (Recommended)
+- accept done 2026-10-25 22:56
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read | verdict |
+|---|---|---|---|---|---|---|---|---|
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 4691 | 242055 | 60s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 2502 | 68311 | 35s | - | FAIL 5d0e4d3 |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 2821 | 202216 | 64s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1922 | 70028 | 30s | - | PASS 676eedf |

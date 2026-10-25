@@ -1330,7 +1330,66 @@ def test_workflows():
     assert "workflow: omi-flow-feature" in (repo / ".omi" / "tasks" / "_template.md").read_text()
 
 
+def test_parallel():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / ".omi" / "tasks").mkdir(parents=True)
+
+        def task(n, status, scope, depends=""):
+            (root / ".omi" / "tasks" / f"TASK-{n}.md").write_text(
+                f"---\nstatus: {status}\nscope: {scope}\ndepends: {depends}\n---\n")
+        task("001", "planned", "src/a/**, tests/a.py")
+        task("002", "planned", "src/b/**")
+        task("003", "planned", "src/**")
+        task("004", "done", "docs/**")
+        task("005", "planned", "docs/x", "TASK-002")
+        task("006", "planned", "docs/y", "TASK-005")
+        assert omi.parallel(root, ["TASK-001", "TASK-002"]) == []
+        out = omi.parallel(root, ["TASK-001", "TASK-003"])
+        assert len(out) == 1 and "src/a/**" in out[0] and "src/**" in out[0]
+        assert omi.parallel(root, ["TASK-002", "TASK-006"]) == ["TASK-006 depends on TASK-002"]
+        assert "status done" in omi.parallel(root, ["TASK-001", "TASK-004"])[0]
+        assert not omi.globs_overlap("src/ab/**", "src/a/**") and omi.globs_overlap("src/a*", "src/ab/x")
+        assert omi.parallel(root, ["TASK-001", "TASK-002", "TASK-001"]) == ["TASK-001: duplicate id"]
+        real, realmc = omi.task_worktrees, omi.main_checkout
+        omi.main_checkout = lambda _: root
+        class Out(io.StringIO):
+            def reconfigure(self, **kw): pass
+        out = Out()
+        realout = sys.stdout
+        try:
+            omi.task_worktrees = lambda r: {}
+            sys.stdout = out
+            omi.main(["parallel", "TASK-001", "TASK-002"])
+            assert out.getvalue().strip() == "parallel ok: TASK-001 TASK-002"
+            out.truncate(0)
+            omi.main(["parallel", "TASK-001"])
+            assert "parallel <TASK-ID>" in out.getvalue()
+            try:
+                omi.main(["parallel", "TASK-001", "TASK-003"])
+                assert False
+            except SystemExit as e:
+                assert e.code != 0 and "src/a/**" in str(e.code)
+        finally:
+            sys.stdout = realout
+            omi.task_worktrees, omi.main_checkout = real, realmc
+    assert omi.container_name("r", "role", "TASK-001") != omi.container_name("r", "role", "TASK-002")
+    real = omi.git
+    omi.git = lambda *a: ("worktree /r\nbranch refs/heads/main\n\nworktree /w1\nbranch refs/heads/task/TASK-A\n\n"
+                          "worktree /w2\nbranch refs/heads/task/TASK-B\n")
+    try:
+        assert omi.task_worktrees(Path("/r")) == {"TASK-A": "/w1", "TASK-B": "/w2"}
+    finally:
+        omi.git = real
+    with tempfile.TemporaryDirectory() as d:
+        a, b = Path(d) / "a.md", Path(d) / "b.md"
+        a.write_text("# t\n"), b.write_text("# t\n")
+        omi.record_usage(a, "r", "m", None, (1, 2, 3), 4)
+        assert "| r | m |" in a.read_text() and b.read_text() == "# t\n"
+
+
 if __name__ == "__main__":
+    test_parallel()
     test_usage()
     test_git_non_ascii()
     test_skills()
