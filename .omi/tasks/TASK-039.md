@@ -15,6 +15,7 @@ One evaluation for everything, using the real usage numbers from TASK-040. Keep 
 - [ ] Report to the PO: total default context added by skills, roles and workflows.
 
 - [ ] Carry-over from the TASK-026 review: fix the contradiction in `omi-skill-data-review` ("stop at the first group with blocking findings, then continue" -> report blocking findings first, then continue), and confirm the `npx playwright cli` fallback in `omi-skill-web-qa` against the pinned upstream skill.
+- [ ] Unreviewed on merge (reviewer wrongly skipped, see decisions 2026-10-25): review the 7 roles from TASK-029/030/031 and the Coordinator commits 8bece61 (omi-task model-invocable), 94f3458 (omi-status pick-list), e7a1bfb (reviewer skip path rule).
 
 ## Checkpoint
 Done:
