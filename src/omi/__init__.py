@@ -284,7 +284,9 @@ def step_skill_ids(root, step, m=None):
     """The step role's default skills, the step's skills and the task's own skills; the role must exist."""
     if step["role"] == COORDINATOR:
         return task_skills(step)
-    return list(dict.fromkeys([*task_skills(get_role(root, step["role"])), *task_skills(step), *task_skills(m or {})]))
+    role = get_role(root, step["role"])
+    own = task_skills(m or {}) if role["access"] == "write" else []  # task skills are for the implementer (as in run_role)
+    return list(dict.fromkeys([*task_skills(role), *task_skills(step), *own]))
 
 
 def validate_workflow(root, f):
@@ -893,7 +895,12 @@ PROXY_PORT = 3128
 def network_allow(root):
     """Hosts a worker may reach: .omi/config.json "network_allow" (PO-editable) or the model API only."""
     cfg = Path(root) / ".omi" / "config.json"
-    allow = (json.loads(cfg.read_text(encoding="utf-8")).get("network_allow", DEFAULT_ALLOW)) if cfg.exists() else DEFAULT_ALLOW
+    try:
+        allow = json.loads(cfg.read_text(encoding="utf-8")).get("network_allow", DEFAULT_ALLOW) if cfg.exists() else DEFAULT_ALLOW
+    except (json.JSONDecodeError, AttributeError):
+        sys.exit('.omi/config.json is not a JSON object. Nothing changed.')
+    if not isinstance(allow, list):
+        sys.exit('"network_allow" in .omi/config.json must be a list of strings. Nothing changed.')
     for e in allow:
         if not isinstance(e, str) or not re.fullmatch(r"(\*\.)?[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{1,5})?", e):
             sys.exit(f'bad "network_allow" entry {e!r} in .omi/config.json: use host, *.suffix or host:port. Nothing changed.')
@@ -906,19 +913,20 @@ def egress(main, name, image, allow):
     yields (network, proxy container). Both are removed on exit; hosts the proxy refused are reported."""
     net, proxy, repo = f"omi-net-{name}", f"{name}-proxy", repo_label(main)
     labels = ["--label", "omi-worker=1", "--label", f"omi-repo={repo}"]
-    script = main / "docker" / "proxy.py"
-    script = script if script.exists() else TEMPLATE / "docker" / "proxy.py"
+    script = TEMPLATE / "docker" / "proxy.py"
     docker = lambda *a: subprocess.run(["docker", *a], capture_output=True, text=True, errors="replace")
     logs = ""
     try:
         r = docker("network", "create", "--internal", *labels, net)
         if r.returncode:
             sys.exit(f"cannot create the worker network: {r.stderr.strip()}. Nothing changed.")
-        r = docker("create", "--name", proxy, *labels, "--user", "node", "--read-only", "--cap-drop", "ALL",
-                   "--security-opt", "no-new-privileges", "-v", f"{script}:/proxy.py:ro", image,
-                   "python3", "/proxy.py", *allow)
-        if r.returncode or docker("network", "connect", net, proxy).returncode or docker("start", proxy).returncode:
-            sys.exit(f"cannot start the egress proxy: {r.stderr.strip()}. Nothing changed.")
+        for cmd in (["create", "--name", proxy, *labels, "--user", "node", "--read-only", "--cap-drop", "ALL",
+                     "--security-opt", "no-new-privileges", "-v", f"{script}:/proxy.py:ro", image,
+                     "python3", "/proxy.py", *allow],
+                    ["network", "connect", net, proxy], ["start", proxy]):
+            r = docker(*cmd)
+            if r.returncode:
+                sys.exit(f"cannot start the egress proxy (docker {cmd[0]}): {r.stderr.strip()}. Nothing changed.")
         for _ in range(50):
             logs = docker("logs", proxy).stdout
             if "omi-proxy ready" in logs:
@@ -931,8 +939,11 @@ def egress(main, name, image, allow):
         logs = docker("logs", proxy).stdout or logs
         docker("rm", "-f", proxy)
         docker("network", "rm", net)
-        for h in dict.fromkeys(re.findall(r"^BLOCKED (\S+)$", logs, re.M)):
+        hosts = list(dict.fromkeys(re.findall(r"^BLOCKED (\S+)$", logs, re.M)))
+        for h in hosts[:5]:
             print(f'NETWORK BLOCKED: {h} - add to "network_allow" in .omi/config.json')
+        if len(hosts) > 5:
+            print(f"... and {len(hosts) - 5} more blocked hosts")
 
 
 def container_name(repo, role, tid=None, model=None, effort=None, now=None):

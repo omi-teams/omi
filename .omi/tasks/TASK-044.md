@@ -45,6 +45,7 @@ Done: proxy.py, egress/network_allow/worker_argv/clean, prove.sh, config templat
 Not done: real Docker run of --prove (no docker in this container).
 Tests: python3 tests/test_omi.py -> ok
 Coordinator proof 2026-10-25 on the Windows host (Docker Desktop, WSL2): `omi worker . --prove` -> PASS allowed api.anthropic.com (200), PASS blocked example.com (403 with host and key), PASS direct TCP 1.1.1.1:443 blocked; NETWORK BLOCKED line printed; no container or network left.
+Review round 1 fixes 1-6 done (step_skill_ids write-only task skills, egress uses TEMPLATE proxy, network_allow validation, per-command stderr, proxy host regex + blocked cap, test leftover removed). Tests: python3 tests/test_omi.py -> ok.
 Next: TASK-045
 
 ## Steps
@@ -64,3 +65,4 @@ Next: TASK-045
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 30 | 14708 | 641592 | 146s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 3520 | 87324 | 45s | - | PASS 6f0e339 |
 | omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 6 | 3029 | 86394 | 40s | - | PASS 6f0e339 |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 22 | 5486 | 367995 | 89s | 2/2 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell | - |

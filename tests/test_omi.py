@@ -678,7 +678,6 @@ def test_network_allowlist():
         assert px.allowed(host, port, al) is want, (host, port)
     # protocol: CONNECT only, 403 names host and key, BLOCKED logged, no headers logged
     import socket, threading
-    px.ALLOW[:] = ["127.0.0.1:%d"]
     echo = socket.socket(); echo.bind(("127.0.0.1", 0)); echo.listen(1)
     px.ALLOW[:] = [f"127.0.0.1:{echo.getsockname()[1]}"]
     threading.Thread(target=lambda: (lambda c: c.sendall(c.recv(10)))(echo.accept()[0]), daemon=True).start()
@@ -700,12 +699,14 @@ def test_network_allowlist():
     try:
         assert ask(b"GET http://example.com/ HTTP/1.1\r\nAuthorization: SECRET\r\n\r\n").startswith("HTTP/1.1 405")
         blocked = ask(b"CONNECT example.com:443 HTTP/1.1\r\nAuthorization: SECRET\r\n\r\n")
+        badhost = ask(b"CONNECT ex_ample$.com:443 HTTP/1.1\r\n\r\n")
         ok = ask(f"CONNECT {px.ALLOW[0]} HTTP/1.1\r\n\r\n".encode(), b"hello")
     finally:
         sys.stdout = saved
         srv.shutdown()
     assert blocked.startswith("HTTP/1.1 403") and 'omi blocked example.com: add it to "network_allow" in .omi/config.json' in blocked
     assert ok.startswith("HTTP/1.1 200") and ok.endswith("hello"), ok
+    assert badhost.startswith("HTTP/1.1 400") and "ex_ample" not in buf.getvalue()
     assert "BLOCKED example.com:443" in buf.getvalue() and "SECRET" not in buf.getvalue()
     # config
     with tempfile.TemporaryDirectory() as d:
@@ -720,6 +721,14 @@ def test_network_allowlist():
             assert "bad host" in str(e)
         else:
             raise AssertionError("bad entry accepted")
+        for bad in ('{"network_allow": "api.anthropic.com"}', '{"network_allow": [1]}', "{not json"):
+            (Path(d) / ".omi" / "config.json").write_text(bad)
+            try:
+                omi.network_allow(d)
+            except SystemExit as e:
+                assert "Nothing changed." in str(e)
+            else:
+                raise AssertionError(bad)
     # argv: restricted network and proxy env; without a network nothing is added
     a = omi.worker_argv(Path("/w"), "img", ["x"], "n", network="omi-net-n", proxy="n-proxy")
     assert a[a.index("--network") + 1] == "omi-net-n" and "HTTPS_PROXY=http://n-proxy:3128" in a
@@ -753,6 +762,28 @@ def test_network_allowlist():
     assert any(c[1:3] == ["network", "connect"] for c in inside)
     assert calls[-2][1:3] == ["rm", "-f"] and calls[-1][1:3] == ["network", "rm"]
     assert buf.getvalue().count("NETWORK BLOCKED: example.com:443 - add to \"network_allow\" in .omi/config.json") == 1
+    # failure reports the stderr of the failing command; blocked lines are capped
+    def run2(cmd, **kw):
+        r = R("omi-proxy ready\n" + "".join(f"BLOCKED h{i}.com:443\n" for i in range(8)) if cmd[1] == "logs" else "")
+        if cmd[1:3] == ["network", "connect"]:
+            r.returncode, r.stderr = 1, "connect boom"
+        return r
+
+    omi.subprocess.run = run2
+    buf = io.StringIO()
+    sys.stdout, saved = buf, sys.stdout
+    try:
+        try:
+            with real_egress(Path("/My Repo"), "n", "img", ["a.com"]):
+                pass
+        except SystemExit as e:
+            assert "connect boom" in str(e)
+        else:
+            raise AssertionError("failure hidden")
+    finally:
+        sys.stdout = saved
+        omi.subprocess.run = real
+    assert buf.getvalue().count("NETWORK BLOCKED") == 5 and "and 3 more" in buf.getvalue()
     # prove.sh checks both an allowed and a blocked host
     sh = (omi.TEMPLATE / "docker" / "prove.sh").read_text()
     assert "api.anthropic.com" in sh and "example.com" in sh and "1.1.1.1" in sh and "network_allow" in sh
@@ -1393,6 +1424,11 @@ def test_workflows():
             task.write_text("---\nid: TASK-001\nworkflow: omi-flow-sens\nstep:\n---\n")
             go("next"), go("done"), go("next"), go("done"), go("next")
             assert front()["step"] == "security" and go("back") == 0 and front()["step"] == "build"
+            # task skills count for a write step only, never for a read-role step (security)
+            tm = {"skills": "omi-skill-a, omi-skill-b"}
+            assert omi.step_skill_ids(root, {"role": "omi-agent-reviewer", "skills": ""}, tm) == omi.step_skill_ids(
+                root, {"role": "omi-agent-reviewer", "skills": ""}, {})
+            assert {"omi-skill-a", "omi-skill-b"} <= set(omi.step_skill_ids(root, {"role": "omi-agent-engineer", "skills": ""}, tm))
             (wf / "omi-flow-sens.md").unlink()
 
             # unknown workflow on the task, default workflow, unknown task role

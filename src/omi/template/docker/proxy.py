@@ -1,5 +1,6 @@
 """Egress allowlist proxy for omi workers: HTTP CONNECT only, never terminates TLS, never reads or logs headers.
 Usage: python3 proxy.py <allow>...   (entries: host, *.suffix, host:port; a bare host means port 443)"""
+import re
 import select
 import socket
 import socketserver
@@ -53,7 +54,7 @@ class Handler(socketserver.BaseRequestHandler):
         if len(parts) < 2 or parts[0].upper() != "CONNECT":
             return reply(c, 405, "omi proxy: CONNECT only")
         host, _, port = parts[1].rpartition(":")
-        if not host or not port.isdigit():
+        if not re.fullmatch(r"[A-Za-z0-9.-]+", host) or not port.isdigit():
             return reply(c, 400, "omi proxy: bad CONNECT target")
         port = int(port)
         if not allowed(host, port, ALLOW):
