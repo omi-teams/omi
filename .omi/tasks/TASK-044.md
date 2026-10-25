@@ -7,7 +7,7 @@ scope: src/omi/__init__.py, src/omi/template/**, tests/**, README.md
 role: omi-agent-engineer
 skills: [omi-skill-docker-worker-pitfalls, omi-skill-windows-powershell]
 workflow: omi-flow-feature-sensitive  # worker security boundary
-step: build
+step: review
 ---
 ## Goal
 Every worker container (engineer and read roles) reaches only the model API and the hosts the PO allows.
@@ -26,6 +26,13 @@ Every worker container (engineer and read roles) reaches only the model API and 
 - [ ] Blocked-host failures name the host and how to allow it; `python tests/test_omi.py` passes.
 
 ## Checkpoint
+Review round 1 FAIL: (reviewer PASS with findings, security-reviewer ran without its step skills; fix all)
+1. src/omi/__init__.py `step()`/`step_skill_ids`: the budget check for a step adds the task's `skills:` only when the step role has `access: write` (same rule as `run_role`, TASK-049). Now `omi step next` into `security` fails with "4 skills declared" because the task's 2 Docker skills are counted for a read role. Test it.
+2. src/omi/__init__.py:909 `egress`: always use `TEMPLATE / "docker" / "proxy.py"`, never the repo copy.
+3. src/omi/__init__.py:83-87 `network_allow`: require a list of strings, catch `JSONDecodeError`; exit with "Nothing changed." otherwise. Test a bare string.
+4. src/omi/__init__.py:107-108: report the stderr of the docker command that failed (`network connect` / `start`), not of `docker create`.
+5. src/omi/template/docker/proxy.py: reject a CONNECT host that is not `[A-Za-z0-9.-]+` (400, no log line); cap the `NETWORK BLOCKED` lines printed by `run_role` (e.g. first 5 plus "... and N more"). Test both.
+6. tests/test_omi.py:378: delete the leftover `px.ALLOW[:] = ["127.0.0.1:%d"]` line.
 Architect (step architect): RECOMMEND B; Coordinator took B, one task (T1+T2 together, scope already covers both).
 - Per-run `docker network create --internal omi-net-<name>` (labels `omi-worker=1`, `omi-repo`); a stdlib CONNECT proxy `src/omi/template/docker/proxy.py` (always from TEMPLATE), run from the worker image with the same hardening flags, no worktree, no token, allowlist as argv; started on bridge, connected to the internal net, wait for `omi-proxy ready`; removed with the network in `finally` (context manager `egress`).
 - `allowed(host, port, allow)`: exact host or `*.suffix`, port 443 unless `host:port`; CONNECT only (405 otherwise, never plain HTTP, never log headers); 403 reason `omi blocked <host>: add it to "network_allow" in .omi/config.json`; logs `BLOCKED <host>:<port>`.
@@ -46,9 +53,14 @@ Next: TASK-045
 - architect started 2026-10-25 22:58
 - architect done 2026-10-25 22:59
 - build started 2026-10-25 22:59
+- build done 2026-10-25 23:02
+- review started 2026-10-25 23:02
+- review done 2026-10-25 23:03
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-architect | claude-opus-5-5 | high | 12 | 6071 | 145418 | 66s | - | n/a |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 30 | 14708 | 641592 | 146s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 3520 | 87324 | 45s | - | PASS 6f0e339 |
+| omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 6 | 3029 | 86394 | 40s | - | PASS 6f0e339 |
