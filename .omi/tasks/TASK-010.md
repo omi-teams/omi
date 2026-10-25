@@ -1,7 +1,7 @@
 ---
 id: TASK-010
 title: Polish omi github output and missing-gh error
-status: planned
+status: in-progress
 depends: TASK-003
 scope: src/omi/__init__.py, tests/**
 ---
