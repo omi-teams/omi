@@ -1,7 +1,7 @@
 ---
 id: TASK-008
 title: Add omi-release skill for UAT candidate and promotion PRs
-status: planned
+status: in-progress
 depends: TASK-003
 scope: src/omi/template/dot-claude/skills/omi-release/**, .claude/skills/omi-release/**, src/omi/template/AGENTS.md, AGENTS.md
 ---
