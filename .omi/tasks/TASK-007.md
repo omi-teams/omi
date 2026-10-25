@@ -1,7 +1,7 @@
 ---
 id: TASK-007
 title: Verify resume and Claude-to-Codex handover
-status: planned
+status: in-progress
 depends: TASK-005
 scope: docs/verification.md, src/omi/template/AGENTS.md
 ---
