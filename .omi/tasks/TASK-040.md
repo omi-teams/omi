@@ -1,0 +1,20 @@
+---
+id: TASK-040
+title: Usage metering per worker run and per task
+status: planned
+depends: TASK-028
+scope: src/omi/__init__.py, src/omi/template/**, .omi/tasks/_template.md, tests/**, AGENTS.md
+---
+## Goal
+Real token numbers instead of estimates, recorded where the PO and later tasks can read them.
+
+## Acceptance criteria
+- [ ] Every `omi run`/`omi worker` run records input, output and cache tokens, model, effort and duration in the task file (a short `## Usage` table); numbers come from the harness output, not estimates. If a harness gives no numbers, record `n/a`.
+- [ ] `python -m omi status` shows per-task totals and review rounds; AGENTS.md grows by at most 1 line.
+- [ ] Tests with a fake harness output; `python tests/test_omi.py` passes.
+
+## Checkpoint
+Done:
+Not done:
+Tests:
+Next: TASK-029

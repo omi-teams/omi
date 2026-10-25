@@ -1,0 +1,21 @@
+---
+id: TASK-039
+title: Final evaluation of skills, roles and workflows against baselines
+status: planned
+depends: TASK-042, TASK-023, TASK-024, TASK-025, TASK-026, TASK-029, TASK-030, TASK-031
+scope: docs/research/omi-eval.md, .omi/agents/**, .omi/skills/**, .omi/workflows/**, .omi/decisions.md
+---
+## Goal
+One evaluation for everything, using the real usage numbers from TASK-040. Keep only what earns its place.
+
+## Acceptance criteria
+- [ ] Every skill and every role is covered by a scenario inside the workflow runs below, each also run once with a plain prompt (no skill/role) as baseline; one baseline per skill or role, not per workflow.
+- [ ] One scenario per workflow family (feature, bugfix, docs-only, change-request, incident, release), run in the Docker worker; record tokens, review rounds, steps skipped and problems.
+- [ ] A skill, role or step that does not beat its baseline on correctness, tokens or review rounds is removed or reworked; decisions logged with the numbers.
+- [ ] Report to the PO: total default context added by skills, roles and workflows.
+
+## Checkpoint
+Done:
+Not done:
+Tests:
+Next: PO review, then release
