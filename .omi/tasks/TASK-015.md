@@ -18,7 +18,7 @@ In `omi-task`, the engineer always runs inside the TASK-006 container, so shell 
 - [ ] Tests cover the argv built by `omi worker` (no token in it), the stop path when Docker or the token is missing, and the Credential Manager wrapper with ctypes stubbed.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
-Next:
+Done: all 7 criteria. `omi token set` (ctypes CredWriteW/CredReadW, target `omi/CLAUDE_CODE_OAUTH_TOKEN`; live round trip on Windows OK). `omi worker <wt> <task> [--model --effort]` builds `omi-worker:<sha12 of Dockerfile>` if missing, runs `claude -p` with the run.sh flags (run.sh deleted, `worker_argv` replaces it), lists `OUT OF SCOPE` paths after the run (exit 3). `omi worker <wt> --prove` runs prove.sh with the real argv: all PASS live on Windows. docker/ moved to the template (+python3). Skill, engineer.md, AGENTS.md, README updated (root and template copies identical).
+Not done: live `claude -p` run in the container (no token here).
+Tests: `python tests/test_omi.py` ok (new: test_worker, test_credential_manager, test_template_docker).
+Next: PO live run of `omi worker` on a small task. Open: `--setting-sources user` skips project hooks/settings in the container (guard cannot run there) - confirm CLAUDE.md/AGENTS.md is not needed by the engineer; docs/spikes/docker.md still mentions run.sh (outside scope); main checkout docker/ is preferred over the template copy, so this repo uses the old Dockerfile until development has the move.
