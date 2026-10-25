@@ -590,7 +590,7 @@ def test_run_read_role():
             task.write_text("---\nid: TASK-001\nworkflow: omi-flow-zz\nstep: build\n---\n")
             calls.clear()
             assert omi.run_role("omi-agent-engineer", wt, task) == 0
-            assert "omi-skill-zz" in prompt() and "\nTests: python " in prompt(), prompt()
+            assert "omi-skill-zz" in prompt() and "\nTests: python3 " in prompt(), prompt()
             assert task.read_text().splitlines()[-1].endswith("| 0/1 |"), task.read_text()  # Usage `skills read` cell
             task.write_text("---\nid: TASK-001\nworkflow: omi-flow-zz\nstep: review\n---\n")  # step role differs
             calls.clear()

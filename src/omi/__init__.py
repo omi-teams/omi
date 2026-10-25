@@ -1242,7 +1242,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool="claude"):
     env.pop(TOKEN_ENV, None)
     env[key] = secret
     prompt_skills = skill_prompt(wt, declared)
-    prompt_skills += "\nTests: " + " ".join("python" if a == sys.executable else a for a in test_command(wt, main))
+    prompt_skills += "\nTests: " + " ".join("python3" if a == sys.executable else a for a in test_command(wt, main))
     text = am["_text"]
     tmp = tempfile.TemporaryDirectory() if read else None
     try:

@@ -20,10 +20,11 @@ A read role (reviewer, security-reviewer, qa-tester, ...) does not get the task'
 Coordinator fix before review: the `Tests:` prompt line prints `python`, but the worker image has only `python3` (Dockerfile). Print `python3` for the host interpreter; update the test. Edit only `## Checkpoint` in this file.
 Done: run_role adds task skills only for write roles; template comment (both copies); test. Tests pass.
 Not done:
-Tests:
+Tests: python3 tests/test_omi.py ok; Tests prompt line now prints python3.
 Next: TASK-036
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read |
 |---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 26 | 3507 | 300248 | 172s | 1/1 omi-skill-lean-implementation |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 10 | 888 | 97291 | 26s | 1/1 omi-skill-lean-implementation |
