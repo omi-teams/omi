@@ -143,44 +143,66 @@ def test_same_and_no_gh():
 
 def test_github_po():
     realrun, realwhich, realapply = omi.subprocess.run, omi.shutil.which, omi.apply_github
-    state = {"user": "squad", "next": "po", "calls": []}
+    st = {}
 
     class R:
-        def __init__(s, out=""): s.stdout, s.returncode = out, 0
+        def __init__(s, out="", rc=0): s.stdout, s.returncode = out, rc
 
     def run(cmd, **kw):
-        state["calls"].append(cmd[1:3] if cmd[1] == "auth" else cmd[1:])
-        if cmd[1] == "api":
-            return R(state["user"])
-        if cmd[1:3] == ["auth", "login"]:
-            state["user"] = state["next"]
-        if cmd[1:3] == ["auth", "switch"]:
-            state["user"] = cmd[-1]
+        sub = cmd[1:3]
+        if sub == ["auth", "status"]:
+            if st["status_fail"]:
+                return R("", 1)
+            hs = [{"login": u, "active": u == st["active"]} for u in st["accts"]]
+            return R(json.dumps({"hosts": {"github.com": hs}}))
+        if sub == ["auth", "login"]:
+            st["calls"].append("login")
+            if st["new"]:
+                st["accts"].append(st["new"]); st["active"] = st["new"]
+            st["status_fail"] = st["status_fail_after"]
+            return R("", st["login_rc"])
+        if sub == ["auth", "logout"]:
+            st["calls"].append("logout")
+            if not st["logout_fail"]:
+                st["accts"].remove(cmd[-1])
+                if st["active"] == cmd[-1]: st["active"] = ""
+            return R("", 1 if st["logout_fail"] else 0)
+        if sub == ["auth", "switch"]:
+            st["calls"].append("switch")
+            st["active"] = cmd[-1]
         return R()
+
+    def go(fail_apply=False, **kw):
+        st.update(accts=["squad"], active="squad", new="po", calls=[], status_fail=False,
+                  status_fail_after=False, login_rc=0, logout_fail=False)
+        st.update(kw)
+        def apply():
+            st["calls"].append("apply")
+            if fail_apply: raise SystemExit("boom")
+        omi.apply_github = apply
+        try:
+            omi.github(po=True)
+            return None
+        except SystemExit as e:
+            return str(e)
 
     omi.subprocess.run, omi.shutil.which = run, lambda _: "gh"
     try:
-        for fail in (False, True):
-            state.update(user="squad", calls=[])
-            def apply():
-                state["calls"].append("apply")
-                if fail: raise SystemExit("boom")
-            omi.apply_github = apply
-            try:
-                omi.github(po=True)
-                assert not fail
-            except SystemExit:
-                assert fail
-            names = [c if c == "apply" else c[1] for c in state["calls"] if c == "apply" or c[0] == "auth"]
-            assert names == ["login", "apply", "logout", "switch"], names
-            assert state["user"] == "squad"
-        state.update(user="squad", next="squad", calls=[])  # same-account guard
-        try:
-            omi.github(po=True)
-            assert False
-        except SystemExit as e:
-            assert "own account" in str(e)
-        assert not any(c[1:] == ["logout"] or c == ["auth", "logout"] for c in state["calls"])
+        assert go() is None and st["calls"] == ["login", "apply", "logout", "switch"], st["calls"]
+        assert st["accts"] == ["squad"] and st["active"] == "squad"
+        assert go(fail_apply=True) == "boom" and st["calls"] == ["login", "apply", "logout", "switch"]
+        assert st["accts"] == ["squad"]
+        e = go(new="")  # same-account guard: no logout
+        assert "own account" in e and "logout" not in st["calls"] and "apply" not in st["calls"]
+        e = go(active="")  # empty prev: abort before login
+        assert "no active squad" in e and st["calls"] == []
+        e = go(login_rc=1)  # login fails after saving the token: still cleaned up
+        assert "login failed" in e and st["calls"] == ["login", "logout", "switch"] and st["accts"] == ["squad"]
+        e = go(status_fail_after=True)  # cannot read accounts after login: loud failure
+        assert "WARNING" in e and "apply" not in st["calls"]
+        e = go(logout_fail=True)  # logout fails: warning + non-zero, switch still attempted
+        assert "WARNING" in e and "po" in e and st["calls"] == ["login", "apply", "logout", "switch"]
+        assert st["active"] == "squad"
     finally:
         omi.subprocess.run, omi.shutil.which, omi.apply_github = realrun, realwhich, realapply
 

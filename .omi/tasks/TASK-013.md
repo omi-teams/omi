@@ -21,3 +21,5 @@ Done: all criteria (github --po, finally logout+switch, same-account guard, test
 Not done: -
 Tests: python tests/test_omi.py ok
 Next: review
+
+- Fix round 1 (credential safety in github(po=True)): DONE. accounts() reads `gh auth status --json hosts` (local); login inside try/finally; cleanup logs out new accounts then switches to prev, both always attempted; leftover => warning + non-zero exit; empty prev aborts before login. tests/test_omi.py passes. Next: re-review.
