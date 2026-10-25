@@ -1,4 +1,5 @@
 import io
+import re
 import json
 import subprocess
 import sys
@@ -334,6 +335,9 @@ def test_worker():
     class R:
         def __init__(s, out="", rc=0, err=""): s.stdout, s.returncode, s.stderr = out, rc, err
 
+    def ran_docker(calls):
+        return [c for c in calls if c[0][:2] in (["docker", "run"], ["docker", "build"])]
+
     def run(cmd, **kw):
         calls.append((cmd, kw))
         if cmd[:3] == ["docker", "image", "inspect"] and st.get("build_fail"):
@@ -377,12 +381,33 @@ def test_worker():
                 assert f in argv, f
             assert argv[argv.index("--cap-drop") + 1] == "ALL" and not any("docker.sock" in a for a in argv)
             c = argv[argv.index("claude"):]
-            assert c[c.index("--model") + 1] == "sonnet" and c[c.index("--effort") + 1] == "medium"
+            assert c[c.index("--model") + 1] == "claude-sonnet-5-5" and c[c.index("--effort") + 1] == "medium"
             assert c[c.index("--permission-mode") + 1] == "bypassPermissions"
             assert "/work/.omi/tasks/TASK-001.md" in c[2] and "Checkpoint" in c[c.index("--append-system-prompt") + 1]
+            name = argv[argv.index("--name") + 1]
+            assert re.fullmatch(r"omi-.+-TASK-001-engineer-claude-sonnet-5-5-medium-\d{6}", name), name
+            lab = [argv[i + 1] for i, a in enumerate(argv) if a == "--label"]
+            for k, v in (("omi-role", "engineer"), ("omi-task", "TASK-001"), ("omi-model", "claude-sonnet-5-5"), ("omi-effort", "medium")):
+                assert f"{k}={v}" in lab, lab
+            assert any(l.startswith("omi-started=") for l in lab) and "omi-worker=1" in lab
             go(effort="high")
             argv = next(c[0] for c in calls if c[0][:2] == ["docker", "run"])
             assert argv[argv.index("--effort") + 1] == "high"
+            # alias map from .omi/config.json; unknown alias fails before docker
+            (wt / ".omi").mkdir(exist_ok=True)
+            (wt / ".omi" / "config.json").write_text('{"models": {"fast": "claude-haiku-5-5"}}')
+            calls.clear(); st.update(info_rc=0, build_fail=0)
+            try:
+                omi.worker(wt, task, model="turbo", effort="low")
+            except SystemExit as e:
+                assert "turbo" in str(e) and not ran_docker(calls), e
+            else:
+                raise AssertionError("unknown alias accepted")
+            go_model = lambda m: (calls.clear(), omi.worker(wt, task, model=m, effort="low"))
+            go_model("fast")
+            argv = next(c[0] for c in calls if c[0][:2] == ["docker", "run"])
+            assert argv[argv.index("--model") + 1] == "claude-haiku-5-5" and "-claude-haiku-5-5-low-" in argv[argv.index("--name") + 1]
+            (wt / ".omi" / "config.json").unlink()
             # build log: silent on success, shown (stderr) on failure
             out.truncate(0); out.seek(0)
             go(build_fail=0)
@@ -434,8 +459,40 @@ def test_worker():
 def test_container_names():
     import datetime
     t = datetime.datetime(2026, 1, 1, 14, 32, 5)
-    assert omi.container_name("omi-squad2", "engineer", "TASK-018", t) == "omi-omi-squad2-TASK-018-engineer-143205"
-    assert omi.container_name("my repo", "prove", now=t) == "omi-my-repo-prove-143205"
+    assert omi.container_name("omi-squad2", "engineer", "TASK-018", "claude-sonnet-5-5", "high", t) == \
+        "omi-omi-squad2-TASK-018-engineer-claude-sonnet-5-5-high-143205"
+    assert omi.container_name("my repo", "prove", now=t) == "omi-my-repo-prove-none-none-143205"
+    with tempfile.TemporaryDirectory() as d:
+        assert omi.resolve_model(d, "opus") == "claude-opus-5-5" and omi.resolve_model(d, "claude-x-1") == "claude-x-1"
+        for bad in ("gpt", None):
+            try:
+                omi.resolve_model(d, bad)
+            except SystemExit as e:
+                assert bad is None or bad in str(e)
+            else:
+                raise AssertionError(bad)
+    labels = omi.worker_labels("engineer", "TASK-1", "m", "low")
+    a = omi.worker_argv(Path("/w"), "img", ["x"], "n", "r", labels)
+    assert "omi-model=m" in a and "omi-effort=low" in a and "omi-task=TASK-1" in a and "omi-role=engineer" in a
+    # status lists running workers (docker mocked); nothing when none
+    import datetime as dt
+    started = (dt.datetime.now() - dt.timedelta(minutes=75)).isoformat(timespec="seconds")
+    real_run = omi.subprocess.run
+    rows = {"out": f"TASK-9\tengineer\tclaude-opus-5-5\thigh\t{started}\n"}
+    omi.subprocess.run = lambda cmd, **kw: type("R", (), {"stdout": rows["out"], "returncode": 0})()
+    buf = io.StringIO()
+    sys.stdout, saved = buf, sys.stdout
+    try:
+        omi.print_workers(Path("/nonexistent"))
+        shown = buf.getvalue()
+        rows["out"] = ""
+        buf.truncate(0); buf.seek(0)
+        omi.print_workers(Path("/nonexistent"))
+        none = buf.getvalue()
+    finally:
+        sys.stdout = saved
+        omi.subprocess.run = real_run
+    assert "TASK-9 engineer claude-opus-5-5 high 1h15m" in shown and none == "", (shown, none)
     argv = omi.worker_argv(Path("/w"), "img", ["x"], "n1")
     assert argv[argv.index("--name") + 1] == "n1"
     assert "--name" not in omi.worker_argv(Path("/w"), "img", ["x"])
