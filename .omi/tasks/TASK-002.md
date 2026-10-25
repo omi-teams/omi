@@ -15,7 +15,7 @@ Land the fixes learned from running TASK-001, so the next task runs without the 
 - [ ] `python tests/test_omi.py` passes.
 
 ## Checkpoint
-Done: the two prompt edits exist uncommitted on `development` in the main checkout (move them into the task branch).
-Not done:
-Tests:
-Next:
+Done: the two prompt edits committed on `task/TASK-002` (engineer.md template + installed copy; omi-task step 6). `.gitattributes` with `* text=auto eol=lf` added.
+Not done: nothing in scope.
+Tests: `python tests/test_omi.py` exit 0.
+Next: PO review and PR.
