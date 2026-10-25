@@ -1,9 +1,9 @@
 ---
 id: TASK-024
 title: Skill group - quality and security
-status: planned
+status: in-progress
 depends: TASK-022
-scope: .omi/skills/quality/**, src/omi/template/dot-omi/skills/quality/**, .omi/decisions.md
+scope: .omi/skills/quality/**, .omi/skills/CATALOG.md, docs/research/_src/**, tests/test_omi.py, src/omi/template/dot-omi/skills/quality/**, .omi/decisions.md
 ---
 ## Goal
 Skills for reviewer and engineer evidence: verification, debugging, diff security review, over-engineering review.
