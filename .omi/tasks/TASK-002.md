@@ -1,7 +1,7 @@
 ---
 id: TASK-002
 title: Ship prompt fixes found in the TASK-001 pilot
-status: planned
+status: in-progress
 depends: TASK-001
 scope: src/omi/template/**, .claude/**, .gitattributes
 ---
