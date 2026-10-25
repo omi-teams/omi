@@ -1,13 +1,13 @@
 ---
 id: TASK-037
 title: Workflows - release and promote (migrate omi-release)
-status: in-progress
+status: done
 depends: TASK-032, TASK-031
 scope: .omi/workflows/**, src/omi/template/dot-omi/workflows/**, .claude/skills/omi-release/**, src/omi/template/dot-claude/skills/omi-release/**, tests/**
 role: omi-agent-engineer
 skills: []  # step build adds omi-skill-lean-implementation
 workflow: omi-flow-feature
-step:
+step: accept
 ---
 ## Goal
 The release flow exists as two workflows, and `omi-release` only starts them, with no change in behaviour.
@@ -26,7 +26,33 @@ The release flow exists as two workflows, and `omi-release` only starts them, wi
 - [ ] In the Checkpoint, a table maps each old step (phase.step) to its new location.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
+Done: omi-flow-release, omi-flow-promote (+template copies, CATALOG), thin omi-release skill (root+template).
+Not done: nothing. Note: PO gates use role `coordinator` (role `po` is not a valid role).
+Tests: tests/test_omi.py ok; omi workflows --check ok (11); diff -r identical.
+Map old step -> new:
+| old | new |
+|---|---|
+| 1.1-1.4 | omi-flow-release step candidate |
+| 1.5-1.8 | omi-flow-release step pr |
+| (PO merge staging) | omi-flow-release step merge-staging (po gate) |
+| 2.1-2.4 | omi-flow-promote step promote |
+| (PO merge main) | omi-flow-promote step merge-main (po gate) |
+| 3.1-3.4 | omi-flow-promote step tag |
 Next: TASK-038
+
+## Steps
+- plan started 2026-10-25 22:24
+- plan done 2026-10-25 22:24
+- build started 2026-10-25 22:24
+- build done 2026-10-25 22:25
+- review started 2026-10-25 22:25
+- review done 2026-10-25 22:26
+- accept started 2026-10-25 22:26
+PO approval accept: Chấp nhận, merge (Recommended)
+- accept done 2026-10-25 22:28
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read |
+|---|---|---|---|---|---|---|---|
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 5640 | 215528 | 68s | 1/1 omi-skill-lean-implementation |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1845 | 116188 | 32s | - |
