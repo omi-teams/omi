@@ -24,6 +24,11 @@ Review round 2 FAIL, fix both (edit only `## Checkpoint` in this file, never oth
 2. Codex `cd dir && cat SKILL.md` or `cat ../x/SKILL.md` must count: match on `<skill dir name>/<file name>` or a bare `SKILL.md`/reference name after a `cd` into the skill dir (resolve against `cd` targets in the same command, or the event's `cwd` if present). Tests.
 Tests: python3 tests/test_omi.py ok
 Round 2 fixes done: read_commands strips redirects, skips sed -i, resolves cd/cwd; skills_read also matches <skill dir>/<file>. Negative + cd/cwd tests added; tests ok.
+Review round 3 FAIL (PO: fix round 3 on opus/high), fix all, edit only `## Checkpoint` here:
+1. Unwrap shells by basename: `/bin/bash -lc '...'`, `/usr/bin/env bash -c` etc. Test `/bin/bash -lc`.
+2. In-place filter only for `sed` (`-\w*i\w*`, `--in-place*`); `grep -i`, `rg -i`, `less -i` stay reads. Catch `sed -ni`, `--in-place=.bak`. Tests.
+3. `skills_read`: match file operands of read commands only, with a path boundary (whole operand equals or ends with `/<rel>`), not a substring of the command; `grep -c omi-skill-b/SKILL.md README.md` and `cat omi-skill-b/SKILL.md.bak` do not count. Tests.
+Prefer one small tokenizer (`shlex.split`) over more regexes.
 Next: review.
 
 ## Usage
@@ -34,3 +39,4 @@ Next: review.
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 20 | 6236 | 291198 | 60s |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1911 | 64304 | 30s |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 14 | 4367 | 168226 | 55s |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 4062 | 133982 | 45s |
