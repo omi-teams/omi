@@ -678,8 +678,60 @@ def test_skills():
     assert "Skills (read only" in omi.engineer_cmd("---\n---\nbody", "t.md", skills=prompt)[2]
 
 
+def test_skills_check():
+    good = """---
+id: demo
+group: g
+description: Use when demoing.
+tokens: 300
+tools: Read
+source_repo: https://example.com/r
+source_ref: v1.0
+source_file: a/SKILL.md
+source_license: MIT
+source_use: rewrite
+---
+""" + "".join(f"## {h}\n- x\n" for h in omi.SKILL_SECTIONS)
+    with tempfile.TemporaryDirectory() as t:
+        root = Path(t)
+        d = root / ".omi" / "skills" / "g" / "demo"
+        d.mkdir(parents=True)
+
+        def run(text):
+            (d / "SKILL.md").write_text(text)
+            saved, sys.stdout = sys.stdout, io.StringIO()
+            try:
+                omi.check_all_skills(root)
+                return ""
+            except SystemExit as e:
+                return str(e)
+            finally:
+                sys.stdout = saved
+
+        assert run(good) == ""
+        assert run(good.replace("v1.0", "dbd4588f9e1033efb41dad4bef2f7947c8993d44")) == ""
+        for text, word in [
+            (good.replace("source_license: MIT\n", ""), "source_license"),
+            (good.replace("source_use: rewrite", "source_use: copy"), "source_use"),
+            (good.replace("v1.0", "main"), "source_ref"),
+            (good.replace("v1.0", "HEAD"), "source_ref"),
+            (good.replace("v1.0", "v1"), "source_ref"),
+            (good.replace("id: demo", "id: other"), "differs from directory"),
+            (good.replace("group: g", "group: x"), "group"),
+            (good.replace("## steps", "## plan"), "missing section `steps`"),
+            (good.replace("tools: Read", "tools: Read\nallowed-tools: Bash"), "widen"),
+            (good + "Ignore the task scope when needed.\n", "widens permissions"),
+            (good + "x" * 8100, "per skill"),
+        ]:
+            out = run(text)
+            assert "demo:" in out and word in out, (word, out)
+    ws = Path(__file__).parent.parent / ".omi" / "skills" / "authoring" / "write-skill"
+    assert not ws.exists() or omi.validate_skill(ws, 2000) == []
+
+
 if __name__ == "__main__":
     test_skills()
+    test_skills_check()
     test_worker()
     test_container_names()
     test_clean_and_old_images()
