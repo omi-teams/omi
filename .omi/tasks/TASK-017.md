@@ -16,7 +16,9 @@ The first live `omi worker` run (TASK-016) could not run the tests in the contai
 - [ ] A live `omi worker --prove` and `python tests/test_omi.py` inside the container both pass.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
-Next:
+Done: Dockerfile (node:24.11.0-trixie-slim, python3 3.13 + git), quiet docker build (log on failure), 8.3 regex git*~n, tests added
+Not done: live omi worker --prove and in-container test run (no docker or py3.13 in this sandbox)
+
+Tests: not runnable here (py3.11 lacks full_match)
+Next: Coordinator runs live --prove and tests on host
+Review round 1 (Coordinator, host): `python tests/test_omi.py` fails: tests/test_omi.py:323 in test_worker, `next(c[0] for c in calls if c[0][:2] == ["docker", "run"])` raises StopIteration (no `docker run` call recorded, likely the new quiet-build path in ensure_image changed the stubbed call sequence). This run uses the new image, so run the full suite in the container (`python3 tests/test_omi.py` with PYTHONPATH=src) and make it pass. Also reword engineer guidance only if in scope.
