@@ -25,6 +25,7 @@ Two workflows exist for work that goes off-plan: a change request after a task w
 - [ ] change-request: its decide step has gate `po`; incident: the production merge step has gate `po` and the hotfix step gate `review`.
 
 ## Checkpoint
+Coordinator check before review, fix (edit only `## Checkpoint` here): `omi-flow-incident` says "Rollback chosen: skip `hotfix`", but `hotfix` has gate `review` and `omi step` refuses to skip a gate step. Make the step a "hotfix or revert" step: output is either the minimal fix with a regression test or the revert diff; both go through the review gate; no skip. Update line 7 and line 25 in both copies; keep `--check` green.
 Done: both workflows + CATALOG.md in .omi/workflows and template copy (identical); contain/merge-prod run as coordinator because devops already has 3 role skills (budget 3)
 Not done: -
 Tests: workflows --check ok (9), tests/test_omi.py ok
