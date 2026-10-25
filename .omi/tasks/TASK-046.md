@@ -19,7 +19,9 @@ Every skill, agent (role) and workflow name carries `omi-` plus its kind, so it 
 ## Checkpoint
 Done: 15 skill folders and ids renamed to omi-skill-<name> (root and template); engineer/reviewer renamed to omi-agent-* (files, role:, defaults, usage rows, container labels); validators reject bad prefixes (skills --check, agents); write-skill documents omi-flow-; catalogs regenerated; tests updated and passing.
 Not done: old role/skill values in open task files (`role: engineer`) do not resolve; no alias kept (criterion 16 conflicts with criterion 15, PO to decide). project-overview.md still has old names in prose (outside scope). Workflow prefix validator is TASK-032.
-Tests: python tests/test_omi.py passes (exit 0).
+Fix round 1: done. docs/verification.md lines 8/27 already hold the historical text (no omi- names); README roles already omi-agent-*; the stale "outside scope" note is gone; src/omi/__init__.py error text already says omi-agent-engineer.
+Fix round 2: done. `git()` and the two `git status`/`git diff` calls in the worktree check (src/omi/__init__.py ~41, ~812-816) use encoding="utf-8", errors="replace". Test test_git_non_ascii added. gh/JSON calls and the claude run output (lines ~419, 461, 515, 917) left on text=True: not git or file output (917 already has errors="replace").
+Tests: python3 tests/test_omi.py exit 0. Note: on Linux the default locale is UTF-8, so the test checks decoding but does not reproduce the Windows locale failure.
 Next: TASK-026
 
 ## Usage
@@ -28,6 +30,7 @@ Next: TASK-026
 | engineer | claude-haiku-5-5 | low | 44 | 19632 | 1131971 | 132s |
 | reviewer | claude-sonnet-5-5 | medium | 12 | 3252 | 302099 | 34s |
 | engineer | claude-haiku-5-5 | low | 16 | 3996 | 192443 | 34s |
+| engineer | claude-haiku-5-5 | low | 14 | 3983 | 175688 | 31s |
 
 ## Fix round 1 (only this)
 1. `docs/verification.md` lines 8 and 27: revert to the original text (`git diff development -- docs/verification.md`); they record past runs and must stay as history.
@@ -35,3 +38,6 @@ Next: TASK-026
 3. Checkpoint in this file: remove the stale note saying the task templates are outside scope; they are now changed and in scope.
 4. `src/omi/__init__.py` around line 610: error text "the engineer agent" -> "the omi-agent-engineer agent".
 Run the whole `python3 tests/test_omi.py` and report its last line.
+
+## Fix round 2 (only this)
+`git()` in `src/omi/__init__.py` (line ~40) uses `text=True` with the Windows locale encoding, so `git diff` over files containing non-ASCII text (the Vietnamese README) makes `r.stdout` None and `omi run reviewer` crashes with AttributeError at `.strip()`. Fix: `encoding="utf-8", errors="replace"` instead of `text=True`; check other `subprocess.run(..., text=True)` calls that read git or file output and fix them the same way; add one test that `git()` returns a non-ASCII diff. Run the whole `python3 tests/test_omi.py`.

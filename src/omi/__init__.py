@@ -38,7 +38,7 @@ TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"
 
 
 def git(cwd, *args):
-    r = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True)
+    r = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, encoding="utf-8", errors="replace")
     return r.stdout.strip() if r.returncode == 0 else None
 
 
@@ -811,7 +811,7 @@ def out_of_scope(wt, tid, committed=False):
     shown = git(wt, "show", f"development:.omi/tasks/{tid}.md")
     globs = split(parse(shown).get("scope")) if shown else []
     r = subprocess.run(["git", "-C", str(wt), "status", "--porcelain", "-z", "-uall", "--no-renames"],
-                       capture_output=True, text=True)
+                       capture_output=True, encoding="utf-8", errors="replace")
     paths = [e[3:] for e in r.stdout.split("\0") if e]
     if committed:
         d = subprocess.run(["git", "-C", str(wt), "diff", "--name-only", "-z", "--no-renames", "development...HEAD"],

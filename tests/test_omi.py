@@ -910,8 +910,21 @@ def test_usage():
         assert "| omi-agent-engineer |" in task.read_text(encoding="utf-8") and "| 10 | 20 | 105 |" in task.read_text(encoding="utf-8")
 
 
+def test_git_non_ascii():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        (root / "README.md").write_text("ASCII\n", encoding="utf-8")
+        git(root, "add", "README.md")
+        git(root, "commit", "-q", "-m", "init")
+        (root / "README.md").write_text("ASCII\nTiếng Việt có dấu\n", encoding="utf-8")
+        diff = omi.git(root, "diff")
+        assert diff is not None and "Tiếng Việt có dấu" in diff, "git() must decode UTF-8 output"
+
+
 if __name__ == "__main__":
     test_usage()
+    test_git_non_ascii()
     test_skills()
     test_skills_check()
     test_worker()
