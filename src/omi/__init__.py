@@ -376,6 +376,12 @@ def po_approved(text, sid):
     return bool(sep) and re.search(rf"^PO approval {re.escape(sid)}: *\S", rest.split("\n## ", 1)[0], re.M) is not None
 
 
+def unticked(text):
+    """Unticked `- [ ]` lines of the `## Acceptance criteria` section."""
+    sec = text.partition("\n## Acceptance criteria\n")[2].split("\n## ", 1)[0]
+    return [l for l in sec.splitlines() if l.startswith("- [ ]")]
+
+
 def set_front(text, key, value):
     _, front, body = text.split("---", 2)
     lines = [ln for ln in front.split("\n") if ln.partition(":")[0].strip() != key]
@@ -423,6 +429,9 @@ def step(root, tid, action, why=None, now=None):
         if cur and steps[at]["gate"] == "po" and not po_approved(text, cur):
             sys.exit(f"{tid}: step {cur} is a po gate; record `PO approval {cur}: <PO's words>` in the task first. "
                      "Nothing changed.")
+        if cur and steps[at]["gate"] == "po" and unticked(text):
+            sys.exit(f"{tid}: step {cur} is a po gate; tick the reviewed acceptance criteria first:\n"
+                     + "\n".join(unticked(text)) + "\nNothing changed.")
         if at + 1 == len(ids):
             print(f"{tid}: workflow {wid} is complete")
             return 0
@@ -451,6 +460,9 @@ def step(root, tid, action, why=None, now=None):
         if steps[at]["gate"] == "po" and not po_approved(text, cur):
             sys.exit(f"{tid}: step {cur} is a po gate; record `PO approval {cur}: <PO's words>` in the task first. "
                      "Nothing changed.")
+        if steps[at]["gate"] == "po" and unticked(text):
+            sys.exit(f"{tid}: step {cur} is a po gate; tick the reviewed acceptance criteria first:\n"
+                     + "\n".join(unticked(text)) + "\nNothing changed.")
         text, msg = add_step_log(text, f"- {cur} done {stamp}"), f"{tid}: step {cur} done"
     elif action == "skip":
         if not (why or "").strip():
@@ -1130,7 +1142,7 @@ def prior_review(text):
     last = re.fullmatch(r"FAIL ([0-9a-f]{7})", rows[-1][-1]) if rows else None
     after = re.split(r"^.*Review round.*$", text.partition("\n## Usage")[0], flags=re.M)[-1] if "Review round" in text else ""
     after = after.split("\n## ", 1)[0]
-    return len(rows), last and last.group(1), set(re.findall(r"[\w.-]+(?:/[\w.-]+)+|[\w-]+\.\w+", after))
+    return len(rows), last and last.group(1), set(re.findall(r"[\w.-]+(?:/[\w.-]+)+|[\w-]+\.(?:py|md|json|toml|ya?ml|sh|txt|js|ts|cfg|ini)\b", after))
 
 
 def main_checkout(wt):
@@ -1316,8 +1328,9 @@ def run_role(role, wt, task_file, model=None, effort=None, tool="claude"):
         print(result if result is not None else (r.stdout or ""))
         done = skills_read(wt, ids, opened_files(tool, r.stdout))
         verdict = (verdict_of(result) or "n/a") if read else "-"
-        if read and verdict != "n/a" and git(wt, "rev-parse", "--short=7", "HEAD"):
-            verdict += " " + git(wt, "rev-parse", "--short=7", "HEAD")
+        head = git(wt, "rev-parse", "--short=7", "HEAD") if read and verdict != "n/a" else None
+        if head:
+            verdict += " " + head
         record_usage(task, role, model, effort, nums, time.monotonic() - t0, skills_cell(ids, done), verdict)
         for sid in ids:
             if sid not in done:

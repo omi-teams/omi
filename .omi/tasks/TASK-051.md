@@ -7,7 +7,7 @@ scope: src/omi/__init__.py, tests/**, .claude/skills/omi-task/**, src/omi/templa
 role: omi-agent-engineer
 skills: []  # step build adds omi-skill-lean-implementation
 workflow: omi-flow-feature
-step:
+step: build
 ---
 ## Goal
 A task cannot pass its `po` accept gate while an acceptance criterion is still `- [ ]`, and the Coordinator ticks the criteria the reviewer confirmed.
@@ -24,7 +24,17 @@ A task cannot pass its `po` accept gate while an acceptance criterion is still `
 - [ ] `python3 tests/test_omi.py` passes.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
+Done: all 4 criteria (step gate check, skill copies, prior_review/rev-parse/Review round FAIL line)
+Not done: -
+Tests: python3 tests/test_omi.py ok
 Next: TASK-042
+
+## Steps
+- plan started 2026-10-25 22:47
+- plan done 2026-10-25 22:47
+- build started 2026-10-25 22:47
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read | verdict |
+|---|---|---|---|---|---|---|---|---|
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 3690 | 252088 | 44s | 1/1 omi-skill-lean-implementation | - |

@@ -1078,6 +1078,8 @@ def test_incremental_review():
     rows = "| omi-agent-reviewer | m | e | 1 | 1 | 1 | 1s | - | FAIL abc1234 |\n"
     text = "## Checkpoint\n### Review round 1\n- old.py:3 bad\n- src/b.py wrong\n\n## Usage\n|---|\n" + rows
     assert omi.prior_review(text) == (1, "abc1234", {"old.py", "src/b.py"})
+    noisy = text.replace("- src/b.py wrong", "- e.g src/b.py wrong, 1.5 v2.0 x.py:7")
+    assert omi.prior_review(noisy)[2] == {"old.py", "src/b.py", "x.py"}
     assert omi.prior_review(text + rows)[0] == 2
     assert omi.prior_review(text.replace("FAIL", "PASS"))[1] is None
     assert omi.prior_review("## Usage\n|---|\n| r | m | e | 1 | 1 | 1 | 1s | - | FAIL |\n") == (0, None, set())
@@ -1254,6 +1256,10 @@ def test_workflows():
             task.write_text(task.read_text() + "PO approval accept:\n")
             fails(lambda: go("done"), "po gate")  # empty approval text does not count
             task.write_text(task.read_text() + "PO approval accept: ok, ship it\n")
+            good_ac = task.read_text()
+            task.write_text(good_ac.replace("## Goal", "## Acceptance criteria\n- [x] a\n- [ ] b open\n\n## Goal"))
+            fails(lambda: go("done"), "tick", "- [ ] b open")
+            task.write_text(good_ac.replace("## Goal", "## Acceptance criteria\n- [x] a\n- [x] b\n\n## Goal"))
             go("done")
             assert go("next") == 0 and front()["step"] == "accept"
             text = task.read_text()
