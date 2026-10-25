@@ -126,8 +126,9 @@ def test_github_rulesets():
 
 def test_ci_checks_and_apply():
     real_run, real_gh, real_info = omi.subprocess.run, omi.gh, omi.repo_info
-    st = {"runs": [{"name": "test (ubuntu-latest)"}, {"name": "test (windows-latest)"}, {"name": "test (ubuntu-latest)"}],
-          "live": None, "puts": []}
+    done = lambda n: {"name": n, "status": "completed"}
+    st = {"runs": [done("test (ubuntu-latest)"), done("test (windows-latest)"), done("test (ubuntu-latest)")],
+          "live": None, "puts": [], "newer": []}
 
     def fake(*a, body=None):
         u = a[-1]
@@ -135,8 +136,10 @@ def test_ci_checks_and_apply():
             st["live"] = body
             st["puts"].append(body)
             return None
+        if "/commits?" in u:
+            return [{"sha": "new"}, {"sha": "old"}]
         if "check-runs" in u:
-            return {"check_runs": st["runs"]}
+            return {"check_runs": st["newer"] if "/new/" in u else st["runs"]}
         if u.endswith("/rulesets"):
             return [{"name": "omi-po-only", "id": 1}] if st["live"] else []
         if u.endswith("/rulesets/1"):
@@ -152,8 +155,22 @@ def test_ci_checks_and_apply():
         assert omi.ci_checks("o/r") == ["test (ubuntu-latest)", "test (windows-latest)"]
         st["runs"] = []
         assert omi.ci_checks("o/r") == []
-        omi.gh = lambda *a, **k: (_ for _ in ()).throw(SystemExit("404"))
+        omi.gh = lambda *a, **k: (_ for _ in ()).throw(SystemExit("gh api x failed: HTTP 404"))
         assert omi.ci_checks("o/r") == []
+        omi.gh = lambda *a, **k: (_ for _ in ()).throw(SystemExit("gh api x failed: HTTP 500"))
+        try:
+            omi.ci_checks("o/r")
+            assert False, "non-404 error must abort"
+        except SystemExit as e:
+            assert "500" in str(e)
+        omi.gh = fake
+        st["newer"] = [{"name": "test (new)", "status": "queued"}]  # fresh commit, CI not finished
+        st["runs"] = [done("test (ubuntu-latest)")]
+        assert omi.ci_checks("o/r") == ["test (ubuntu-latest)"], "walks back past the unfinished commit"
+        st["newer"] = [done("test (new)")]
+        assert omi.ci_checks("o/r") == ["test (new)"]
+        st["newer"] = []
+        st["runs"] = []
         omi.gh = fake
         import contextlib, io
         out = io.StringIO()
@@ -161,7 +178,7 @@ def test_ci_checks_and_apply():
             omi.apply_github()
         assert "no CI check runs" in out.getvalue()
         st["live"] = omi.rulesets()["omi-po-only"]  # no required checks stored
-        st["runs"] = [{"name": "test (ubuntu-latest)"}]
+        st["runs"] = [done("test (ubuntu-latest)")]
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             omi.apply_github()
@@ -170,7 +187,7 @@ def test_ci_checks_and_apply():
         with contextlib.redirect_stdout(out):
             omi.apply_github()
         assert "unchanged ruleset omi-po-only" in out.getvalue()
-        st["runs"] = [{"name": "test (ubuntu-latest)"}, {"name": "test (macos-latest)"}]
+        st["runs"] = [done("test (ubuntu-latest)"), done("test (macos-latest)")]
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             omi.apply_github()

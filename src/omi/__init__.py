@@ -219,12 +219,25 @@ def gh(*args, body=None):
 
 
 def ci_checks(repo):
-    """Sorted check-run names of the latest commit on development ([] if none yet)."""
+    """Sorted check-run names of the newest development commit (of the last 20) with completed runs.
+
+    [] only if development has none; any other gh error aborts."""
     try:
-        runs = gh(f"repos/{repo}/commits/development/check-runs?per_page=100")["check_runs"]
-    except SystemExit:  # no development branch or no access: same as no CI yet
-        return []
-    return sorted({c["name"] for c in runs})
+        commits = gh(f"repos/{repo}/commits?sha=development&per_page=20")
+    except SystemExit as e:
+        if "404" in str(e):
+            return []
+        raise SystemExit(f"cannot read CI checks on development; required checks left untouched. {e}")
+    for c in commits or []:
+        try:
+            runs = gh(f"repos/{repo}/commits/{c['sha']}/check-runs?per_page=100")["check_runs"]
+        except SystemExit as e:
+            if "404" in str(e):
+                continue
+            raise SystemExit(f"cannot read CI checks on development; required checks left untouched. {e}")
+        if any(r.get("status") == "completed" for r in runs):
+            return sorted({r["name"] for r in runs})
+    return []
 
 
 def same(live, want):
