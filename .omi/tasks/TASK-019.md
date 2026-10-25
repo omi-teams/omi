@@ -15,7 +15,8 @@ Claude Code 2.1.302 loads AGENTS.md natively (Coordinator test 2026-10-25: a dir
 - [ ] Tests cover `omi init` without CLAUDE.md and `omi clean --all`; `python tests/test_omi.py` passes.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
-Next:
+Done: all 4 criteria. CLAUDE.md removed (root + template), README table updated, `omi clean --all` (removes current image), omi-task step 7 conditional clean, engineer.md (both copies) says to ignore /work/AGENTS.md.
+Finding: could NOT verify live whether `claude -p --setting-sources user` loads /work/AGENTS.md (no OAuth token in this container: "Not logged in"). `--help` documents no flag that disables AGENTS.md/CLAUDE.md loading except --safe-mode/--bare-style options that also disable skills/agents/model-visible config, so used the prompt fallback (explicit ignore line in engineer prompt).
+Tests: python tests/test_omi.py passes
+Next: Coordinator may verify live with a token.
+Live check (Coordinator, 2026-10-25, real token, haiku, worker image): `claude -p --setting-sources user` in the container with /work/AGENTS.md answered NONE (no project instructions loaded); the same run without `--setting-sources user` quoted `# OMI Squad` from /work/AGENTS.md. So `--setting-sources user` (already in engineer_cmd) is what keeps the Coordinator rules out; the engineer.md line is a second guard.
