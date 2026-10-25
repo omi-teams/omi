@@ -17,6 +17,6 @@ Prove that what the unit test checks also holds inside real Claude Code: the ses
 - [ ] Results, including failures and the Claude Code version, are recorded in `docs/verification.md`.
 
 ## Checkpoint
-Not done: needs the PO to open a new Claude Code session in this repo, because hooks and agents created mid-session are not loaded.
-Tests:
-Next:
+Done: all checks PASS in docs/verification.md except `/omi-status`.
+Tests: n/a (docs only)
+Next: PO types `/omi-status` in a session; coordinator records the result, sets done, opens PR.

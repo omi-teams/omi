@@ -11,4 +11,4 @@ Claude Code 2.1.302, 2026-10-25.
 | Out-of-scope Write in worktree blocked | PASS | Write `src/omi/_probe.py` -> `OMI: src/omi/_probe.py is outside the scope of TASK-004. Stop and report NEEDS SCOPE to the Coordinator.` File not created. |
 | In-scope Write in worktree allowed | PASS | This file, `docs/verification.md`. |
 | `/omi-status` `!` injection | PENDING | PO must type it (skill has disable-model-invocation). |
-| reviewer model | PENDING | Coordinator to fill in. |
+| Reviewer model matches frontmatter (`sonnet`, read-only tools) | PASS | Model ID `claude-sonnet-5-5`; tools Read, Grep, Glob, Bash. |
