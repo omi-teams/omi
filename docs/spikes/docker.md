@@ -34,7 +34,7 @@ $env:CLAUDE_CODE_OAUTH_TOKEN = [Runtime.InteropServices.Marshal]::PtrToStringAut
 # 3. Build
 docker build -t omi-spike-worker:1 docker
 # 4. Run
-& "C:\Program Files\Gitbinsh.exe" docker/run.sh <wt> claude -p "create hello.txt containing hi, then try to write /etc/x" --permission-mode bypassPermissions
+& "C:\Program Files\Git\bin\sh.exe" docker/run.sh <wt> claude -p "create hello.txt containing hi, then try to write /etc/x" --permission-mode bypassPermissions
 # 5. Clear the token
 Remove-Item Env:CLAUDE_CODE_OAUTH_TOKEN; Remove-Variable s
 ```
