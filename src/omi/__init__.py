@@ -215,9 +215,58 @@ def same(live, want):
     return live == want
 
 
-def github():
+def accounts():
+    """(logins, active) from local gh state (no network); None if gh cannot tell."""
+    r = subprocess.run(["gh", "auth", "status", "--json", "hosts"], capture_output=True, text=True)
+    try:
+        hs = json.loads(r.stdout)["hosts"].get("github.com", [])
+    except (ValueError, KeyError):
+        return None
+    if r.returncode and hs:
+        return None
+    return [h["login"] for h in hs], next((h["login"] for h in hs if h.get("active")), "")
+
+
+def github(po=False):
     if not shutil.which("gh"):
         sys.exit("gh is not installed (https://cli.github.com); omi github needs it.")
+    if not po:
+        return apply_github()
+    before = accounts()
+    prev = before[1] if before else ""
+    if not prev:
+        sys.exit("no active squad gh account (or gh auth status failed); log in as the squad account first. Nothing changed.")
+    try:
+        r = subprocess.run(["gh", "auth", "login", "--web", "-h", "github.com"])
+        now = accounts()
+        if r.returncode:
+            sys.exit("gh auth login failed; cleaning up.")
+        if now is None:
+            sys.exit("cannot read gh accounts after login; cleaning up.")
+        if not set(now[0]) - set(before[0]) and now[1] == prev:
+            sys.exit(f"logged in as {prev}, the same as the squad account; the PO must log in with their own account. Nothing changed.")
+        apply_github()
+    finally:
+        left = []
+        try:
+            cur = accounts()
+            for u in (set(cur[0]) - set(before[0])) if cur else ():
+                try:
+                    subprocess.run(["gh", "auth", "logout", "-h", "github.com", "-u", u])
+                except BaseException:  # keep going: the switch below must still run
+                    pass
+        finally:
+            try:
+                subprocess.run(["gh", "auth", "switch", "-h", "github.com", "-u", prev])
+            finally:
+                cur = accounts()
+                left = sorted(set(cur[0]) - set(before[0])) if cur else ["(unknown: gh auth status failed)"]
+                if left:
+                    sys.exit(f"WARNING: PO credentials may still be stored in gh: {left}. Run `gh auth logout -u <login>` now, then `gh auth switch -u {prev}`.")
+                print(f"active gh account: {cur[1]}")
+
+
+def apply_github():
     r = subprocess.run(["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
                        capture_output=True, text=True)
     if r.returncode:
@@ -255,7 +304,7 @@ def main(argv=None):
     elif cmd == "status":
         status(*rest[:1])
     elif cmd == "github":
-        github()
+        github("--po" in rest)
     elif cmd == "guard":
         sys.exit(guard())
     else:
