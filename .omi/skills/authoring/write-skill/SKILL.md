@@ -5,13 +5,14 @@ description: Use when creating or revising an omi-skill; gives the contract, tri
 tokens: 900
 tools: Read, Write, Edit, Bash
 source_repo: https://github.com/anthropics/skills
-source_ref: main
+source_ref: dbd4588f9e1033efb41dad4bef2f7947c8993d44
 source_file: skills/skill-creator/SKILL.md
 source_license: Apache-2.0
 source_use: adapt
 ---
-<!-- Adapted from Anthropic skill-creator (https://github.com/anthropics/skills), Apache-2.0.
-     Copyright Anthropic. Licensed under the Apache License 2.0; changes: condensed to the omi skill contract. -->
+<!-- Adapted from Anthropic skill-creator (https://github.com/anthropics/skills), Apache-2.0, pinned at dbd4588f9e1033efb41dad4bef2f7947c8993d44.
+     Copyright Anthropic, PBC (see upstream LICENSE.txt at the pinned commit).
+     Licensed under the Apache License 2.0, https://www.apache.org/licenses/LICENSE-2.0 ; changes: condensed to the omi skill contract. -->
 # Write a skill
 
 ## When to use

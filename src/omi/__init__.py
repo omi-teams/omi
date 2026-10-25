@@ -101,6 +101,7 @@ SKILL_USES = ("reference", "adapt", "rewrite")
 SKILL_WIDENING = re.compile(  # phrases by which a skill would widen permissions or scope
     r"ignore (the )?(task )?scope|outside (the )?scope|widen(ing)? (the )?(scope|permissions)|"
     r"disable (the )?(guard|hook)|--dangerously|bypass(ing)? (the )?(guard|permissions?)|skip (the )?guard", re.I)
+SKILL_REF = re.compile(r"[0-9a-f]{7,40}|v?\d+(\.\d+)+", re.I)  # commit SHA or version tag, never a branch
 SKILL_FORBIDDEN_KEYS = ("allowed-tools", "allowed_tools", "permissions", "scope")
 
 
@@ -116,11 +117,14 @@ def validate_skill(d, cap):
         errs.append(f"group `{m['group']}` differs from directory `{d.parent.name}`")
     if m.get("source_use") and m["source_use"] not in SKILL_USES:
         errs.append(f"source_use `{m['source_use']}` is not one of {'|'.join(SKILL_USES)}")
+    if m.get("source_ref") and not SKILL_REF.fullmatch(m["source_ref"]):
+        errs.append(f"source_ref `{m['source_ref']}` is not a 7-40 char hex SHA or a version tag like v1.2")
     if m.get("tokens") and not m["tokens"].isdigit():
         errs.append("tokens is not a number")
     heads = [h.strip().lower() for h in re.findall(r"^#{1,6}\s+(.+)$", body, re.M)]
     errs += [f"missing section `{s}`" for s in SKILL_SECTIONS if s not in heads]
     errs += [f"frontmatter `{k}` would widen permissions or scope" for k in SKILL_FORBIDDEN_KEYS if k in m]
+    # ponytail: heuristic phrase match, weak against evasion; the frontmatter key check above is the real guard
     errs += [f"widens permissions or scope: `{x.group(0)}`" for x in SKILL_WIDENING.finditer(body)]
     try:
         n = tokens(*skill_files(d))

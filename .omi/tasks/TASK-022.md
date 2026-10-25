@@ -18,6 +18,7 @@ Every omi-skill follows one contract and is checked by a command, so quality doe
 Done: contract + validate_skill/check_all_skills + `skills --check` in src/omi/__init__.py; authoring/write-skill; test_skills_check.
 Not done: nothing.
 Tests: python3 tests/test_omi.py ok
+Review round 1: all 4 fixes done (source_ref check + tests, pinned SHA, notice, ponytail comment). tests ok, skills --check ok.
 Next: TASK-023
 
 ## Review round 1 (fix these, nothing else)

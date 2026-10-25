@@ -686,7 +686,7 @@ description: Use when demoing.
 tokens: 300
 tools: Read
 source_repo: https://example.com/r
-source_ref: v1
+source_ref: v1.0
 source_file: a/SKILL.md
 source_license: MIT
 source_use: rewrite
@@ -709,9 +709,13 @@ source_use: rewrite
                 sys.stdout = saved
 
         assert run(good) == ""
+        assert run(good.replace("v1.0", "dbd4588f9e1033efb41dad4bef2f7947c8993d44")) == ""
         for text, word in [
             (good.replace("source_license: MIT\n", ""), "source_license"),
             (good.replace("source_use: rewrite", "source_use: copy"), "source_use"),
+            (good.replace("v1.0", "main"), "source_ref"),
+            (good.replace("v1.0", "HEAD"), "source_ref"),
+            (good.replace("v1.0", "v1"), "source_ref"),
             (good.replace("id: demo", "id: other"), "differs from directory"),
             (good.replace("group: g", "group: x"), "group"),
             (good.replace("## steps", "## plan"), "missing section `steps`"),
