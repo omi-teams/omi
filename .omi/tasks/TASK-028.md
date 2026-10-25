@@ -19,7 +19,7 @@ Roles are prompt files in `.omi/agents`, loaded only when a task names them. `.c
 - [ ] omi-task skill, AGENTS.md (Roles section, at most 3 added lines) and README updated; `python tests/test_omi.py` passes, including a test that a read role cannot write.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
+Done: all AC; roles in .omi/agents (+template), omi agents/run, read roles ro in Docker after deterministic checks, docs.
+Not done: network allowlist for read roles (needs egress proxy); codex CLI not in the Dockerfile image.
+Tests: python tests/test_omi.py ok
 Next: TASK-040

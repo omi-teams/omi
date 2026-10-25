@@ -456,6 +456,110 @@ def test_worker():
                 omi.os.environ[omi.TOKEN_ENV] = tok
 
 
+def test_roles():
+    with tempfile.TemporaryDirectory() as t:
+        root = Path(t)
+        saved, sys.stdout = sys.stdout, io.StringIO()
+        try:
+            omi.init(root)
+            omi.agents_catalog(root)
+        finally:
+            sys.stdout = saved
+        assert not (root / ".claude" / "agents").exists()
+        cat = (root / ".omi" / "agents" / "CATALOG.md").read_text()
+        assert "- engineer (write, sonnet/medium):" in cat and "- reviewer (read, sonnet/medium):" in cat
+        assert omi.get_role(root, "reviewer")["access"] == "read"
+        try:
+            omi.get_role(root, "ghost")
+        except SystemExit as e:
+            assert "unknown role" in str(e)
+        else:
+            raise AssertionError("unknown role accepted")
+        try:
+            omi.task_skill_ids(root, {"role": "ghost"})
+        except SystemExit as e:
+            assert "ghost" in str(e)
+        else:
+            raise AssertionError("unknown task role accepted")
+        assert omi.task_skill_ids(root, {"skills": "[a]"}) == ["a"]
+        (root / ".omi" / "agents" / "reviewer.md").write_text("---\nrole: reviewer\nmodel: sonnet\neffort: low\naccess: read\n"
+                                                           "skills: [x, a]\nsummary: s\n---\nbody")
+        assert omi.task_skill_ids(root, {"role": "reviewer", "skills": "[a, b]"}) == ["x", "a", "b"]
+        assert "tests/test_omi.py" not in omi.test_command(root, root)[-1]
+    a = omi.codex_cmd("---\n---\nbody", "t.md", "claude-sonnet-5-5", "low")
+    assert a[:6] == ["codex", "exec", "-m", "claude-sonnet-5-5", "-c", "model_reasoning_effort=low"] and "/work/t.md" in a[-1]
+
+
+def test_run_read_role():
+    real = omi.subprocess.run, omi.shutil.which, omi.main_checkout, omi.WINDOWS, omi.os.environ.get(omi.TOKEN_ENV)
+    calls = []
+    st = {}
+
+    class R:
+        def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
+
+    def run(cmd, **kw):
+        calls.append((cmd, kw))
+        if cmd[:2] == ["docker", "info"]:
+            return R(rc=st["info_rc"])
+        if "show" in cmd:
+            return R("---\nscope: src/**\n---\n")
+        if "status" in cmd:
+            return R(" M src/a.py\0")
+        if "diff" in cmd and "--name-only" in cmd:
+            return R("src/a.py\0" + st.get("extra", ""))
+        if cmd[0] == sys.executable:
+            return R("tests out", st.get("tests_rc", 0))
+        return R()
+
+    def docker_runs():
+        return [c for c in calls if c[0][:2] == ["docker", "run"]]
+
+    with tempfile.TemporaryDirectory() as d:
+        wt = Path(d).resolve()
+        (wt / ".git").write_text("gitdir: /x")
+        task = wt / ".omi" / "tasks" / "TASK-001.md"
+        omi.subprocess.run, omi.shutil.which = run, lambda _: "docker"
+        omi.main_checkout, omi.WINDOWS = (lambda _: wt), False
+        omi.os.environ[omi.TOKEN_ENV] = "tok"
+        out = io.StringIO()
+        sys.stdout, saved = out, sys.stdout
+        try:
+            def go(**kw):
+                calls.clear()
+                st.clear()
+                st.update(info_rc=0)
+                st.update(kw)
+                try:
+                    return omi.run_role("reviewer", wt, task)
+                except SystemExit as e:
+                    return str(e)
+
+            assert go() == 0
+            argv = docker_runs()[0][0]
+            assert f"{wt}:/work:ro" in argv and f"{wt}:/work" not in argv, "read role must mount the worktree ro"
+            assert f"{wt / '.git'}:/work/.git:ro" in argv and "omi-role=reviewer" in argv
+            assert any(a.endswith(":/review:ro") for a in argv) and "Diff: /review/diff.patch" in argv[argv.index("claude") + 2]
+            assert "bypassPermissions" in argv  # the ro mount, not prompts, is the boundary
+            # the write role keeps a rw mount
+            calls.clear()
+            omi.run_role("engineer", wt, task)
+            assert f"{wt}:/work" in docker_runs()[0][0]
+            # a failing check blocks the role: no container, failure reported
+            for kw, word in (({"tests_rc": 1}, "tests failed"), ({"extra": "docs/x.md\0"}, "outside scope: docs/x.md")):
+                out.truncate(0); out.seek(0)
+                assert go(**kw) == 4 and not docker_runs() and word in out.getvalue(), out.getvalue()
+            # no host fallback when Docker is down
+            e = go(info_rc=1)
+            assert "Docker is not running" in e and not docker_runs()
+        finally:
+            sys.stdout = saved
+            omi.subprocess.run, omi.shutil.which, omi.main_checkout, omi.WINDOWS, tok = real
+            omi.os.environ.pop(omi.TOKEN_ENV, None)
+            if tok is not None:
+                omi.os.environ[omi.TOKEN_ENV] = tok
+
+
 def test_container_names():
     import datetime
     t = datetime.datetime(2026, 1, 1, 14, 32, 5)
@@ -733,6 +837,8 @@ if __name__ == "__main__":
     test_skills()
     test_skills_check()
     test_worker()
+    test_roles()
+    test_run_read_role()
     test_container_names()
     test_clean_and_old_images()
     test_credential_manager()
