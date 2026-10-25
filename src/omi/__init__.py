@@ -1,5 +1,6 @@
 """OMI Squad CLI: init, status, guard, skills, agents, workflows, step, run, token, worker. Stdlib only."""
 
+import contextlib
 import ctypes
 import datetime
 import getpass
@@ -885,6 +886,55 @@ def resolve_model(root, model):
     sys.exit(f"unknown model alias '{model}': add it to \"models\" in .omi/config.json. Nothing changed.")
 
 
+DEFAULT_ALLOW = ["api.anthropic.com"]
+PROXY_PORT = 3128
+
+
+def network_allow(root):
+    """Hosts a worker may reach: .omi/config.json "network_allow" (PO-editable) or the model API only."""
+    cfg = Path(root) / ".omi" / "config.json"
+    allow = (json.loads(cfg.read_text(encoding="utf-8")).get("network_allow", DEFAULT_ALLOW)) if cfg.exists() else DEFAULT_ALLOW
+    for e in allow:
+        if not isinstance(e, str) or not re.fullmatch(r"(\*\.)?[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{1,5})?", e):
+            sys.exit(f'bad "network_allow" entry {e!r} in .omi/config.json: use host, *.suffix or host:port. Nothing changed.')
+    return list(allow)
+
+
+@contextlib.contextmanager
+def egress(main, name, image, allow):
+    """Internal docker network plus a CONNECT-only allowlist proxy (docker/proxy.py, no token, no worktree);
+    yields (network, proxy container). Both are removed on exit; hosts the proxy refused are reported."""
+    net, proxy, repo = f"omi-net-{name}", f"{name}-proxy", repo_label(main)
+    labels = ["--label", "omi-worker=1", "--label", f"omi-repo={repo}"]
+    script = main / "docker" / "proxy.py"
+    script = script if script.exists() else TEMPLATE / "docker" / "proxy.py"
+    docker = lambda *a: subprocess.run(["docker", *a], capture_output=True, text=True, errors="replace")
+    logs = ""
+    try:
+        r = docker("network", "create", "--internal", *labels, net)
+        if r.returncode:
+            sys.exit(f"cannot create the worker network: {r.stderr.strip()}. Nothing changed.")
+        r = docker("create", "--name", proxy, *labels, "--user", "node", "--read-only", "--cap-drop", "ALL",
+                   "--security-opt", "no-new-privileges", "-v", f"{script}:/proxy.py:ro", image,
+                   "python3", "/proxy.py", *allow)
+        if r.returncode or docker("network", "connect", net, proxy).returncode or docker("start", proxy).returncode:
+            sys.exit(f"cannot start the egress proxy: {r.stderr.strip()}. Nothing changed.")
+        for _ in range(50):
+            logs = docker("logs", proxy).stdout
+            if "omi-proxy ready" in logs:
+                break
+            time.sleep(0.2)
+        else:
+            sys.exit("the egress proxy did not start. Nothing changed.")
+        yield net, proxy
+    finally:
+        logs = docker("logs", proxy).stdout or logs
+        docker("rm", "-f", proxy)
+        docker("network", "rm", net)
+        for h in dict.fromkeys(re.findall(r"^BLOCKED (\S+)$", logs, re.M)):
+            print(f'NETWORK BLOCKED: {h} - add to "network_allow" in .omi/config.json')
+
+
 def container_name(repo, role, tid=None, model=None, effort=None, now=None):
     """omi-<repo>-<task-id>-<role>-<model-id>-<effort>-<HHMMSS>, limited to Docker's [a-zA-Z0-9_.-]; model/effort `none` for prove."""
     stamp = (now or datetime.datetime.now()).strftime("%H%M%S")
@@ -896,17 +946,21 @@ def repo_label(main):
     return re.sub(r"[^a-zA-Z0-9_.-]", "-", main.name.lower())
 
 
-def worker_argv(wt, image, cmd, name=None, repo=None, labels=None, ro=False, mounts=(), env_names=(TOKEN_ENV,)):
+def worker_argv(wt, image, cmd, name=None, repo=None, labels=None, ro=False, mounts=(), env_names=(TOKEN_ENV,), network=None, proxy=None):
     """docker run argv: only the worktree is rw, its .git file ro, non-root, no caps, rootfs ro, no socket.
-    The token goes in by name only (-e NAME); its value lives in the child env, never in argv."""
+    The token goes in by name only (-e NAME); its value lives in the child env, never in argv.
+    network/proxy: the internal network and the egress proxy container; HTTPS_PROXY is the only way out."""
     wt = Path(wt)
+    url = f"http://{proxy}:{PROXY_PORT}"
+    net = ["--network", network, "-e", f"HTTPS_PROXY={url}", "-e", f"HTTP_PROXY={url}",
+           "-e", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1"] if network else []
     return ["docker", "run", "--rm", "-i", *(["--name", name] if name else []), "--label", "omi-worker=1",
             *(["--label", f"omi-repo={repo}"] if repo else []),
             *[x for k, v in (labels or {}).items() for x in ("--label", f"{k}={v}")],
             "--user", "node", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
             "--tmpfs", "/tmp:rw,noexec,nosuid,size=256m",
             "--tmpfs", "/home/node:rw,noexec,nosuid,uid=1000,gid=1000,size=256m",
-            *[x for n in env_names for x in ("-e", n)], "-e", "HOME=/home/node",
+            *[x for n in env_names for x in ("-e", n)], "-e", "HOME=/home/node", *net,
             "-v", f"{wt}:/work{':ro' if ro else ''}", "-v", f"{wt / '.git'}:/work/.git:ro",
             *[x for m in mounts for x in ("-v", f"{m}:ro")], "-w", "/work", image, *cmd]
 
@@ -1230,10 +1284,15 @@ def clean(cwd=".", all_images=False):
     ids = r.stdout.split()
     if ids:
         subprocess.run(["docker", "rm", "-f", *ids], capture_output=True)
+    r = subprocess.run(["docker", "network", "ls", "-q", "--filter", f"label=omi-repo={repo_label(main)}"],
+                       capture_output=True, text=True, errors="replace")
+    nets = r.stdout.split()
+    if nets:
+        subprocess.run(["docker", "network", "rm", *nets], capture_output=True)
     imgs = old_images(main, None if all_images else image_tag(main)[1])
     for i in imgs:
         subprocess.run(["docker", "rmi", i], capture_output=True)
-    print(f"removed {len(ids)} container(s), {len(imgs)} image(s)")
+    print(f"removed {len(ids)} container(s), {len(nets)} network(s), {len(imgs)} image(s)")
 
 
 def out_of_scope(wt, tid, committed=False):
@@ -1330,6 +1389,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool="claude"):
         if problems:
             print(f"{role} not started; fix these first:\n" + "\n".join(problems))
             return 4
+    allow = network_allow(main)
     image = ensure_image(main)
     env = dict(os.environ)
     env.pop(TOKEN_ENV, None)
@@ -1357,10 +1417,12 @@ def run_role(role, wt, task_file, model=None, effort=None, tool="claude"):
             prompt_skills += note
         cmd = (engineer_cmd if tool == "claude" else codex_cmd)(text, task_rel, model, effort, prompt_skills)
         t0 = time.monotonic()
-        r = subprocess.run(worker_argv(wt, image, cmd, container_name(main.name, role, task.stem, model, effort),
-                                         repo_label(main), worker_labels(role, task.stem, model, effort), ro=read,
-                                         mounts=mounts, env_names=(key,)),
-                            env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True, errors="replace")
+        name = container_name(main.name, role, task.stem, model, effort)
+        with egress(main, name, image, allow) as (net, proxy):
+            r = subprocess.run(worker_argv(wt, image, cmd, name, repo_label(main),
+                                             worker_labels(role, task.stem, model, effort), ro=read,
+                                             mounts=mounts, env_names=(key,), network=net, proxy=proxy),
+                                env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True, errors="replace")
         rc = r.returncode
         result, *nums = parse_usage(tool, r.stdout)
         print(result if result is not None else (r.stdout or ""))
@@ -1392,14 +1454,17 @@ def worker(wt, task_file=None, model=None, effort=None, prove=False):
     if not main or not (wt / ".git").is_file():
         sys.exit(f"{wt} is not a git worktree. Nothing changed.")
     need_docker()
+    allow = network_allow(main)
     image = ensure_image(main)
     env = dict(os.environ)
     env.pop(TOKEN_ENV, None)
     script = main / "docker" / "prove.sh"
     script = script if script.exists() else TEMPLATE / "docker" / "prove.sh"
-    return subprocess.run(worker_argv(wt, image, ["sh", "-s"], container_name(main.name, "prove"), repo_label(main),
-                                 worker_labels("prove", None, None, None)), env=env,
-                          input=script.read_bytes().replace(b"\r\n", b"\n")).returncode
+    name = container_name(main.name, "prove")
+    with egress(main, name, image, allow) as (net, proxy):
+        return subprocess.run(worker_argv(wt, image, ["sh", "-s"], name, repo_label(main),
+                                          worker_labels("prove", None, None, None), network=net, proxy=proxy), env=env,
+                              input=script.read_bytes().replace(b"\r\n", b"\n")).returncode
 
 
 def run_cmd(role, tid, rest):

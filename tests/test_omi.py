@@ -9,6 +9,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 import omi  # noqa: E402
 
+real_egress = omi.egress  # other tests run workers with docker mocked: no proxy
+
+
+@omi.contextlib.contextmanager
+def no_egress(main, name, image, allow):
+    yield f"omi-net-{name}", f"{name}-proxy"
+
+
+omi.egress = no_egress
+
 
 def git(cwd, *args):
     subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],
@@ -655,6 +665,99 @@ def test_container_names():
     assert a[a.index("omi-repo=my-repo") - 1] == "--label"
 
 
+def test_network_allowlist():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("omi_proxy", omi.TEMPLATE / "docker" / "proxy.py")
+    px = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(px)
+    al = ["api.anthropic.com", "*.example.org", "host.io:8443"]
+    for host, port, want in (("api.anthropic.com", 443, True), ("API.Anthropic.com.", 443, True), ("example.com", 443, False),
+                             ("evil-api.anthropic.com", 443, False), ("api.anthropic.com", 80, False),
+                             ("a.example.org", 443, True), ("example.org", 443, False), ("x.notexample.org", 443, False),
+                             ("host.io", 8443, True), ("host.io", 443, False), ("1.1.1.1", 443, False)):
+        assert px.allowed(host, port, al) is want, (host, port)
+    # protocol: CONNECT only, 403 names host and key, BLOCKED logged, no headers logged
+    import socket, threading
+    px.ALLOW[:] = ["127.0.0.1:%d"]
+    echo = socket.socket(); echo.bind(("127.0.0.1", 0)); echo.listen(1)
+    px.ALLOW[:] = [f"127.0.0.1:{echo.getsockname()[1]}"]
+    threading.Thread(target=lambda: (lambda c: c.sendall(c.recv(10)))(echo.accept()[0]), daemon=True).start()
+    srv = px.Server(("127.0.0.1", 0), px.Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+    def ask(req, extra=b""):
+        c = socket.create_connection(srv.server_address, 5)
+        c.sendall(req)
+        data = c.recv(4096)
+        if extra:
+            c.sendall(extra)
+            data += c.recv(100)
+        c.close()
+        return data.decode()
+
+    buf = io.StringIO()
+    sys.stdout, saved = buf, sys.stdout
+    try:
+        assert ask(b"GET http://example.com/ HTTP/1.1\r\nAuthorization: SECRET\r\n\r\n").startswith("HTTP/1.1 405")
+        blocked = ask(b"CONNECT example.com:443 HTTP/1.1\r\nAuthorization: SECRET\r\n\r\n")
+        ok = ask(f"CONNECT {px.ALLOW[0]} HTTP/1.1\r\n\r\n".encode(), b"hello")
+    finally:
+        sys.stdout = saved
+        srv.shutdown()
+    assert blocked.startswith("HTTP/1.1 403") and 'omi blocked example.com: add it to "network_allow" in .omi/config.json' in blocked
+    assert ok.startswith("HTTP/1.1 200") and ok.endswith("hello"), ok
+    assert "BLOCKED example.com:443" in buf.getvalue() and "SECRET" not in buf.getvalue()
+    # config
+    with tempfile.TemporaryDirectory() as d:
+        assert omi.network_allow(d) == ["api.anthropic.com"]
+        (Path(d) / ".omi").mkdir()
+        (Path(d) / ".omi" / "config.json").write_text('{"network_allow": ["api.anthropic.com", "*.x.io:8443"]}')
+        assert omi.network_allow(d) == ["api.anthropic.com", "*.x.io:8443"]
+        (Path(d) / ".omi" / "config.json").write_text('{"network_allow": ["bad host"]}')
+        try:
+            omi.network_allow(d)
+        except SystemExit as e:
+            assert "bad host" in str(e)
+        else:
+            raise AssertionError("bad entry accepted")
+    # argv: restricted network and proxy env; without a network nothing is added
+    a = omi.worker_argv(Path("/w"), "img", ["x"], "n", network="omi-net-n", proxy="n-proxy")
+    assert a[a.index("--network") + 1] == "omi-net-n" and "HTTPS_PROXY=http://n-proxy:3128" in a
+    assert "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1" in a and "--network" not in omi.worker_argv(Path("/w"), "img", ["x"])
+    # egress: order, hardening, no token, cleanup and the blocked-host message
+    calls = []
+
+    class R:
+        def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        return R("omi-proxy ready\nBLOCKED example.com:443\nBLOCKED example.com:443\n" if cmd[:2] == ["docker", "logs"] else "")
+
+    real = omi.subprocess.run
+    omi.subprocess.run = run
+    buf = io.StringIO()
+    sys.stdout, saved = buf, sys.stdout
+    try:
+        with real_egress(Path("/My Repo"), "n", "img", ["api.anthropic.com"]) as (net, proxy):
+            assert (net, proxy) == ("omi-net-n", "n-proxy")
+            inside = list(calls)
+    finally:
+        sys.stdout = saved
+        omi.subprocess.run = real
+    assert [c[1:3] for c in inside][:1] == [["network", "create"]] and inside[0][3] == "--internal"
+    create = next(c for c in inside if c[1] == "create")
+    assert create[-3:] == ["python3", "/proxy.py", "api.anthropic.com"] and "--read-only" in create and "--cap-drop" in create
+    assert not any("TOKEN" in a or ":/work" in a for a in create) and "omi-repo=my-repo" in create
+    assert [c[1] for c in inside if c[1] in ("create", "start")] == ["create", "start"]
+    assert any(c[1:3] == ["network", "connect"] for c in inside)
+    assert calls[-2][1:3] == ["rm", "-f"] and calls[-1][1:3] == ["network", "rm"]
+    assert buf.getvalue().count("NETWORK BLOCKED: example.com:443 - add to \"network_allow\" in .omi/config.json") == 1
+    # prove.sh checks both an allowed and a blocked host
+    sh = (omi.TEMPLATE / "docker" / "prove.sh").read_text()
+    assert "api.anthropic.com" in sh and "example.com" in sh and "1.1.1.1" in sh and "network_allow" in sh
+
+
 def test_clean_and_old_images():
     real, realmc = omi.subprocess.run, omi.main_checkout
     calls = []
@@ -677,12 +780,15 @@ def test_clean_and_old_images():
                 return R(f"{cur}\n{repo}:old1\n{repo}:old2\n" + ("" if "label=omi-repo=my-repo" in cmd else "omi-worker-other:x\n"))
             if cmd[:3] == ["docker", "image", "inspect"]:
                 return R(rc=1)
+            if cmd[:3] == ["docker", "network", "ls"]:
+                return R("n1\n" if "label=omi-repo=my-repo" in cmd else "other\n")
             return R()
 
         omi.subprocess.run, omi.main_checkout = run, lambda _: main
         try:
             omi.clean()
             assert ["docker", "rm", "-f", "c1", "c2"] in calls and not any("other" in c for c in calls if c[:2] == ["docker", "rm"])
+            assert ["docker", "network", "rm", "n1"] in calls
             assert ["docker", "rmi", f"{repo}:old1"] in calls and ["docker", "rmi", f"{repo}:old2"] in calls
             assert ["docker", "rmi", cur] not in calls and ["docker", "rmi", "omi-worker-other:x"] not in calls
             ps = next(c for c in calls if c[:2] == ["docker", "ps"])
@@ -1401,6 +1507,7 @@ if __name__ == "__main__":
     test_incremental_review()
     test_review_round_flow()
     test_container_names()
+    test_network_allowlist()
     test_clean_and_old_images()
     test_credential_manager()
     test_template_docker()

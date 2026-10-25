@@ -7,7 +7,7 @@ scope: src/omi/__init__.py, src/omi/template/**, tests/**, README.md
 role: omi-agent-engineer
 skills: [omi-skill-docker-worker-pitfalls, omi-skill-windows-powershell]
 workflow: omi-flow-feature-sensitive  # worker security boundary
-step: architect
+step: build
 ---
 ## Goal
 Every worker container (engineer and read roles) reaches only the model API and the hosts the PO allows.
@@ -34,17 +34,21 @@ Architect (step architect): RECOMMEND B; Coordinator took B, one task (T1+T2 tog
 - `clean` also removes networks by `label=omi-repo=<repo>`.
 - `prove.sh`: CONNECT api.anthropic.com -> 200; CONNECT example.com -> 403 naming host and key; direct TCP 1.1.1.1:443 fails.
 - Tests: proxy allow/deny matrix, wildcard, port, 405, 403 text (importlib); argv, egress order, clean networks. README: manual check incl. Docker Desktop on Windows; known residue: DNS may still resolve on some engines.
-Done:
-Not done:
-Tests:
+Done: proxy.py, egress/network_allow/worker_argv/clean, prove.sh, config template, README, tests.
+Not done: real Docker run of --prove (no docker in this container).
+Tests: python3 tests/test_omi.py -> ok
+Coordinator proof 2026-10-25 on the Windows host (Docker Desktop, WSL2): `omi worker . --prove` -> PASS allowed api.anthropic.com (200), PASS blocked example.com (403 with host and key), PASS direct TCP 1.1.1.1:443 blocked; NETWORK BLOCKED line printed; no container or network left.
 Next: TASK-045
 
 ## Steps
 - plan started 2026-10-25 22:58
 - plan done 2026-10-25 22:58
 - architect started 2026-10-25 22:58
+- architect done 2026-10-25 22:59
+- build started 2026-10-25 22:59
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-architect | claude-opus-5-5 | high | 12 | 6071 | 145418 | 66s | - | n/a |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 30 | 14708 | 641592 | 146s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
