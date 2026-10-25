@@ -3,7 +3,7 @@ id: TASK-018
 title: Real CI check names in omi github, and a v* tag after release
 status: in-progress
 depends: TASK-017
-scope: src/omi/__init__.py, tests/**, docs/pilot.md, .claude/skills/omi-release/**, src/omi/template/dot-claude/skills/omi-release/**
+scope: src/omi/__init__.py, tests/**, docs/pilot.md, .claude/skills/omi-task/**, src/omi/template/dot-claude/skills/omi-task/**, .claude/skills/omi-release/**, src/omi/template/dot-claude/skills/omi-release/**
 ---
 ## Goal
 In the pilot, staging/main required a check named `test`, but the matrix CI reports `test (ubuntu-latest)` and the other OS variants, so the gate could never pass and the PO had to bypass it.
