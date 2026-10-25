@@ -43,4 +43,4 @@ On Codex: run a role with the shell command `codex exec` (never Codex's built-in
 
 ## Branches
 `task/TASK-NNN` → `development` → `staging` → `main`.
-The squad merges into `development` only after review PASS and green CI. Only the PO merges into `staging` and `main`.
+The squad merges into `development` only after review PASS and green CI (no remote: the local tests pass instead). Only the PO merges into `staging` and `main`.
