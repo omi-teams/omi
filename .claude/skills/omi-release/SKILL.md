@@ -19,11 +19,11 @@ Phase 1 - candidate:
    - Rollback: revert the promotion merge commit on staging (or main), or redeploy the previous `rc-*` tag.
    - The tag name `<rc>`.
 6. `gh pr create --base staging --head development --title "release: <rc>" --body-file <file>`.
-7. Tag after the PR exists: if `git rev-parse -q --verify refs/tags/<rc>` finds it, skip. Otherwise `git tag <rc> origin/development` and `git push origin <rc>`.
+7. Tag after the PR exists: if `git ls-remote --tags origin <rc>` shows it, skip. Otherwise create it if missing locally (`git rev-parse -q --verify refs/tags/<rc>` || `git tag <rc> origin/development`), then `git push origin <rc>`.
 8. Report the PR URL and `<rc>` in at most 3 lines and stop. The PO tests and merges.
 
 Phase 2 - promote:
-1. `gh pr list --base staging --state all --limit 1 --json state,body`. Require `state == "MERGED"`; read `<rc>` from the body. Also require `git log origin/main..origin/staging` to be non-empty. Otherwise report why and stop.
+1. `git fetch origin --tags`. Run `gh pr list --base staging --state all --limit 1 --json state,body`. Require `state == "MERGED"`; read `<rc>` from the body. Also require `git log origin/main..origin/staging` to be non-empty. Otherwise report why and stop.
 2. Run `gh pr list --base main --state open`. If any is open, report it and stop.
 3. `gh pr create --base main --head staging --title "release: <rc>" --body-file <file>`. The body points to the same `<rc>`, reuses the release notes and rollback plan, and states that staging was accepted by the PO.
 4. Report the PR URL in at most 3 lines and stop. The PO merges it.

@@ -15,6 +15,6 @@ The squad prepares promotions (development → staging → main); the PO only te
 - [ ] The skill never merges into staging or main itself.
 
 ## Checkpoint
-Done: skill + AGENTS lines; review fix round 1 applied. Not done: -
+Done: skill + AGENTS lines; review fix rounds 1-2 applied. Not done: -
 Tests: test_omi.py
 Next: review
