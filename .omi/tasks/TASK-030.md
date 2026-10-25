@@ -16,7 +16,12 @@ Two independent read-only roles that give evidence beyond the general reviewer.
 - [ ] Catalog regenerated; template copy identical.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
+Done: both roles, catalog regenerated (7 roles), template copy identical
+Not done: -
+Tests: none in scope; catalog generator ran OK
 Next: TASK-031
+
+## Usage
+| role | model | effort | input | output | cache | duration |
+|---|---|---|---|---|---|---|
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 2979 | 172944 | 30s |
