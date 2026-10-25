@@ -15,6 +15,8 @@ A workflow is a playbook file with a declared step table; omi tracks the current
 - [ ] `python -m omi workflows` generates `.omi/workflows/CATALOG.md` (one line each) and `--check` validates all files.
 - [ ] Tests: step order, refused skip, po gate, unknown ids; `python tests/test_omi.py` passes.
 
+- [ ] `python -m omi workflows --check` exists and exits 0 on a valid folder: TASK-028 calls it before every read role when `.omi/workflows` exists, so a missing command would block all read roles.
+
 ## Checkpoint
 Done:
 Not done:

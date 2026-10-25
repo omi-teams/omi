@@ -14,6 +14,8 @@ After a failed review, the next round gets only the fixes and the previous findi
 - [ ] TASK-040 usage numbers show the saving on a test scenario, recorded in the checkpoint; if there is no saving the feature is reverted.
 - [ ] `python tests/test_omi.py` passes.
 
+- [ ] The review diff includes files the engineer added but did not stage (`git add -N`) or the docs state that the diff must be committed first.
+
 ## Checkpoint
 Done:
 Not done:
