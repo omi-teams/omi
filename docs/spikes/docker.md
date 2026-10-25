@@ -1,6 +1,6 @@
 # Spike: Docker worker write boundary (TASK-006)
 
-**Recommendation: pending live auth check.** The write boundary is proven; running `claude` with the subscription token is not yet tested.
+**Recommendation: go** for running the engineer in this container, with the limits below. Live check 2026-10-25 by the PO: `claude -p` (2.1.302, `claude setup-token` token via env var) in the container created `/work/hello.txt` (`hi`, seen on the host) and its write to `/etc/x` failed with EROFS. Open before production use: terms of use for automated subscription use; RAM under a real task; `claude -p` waits 3 s for stdin, so pass `< /dev/null` (or `-i` off) in the runner.
 
 ## Files
 - `docker/Dockerfile`: `node:24-slim` (pinned by tag), Claude Code CLI pinned to `2.1.302` (same as host) and installed at build time (baked in, not on a tmpfs, so no exit 126), runs as `node`.
