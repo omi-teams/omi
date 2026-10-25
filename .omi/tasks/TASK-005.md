@@ -1,7 +1,7 @@
 ---
 id: TASK-005
 title: Show omi status drift between checkpoint and git
-status: planned
+status: in-progress
 depends: TASK-002
 scope: src/omi/__init__.py, tests/**
 ---
