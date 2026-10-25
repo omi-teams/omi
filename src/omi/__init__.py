@@ -399,7 +399,10 @@ def ensure_image(main):
         d = TEMPLATE / "docker"
     tag = "omi-worker:" + hashlib.sha256((d / "Dockerfile").read_bytes()).hexdigest()[:12]
     if subprocess.run(["docker", "image", "inspect", tag], capture_output=True).returncode:
-        if subprocess.run(["docker", "build", "-t", tag, "--label", "omi-worker=1", str(d)]).returncode:
+        r = subprocess.run(["docker", "build", "-t", tag, "--label", "omi-worker=1", str(d)],
+                           capture_output=True, text=True, errors="replace")
+        if r.returncode:
+            print(r.stdout, r.stderr, sep="\n", file=sys.stderr)
             sys.exit("docker build failed.")
     return tag
 
@@ -416,7 +419,7 @@ def out_of_scope(wt, tid):
             return False
         if os.path.islink(Path(wt) / p):  # host tools could follow it out of the worktree
             return True
-        if any(c.lower().startswith(".git") or re.fullmatch(r"(?i)git(att|mod)?~\d+", c) for c in p.split("/")) and p not in globs:
+        if any(c.lower().startswith(".git") or re.fullmatch(r"(?i)git[^~/]*~\d+(\.[^/]*)?", c) for c in p.split("/")) and p not in globs:
             return True  # .gitattributes, .githooks..., and their Windows 8.3 names (GIT~1): host git processes them; only an exact scope entry allows
         return not any(PurePosixPath(p).full_match(g) for g in globs)
     return [p for p in paths if bad(p)]

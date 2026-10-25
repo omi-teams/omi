@@ -243,10 +243,14 @@ def test_worker():
     st = {}
 
     class R:
-        def __init__(s, out="", rc=0): s.stdout, s.returncode = out, rc
+        def __init__(s, out="", rc=0, err=""): s.stdout, s.returncode, s.stderr = out, rc, err
 
     def run(cmd, **kw):
         calls.append((cmd, kw))
+        if cmd[:3] == ["docker", "image", "inspect"] and st.get("build_fail"):
+            return R(rc=1)
+        if cmd[:2] == ["docker", "build"]:
+            return R("BUILDLOG", 1 if st.get("build_fail") else 0, "BUILDERR")
         if cmd[:2] == ["docker", "info"]:
             return R(rc=st["info_rc"])
         if "show" in cmd:
@@ -267,7 +271,7 @@ def test_worker():
         try:
             def go(task=task, **kw):
                 calls.clear()
-                st.update(info_rc=0)
+                st.update(info_rc=0, build_fail=0)
                 st.update(kw)
                 try:
                     return omi.worker(wt, task, effort=kw.get("effort"))
@@ -288,14 +292,27 @@ def test_worker():
             assert c[c.index("--permission-mode") + 1] == "bypassPermissions"
             assert "/work/.omi/tasks/TASK-001.md" in c[2] and "Checkpoint" in c[c.index("--append-system-prompt") + 1]
             go(effort="high")
+            argv = next(c[0] for c in calls if c[0][:2] == ["docker", "run"])
+            assert argv[argv.index("--effort") + 1] == "high"
+            # build log: silent on success, shown (stderr) on failure
+            out.truncate(0); out.seek(0)
+            go(build_fail=0)
+            assert "BUILDLOG" not in out.getvalue()
+            err = io.StringIO()
+            sys.stderr, saved_err = err, sys.stderr
+            try:
+                e = go(build_fail=1)
+            finally:
+                sys.stderr = saved_err
+            assert e == "docker build failed." and "BUILDLOG" in err.getvalue() and "BUILDERR" in err.getvalue(), e
             # .git* components flagged unless named exactly; symlinks flagged
             status = R(" M src/.gitattributes\0 M src/ok.py\0")
             run0 = omi.subprocess.run
             omi.subprocess.run = lambda cmd, **kw: status if "status" in cmd else run0(cmd, **kw)
             assert omi.out_of_scope(wt, "TASK-001") == ["src/.gitattributes"]
-            status = R(" M GIT~1/x\0 M src/GITATT~1\0 M a/gitmod~2\0 M src/GITHUB.py\0 M src/ok.py\0")
+            status = R(" M GIT~1/x\0 M src/GITATT~1\0 M a/gitmod~2\0 M GITIGN~1.TXT\0 M x/GITHUB~3\0 M src/GITHUB.py\0 M src/ok.py\0")
             omi.subprocess.run = lambda cmd, **kw: status if "status" in cmd else run0(cmd, **kw)
-            assert omi.out_of_scope(wt, "TASK-001") == ["GIT~1/x", "src/GITATT~1", "a/gitmod~2"]
+            assert omi.out_of_scope(wt, "TASK-001") == ["GIT~1/x", "src/GITATT~1", "a/gitmod~2", "GITIGN~1.TXT", "x/GITHUB~3"]
             status = R(" M src/.gitattributes\0 M src/ok.py\0")
             omi.subprocess.run = lambda cmd, **kw: (R("---\nscope: src/.gitattributes, src/ok.py\n---\n") if "show" in cmd
                                                     else status)
@@ -305,8 +322,6 @@ def test_worker():
             assert omi.out_of_scope(wt, "TASK-001") == ["src/ok.py"]
             omi.os.path.islink = real_islink
             omi.subprocess.run = run0
-            argv = next(c[0] for c in calls if c[0][:2] == ["docker", "run"])
-            assert argv[argv.index("--effort") + 1] == "high"
 
             def ran():
                 return [c[0][:2] for c in calls if c[0][:2] in (["docker", "run"], ["docker", "build"])]
