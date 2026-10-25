@@ -257,7 +257,9 @@ def github(po=False):
                     pass
         finally:
             try:
-                subprocess.run(["gh", "auth", "switch", "-h", "github.com", "-u", prev])
+                cur = accounts()  # logout already switches back when another account exists
+                if not cur or cur[1] != prev:
+                    subprocess.run(["gh", "auth", "switch", "-h", "github.com", "-u", prev])
             finally:
                 cur = accounts()
                 left = sorted(set(cur[0]) - set(before[0])) if cur else ["(unknown: gh auth status failed)"]
@@ -267,11 +269,13 @@ def github(po=False):
 
 
 def apply_github():
-    r = subprocess.run(["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
+    r = subprocess.run(["gh", "repo", "view", "--json", "nameWithOwner,visibility", "--jq", ".nameWithOwner+\" \"+.visibility"],
                        capture_output=True, text=True)
     if r.returncode:
         sys.exit(f"cannot read repo from gh: {r.stderr.strip()}")
-    repo = r.stdout.strip()
+    repo, vis = r.stdout.split()
+    if vis.upper() == "PRIVATE":
+        sys.exit(f"{repo} is private; rulesets need a public repo on the GitHub Free plan. Make it public (or upgrade), then rerun. Nothing changed.")
     if not gh(f"repos/{repo}")["permissions"]["admin"]:
         sys.exit(f"the gh token has no admin on {repo}; nothing changed. Use an admin token.")
     try:

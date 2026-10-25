@@ -16,7 +16,7 @@ Remove the manual steps and the main cost found in the TASK-009 pilot (see docs/
 - [ ] Template and root copies of changed skills stay identical; tests pass.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
-Next:
+Done: all 5 criteria (idea push step, private check, single switch, model sonnet + README, skills identical).
+Not done: none.
+Tests: python tests/test_omi.py ok.
+Next: review.
