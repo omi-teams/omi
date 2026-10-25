@@ -1,13 +1,13 @@
 ---
 id: TASK-037
 title: Workflows - release and promote (migrate omi-release)
-status: in-progress
+status: done
 depends: TASK-032, TASK-031
 scope: .omi/workflows/**, src/omi/template/dot-omi/workflows/**, .claude/skills/omi-release/**, src/omi/template/dot-claude/skills/omi-release/**, tests/**
 role: omi-agent-engineer
 skills: []  # step build adds omi-skill-lean-implementation
 workflow: omi-flow-feature
-step: build
+step: accept
 ---
 ## Goal
 The release flow exists as two workflows, and `omi-release` only starts them, with no change in behaviour.
@@ -44,8 +44,15 @@ Next: TASK-038
 - plan started 2026-10-25 22:24
 - plan done 2026-10-25 22:24
 - build started 2026-10-25 22:24
+- build done 2026-10-25 22:25
+- review started 2026-10-25 22:25
+- review done 2026-10-25 22:26
+- accept started 2026-10-25 22:26
+PO approval accept: Chấp nhận, merge (Recommended)
+- accept done 2026-10-25 22:28
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read |
 |---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 5640 | 215528 | 68s | 1/1 omi-skill-lean-implementation |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1845 | 116188 | 32s | - |
