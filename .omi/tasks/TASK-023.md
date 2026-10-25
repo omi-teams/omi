@@ -1,7 +1,7 @@
 ---
 id: TASK-023
 title: Skill group - squad workflow
-status: in-progress
+status: done
 depends: TASK-022
 scope: .omi/skills/workflow/**, .omi/skills/CATALOG.md, docs/research/_src/**, src/omi/template/dot-omi/skills/workflow/**, .omi/decisions.md, tests/test_omi.py
 ---
@@ -9,10 +9,10 @@ scope: .omi/skills/workflow/**, .omi/skills/CATALOG.md, docs/research/_src/**, s
 Skills for discovery, planning and handoff, distilled per the TASK-020 table (Superpowers brainstorming/writing-plans, BMAD, GSD).
 
 ## Acceptance criteria
-- [ ] Skills: `brainstorm-ac` (requirements to testable acceptance criteria), `task-brief` (short task brief for a fresh agent), `resume` (resume from checkpoint), `change-request` (scope change flow with PO decision), `lean-implementation` (YAGNI/stdlib-first rule for the engineer, adapted from Ponytail).
-- [ ] Each passes `python -m omi skills --check`, cites a concrete squad step it serves, and records source, commit, file and license.
-- [ ] Each is at most 2000 tokens; a candidate that duplicates `omi-idea` or `omi-task` is rejected and logged in decisions.
-- [ ] Catalog regenerated; the template copy is identical.
+- [x] Skills: `brainstorm-ac` (requirements to testable acceptance criteria), `task-brief` (short task brief for a fresh agent), `resume` (resume from checkpoint), `change-request` (scope change flow with PO decision), `lean-implementation` (YAGNI/stdlib-first rule for the engineer, adapted from Ponytail).
+- [x] Each passes `python -m omi skills --check`, cites a concrete squad step it serves, and records source, commit, file and license.
+- [x] Each is at most 2000 tokens; a candidate that duplicates `omi-idea` or `omi-task` is rejected and logged in decisions.
+- [x] Catalog regenerated; the template copy is identical.
 
 ## Checkpoint
 Done: 4 skills in .omi/skills/workflow (brainstorm-ac, task-brief, change-request, lean-implementation), catalog regenerated, template copy, _src deleted, `resume` rejected and logged in decisions.
@@ -29,6 +29,7 @@ In `docs/research/_src/`: Superpowers 6.3.0 brainstorming / writing-plans / exec
 |---|---|---|---|---|---|---|
 | engineer | claude-sonnet-5-5 | medium | 24 | 7489 | 389383 | 64s |
 | engineer | claude-haiku-5-5 | low | 12 | 1238 | 120996 | 15s |
+| reviewer | claude-sonnet-5-5 | medium | 8 | 1327 | 112237 | 17s |
 
 ## Fix round 1 (only this)
 `python tests/test_omi.py` fails in `test_skills`: `cat.count("\n- ") == 4` assumes the fresh root has only the 4 skills the test creates, but `omi init` now also copies the template's workflow skills into the catalog. Make the assertion independent of template skills (count only the lines for the skills the test creates, or compare against the template skill count). Then run the whole `python3 tests/test_omi.py` (it is a plain script, not pytest) and report its last line.
