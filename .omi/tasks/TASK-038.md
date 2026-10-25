@@ -16,6 +16,9 @@ The Coordinator picks a workflow at planning time and follows it step by step.
 
 - [ ] Carry-over from the TASK-033 review: `omi-flow-feature-ui` "Use instead" for a UI change in a sensitive area has no actionable path; say the Coordinator runs `omi-flow-feature-sensitive` and inserts the `design` and `qa` steps.
 
+- [ ] `omi step <ID> back` (or `next` from a FAILed `review` gate) returns to the previous write step, so a fix round runs with that step's skills; log it in `## Steps`.
+- [ ] `omi run` saves the reviewer's `VERDICT: PASS|FAIL` in the Usage row (or `## Steps`), so the verdict is on record, not only in terminal output.
+
 ## Checkpoint
 Done:
 Not done:

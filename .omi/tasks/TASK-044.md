@@ -4,6 +4,7 @@ title: Network allowlist for worker containers
 status: planned
 depends: TASK-028
 scope: src/omi/__init__.py, src/omi/template/**, tests/**, README.md
+skills: [omi-skill-docker-worker-pitfalls, omi-skill-windows-powershell]
 ---
 ## Goal
 Every worker container (engineer and read roles) reaches only the model API and the hosts the PO allows.
