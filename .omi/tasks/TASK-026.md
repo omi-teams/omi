@@ -15,7 +15,7 @@ Stack-specific skills that load only when a task declares them.
 - [ ] Large reference data (palettes, rule lists) stays in reference files outside SKILL.md and counts toward the task budget only when declared.
 - [ ] Each passes `--check`, records source, commit, file, license; catalog regenerated; template copy identical.
 
-- [ ] Every new skill id starts with `omi-` (e.g. `omi-ui-direction`, `omi-web-qa`, `omi-data-review`).
+- [ ] Every new skill id starts with `omi-skill-` (e.g. `omi-skill-ui-direction`, `omi-skill-web-qa`, `omi-skill-data-review`).
 
 ## Checkpoint
 Done:
