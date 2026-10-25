@@ -1,7 +1,7 @@
 ---
 id: TASK-006
 title: Spike Docker worker to block shell writes outside scope
-status: planned
+status: in-progress
 depends: TASK-004
 scope: docker/**, docs/spikes/docker.md
 ---
