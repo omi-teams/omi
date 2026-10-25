@@ -9,7 +9,7 @@ scope: .omi/workflows/**, src/omi/template/dot-omi/workflows/**, .claude/skills/
 Express the existing release flow as workflows without changing its behaviour.
 
 ## Acceptance criteria
-- [ ] `release` and `promote` workflows reproduce every step and PO gate of the current omi-release skill (merges into staging/main stay with the PO).
+- [ ] `omi-flow-release` and `omi-flow-promote` workflows reproduce every step and PO gate of the current omi-release skill (merges into staging/main stay with the PO).
 - [ ] `omi-release` becomes a thin entry that starts the workflow; no step of the old flow is lost (checked against the old file in the review).
 - [ ] `python tests/test_omi.py` passes; template copy identical.
 

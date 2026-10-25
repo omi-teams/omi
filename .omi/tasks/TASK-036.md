@@ -9,8 +9,8 @@ scope: .omi/workflows/**, src/omi/template/dot-omi/workflows/**, .omi/decisions.
 Workflows for things that go off-plan.
 
 ## Acceptance criteria
-- [ ] `change-request`: impact on tasks and cost, options + one recommendation, PO decision recorded in decisions.md, then replan; no work starts before the decision.
-- [ ] `incident`: contain, diagnose, hotfix or rollback, postmortem note; the production merge stays a PO gate.
+- [ ] `omi-flow-change-request`: impact on tasks and cost, options + one recommendation, PO decision recorded in decisions.md, then replan; no work starts before the decision.
+- [ ] `omi-flow-incident`: contain, diagnose, hotfix or rollback, postmortem note; the production merge stays a PO gate.
 - [ ] Each passes `--check`; catalog regenerated; template copy identical.
 
 ## Checkpoint
