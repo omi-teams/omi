@@ -85,6 +85,16 @@ def checkpoint(text):
     return rest.split("\n## ", 1)[0].strip() if sep else ""
 
 
+def drift(wt, tid):
+    """One line: commits ahead of development, dirty flag, stale-checkpoint warning."""
+    ahead = git(wt, "rev-list", "--count", "development..HEAD")
+    dirty = bool(git(wt, "status", "--porcelain"))
+    last = git(wt, "log", "-1", "--format=%H", "--", f".omi/tasks/{tid}.md")
+    after = git(wt, "rev-list", "--count", f"{last}..HEAD") if last else ahead
+    line = f"ahead of development: {ahead if ahead is not None else '?'}, uncommitted: {'yes' if dirty else 'no'}"
+    return line + (" - WARNING checkpoint stale" if after not in (None, "0") else "")
+
+
 def status(cwd="."):
     root = Path(git(cwd, "rev-parse", "--show-toplevel") or cwd).resolve()
     print(f"branch: {git(root, 'rev-parse', '--abbrev-ref', 'HEAD')}")
@@ -101,6 +111,7 @@ def status(cwd="."):
                 if st != "planned":
                     if "worktree" in m:
                         print(f"  worktree: {m['worktree']}")
+                        print("  " + drift(m["worktree"], k))
                     for line in checkpoint(m["_text"]).splitlines():
                         print(f"  {line}")
     nxt = next((k for k, m in ts.items()
