@@ -1,6 +1,7 @@
 """OMI Squad CLI: init, status, guard, token, worker. Stdlib only."""
 
 import ctypes
+import datetime
 import getpass
 import hashlib
 import json
@@ -20,6 +21,7 @@ USAGE = """usage: omi <command>
   status       show tasks, checkpoints and the next suggested task
   guard        Claude Code PreToolUse hook: block writes outside task scope
   github       set up branches and rulesets: squad merges to development, only the PO to staging/main
+  clean        remove this repo's worker containers and old worker images
   token set    store the `claude setup-token` value in Windows Credential Manager
   worker <wt> <task-file> [--model M] [--effort E]   run the engineer in the Docker worker
   worker <wt> --prove   run docker/prove.sh in the worker (boundary check, no token)"""
@@ -187,8 +189,8 @@ def guard(stdin=None):
     return 2
 
 
-def rulesets():
-    """{name: payload} of the GitHub rulesets omi github applies."""
+def rulesets(checks=()):
+    """{name: payload} of the GitHub rulesets omi github applies; checks = required check-run names."""
     def ruleset(name, refs, rules, bypass, target="branch"):
         kind = "heads" if target == "branch" else "tags"
         return {"name": name, "target": target, "enforcement": "active", "bypass_actors": bypass,
@@ -198,22 +200,54 @@ def rulesets():
     pr = {"required_approving_review_count": 0, "dismiss_stale_reviews_on_push": False,
           "require_code_owner_review": False, "require_last_push_approval": False,
           "required_review_thread_resolution": False}
-    checks = {"required_status_checks": [{"context": "test"}], "strict_required_status_checks_policy": False}
+    status = [("required_status_checks", {"required_status_checks": [{"context": c} for c in checks],
+                                           "strict_required_status_checks_policy": False})] if checks else []
     return {r["name"]: r for r in (
         ruleset("omi-development", ["development"], [("deletion", None), ("non_fast_forward", None)], []),
         ruleset("omi-po-only", ["staging", "main"],
                 [("deletion", None), ("non_fast_forward", None), ("update", None),
-                 ("pull_request", pr), ("required_status_checks", checks)], admin),
+                 ("pull_request", pr), *status], admin),
         # creating rc-* tags stays allowed (omi-release); moving or deleting them is admin only
         ruleset("omi-tags", ["rc-*", "v*"], [("update", None), ("deletion", None)], admin, "tag"))}
+
+
+class GhError(SystemExit):
+    """gh api failure; status is the HTTP status from gh's own output (never from argv), or None."""
+    def __init__(self, msg, status=None):
+        super().__init__(msg)
+        self.status = status
 
 
 def gh(*args, body=None):
     r = subprocess.run(["gh", "api", *args, *(["--input", "-"] if body else [])],
                        input=json.dumps(body) if body else None, capture_output=True, text=True)
     if r.returncode:
-        sys.exit(f"gh api {' '.join(args)} failed: {r.stderr.strip() or r.stdout.strip()}")
+        out = r.stderr.strip() or r.stdout.strip()
+        m = re.search(r"HTTP (\d{3})", out)
+        raise GhError(f"gh api {' '.join(args)} failed: {out}", int(m.group(1)) if m else None)
     return json.loads(r.stdout) if r.stdout.strip() else None
+
+
+def ci_checks(repo):
+    """Sorted check-run names of the newest development commit (of the last 20) with completed runs.
+
+    [] only if development has none; any other gh error aborts."""
+    try:
+        commits = gh(f"repos/{repo}/commits?sha=development&per_page=20")
+    except GhError as e:
+        if e.status == 404:
+            return []
+        raise SystemExit(f"cannot read CI checks on development; required checks left untouched. {e}")
+    for c in commits or []:
+        try:
+            runs = gh(f"repos/{repo}/commits/{c['sha']}/check-runs?per_page=100")["check_runs"]
+        except GhError as e:
+            if e.status == 404:
+                continue
+            raise SystemExit(f"cannot read CI checks on development; required checks left untouched. {e}")
+        if any(r.get("status") == "completed" for r in runs):
+            return sorted({r["name"] for r in runs})
+    return []
 
 
 def same(live, want):
@@ -305,8 +339,11 @@ def apply_github():
         sha = gh(f"repos/{repo}/git/ref/heads/main")["object"]["sha"]
         gh("-X", "POST", f"repos/{repo}/git/refs", body={"ref": "refs/heads/staging", "sha": sha})
         print("create branch staging (from main)")
+    checks = ci_checks(repo)
+    print(f"checks  required on staging/main: {', '.join(checks)}" if checks else
+          "no CI check runs on development yet; staging/main get no required checks. Rerun omi github after CI has run.")
     existing = {x["name"]: x["id"] for x in gh(f"repos/{repo}/rulesets")}
-    for name, payload in rulesets().items():
+    for name, payload in rulesets(checks).items():
         if name in existing:
             if same(gh(f"repos/{repo}/rulesets/{existing[name]}"), {k: v for k, v in payload.items() if k != "name"}):
                 print(f"unchanged ruleset {name}")
@@ -366,11 +403,23 @@ def token():
     return (cred_read() if WINDOWS else None) or os.environ.get(TOKEN_ENV)
 
 
-def worker_argv(wt, image, cmd):
+def container_name(repo, role, tid=None, now=None):
+    """omi-<repo>-<task-id>-<role>-<HHMMSS>, limited to Docker's [a-zA-Z0-9_.-]."""
+    stamp = (now or datetime.datetime.now()).strftime("%H%M%S")
+    raw = "-".join(p for p in ("omi", repo, tid, role, stamp) if p)
+    return re.sub(r"[^a-zA-Z0-9_.-]", "-", raw)
+
+
+def repo_label(main):
+    return re.sub(r"[^a-zA-Z0-9_.-]", "-", main.name.lower())
+
+
+def worker_argv(wt, image, cmd, name=None, repo=None):
     """docker run argv: only the worktree is rw, its .git file ro, non-root, no caps, rootfs ro, no socket.
     The token goes in by name only (-e NAME); its value lives in the child env, never in argv."""
     wt = Path(wt)
-    return ["docker", "run", "--rm", "-i", "--label", "omi-worker=1",
+    return ["docker", "run", "--rm", "-i", *(["--name", name] if name else []), "--label", "omi-worker=1",
+            *(["--label", f"omi-repo={repo}"] if repo else []),
             "--user", "node", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
             "--tmpfs", "/tmp:rw,noexec,nosuid,size=256m",
             "--tmpfs", "/home/node:rw,noexec,nosuid,uid=1000,gid=1000,size=256m",
@@ -393,18 +442,52 @@ def main_checkout(wt):
     return Path(common).parent if common else None
 
 
-def ensure_image(main):
+def image_repo(main):
+    return f"omi-worker-{repo_label(main)}"
+
+
+def image_tag(main):
     d = main / "docker"
     if not (d / "Dockerfile").exists():
         d = TEMPLATE / "docker"
-    tag = "omi-worker:" + hashlib.sha256((d / "Dockerfile").read_bytes()).hexdigest()[:12]
+    return d, f"{image_repo(main)}:" + hashlib.sha256((d / "Dockerfile").read_bytes()).hexdigest()[:12]
+
+
+def old_images(main, keep):
+    """Images of this repo's worker other than `keep`."""
+    r = subprocess.run(["docker", "images", "--filter", f"label=omi-repo={repo_label(main)}",
+                        "--format", "{{.Repository}}:{{.Tag}}"],
+                       capture_output=True, text=True, errors="replace")
+    return [i for i in r.stdout.split() if i != keep and i.startswith(image_repo(main) + ":")]
+
+
+def ensure_image(main):
+    d, tag = image_tag(main)
     if subprocess.run(["docker", "image", "inspect", tag], capture_output=True).returncode:
-        r = subprocess.run(["docker", "build", "-t", tag, "--label", "omi-worker=1", str(d)],
+        r = subprocess.run(["docker", "build", "-t", tag, "--label", "omi-worker=1",
+                            "--label", f"omi-repo={repo_label(main)}", str(d)],
                            capture_output=True, text=True, errors="replace")
         if r.returncode:
             print(r.stdout, r.stderr, sep="\n", file=sys.stderr)
             sys.exit("docker build failed.")
+        for i in old_images(main, tag):
+            subprocess.run(["docker", "rmi", i], capture_output=True)
     return tag
+
+
+def clean(cwd="."):
+    """Remove this repo's worker containers and every worker image except the current one."""
+    main = main_checkout(cwd) or Path(cwd).resolve()
+    r = subprocess.run(["docker", "ps", "-a", "-q", "--filter", "label=omi-worker=1",
+                        "--filter", f"label=omi-repo={repo_label(main)}"],
+                       capture_output=True, text=True, errors="replace")
+    ids = r.stdout.split()
+    if ids:
+        subprocess.run(["docker", "rm", "-f", *ids], capture_output=True)
+    imgs = old_images(main, image_tag(main)[1])
+    for i in imgs:
+        subprocess.run(["docker", "rmi", i], capture_output=True)
+    print(f"removed {len(ids)} container(s), {len(imgs)} image(s)")
 
 
 def out_of_scope(wt, tid):
@@ -447,13 +530,13 @@ def worker(wt, task_file=None, model=None, effort=None, prove=False):
     if prove:
         script = main / "docker" / "prove.sh"
         script = script if script.exists() else TEMPLATE / "docker" / "prove.sh"
-        return subprocess.run(worker_argv(wt, image, ["sh", "-s"]), env=env,
+        return subprocess.run(worker_argv(wt, image, ["sh", "-s"], container_name(main.name, "prove"), repo_label(main)), env=env,
                               input=script.read_bytes().replace(b"\r\n", b"\n")).returncode
     agent = main / ".claude" / "agents" / "engineer.md"
     agent = agent if agent.exists() else TEMPLATE / "dot-claude" / "agents" / "engineer.md"
     cmd = engineer_cmd(agent.read_text(encoding="utf-8"), task_rel, model, effort)
     env[TOKEN_ENV] = secret
-    rc = subprocess.run(worker_argv(wt, image, cmd), env=env, stdin=subprocess.DEVNULL).returncode
+    rc = subprocess.run(worker_argv(wt, image, cmd, container_name(main.name, "engineer", task.stem), repo_label(main)), env=env, stdin=subprocess.DEVNULL).returncode
     bad = out_of_scope(wt, task.stem)
     for p in bad:
         print(f"OUT OF SCOPE: {p}")
@@ -474,6 +557,8 @@ def main(argv=None):
         status(*rest[:1])
     elif cmd == "github":
         github("--po" in rest)
+    elif cmd == "clean":
+        clean()
     elif cmd == "guard":
         sys.exit(guard())
     elif cmd == "token" and rest[:1] == ["set"]:

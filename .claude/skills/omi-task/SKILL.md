@@ -21,5 +21,5 @@ The main checkout stays on `development`. `<wt>` is `../<repo-name>.wt/<ID>`.
 6. On PASS, set `status: done` in `<wt>`'s task file and commit. Then:
    - With a GitHub remote: `git -C <wt> push -u origin task/<ID>`, `gh pr create --base development --head task/<ID> --fill`, then `gh pr checks --watch`. If CI fails, that counts as a fix round (step 5). When green, run `gh pr merge --squash --delete-branch`, then `git pull`.
    - Without a remote: `git merge --squash task/<ID>`, then commit `<type>: <title> (<ID>)`.
-7. Post-merge check: run the project's test command on `development`. Then remove `<wt>` and `task/<ID>` if still present (`gh pr merge --delete-branch` already does both).
+7. Post-merge check: run the project's test command on `development`. Then remove `<wt>` and `task/<ID>` if still present (`gh pr merge --delete-branch` already does both), and run `python -m omi clean` (removes leftover worker containers and old worker images).
 8. Report to the PO in at most 10 lines and stop. The PO picks the next task.

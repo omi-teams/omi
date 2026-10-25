@@ -111,14 +111,102 @@ def test_github_rulesets():
     assert dev["bypass_actors"] == []
     assert po["conditions"]["ref_name"]["include"] == ["refs/heads/staging", "refs/heads/main"]
     types = {r["type"]: r for r in po["rules"]}
-    assert {"pull_request", "update", "required_status_checks"} <= set(types)
-    assert types["required_status_checks"]["parameters"]["required_status_checks"] == [{"context": "test"}]
+    assert {"pull_request", "update"} <= set(types) and "required_status_checks" not in types
+    po = omi.rulesets(["test (ubuntu-latest)", "test (macos-latest)"])["omi-po-only"]
+    types = {r["type"]: r for r in po["rules"]}
+    assert types["required_status_checks"]["parameters"]["required_status_checks"] == [
+        {"context": "test (ubuntu-latest)"}, {"context": "test (macos-latest)"}]
     assert po["bypass_actors"][0]["actor_id"] == 5
 
     tags = rs["omi-tags"]
     assert tags["target"] == "tag" and tags["bypass_actors"] == po["bypass_actors"]
     assert tags["conditions"]["ref_name"]["include"] == ["refs/tags/rc-*", "refs/tags/v*"]
     assert sorted(r["type"] for r in tags["rules"]) == ["deletion", "update"]  # no "creation": squad can tag
+
+
+def test_ci_checks_and_apply():
+    real_run, real_gh, real_info = omi.subprocess.run, omi.gh, omi.repo_info
+    done = lambda n: {"name": n, "status": "completed"}
+    st = {"runs": [done("test (ubuntu-latest)"), done("test (windows-latest)"), done("test (ubuntu-latest)")],
+          "live": None, "puts": [], "newer": []}
+
+    def fake(*a, body=None):
+        u = a[-1]
+        if body is not None and a[1] == "PUT":
+            st["live"] = body
+            st["puts"].append(body)
+            return None
+        if "/commits?" in u:
+            return [{"sha": "new"}, {"sha": "old"}]
+        if "check-runs" in u:
+            return {"check_runs": st["newer"] if "/new/" in u else st["runs"]}
+        if u.endswith("/rulesets"):
+            return [{"name": "omi-po-only", "id": 1}] if st["live"] else []
+        if u.endswith("/rulesets/1"):
+            return st["live"]
+        if "git/ref" in u:
+            return {"object": {"sha": "x"}}
+        if body is not None:
+            return None
+        return {"permissions": {"admin": True}}
+
+    omi.gh, omi.repo_info = fake, lambda: "o/r"
+    try:
+        assert omi.ci_checks("o/r") == ["test (ubuntu-latest)", "test (windows-latest)"]
+        st["runs"] = []
+        assert omi.ci_checks("o/r") == []
+        omi.gh = lambda *a, **k: (_ for _ in ()).throw(omi.GhError("gh api x failed: HTTP 404", 404))
+        assert omi.ci_checks("o/r") == []
+        omi.gh = lambda *a, **k: (_ for _ in ()).throw(omi.GhError("gh api x failed: HTTP 500", 500))
+        try:
+            omi.ci_checks("o/r")
+            assert False, "non-404 error must abort"
+        except SystemExit as e:
+            assert "500" in str(e)
+        # real gh(): "404" in repo/sha must not count as a 404 status
+        class R:
+            returncode, stdout, stderr = 1, "", "gh: Server Error (HTTP 500)"
+        omi.subprocess.run = lambda *a, **k: R()
+        omi.gh = real_gh
+        try:
+            omi.ci_checks("app404/r404")
+            assert False, "HTTP 500 must abort even if the path contains 404"
+        except SystemExit as e:
+            assert "required checks left untouched" in str(e)
+        R.stderr = "gh: Not Found (HTTP 404)"
+        assert omi.ci_checks("o/r") == []
+        omi.subprocess.run = real_run
+        omi.gh = fake
+        st["newer"] = [{"name": "test (new)", "status": "queued"}]  # fresh commit, CI not finished
+        st["runs"] = [done("test (ubuntu-latest)")]
+        assert omi.ci_checks("o/r") == ["test (ubuntu-latest)"], "walks back past the unfinished commit"
+        st["newer"] = [done("test (new)")]
+        assert omi.ci_checks("o/r") == ["test (new)"]
+        st["newer"] = []
+        st["runs"] = []
+        omi.gh = fake
+        import contextlib, io
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            omi.apply_github()
+        assert "no CI check runs" in out.getvalue()
+        st["live"] = omi.rulesets()["omi-po-only"]  # no required checks stored
+        st["runs"] = [done("test (ubuntu-latest)")]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            omi.apply_github()
+        assert "update ruleset omi-po-only" in out.getvalue() and len(st["puts"]) == 1
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            omi.apply_github()
+        assert "unchanged ruleset omi-po-only" in out.getvalue()
+        st["runs"] = [done("test (ubuntu-latest)"), done("test (macos-latest)")]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            omi.apply_github()
+        assert "update ruleset omi-po-only" in out.getvalue()
+    finally:
+        omi.subprocess.run, omi.gh, omi.repo_info = real_run, real_gh, real_info
 
 
 def test_same_and_no_gh():
@@ -342,6 +430,57 @@ def test_worker():
                 omi.os.environ[omi.TOKEN_ENV] = tok
 
 
+def test_container_names():
+    import datetime
+    t = datetime.datetime(2026, 1, 1, 14, 32, 5)
+    assert omi.container_name("omi-squad2", "engineer", "TASK-018", t) == "omi-omi-squad2-TASK-018-engineer-143205"
+    assert omi.container_name("my repo", "prove", now=t) == "omi-my-repo-prove-143205"
+    argv = omi.worker_argv(Path("/w"), "img", ["x"], "n1")
+    assert argv[argv.index("--name") + 1] == "n1"
+    assert "--name" not in omi.worker_argv(Path("/w"), "img", ["x"])
+    a = omi.worker_argv(Path("/w"), "img", ["x"], "n1", "my-repo")
+    assert a[a.index("omi-repo=my-repo") - 1] == "--label"
+
+
+def test_clean_and_old_images():
+    real, realmc = omi.subprocess.run, omi.main_checkout
+    calls = []
+
+    class R:
+        def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
+
+    with tempfile.TemporaryDirectory() as d:
+        main = Path(d) / "My Repo"
+        main.mkdir()
+        cur = omi.image_tag(main)[1]
+        repo = omi.image_repo(main)
+        assert repo == "omi-worker-my-repo"
+
+        def run(cmd, **kw):
+            calls.append(cmd)
+            if cmd[:2] == ["docker", "ps"]:
+                return R("c1\nc2\n" if "label=omi-repo=my-repo" in cmd else "other\n")
+            if cmd[:2] == ["docker", "images"]:
+                return R(f"{cur}\n{repo}:old1\n{repo}:old2\n" + ("" if "label=omi-repo=my-repo" in cmd else "omi-worker-other:x\n"))
+            if cmd[:3] == ["docker", "image", "inspect"]:
+                return R(rc=1)
+            return R()
+
+        omi.subprocess.run, omi.main_checkout = run, lambda _: main
+        try:
+            omi.clean()
+            assert ["docker", "rm", "-f", "c1", "c2"] in calls and not any("other" in c for c in calls if c[:2] == ["docker", "rm"])
+            assert ["docker", "rmi", f"{repo}:old1"] in calls and ["docker", "rmi", f"{repo}:old2"] in calls
+            assert ["docker", "rmi", cur] not in calls and ["docker", "rmi", "omi-worker-other:x"] not in calls
+            ps = next(c for c in calls if c[:2] == ["docker", "ps"])
+            assert "label=omi-worker=1" in ps and "label=omi-repo=my-repo" in ps and not any(a.startswith("name=") for a in ps)
+            calls.clear()
+            assert omi.ensure_image(main) == cur
+            assert ["docker", "rmi", f"{repo}:old1"] in calls and ["docker", "rmi", cur] not in calls
+        finally:
+            omi.subprocess.run, omi.main_checkout = real, realmc
+
+
 def test_credential_manager():
     import ctypes
     store = {}
@@ -409,10 +548,13 @@ def test_template_docker():
 
 if __name__ == "__main__":
     test_worker()
+    test_container_names()
+    test_clean_and_old_images()
     test_credential_manager()
     test_template_docker()
     test_init_guard_status()
     test_github_rulesets()
+    test_ci_checks_and_apply()
     test_same_and_no_gh()
     test_github_po()
     test_github_private()
