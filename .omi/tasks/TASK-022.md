@@ -1,7 +1,7 @@
 ---
 id: TASK-022
 title: Skill standard, validator and authoring skill
-status: planned
+status: in-progress
 depends: TASK-021
 scope: src/omi/__init__.py, src/omi/template/**, .omi/skills/authoring/**, tests/**
 ---
