@@ -3,7 +3,7 @@ id: TASK-023
 title: Skill group - squad workflow
 status: in-progress
 depends: TASK-022
-scope: .omi/skills/workflow/**, .omi/skills/CATALOG.md, docs/research/_src/**, src/omi/template/dot-omi/skills/workflow/**, .omi/decisions.md
+scope: .omi/skills/workflow/**, .omi/skills/CATALOG.md, docs/research/_src/**, src/omi/template/dot-omi/skills/workflow/**, .omi/decisions.md, tests/test_omi.py
 ---
 ## Goal
 Skills for discovery, planning and handoff, distilled per the TASK-020 table (Superpowers brainstorming/writing-plans, BMAD, GSD).
@@ -18,6 +18,7 @@ Skills for discovery, planning and handoff, distilled per the TASK-020 table (Su
 Done: 4 skills in .omi/skills/workflow (brainstorm-ac, task-brief, change-request, lean-implementation), catalog regenerated, template copy, _src deleted, `resume` rejected and logged in decisions.
 Not done: -
 Tests: `python -m omi skills --check` ok (5 checked); template diff identical.
+Fix round 1: `test_skills` count now counts only the lines for the skills the test creates (small, big, mid, withref); `python3 tests/test_omi.py` last line `ok`, exit 0.
 Next: TASK-024
 
 ## Inputs (copied by the Coordinator; the container has no network or host plugin access)
@@ -27,3 +28,7 @@ In `docs/research/_src/`: Superpowers 6.3.0 brainstorming / writing-plans / exec
 | role | model | effort | input | output | cache | duration |
 |---|---|---|---|---|---|---|
 | engineer | claude-sonnet-5-5 | medium | 24 | 7489 | 389383 | 64s |
+| engineer | claude-haiku-5-5 | low | 12 | 1238 | 120996 | 15s |
+
+## Fix round 1 (only this)
+`python tests/test_omi.py` fails in `test_skills`: `cat.count("\n- ") == 4` assumes the fresh root has only the 4 skills the test creates, but `omi init` now also copies the template's workflow skills into the catalog. Make the assertion independent of template skills (count only the lines for the skills the test creates, or compare against the template skill count). Then run the whole `python3 tests/test_omi.py` (it is a plain script, not pytest) and report its last line.
