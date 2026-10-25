@@ -14,6 +14,8 @@ One evaluation for everything, using the real usage numbers from TASK-040. Keep 
 - [ ] A skill, role or step that does not beat its baseline on correctness, tokens or review rounds is removed or reworked; decisions logged with the numbers.
 - [ ] Report to the PO: total default context added by skills, roles and workflows.
 
+- [ ] Carry-over from the TASK-026 review: fix the contradiction in `omi-skill-data-review` ("stop at the first group with blocking findings, then continue" -> report blocking findings first, then continue), and confirm the `npx playwright cli` fallback in `omi-skill-web-qa` against the pinned upstream skill.
+
 ## Checkpoint
 Done:
 Not done:
