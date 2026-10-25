@@ -1,13 +1,13 @@
 ---
 id: TASK-052
 title: Skill budget by tokens only
-status: in-progress
+status: done
 depends: TASK-044
 scope: src/omi/__init__.py, tests/**, AGENTS.md, src/omi/template/**, .omi/tasks/_template.md, .omi/skills/workflow/omi-skill-task-brief/**
 role: omi-agent-engineer
 skills: []  # step build adds omi-skill-lean-implementation
 workflow: omi-flow-feature
-step: build
+step: accept
 ---
 ## Goal
 A run's skills are limited by tokens only (2000 per skill, 6000 per run); the "3 skills" count limit is gone.
@@ -18,9 +18,9 @@ A run's skills are limited by tokens only (2000 per skill, 6000 per run); the "3
 - Tests: `python3 tests/test_omi.py`; replace the 4-skills refusal test with one that 4 small skills pass and a 6001-token total fails.
 
 ## Acceptance criteria
-- [ ] No skill-count limit in code or text; token limits unchanged and still enforced (tests).
-- [ ] Root and template copies identical; `python -m omi skills --check` passes.
-- [ ] `python3 tests/test_omi.py` passes.
+- [x] No skill-count limit in code or text; token limits unchanged and still enforced (tests).
+- [x] Root and template copies identical; `python -m omi skills --check` passes.
+- [x] `python3 tests/test_omi.py` passes.
 
 ## Checkpoint
 Done: count limit removed (code, texts, template copies); tests updated; review round 1 findings fixed (total-over-6000 case in check_skills test and in workflow step test via get_workflow, which `omi step` uses)
@@ -36,6 +36,12 @@ Next: review
 - review started 2026-10-25 23:21
 - review failed 2026-10-25 23:22
 - build started 2026-10-25 23:22
+- build done 2026-10-25 23:23
+- review started 2026-10-25 23:23
+- review done 2026-10-25 23:23
+- accept started 2026-10-25 23:23
+PO approval accept: Chấp nhận, merge (Recommended)
+- accept done 2026-10-25 23:24
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -44,3 +50,4 @@ Next: review
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 2649 | 211364 | 48s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 1951 | 122083 | 38s | - | PASS bbc37dc |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 2119 | 182212 | 34s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1156 | 67971 | 22s | - | PASS cd057c6 |
