@@ -401,11 +401,16 @@ def container_name(repo, role, tid=None, now=None):
     return re.sub(r"[^a-zA-Z0-9_.-]", "-", raw)
 
 
-def worker_argv(wt, image, cmd, name=None):
+def repo_label(main):
+    return re.sub(r"[^a-zA-Z0-9_.-]", "-", main.name.lower())
+
+
+def worker_argv(wt, image, cmd, name=None, repo=None):
     """docker run argv: only the worktree is rw, its .git file ro, non-root, no caps, rootfs ro, no socket.
     The token goes in by name only (-e NAME); its value lives in the child env, never in argv."""
     wt = Path(wt)
     return ["docker", "run", "--rm", "-i", *(["--name", name] if name else []), "--label", "omi-worker=1",
+            *(["--label", f"omi-repo={repo}"] if repo else []),
             "--user", "node", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
             "--tmpfs", "/tmp:rw,noexec,nosuid,size=256m",
             "--tmpfs", "/home/node:rw,noexec,nosuid,uid=1000,gid=1000,size=256m",
@@ -429,7 +434,7 @@ def main_checkout(wt):
 
 
 def image_repo(main):
-    return f"omi-worker-{re.sub(r'[^a-zA-Z0-9_.-]', '-', main.name.lower())}"
+    return f"omi-worker-{repo_label(main)}"
 
 
 def image_tag(main):
@@ -441,7 +446,8 @@ def image_tag(main):
 
 def old_images(main, keep):
     """Images of this repo's worker other than `keep`."""
-    r = subprocess.run(["docker", "images", image_repo(main), "--format", "{{.Repository}}:{{.Tag}}"],
+    r = subprocess.run(["docker", "images", "--filter", f"label=omi-repo={repo_label(main)}",
+                        "--format", "{{.Repository}}:{{.Tag}}"],
                        capture_output=True, text=True, errors="replace")
     return [i for i in r.stdout.split() if i != keep and i.startswith(image_repo(main) + ":")]
 
@@ -449,7 +455,8 @@ def old_images(main, keep):
 def ensure_image(main):
     d, tag = image_tag(main)
     if subprocess.run(["docker", "image", "inspect", tag], capture_output=True).returncode:
-        r = subprocess.run(["docker", "build", "-t", tag, "--label", "omi-worker=1", str(d)],
+        r = subprocess.run(["docker", "build", "-t", tag, "--label", "omi-worker=1",
+                            "--label", f"omi-repo={repo_label(main)}", str(d)],
                            capture_output=True, text=True, errors="replace")
         if r.returncode:
             print(r.stdout, r.stderr, sep="\n", file=sys.stderr)
@@ -462,8 +469,8 @@ def ensure_image(main):
 def clean(cwd="."):
     """Remove this repo's worker containers and every worker image except the current one."""
     main = main_checkout(cwd) or Path(cwd).resolve()
-    prefix = re.sub(r"[^a-zA-Z0-9_.-]", "-", f"omi-{main.name}-")
-    r = subprocess.run(["docker", "ps", "-a", "-q", "--filter", "label=omi-worker=1", "--filter", "name=^" + prefix.replace(".", "\\.")],
+    r = subprocess.run(["docker", "ps", "-a", "-q", "--filter", "label=omi-worker=1",
+                        "--filter", f"label=omi-repo={repo_label(main)}"],
                        capture_output=True, text=True, errors="replace")
     ids = r.stdout.split()
     if ids:
@@ -514,13 +521,13 @@ def worker(wt, task_file=None, model=None, effort=None, prove=False):
     if prove:
         script = main / "docker" / "prove.sh"
         script = script if script.exists() else TEMPLATE / "docker" / "prove.sh"
-        return subprocess.run(worker_argv(wt, image, ["sh", "-s"], container_name(main.name, "prove")), env=env,
+        return subprocess.run(worker_argv(wt, image, ["sh", "-s"], container_name(main.name, "prove"), repo_label(main)), env=env,
                               input=script.read_bytes().replace(b"\r\n", b"\n")).returncode
     agent = main / ".claude" / "agents" / "engineer.md"
     agent = agent if agent.exists() else TEMPLATE / "dot-claude" / "agents" / "engineer.md"
     cmd = engineer_cmd(agent.read_text(encoding="utf-8"), task_rel, model, effort)
     env[TOKEN_ENV] = secret
-    rc = subprocess.run(worker_argv(wt, image, cmd, container_name(main.name, "engineer", task.stem)), env=env, stdin=subprocess.DEVNULL).returncode
+    rc = subprocess.run(worker_argv(wt, image, cmd, container_name(main.name, "engineer", task.stem), repo_label(main)), env=env, stdin=subprocess.DEVNULL).returncode
     bad = out_of_scope(wt, task.stem)
     for p in bad:
         print(f"OUT OF SCOPE: {p}")

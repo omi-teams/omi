@@ -425,6 +425,8 @@ def test_container_names():
     argv = omi.worker_argv(Path("/w"), "img", ["x"], "n1")
     assert argv[argv.index("--name") + 1] == "n1"
     assert "--name" not in omi.worker_argv(Path("/w"), "img", ["x"])
+    a = omi.worker_argv(Path("/w"), "img", ["x"], "n1", "my-repo")
+    assert a[a.index("omi-repo=my-repo") - 1] == "--label"
 
 
 def test_clean_and_old_images():
@@ -444,9 +446,9 @@ def test_clean_and_old_images():
         def run(cmd, **kw):
             calls.append(cmd)
             if cmd[:2] == ["docker", "ps"]:
-                return R("c1\nc2\n")
+                return R("c1\nc2\n" if "label=omi-repo=my-repo" in cmd else "other\n")
             if cmd[:2] == ["docker", "images"]:
-                return R(f"{cur}\n{repo}:old1\n{repo}:old2\nomi-worker-other:x\n")
+                return R(f"{cur}\n{repo}:old1\n{repo}:old2\n" + ("" if "label=omi-repo=my-repo" in cmd else "omi-worker-other:x\n"))
             if cmd[:3] == ["docker", "image", "inspect"]:
                 return R(rc=1)
             return R()
@@ -454,11 +456,11 @@ def test_clean_and_old_images():
         omi.subprocess.run, omi.main_checkout = run, lambda _: main
         try:
             omi.clean()
-            assert ["docker", "rm", "-f", "c1", "c2"] in calls
+            assert ["docker", "rm", "-f", "c1", "c2"] in calls and not any("other" in c for c in calls if c[:2] == ["docker", "rm"])
             assert ["docker", "rmi", f"{repo}:old1"] in calls and ["docker", "rmi", f"{repo}:old2"] in calls
             assert ["docker", "rmi", cur] not in calls and ["docker", "rmi", "omi-worker-other:x"] not in calls
             ps = next(c for c in calls if c[:2] == ["docker", "ps"])
-            assert "label=omi-worker=1" in ps and "name=^omi-My-Repo-" in ps
+            assert "label=omi-worker=1" in ps and "label=omi-repo=my-repo" in ps and not any(a.startswith("name=") for a in ps)
             calls.clear()
             assert omi.ensure_image(main) == cur
             assert ["docker", "rmi", f"{repo}:old1"] in calls and ["docker", "rmi", cur] not in calls
