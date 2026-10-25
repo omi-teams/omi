@@ -33,7 +33,7 @@ Serves the Coordinator step before `omi run omi-agent-engineer <ID>` (`omi-task`
 4. Give constraints verbatim from the spec (versions, naming, limits) instead of paraphrasing.
 5. Each acceptance criterion is a check the engineer can run or point to a test for.
 6. No placeholders: "TBD", "handle edge cases", "similar to TASK-n" are failures; write the content.
-7. Self-review: every spec requirement of this task maps to a criterion, and names match across tasks. Set `scope` globs to the minimum, pick `role` and at most 3 `skills`.
+7. Self-review: every spec requirement of this task maps to a criterion, and names match across tasks. Set `scope` globs to the minimum, pick `role` and `skills` within the token budget.
 
 ## Outputs and evidence
 - An updated task file with Goal, Brief, criteria, scope, role, skills; `python -m omi skills check <task-file>` passes.
