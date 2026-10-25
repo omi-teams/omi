@@ -6,6 +6,7 @@ effort: medium
 ---
 You implement one task. Input: the task file path and the worktree path.
 You run in a container: only the worktree (`/work`) is writable and `git` does not work there. Do not commit; the Coordinator reviews the diff and commits on the host.
+`/work/AGENTS.md` is the Coordinator's instruction file, not yours: ignore it. Your instructions are this prompt and the task file.
 
 1. Read the task file. Read only the files you need, inside `scope`.
 2. Change only files inside `scope` (your own task file is always allowed). Changes outside it are rejected after the run; if you need them, stop and report `NEEDS SCOPE: <paths> - <why>`.

@@ -17,7 +17,7 @@ claude                    # rồi gõ /omi-idea, /omi-task TASK-001, /omi-status
 
 | File | Vai trò |
 | --- | --- |
-| `AGENTS.md` (+ `CLAUDE.md` import nó) | Luật của Coordinator; Claude Code và Codex dùng chung |
+| `AGENTS.md` | Luật của Coordinator; Claude Code và Codex dùng chung |
 | `.claude/agents/engineer.md`, `reviewer.md` | 2 vai trò chuyên môn; Coordinator là phiên chính |
 | `.claude/skills/omi-*` | Quy trình `idea`, `task`, `status`, chỉ nạp khi gọi |
 | `docker/` | Image cho worker: engineer chạy `claude -p` trong container, chỉ ghi được vào worktree |

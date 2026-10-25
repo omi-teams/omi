@@ -19,6 +19,7 @@ def test_init_guard_status():
         root = Path(d).resolve()
         omi.init(root)
         assert (root / ".claude" / "settings.json").exists()
+        assert (root / "AGENTS.md").exists() and not (root / "CLAUDE.md").exists()
         (root / "AGENTS.md").write_text("custom")
         omi.init(root)
         assert (root / "AGENTS.md").read_text() == "custom", "init must not overwrite"
@@ -474,6 +475,9 @@ def test_clean_and_old_images():
             assert ["docker", "rmi", cur] not in calls and ["docker", "rmi", "omi-worker-other:x"] not in calls
             ps = next(c for c in calls if c[:2] == ["docker", "ps"])
             assert "label=omi-worker=1" in ps and "label=omi-repo=my-repo" in ps and not any(a.startswith("name=") for a in ps)
+            calls.clear()
+            omi.clean(all_images=True)
+            assert ["docker", "rmi", cur] in calls and ["docker", "rmi", "omi-worker-other:x"] not in calls
             calls.clear()
             assert omi.ensure_image(main) == cur
             assert ["docker", "rmi", f"{repo}:old1"] in calls and ["docker", "rmi", cur] not in calls

@@ -21,7 +21,7 @@ USAGE = """usage: omi <command>
   status       show tasks, checkpoints and the next suggested task
   guard        Claude Code PreToolUse hook: block writes outside task scope
   github       set up branches and rulesets: squad merges to development, only the PO to staging/main
-  clean        remove this repo's worker containers and old worker images
+  clean [--all]   remove this repo's worker containers and old worker images (--all: the current image too)
   token set    store the `claude setup-token` value in Windows Credential Manager
   worker <wt> <task-file> [--model M] [--effort E]   run the engineer in the Docker worker
   worker <wt> --prove   run docker/prove.sh in the worker (boundary check, no token)"""
@@ -475,8 +475,8 @@ def ensure_image(main):
     return tag
 
 
-def clean(cwd="."):
-    """Remove this repo's worker containers and every worker image except the current one."""
+def clean(cwd=".", all_images=False):
+    """Remove this repo's worker containers and every worker image except the current one (all_images: that too)."""
     main = main_checkout(cwd) or Path(cwd).resolve()
     r = subprocess.run(["docker", "ps", "-a", "-q", "--filter", "label=omi-worker=1",
                         "--filter", f"label=omi-repo={repo_label(main)}"],
@@ -484,7 +484,7 @@ def clean(cwd="."):
     ids = r.stdout.split()
     if ids:
         subprocess.run(["docker", "rm", "-f", *ids], capture_output=True)
-    imgs = old_images(main, image_tag(main)[1])
+    imgs = old_images(main, None if all_images else image_tag(main)[1])
     for i in imgs:
         subprocess.run(["docker", "rmi", i], capture_output=True)
     print(f"removed {len(ids)} container(s), {len(imgs)} image(s)")
@@ -558,7 +558,7 @@ def main(argv=None):
     elif cmd == "github":
         github("--po" in rest)
     elif cmd == "clean":
-        clean()
+        clean(all_images="--all" in rest)
     elif cmd == "guard":
         sys.exit(guard())
     elif cmd == "token" and rest[:1] == ["set"]:
