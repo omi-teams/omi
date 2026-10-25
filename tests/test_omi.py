@@ -100,6 +100,8 @@ def test_init_guard_status():
 
         git(root, "worktree", "remove", "--force", str(wt))
         assert guard(root / "README.md") == 0
+        assert guard(root / ".claude" / "settings.json") == 2, "main checkout config, no worktree"
+        assert guard(root / ".CLAUDE" / "Settings.json") == 2, "case-insensitive"
 
 
 def test_github_rulesets():

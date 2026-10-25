@@ -143,12 +143,10 @@ def guard(stdin=None):
         rel = PurePosixPath(path.resolve().relative_to(root).as_posix())
     except (ValueError, TypeError):
         rel = None
-    if path.parent.name == ".claude" and fnmatch(path.name, "settings*.json") and not (
+    if path.parent.name.lower() == ".claude" and fnmatch(path.name.lower(), "settings*.json") and not (
             branch.startswith("task/") and rel):
-        reason = "is Claude Code config; only a task whose scope names it may change it."
-        if engineer or not top:
-            print(f"OMI: {path} {reason}", file=sys.stderr)
-            return 2
+        print(f"OMI: {path} is Claude Code config; only a task whose scope names it may change it.", file=sys.stderr)
+        return 2
     if not top:
         reason = "is outside the task worktree."
         if not engineer:
