@@ -1,7 +1,7 @@
 ---
 id: TASK-035
 title: Workflows - docs-only, spike
-status: in-progress
+status: done
 depends: TASK-032, TASK-029, TASK-031
 scope: .omi/workflows/**, src/omi/template/dot-omi/workflows/**, .omi/decisions.md
 role: omi-agent-engineer
@@ -27,3 +27,4 @@ Next: TASK-036
 | role | model | effort | input | output | cache | duration | skills read |
 |---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 14 | 3061 | 150263 | 37s | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 1669 | 148530 | 35s | - |
