@@ -29,3 +29,4 @@
 - 2026-10-25 | reviewer skip is a fixed path rule (docs/**, .omi/tasks/**, .omi/decisions.md only) | TASK-029..031 skipped review although they changed agent prompts and src/omi/template; the old 'docs or .omi/' wording left it to judgment. Those 3 are left to TASK-039 | PO chat
 - 2026-10-25 | add TASK-047: record skill files each role actually read | no evidence today that a role read its declared skills | PO chat
 - 2026-10-25 | omi step: task id must match ^[A-Za-z0-9_-]+$; a PO approval line counts only inside ## Steps; feature workflows omi-flow-feature, -feature-ui, -feature-sensitive added | TASK-032 review carry-over (path traversal, forged approval) | TASK-033
+- 2026-10-25 | split TASK-048 out of TASK-038 and run it before TASK-036 | verify skill loading and workflow steps on the remaining workflow tasks instead of after TASK-038 | PO chat
