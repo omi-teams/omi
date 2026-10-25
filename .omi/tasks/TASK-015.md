@@ -22,3 +22,5 @@ Done: all 7 criteria. `omi token set` (ctypes CredWriteW/CredReadW, target `omi/
 Not done: live `claude -p` run in the container (no token here).
 Tests: `python tests/test_omi.py` ok (new: test_worker, test_credential_manager, test_template_docker).
 Next: PO live run of `omi worker` on a small task. Open: `--setting-sources user` skips project hooks/settings in the container (guard cannot run there) - confirm CLAUDE.md/AGENTS.md is not needed by the engineer; docs/spikes/docker.md still mentions run.sh (outside scope); main checkout docker/ is preferred over the template copy, so this repo uses the old Dockerfile until development has the move.
+
+Fix round 1 done: out_of_scope flags any path component starting with .git (unless exact scope entry) and symlinks (os.path.islink); `omi worker <wt> --model x` now gives usage error. Tests ok (python tests/test_omi.py).

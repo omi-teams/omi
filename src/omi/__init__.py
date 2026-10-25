@@ -401,8 +401,15 @@ def out_of_scope(wt, tid):
     r = subprocess.run(["git", "-C", str(wt), "status", "--porcelain", "-z", "-uall", "--no-renames"],
                        capture_output=True, text=True)
     paths = [e[3:] for e in r.stdout.split("\0") if e]
-    return [p for p in paths
-            if p != f".omi/tasks/{tid}.md" and not any(PurePosixPath(p).full_match(g) for g in globs)]
+    def bad(p):
+        if p == f".omi/tasks/{tid}.md":
+            return False
+        if os.path.islink(Path(wt) / p):  # host tools could follow it out of the worktree
+            return True
+        if any(c.lower().startswith(".git") for c in p.split("/")) and p not in globs:
+            return True  # .gitattributes, .gitmodules, .githooks...: host git processes them; only an exact scope entry allows
+        return not any(PurePosixPath(p).full_match(g) for g in globs)
+    return [p for p in paths if bad(p)]
 
 
 def worker(wt, task_file=None, model=None, effort=None, prove=False):
@@ -460,7 +467,7 @@ def main(argv=None):
         token_set()
     elif cmd == "worker" and rest:
         prove = "--prove" in rest
-        if not prove and len(rest) < 2:
+        if not prove and (len(rest) < 2 or rest[1].startswith("--")):
             sys.exit("usage: omi worker <wt> <task-file> [--model M] [--effort E]")
         sys.exit(worker(rest[0], None if prove else rest[1], flag(rest, "--model"), flag(rest, "--effort"), prove))
     else:

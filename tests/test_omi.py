@@ -280,6 +280,19 @@ def test_worker():
             assert c[c.index("--permission-mode") + 1] == "bypassPermissions"
             assert "/work/.omi/tasks/TASK-001.md" in c[2] and "Checkpoint" in c[c.index("--append-system-prompt") + 1]
             go(effort="high")
+            # .git* components flagged unless named exactly; symlinks flagged
+            status = R(" M src/.gitattributes\0 M src/ok.py\0")
+            run0 = omi.subprocess.run
+            omi.subprocess.run = lambda cmd, **kw: status if "status" in cmd else run0(cmd, **kw)
+            assert omi.out_of_scope(wt, "TASK-001") == ["src/.gitattributes"]
+            omi.subprocess.run = lambda cmd, **kw: (R("---\nscope: src/.gitattributes, src/ok.py\n---\n") if "show" in cmd
+                                                    else status)
+            assert omi.out_of_scope(wt, "TASK-001") == []
+            real_islink = omi.os.path.islink
+            omi.os.path.islink = lambda p: str(p).endswith("ok.py")
+            assert omi.out_of_scope(wt, "TASK-001") == ["src/ok.py"]
+            omi.os.path.islink = real_islink
+            omi.subprocess.run = run0
             argv = next(c[0] for c in calls if c[0][:2] == ["docker", "run"])
             assert argv[argv.index("--effort") + 1] == "high"
 
