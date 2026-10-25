@@ -7,7 +7,7 @@ scope: src/omi/__init__.py, tests/**, AGENTS.md, src/omi/template/**, .omi/tasks
 role: omi-agent-engineer
 skills: []  # step build adds omi-skill-lean-implementation
 workflow: omi-flow-feature
-step:
+step: build
 ---
 ## Goal
 A run's skills are limited by tokens only (2000 per skill, 6000 per run); the "3 skills" count limit is gone.
@@ -23,7 +23,18 @@ A run's skills are limited by tokens only (2000 per skill, 6000 per run); the "3
 - [ ] `python3 tests/test_omi.py` passes.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
-Next:
+Done: count limit removed (code, texts, template copies); tests updated
+Not done: -
+Tests: python3 tests/test_omi.py ok; omi skills --check ok
+Next: review
+
+## Steps
+- plan started 2026-10-25 23:10
+- plan done 2026-10-25 23:10
+- build started 2026-10-25 23:10
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read | verdict |
+|---|---|---|---|---|---|---|---|---|
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 0 | 0 | 0 | 201s | 0/1 | - |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 2649 | 211364 | 48s | 1/1 omi-skill-lean-implementation | - |

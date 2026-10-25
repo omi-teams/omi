@@ -954,7 +954,7 @@ def test_skills():
         omi.sys.stdout, saved = io.StringIO(), sys.stdout
         omi.skills_catalog(root)
         sys.stdout = saved
-        fails(["sa", "sb", "sc", "sd"], "4 skills", "at most 3")
+        assert len(omi.check_skills(root, ["sa", "sb", "sc", "sd"])) == 4  # no count limit
         for i in "abc":
             skill("g", f"m{i}", "x" * 7000)
         omi.sys.stdout, saved = io.StringIO(), sys.stdout
@@ -968,7 +968,7 @@ def test_skills():
         sys.stdout = saved
         (root / ".omi" / "config.json").write_text('{"skill_limits": {"tokens": 5000}}')
         fails(["ma", "mb", "mc"], "total", "at most 5000", "5")
-        (root / ".omi" / "config.json").write_text('{"skill_limits": {"skills": 4}}')
+        (root / ".omi" / "config.json").write_text('{"skill_limits": {"skills": 1}}')  # old key ignored
         assert len(omi.check_skills(root, ["sa", "sb", "sc", "sd"])) == 4
     prompt = omi.skill_prompt(Path("/r"), [Path("/r/.omi/skills/g/a/SKILL.md")])
     assert "/work/.omi/skills/g/a/SKILL.md" in prompt and "CATALOG" not in prompt and omi.skill_prompt(Path("/r"), []) == ""
@@ -1345,7 +1345,7 @@ def test_workflows():
                    ("omi-flow-s", ok[1].replace("omi-skill-a", "omi-skill-ghost"), "unknown skill omi-skill-ghost"),
                    ("omi-flow-g", ok[2].replace("gate: review", "gate: maybe"), "gate `maybe`"),
                    ("omi-flow-n", ok[2].replace("skills: ", "skills: omi-skill-a, omi-skill-b, omi-skill-c, omi-skill-big"),
-                    "step review: skill budget", "4 skills"),
+                    "step review: skill budget", "omi-skill-big is", "per skill"),
                    ("omi-flow-k", ok[1].replace("omi-skill-a", "omi-skill-big"), "omi-skill-big is", "per skill"),
                    ("omi-flow-m", ok[0].replace(" | stop: AC written", ""), "step plan: missing `stop`")]
             for name, row, *words in bad:
@@ -1356,7 +1356,7 @@ def test_workflows():
                 "---\nrole: omi-agent-reviewer\nmodel: sonnet\neffort: low\naccess: read\n"
                 "skills: [omi-skill-a, omi-skill-b]\nsummary: s\n---\nbody")
             flow("omi-flow-d", ok[2].replace("skills: ", "skills: omi-skill-c, omi-skill-big"))
-            fails(lambda: omi.get_workflow(root, "omi-flow-d"), "4 skills", "at most 3")  # role defaults count per step
+            fails(lambda: omi.get_workflow(root, "omi-flow-d"), "omi-skill-big is", "per skill")  # role defaults count per step
             (wf / "omi-flow-d.md").unlink()
             flow("omi-flow-long", *ok, summary="x" * 8000)
             fails(lambda: omi.get_workflow(root, "omi-flow-long"), "per workflow")

@@ -67,7 +67,7 @@ def parse(text):
     return m
 
 
-SKILL_LIMITS = {"skills": 3, "tokens": 6000, "skill_tokens": 2000}  # .omi/config.json "skill_limits" overrides (PO only)
+SKILL_LIMITS = {"tokens": 6000, "skill_tokens": 2000}  # .omi/config.json "skill_limits" overrides (PO only)
 
 
 def tokens(*files):
@@ -182,8 +182,6 @@ def check_skills(root, ids):
     lim = skill_limits(root)
     per = {sid: tokens(*skill_files(dirs[sid])) for sid in ids}
     total = sum(per.values())
-    if len(ids) > lim["skills"]:
-        sys.exit(f"skill budget: {len(ids)} skills declared, at most {lim['skills']}. Only the PO can raise it.")
     for sid, n in per.items():
         if n > lim["skill_tokens"]:
             sys.exit(f"skill budget: {sid} is {n} tokens, at most {lim['skill_tokens']} per skill. Only the PO can raise it.")
