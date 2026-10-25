@@ -890,6 +890,7 @@ def resolve_model(root, model):
 
 DEFAULT_ALLOW = ["api.anthropic.com"]
 PROXY_PORT = 3128
+PROXY_ALIAS = "omi-proxy"  # DNS name on the per-run network; container names can exceed the 63-char DNS label limit
 
 
 def network_allow(root):
@@ -910,7 +911,7 @@ def network_allow(root):
 @contextlib.contextmanager
 def egress(main, name, image, allow):
     """Internal docker network plus a CONNECT-only allowlist proxy (docker/proxy.py, no token, no worktree);
-    yields (network, proxy container). Both are removed on exit; hosts the proxy refused are reported."""
+    yields (network, proxy host name on that network). Both are removed on exit; hosts the proxy refused are reported."""
     net, proxy, repo = f"omi-net-{name}", f"{name}-proxy", repo_label(main)
     labels = ["--label", "omi-worker=1", "--label", f"omi-repo={repo}"]
     script = TEMPLATE / "docker" / "proxy.py"
@@ -923,7 +924,7 @@ def egress(main, name, image, allow):
         for cmd in (["create", "--name", proxy, *labels, "--user", "node", "--read-only", "--cap-drop", "ALL",
                      "--security-opt", "no-new-privileges", "-v", f"{script}:/proxy.py:ro", image,
                      "python3", "/proxy.py", *allow],
-                    ["network", "connect", net, proxy], ["start", proxy]):
+                    ["network", "connect", "--alias", PROXY_ALIAS, net, proxy], ["start", proxy]):
             r = docker(*cmd)
             if r.returncode:
                 sys.exit(f"cannot start the egress proxy (docker {cmd[0]}): {r.stderr.strip()}. Nothing changed.")
@@ -934,7 +935,7 @@ def egress(main, name, image, allow):
             time.sleep(0.2)
         else:
             sys.exit("the egress proxy did not start. Nothing changed.")
-        yield net, proxy
+        yield net, PROXY_ALIAS
     finally:
         logs = docker("logs", proxy).stdout or logs
         docker("rm", "-f", proxy)
