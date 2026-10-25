@@ -1330,7 +1330,31 @@ def test_workflows():
     assert "workflow: omi-flow-feature" in (repo / ".omi" / "tasks" / "_template.md").read_text()
 
 
+def test_parallel():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / ".omi" / "tasks").mkdir(parents=True)
+
+        def task(n, status, scope, depends=""):
+            (root / ".omi" / "tasks" / f"TASK-{n}.md").write_text(
+                f"---\nstatus: {status}\nscope: {scope}\ndepends: {depends}\n---\n")
+        task("001", "planned", "src/a/**, tests/a.py")
+        task("002", "planned", "src/b/**")
+        task("003", "planned", "src/**")
+        task("004", "done", "docs/**")
+        task("005", "planned", "docs/x", "TASK-002")
+        task("006", "planned", "docs/y", "TASK-005")
+        assert omi.parallel(root, ["TASK-001", "TASK-002"]) == []
+        out = omi.parallel(root, ["TASK-001", "TASK-003"])
+        assert len(out) == 1 and "src/a/**" in out[0] and "src/**" in out[0]
+        assert omi.parallel(root, ["TASK-002", "TASK-006"]) == ["TASK-006 depends on TASK-002"]
+        assert "status done" in omi.parallel(root, ["TASK-001", "TASK-004"])[0]
+        assert not omi.globs_overlap("src/ab/**", "src/a/**") and omi.globs_overlap("src/a*", "src/ab/x")
+    assert omi.container_name("r", "role", "TASK-001") != omi.container_name("r", "role", "TASK-002")
+
+
 if __name__ == "__main__":
+    test_parallel()
     test_usage()
     test_git_non_ascii()
     test_skills()

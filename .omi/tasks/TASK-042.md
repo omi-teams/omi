@@ -7,7 +7,7 @@ scope: src/omi/__init__.py, src/omi/template/**, .claude/skills/omi-task/**, tes
 role: omi-agent-engineer
 skills: []  # step build adds omi-skill-lean-implementation
 workflow: omi-flow-feature
-step:
+step: build
 ---
 ## Goal
 Run independent tasks in parallel only when the PO asks, with conflicts caught by code.
@@ -26,7 +26,17 @@ Run independent tasks in parallel only when the PO asks, with conflicts caught b
 - [ ] `python tests/test_omi.py` passes, including an overlap test.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
+Done: omi parallel (+usage), tests, SKILL.md, AGENTS.md (root+template)
+Not done: -
+Tests: python3 tests/test_omi.py ok
 Next: TASK-039
+
+## Steps
+- plan started 2026-10-25 22:51
+- plan done 2026-10-25 22:51
+- build started 2026-10-25 22:51
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read | verdict |
+|---|---|---|---|---|---|---|---|---|
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 4691 | 242055 | 60s | 1/1 omi-skill-lean-implementation | - |

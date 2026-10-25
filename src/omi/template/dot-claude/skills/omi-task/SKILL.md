@@ -4,6 +4,7 @@ description: Run one OMI task end to end - worktree, engineer in the Docker work
 argument-hint: TASK-NNN
 ---
 Task: $ARGUMENTS. If empty, propose the `next` task from `python -m omi status` and wait for the PO.
+Several IDs (`omi-task <ID> <ID>`) only when the PO asks: run `python -m omi parallel <IDs>` first and stop with its output on a conflict; then run each task's steps, engineers with `run_in_background`, one PO accept question per task.
 
 The main checkout stays on `development`. `<wt>` is `../<repo-name>.wt/<ID>`.
 

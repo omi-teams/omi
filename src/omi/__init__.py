@@ -34,6 +34,7 @@ USAGE = """usage: omi <command>
   workflows [--check]   write .omi/workflows/CATALOG.md (one line per workflow); --check validates every workflow
   step <TASK-ID> next|done|back|skip --why <reason>   record the task's workflow step (gates cannot be skipped)
   run <role> <TASK-ID> [--model M] [--effort E] [--tool claude|codex]   run a role in Docker (read roles: ro worktree, after the deterministic checks)
+  parallel <TASK-ID> <TASK-ID> [...]   check that tasks can run in parallel (depends, status, scope overlap)
   worker <wt> <task-file> [--model M] [--effort E]   run the engineer in the Docker worker
   worker <wt> --prove   run docker/prove.sh in the worker (boundary check, no token)"""
 WINDOWS = sys.platform == "win32"
@@ -519,6 +520,42 @@ def tasks(root):
         if f.exists():
             found[tid] = meta(f) | {"worktree": wt}
     return dict(sorted(found.items()))
+
+
+def glob_prefix(glob):
+    return re.split(r"[*?\[]", glob, 1)[0]
+
+
+def globs_overlap(a, b):
+    """# ponytail: compares only the literal prefix before the first wildcard; may report a false overlap, never misses one."""
+    for x, y in ((a, b), (b, a)):
+        px, py = glob_prefix(x), glob_prefix(y)
+        if px == py or (px.startswith(py) and (py != y or py.endswith("/") or px[len(py)] == "/")):
+            return True
+    return False
+
+
+def parallel(root, ids):
+    """Conflicts that forbid running these tasks in parallel (empty list: ok)."""
+    found = tasks(root)
+    out = []
+    for tid in ids:
+        if tid not in found:
+            out.append(f"{tid}: no task file")
+        elif found[tid].get("status") not in ("planned", "in-progress"):
+            out.append(f"{tid}: status {found[tid].get('status')} (need planned or in-progress)")
+
+    def deps(tid, seen=()):
+        for d in split(found.get(tid, {}).get("depends")):
+            if d not in seen:
+                yield d
+                yield from deps(d, (*seen, d))
+    for i, a in enumerate(ids):
+        out += [f"{a} depends on {b}" for b in ids if b != a and b in set(deps(a))]
+        for b in ids[i + 1:]:
+            out += [f"{a} and {b} scopes overlap: {x} vs {y}" for x in split(found.get(a, {}).get("scope"))
+                    for y in split(found.get(b, {}).get("scope")) if globs_overlap(x, y)]
+    return out
 
 
 def checkpoint(text):
@@ -1397,6 +1434,9 @@ def main(argv=None):
             print("skills ok")
         else:
             skills_catalog(".")
+    elif cmd == "parallel" and len(rest) >= 2:
+        conflicts = parallel(main_checkout(".") or Path(".").resolve(), rest)
+        sys.exit("\n".join(conflicts) if conflicts else print("parallel ok: " + " ".join(rest)))
     elif cmd == "agents":
         agents_catalog(".")
     elif cmd == "workflows":
