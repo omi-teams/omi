@@ -922,11 +922,132 @@ def test_git_non_ascii():
         assert diff is not None and "Tiếng Việt có dấu" in diff, "git() must decode UTF-8 output"
 
 
+def test_workflows():
+    def fails(fn, *words):
+        try:
+            fn()
+        except SystemExit as e:
+            assert all(w in str(e) for w in words), str(e)
+            return str(e)
+        raise AssertionError(f"should fail: {words}")
+
+    with tempfile.TemporaryDirectory() as t:
+        root = Path(t).resolve()
+        wf = root / ".omi" / "workflows"
+        saved, sys.stdout = sys.stdout, io.StringIO()
+        try:
+            omi.init(root)
+            assert (wf / "CATALOG.md").exists(), "init creates the workflows folder"
+            for sid, size in (("omi-skill-a", 100), ("omi-skill-b", 100), ("omi-skill-c", 100), ("omi-skill-big", 9000)):
+                d = root / ".omi" / "skills" / "g" / sid
+                d.mkdir(parents=True)
+                (d / "SKILL.md").write_text(f"---\ndescription: use for {sid}\n---\n" + "x" * size)
+            omi.skills_catalog(root)
+
+            def flow(name, *steps, summary="Use for demos."):
+                rows = "".join(f"- {s}\n" for s in steps)
+                (wf / f"{name}.md").write_text(f"---\nid: {name}\nsummary: {summary}\nsteps:\n{rows}---\nPlaybook.\n")
+
+            ok = ("id: plan | role: coordinator | skills: | input: idea | output: task file | gate: none | stop: AC written",
+                  "id: build | role: omi-agent-engineer | skills: omi-skill-a | input: task | output: diff | gate: none | stop: tests pass",
+                  "id: review | role: omi-agent-reviewer | skills: | input: diff | output: verdict | gate: review | stop: PASS",
+                  "id: accept | role: coordinator | skills: | input: verdict | output: PO words | gate: po | stop: PO accepts")
+            flow("omi-flow-demo", *ok)
+            omi.workflows_catalog(root)
+            cat = (wf / "CATALOG.md").read_text()
+            assert "- omi-flow-demo: Use for demos. [plan > build > review > accept] [~" in cat, cat
+            omi.check_all_workflows(root)
+            assert [s["gate"] for s in omi.get_workflow(root, "omi-flow-demo")] == ["none", "none", "review", "po"]
+            r = subprocess.run([sys.executable, "-m", "omi", "workflows", "--check"], cwd=root, capture_output=True, text=True,
+                               env={**omi.os.environ, "PYTHONPATH": str(Path(__file__).parents[1] / "src")})
+            assert r.returncode == 0 and "workflows ok (1 checked)" in r.stdout, r.stdout + r.stderr
+
+            # unknown ids, gates, budgets and size fail the check
+            fails(lambda: omi.get_workflow(root, "omi-flow-ghost"), "unknown workflow `omi-flow-ghost`", "omi-flow-demo")
+            bad = [("omi-flow-r", ok[1].replace("omi-agent-engineer", "omi-agent-ghost"), "unknown role `omi-agent-ghost`"),
+                   ("omi-flow-s", ok[1].replace("omi-skill-a", "omi-skill-ghost"), "unknown skill omi-skill-ghost"),
+                   ("omi-flow-g", ok[2].replace("gate: review", "gate: maybe"), "gate `maybe`"),
+                   ("omi-flow-n", ok[2].replace("skills: ", "skills: omi-skill-a, omi-skill-b, omi-skill-c, omi-skill-big"),
+                    "step review: skill budget", "4 skills"),
+                   ("omi-flow-k", ok[1].replace("omi-skill-a", "omi-skill-big"), "omi-skill-big is", "per skill"),
+                   ("omi-flow-m", ok[0].replace(" | stop: AC written", ""), "step plan: missing `stop`")]
+            for name, row, *words in bad:
+                flow(name, row)
+                fails(lambda: omi.get_workflow(root, name), *words)
+                (wf / f"{name}.md").unlink()
+            (root / ".omi" / "agents" / "omi-agent-reviewer.md").write_text(
+                "---\nrole: omi-agent-reviewer\nmodel: sonnet\neffort: low\naccess: read\n"
+                "skills: [omi-skill-a, omi-skill-b]\nsummary: s\n---\nbody")
+            flow("omi-flow-d", ok[2].replace("skills: ", "skills: omi-skill-c, omi-skill-big"))
+            fails(lambda: omi.get_workflow(root, "omi-flow-d"), "4 skills", "at most 3")  # role defaults count per step
+            (wf / "omi-flow-d.md").unlink()
+            flow("omi-flow-long", *ok, summary="x" * 8000)
+            fails(lambda: omi.get_workflow(root, "omi-flow-long"), "per workflow")
+            (wf / "omi-flow-long.md").unlink()
+            flow("bad-name", *ok)
+            fails(lambda: omi.check_all_workflows(root), "must start with `omi-flow-`", "stale")
+            (wf / "bad-name.md").unlink()
+            omi.check_all_workflows(root)
+
+            # step state
+            task = root / ".omi" / "tasks" / "TASK-001.md"
+            task.write_text("---\nid: TASK-001\nworkflow: omi-flow-demo\nstep:\n---\n## Goal\nG\n\n## Checkpoint\nDone:\n")
+            go = lambda action, why=None: omi.step(root, "TASK-001", action, why)  # noqa: E731
+            front = lambda: omi.meta(task)  # noqa: E731
+            fails(lambda: go("done"), "no step started")
+            assert go("next") == 0 and front()["step"] == "plan"
+            fails(lambda: go("next"), "step plan is not done")
+            fails(lambda: go("skip"), "--why")
+            go("skip", "PO wrote the AC already")
+            fails(lambda: go("skip", "again"), "already skipped")
+            go("next")
+            assert front()["step"] == "build" and omi.checkpoint(task.read_text()) == "Done:"
+            # jumping over a step by editing the frontmatter is refused
+            good = task.read_text()
+            task.write_text(good.replace("step: build", "step: accept"))
+            fails(lambda: go("done"), "build", "cannot be jumped over")
+            task.write_text(good.replace("step: build", "step: ghost"))
+            fails(lambda: go("next"), "`ghost` is not in workflow")
+            task.write_text(good)
+            go("done")
+            go("next")
+            fails(lambda: go("skip", "trust me"), "gate review", "cannot be skipped")
+            go("done")
+            go("next")
+            assert front()["step"] == "accept"
+            fails(lambda: go("skip", "no time"), "gate po")
+            fails(lambda: go("done"), "po gate", "PO approval accept:")
+            task.write_text(task.read_text() + "PO approval accept:\n")
+            fails(lambda: go("done"), "po gate")  # empty approval text does not count
+            task.write_text(task.read_text() + "PO approval accept: ok, ship it\n")
+            go("done")
+            assert go("next") == 0 and front()["step"] == "accept"
+            text = task.read_text()
+            assert re.search(r"## Steps\n- plan started .+\n- plan skipped .+: PO wrote the AC already\n- build started", text), text
+            assert omi.step_states(text) == {"plan": "skipped", "build": "done", "review": "done", "accept": "done"}
+
+            # unknown workflow on the task, default workflow, unknown task role
+            task.write_text("---\nid: TASK-001\nworkflow: omi-flow-ghost\n---\n")
+            fails(lambda: go("next"), "unknown workflow `omi-flow-ghost`")
+            task.write_text("---\nid: TASK-001\n---\n")
+            fails(lambda: go("next"), f"unknown workflow `{omi.DEFAULT_WORKFLOW}`")
+            task.write_text("---\nid: TASK-001\nworkflow: omi-flow-demo\nrole: omi-agent-ghost\nstep: plan\n---\n"
+                            "## Steps\n- plan done 2026-10-25 10:00\n")
+            fails(lambda: go("next"), "unknown role `omi-agent-ghost`")
+            fails(lambda: omi.step(root, "TASK-404", "next"), "no task file")
+        finally:
+            sys.stdout = saved
+    repo = Path(__file__).parents[1]
+    assert (repo / ".omi" / "tasks" / "_template.md").read_text() == (omi.TEMPLATE / "dot-omi" / "tasks" / "_template.md").read_text()
+    assert "workflow: omi-flow-feature" in (repo / ".omi" / "tasks" / "_template.md").read_text()
+
+
 if __name__ == "__main__":
     test_usage()
     test_git_non_ascii()
     test_skills()
     test_skills_check()
+    test_workflows()
     test_worker()
     test_roles()
     test_run_read_role()
