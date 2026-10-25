@@ -1,0 +1,9 @@
+---
+name: omi-status
+description: Show OMI project status.
+disable-model-invocation: true
+allowed-tools: Bash(python -m omi status)
+---
+!`python -m omi status`
+
+Show the status above to the PO verbatim in a code block. Add nothing unless asked.
