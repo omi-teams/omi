@@ -215,9 +215,30 @@ def same(live, want):
     return live == want
 
 
-def github():
+def active_login():
+    r = subprocess.run(["gh", "api", "user", "--jq", ".login"], capture_output=True, text=True)
+    return r.stdout.strip()
+
+
+def github(po=False):
     if not shutil.which("gh"):
         sys.exit("gh is not installed (https://cli.github.com); omi github needs it.")
+    if not po:
+        return apply_github()
+    prev = active_login()
+    subprocess.run(["gh", "auth", "login", "--web", "-h", "github.com"], check=True)
+    who = active_login()
+    if who == prev:
+        sys.exit(f"logged in as {who}, the same as the squad account; the PO must log in with their own account. Nothing changed.")
+    try:
+        apply_github()
+    finally:
+        subprocess.run(["gh", "auth", "logout", "-h", "github.com", "-u", who])
+        subprocess.run(["gh", "auth", "switch", "-h", "github.com", "-u", prev])
+        print(f"active gh account: {active_login()}")
+
+
+def apply_github():
     r = subprocess.run(["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
                        capture_output=True, text=True)
     if r.returncode:
@@ -255,7 +276,7 @@ def main(argv=None):
     elif cmd == "status":
         status(*rest[:1])
     elif cmd == "github":
-        github()
+        github("--po" in rest)
     elif cmd == "guard":
         sys.exit(guard())
     else:

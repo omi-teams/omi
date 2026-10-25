@@ -17,7 +17,7 @@ The PO applies rulesets with one command and no PO credential is left on the squ
 - [ ] README's `omi github` line mentions `--po`.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
-Next:
+Done: all criteria (github --po, finally logout+switch, same-account guard, test, README)
+Not done: -
+Tests: python tests/test_omi.py ok
+Next: review

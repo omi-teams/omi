@@ -141,8 +141,53 @@ def test_same_and_no_gh():
         omi.shutil.which = real
 
 
+def test_github_po():
+    realrun, realwhich, realapply = omi.subprocess.run, omi.shutil.which, omi.apply_github
+    state = {"user": "squad", "next": "po", "calls": []}
+
+    class R:
+        def __init__(s, out=""): s.stdout, s.returncode = out, 0
+
+    def run(cmd, **kw):
+        state["calls"].append(cmd[1:3] if cmd[1] == "auth" else cmd[1:])
+        if cmd[1] == "api":
+            return R(state["user"])
+        if cmd[1:3] == ["auth", "login"]:
+            state["user"] = state["next"]
+        if cmd[1:3] == ["auth", "switch"]:
+            state["user"] = cmd[-1]
+        return R()
+
+    omi.subprocess.run, omi.shutil.which = run, lambda _: "gh"
+    try:
+        for fail in (False, True):
+            state.update(user="squad", calls=[])
+            def apply():
+                state["calls"].append("apply")
+                if fail: raise SystemExit("boom")
+            omi.apply_github = apply
+            try:
+                omi.github(po=True)
+                assert not fail
+            except SystemExit:
+                assert fail
+            names = [c if c == "apply" else c[1] for c in state["calls"] if c == "apply" or c[0] == "auth"]
+            assert names == ["login", "apply", "logout", "switch"], names
+            assert state["user"] == "squad"
+        state.update(user="squad", next="squad", calls=[])  # same-account guard
+        try:
+            omi.github(po=True)
+            assert False
+        except SystemExit as e:
+            assert "own account" in str(e)
+        assert not any(c[1:] == ["logout"] or c == ["auth", "logout"] for c in state["calls"])
+    finally:
+        omi.subprocess.run, omi.shutil.which, omi.apply_github = realrun, realwhich, realapply
+
+
 if __name__ == "__main__":
     test_init_guard_status()
     test_github_rulesets()
     test_same_and_no_gh()
+    test_github_po()
     print("ok")
