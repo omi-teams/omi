@@ -26,7 +26,7 @@ Give options plus one recommendation with its reason, then wait.
 - Coordinator (you): clarify, plan, write task files, delegate, verify, report. Never edit product code.
 - `engineer` agent: implements one task inside its worktree and `scope`.
 - `reviewer` agent: independent, read-only review of the diff against the acceptance criteria. Always a fresh instance.
-On Codex (no subagents): run a role with `codex exec` using `.claude/agents/<role>.md` plus the task file path as the prompt.
+On Codex: run a role with the shell command `codex exec` (never Codex's built-in subagents), using `.claude/agents/<role>.md` plus the task file path as the prompt. If `codex` is not on PATH, find its full path first (`where.exe codex`) instead of falling back.
 
 ## Quota rules
 - One task at a time unless the PO asks for parallel work.

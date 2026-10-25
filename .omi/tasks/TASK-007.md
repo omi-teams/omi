@@ -14,6 +14,7 @@ Show that a task interrupted mid-way can be finished in a new session, on Claude
 - [ ] Any AGENTS.md fix needed for Codex is made; results are recorded in `docs/verification.md`.
 
 ## Checkpoint
-Not done: Codex is not installed. The PO installs it and logs in with their subscription.
-Tests:
-Next:
+Done: Claude resume PASS; Codex resume PASS; AGENTS.md template fixed; results in docs/verification.md.
+Not done: Codex end-to-end finish (sandbox blocks .git writes; needs PO run with full access); root AGENTS.md still has old line.
+Tests: pytest run, see commit.
+Next: PO reviews; optionally rerun Codex with full access.
