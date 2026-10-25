@@ -20,6 +20,7 @@ claude                    # rồi gõ /omi-idea, /omi-task TASK-001, /omi-status
 | `AGENTS.md` (+ `CLAUDE.md` import nó) | Luật của Coordinator; Claude Code và Codex dùng chung |
 | `.claude/agents/engineer.md`, `reviewer.md` | 2 vai trò chuyên môn; Coordinator là phiên chính |
 | `.claude/skills/omi-*` | Quy trình `idea`, `task`, `status`, chỉ nạp khi gọi |
+| `docker/` | Image cho worker: engineer chạy `claude -p` trong container, chỉ ghi được vào worktree |
 | `.claude/settings.json` | Hook: tự chèn `omi status` đầu phiên; `omi guard` chặn ghi ngoài scope |
 | `.omi/tasks/TASK-NNN.md` | Mỗi task một file: brief, scope, acceptance criteria, checkpoint |
 | `.omi/decisions.md` | Nhật ký quyết định của PO |
@@ -35,7 +36,8 @@ claude                    # rồi gõ /omi-idea, /omi-task TASK-001, /omi-status
 
 ## Giới hạn đã biết
 
-- `omi guard` chặn Edit/Write của Claude Code. Thao tác ghi qua shell **chưa** bị chặn (giai đoạn 3: worker chạy trong Docker).
+- `omi guard` chặn Edit/Write của Coordinator và reviewer trên host. Engineer chạy trong Docker (`omi worker`): hệ điều hành chặn mọi thao tác ghi ngoài worktree, kể cả qua shell; thay đổi ngoài scope bị liệt kê sau khi chạy và Coordinator loại bỏ trước khi commit.
+- `omi worker` cần Docker đang chạy và token từ `claude setup-token` (`omi token set` lưu vào Windows Credential Manager; OS khác dùng biến môi trường `CLAUDE_CODE_OAUTH_TOKEN`). Không có phương án chạy engineer trên host.
 - Codex chưa có hook, nên scope chỉ dựa vào hướng dẫn trong prompt.
 - Hook gọi `python -m omi`: nếu `python` không chạy được hoặc chưa cài `omi`, hook không chặn được gì (fail-open).
 
@@ -43,7 +45,7 @@ claude                    # rồi gõ /omi-idea, /omi-task TASK-001, /omi-status
 
 1. ✅ Khung squad: init, status, guard, idea, task.
 2. Pilot một dự án thật qua `omi-idea` → `omi-task`; thêm lệnh `omi github` để cấu hình rulesets (chỉ PO merge vào `staging`/`main`).
-3. Spike Docker để chặn ghi qua shell, kèm auth subscription trong container.
+3. ✅ Engineer chạy trong Docker worker (`omi worker`), auth subscription qua token.
 4. Kiểm thử resume và đổi công cụ Claude ↔ Codex.
 5. Luồng UAT/promotion staging → main.
 
