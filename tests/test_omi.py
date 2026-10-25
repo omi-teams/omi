@@ -400,6 +400,16 @@ def test_worker():
                 omi.os.environ[omi.TOKEN_ENV] = tok
 
 
+def test_container_names():
+    import datetime
+    t = datetime.datetime(2026, 1, 1, 14, 32, 5)
+    assert omi.container_name("omi-squad2", "engineer", "TASK-018", t) == "omi-omi-squad2-TASK-018-engineer-143205"
+    assert omi.container_name("my repo", "prove", now=t) == "omi-my-repo-prove-143205"
+    argv = omi.worker_argv(Path("/w"), "img", ["x"], "n1")
+    assert argv[argv.index("--name") + 1] == "n1"
+    assert "--name" not in omi.worker_argv(Path("/w"), "img", ["x"])
+
+
 def test_credential_manager():
     import ctypes
     store = {}
@@ -467,6 +477,7 @@ def test_template_docker():
 
 if __name__ == "__main__":
     test_worker()
+    test_container_names()
     test_credential_manager()
     test_template_docker()
     test_init_guard_status()

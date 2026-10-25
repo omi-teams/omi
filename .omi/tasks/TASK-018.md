@@ -22,3 +22,4 @@ Not done: none.
 Tests: python3 tests/test_omi.py passes.
 Next: Coordinator review and commit.
 Round 2 (Coordinator): the PO asked for readable container names (new criterion above). Everything else from round 1 is done and committed; only add the naming and its test.
+Round 2 done: container_name() + --name in worker_argv, image omi-worker-<repo>:<hash>, test_container_names. python3 tests/test_omi.py passes.

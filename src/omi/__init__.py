@@ -1,6 +1,7 @@
 """OMI Squad CLI: init, status, guard, token, worker. Stdlib only."""
 
 import ctypes
+import datetime
 import getpass
 import hashlib
 import json
@@ -379,11 +380,18 @@ def token():
     return (cred_read() if WINDOWS else None) or os.environ.get(TOKEN_ENV)
 
 
-def worker_argv(wt, image, cmd):
+def container_name(repo, role, tid=None, now=None):
+    """omi-<repo>-<task-id>-<role>-<HHMMSS>, limited to Docker's [a-zA-Z0-9_.-]."""
+    stamp = (now or datetime.datetime.now()).strftime("%H%M%S")
+    raw = "-".join(p for p in ("omi", repo, tid, role, stamp) if p)
+    return re.sub(r"[^a-zA-Z0-9_.-]", "-", raw)
+
+
+def worker_argv(wt, image, cmd, name=None):
     """docker run argv: only the worktree is rw, its .git file ro, non-root, no caps, rootfs ro, no socket.
     The token goes in by name only (-e NAME); its value lives in the child env, never in argv."""
     wt = Path(wt)
-    return ["docker", "run", "--rm", "-i", "--label", "omi-worker=1",
+    return ["docker", "run", "--rm", "-i", *(["--name", name] if name else []), "--label", "omi-worker=1",
             "--user", "node", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
             "--tmpfs", "/tmp:rw,noexec,nosuid,size=256m",
             "--tmpfs", "/home/node:rw,noexec,nosuid,uid=1000,gid=1000,size=256m",
@@ -410,7 +418,7 @@ def ensure_image(main):
     d = main / "docker"
     if not (d / "Dockerfile").exists():
         d = TEMPLATE / "docker"
-    tag = "omi-worker:" + hashlib.sha256((d / "Dockerfile").read_bytes()).hexdigest()[:12]
+    tag = f"omi-worker-{re.sub(r'[^a-zA-Z0-9_.-]', '-', main.name.lower())}:" + hashlib.sha256((d / "Dockerfile").read_bytes()).hexdigest()[:12]
     if subprocess.run(["docker", "image", "inspect", tag], capture_output=True).returncode:
         r = subprocess.run(["docker", "build", "-t", tag, "--label", "omi-worker=1", str(d)],
                            capture_output=True, text=True, errors="replace")
@@ -460,13 +468,13 @@ def worker(wt, task_file=None, model=None, effort=None, prove=False):
     if prove:
         script = main / "docker" / "prove.sh"
         script = script if script.exists() else TEMPLATE / "docker" / "prove.sh"
-        return subprocess.run(worker_argv(wt, image, ["sh", "-s"]), env=env,
+        return subprocess.run(worker_argv(wt, image, ["sh", "-s"], container_name(main.name, "prove")), env=env,
                               input=script.read_bytes().replace(b"\r\n", b"\n")).returncode
     agent = main / ".claude" / "agents" / "engineer.md"
     agent = agent if agent.exists() else TEMPLATE / "dot-claude" / "agents" / "engineer.md"
     cmd = engineer_cmd(agent.read_text(encoding="utf-8"), task_rel, model, effort)
     env[TOKEN_ENV] = secret
-    rc = subprocess.run(worker_argv(wt, image, cmd), env=env, stdin=subprocess.DEVNULL).returncode
+    rc = subprocess.run(worker_argv(wt, image, cmd, container_name(main.name, "engineer", task.stem)), env=env, stdin=subprocess.DEVNULL).returncode
     bad = out_of_scope(wt, task.stem)
     for p in bad:
         print(f"OUT OF SCOPE: {p}")
