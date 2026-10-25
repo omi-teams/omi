@@ -1,7 +1,7 @@
 ---
 id: TASK-040
 title: Usage metering per worker run and per task
-status: planned
+status: in-progress
 depends: TASK-028
 scope: src/omi/__init__.py, src/omi/template/**, .omi/tasks/_template.md, tests/**, AGENTS.md
 ---
