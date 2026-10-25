@@ -538,7 +538,8 @@ def globs_overlap(a, b):
 def parallel(root, ids):
     """Conflicts that forbid running these tasks in parallel (empty list: ok)."""
     found = tasks(root)
-    out = []
+    out = [f"{t}: duplicate id" for t in dict.fromkeys(ids) if ids.count(t) > 1]
+    ids = list(dict.fromkeys(ids))
     for tid in ids:
         if tid not in found:
             out.append(f"{tid}: no task file")
@@ -1436,7 +1437,9 @@ def main(argv=None):
             skills_catalog(".")
     elif cmd == "parallel" and len(rest) >= 2:
         conflicts = parallel(main_checkout(".") or Path(".").resolve(), rest)
-        sys.exit("\n".join(conflicts) if conflicts else print("parallel ok: " + " ".join(rest)))
+        if conflicts:
+            sys.exit("\n".join(conflicts))
+        print("parallel ok: " + " ".join(rest))
     elif cmd == "agents":
         agents_catalog(".")
     elif cmd == "workflows":
