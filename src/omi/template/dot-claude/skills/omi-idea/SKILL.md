@@ -9,3 +9,4 @@ disable-model-invocation: true
 4. On approval: commit on `main`, then append to `.omi/decisions.md`: `- <date> | Approve docs/product.md | PO | <commit sha>`.
 5. Create `development` from `main`. On it, split the work into `.omi/tasks/TASK-NNN.md` files from `.omi/tasks/_template.md`. Each task has one outcome, fits in one session, explicit `scope` globs, and testable acceptance criteria. TASK-001 is usually the project skeleton plus CI.
 6. Commit, run `python -m omi status`, and ask the PO which task to run.
+7. If a git remote exists, push `main` and `development`, then tell the PO to run `python -m omi github --po` once (repo must be public on the Free plan).

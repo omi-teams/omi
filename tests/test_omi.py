@@ -189,6 +189,15 @@ def test_github_po():
     omi.subprocess.run, omi.shutil.which = run, lambda _: "gh"
     try:
         assert go() is None and st["calls"] == ["login", "apply", "logout", "switch"], st["calls"]
+        # logout already restored prev: no extra switch
+        orig = run
+        def run2(cmd, **kw):
+            if cmd[1:3] == ["auth", "logout"]:
+                r = orig(cmd, **kw); st["active"] = "squad"; return r
+            return orig(cmd, **kw)
+        omi.subprocess.run = run2
+        assert go() is None and "switch" not in st["calls"], st["calls"]
+        omi.subprocess.run = run
         assert st["accts"] == ["squad"] and st["active"] == "squad"
         assert go(fail_apply=True) == "boom" and st["calls"] == ["login", "apply", "logout", "switch"]
         assert st["accts"] == ["squad"]
@@ -207,9 +216,23 @@ def test_github_po():
         omi.subprocess.run, omi.shutil.which, omi.apply_github = realrun, realwhich, realapply
 
 
+def test_github_private():
+    real = omi.subprocess.run
+    class R: stdout, stderr, returncode = "o/r PRIVATE", "", 0
+    omi.subprocess.run = lambda *a, **k: R()
+    try:
+        omi.apply_github()
+        assert False
+    except SystemExit as e:
+        assert "private" in str(e)
+    finally:
+        omi.subprocess.run = real
+
+
 if __name__ == "__main__":
     test_init_guard_status()
     test_github_rulesets()
     test_same_and_no_gh()
     test_github_po()
+    test_github_private()
     print("ok")
