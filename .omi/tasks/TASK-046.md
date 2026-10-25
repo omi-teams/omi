@@ -3,7 +3,7 @@ id: TASK-046
 title: Typed omi- names for every skill, agent and workflow, enforced by the validators
 status: in-progress
 depends: TASK-028
-scope: .omi/skills/**, .omi/agents/**, src/omi/template/dot-omi/skills/**, src/omi/template/dot-omi/agents/**, src/omi/__init__.py, tests/test_omi.py, .claude/skills/**, src/omi/template/dot-claude/skills/**, AGENTS.md, src/omi/template/AGENTS.md, README.md, docs/**, .omi/decisions.md
+scope: .omi/skills/**, .omi/agents/**, src/omi/template/dot-omi/skills/**, src/omi/template/dot-omi/agents/**, src/omi/__init__.py, tests/test_omi.py, .claude/skills/**, src/omi/template/dot-claude/skills/**, AGENTS.md, src/omi/template/AGENTS.md, README.md, docs/**, .omi/decisions.md, .omi/tasks/_template.md, src/omi/template/dot-omi/tasks/_template.md
 ---
 ## Goal
 Every skill, agent (role) and workflow name carries `omi-` plus its kind, so it is obvious in any list or log what it is and that it belongs to the OMI squad: skills `omi-skill-<name>`, agents `omi-agent-<name>`, workflows `omi-flow-<name>`. The four PO commands (`omi-idea`, `omi-task`, `omi-release`, `omi-status`) keep their names and are not renamed.
