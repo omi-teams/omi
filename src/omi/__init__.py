@@ -1,4 +1,4 @@
-"""OMI Squad CLI: init, status, guard, skills, agents, run, token, worker. Stdlib only."""
+"""OMI Squad CLI: init, status, guard, skills, agents, workflows, step, run, token, worker. Stdlib only."""
 
 import ctypes
 import datetime
@@ -29,6 +29,8 @@ USAGE = """usage: omi <command>
   skills --check   validate every skill against the contract (parts, size, source, no widened permissions)
   token set    store the `claude setup-token` value in Windows Credential Manager
   agents       write .omi/agents/CATALOG.md (one line per role)
+  workflows [--check]   write .omi/workflows/CATALOG.md (one line per workflow); --check validates every workflow
+  step <TASK-ID> next|done|skip --why <reason>   record the task's workflow step (gates cannot be skipped)
   run <role> <TASK-ID> [--model M] [--effort E] [--tool claude|codex]   run a role in Docker (read roles: ro worktree, after the deterministic checks)
   worker <wt> <task-file> [--model M] [--effort E]   run the engineer in the Docker worker
   worker <wt> --prove   run docker/prove.sh in the worker (boundary check, no token)"""
@@ -244,6 +246,205 @@ def task_skill_ids(root, m):
     """The task's role default skills plus its own `skills:`, without duplicates; the role must exist."""
     role = get_role(root, m.get("role") or "omi-agent-engineer")
     return list(dict.fromkeys([*task_skills(role), *task_skills(m)]))
+
+
+WORKFLOW_TOKENS = 2000  # per workflow file (bytes/4)
+DEFAULT_WORKFLOW = "omi-flow-feature"
+STEP_KEYS = ("id", "role", "skills", "input", "output", "gate", "stop")
+GATES = ("none", "review", "po")
+COORDINATOR = "coordinator"  # a step the Coordinator does itself (plan, PO acceptance); no role file
+
+
+def workflows_dir(root):
+    d = Path(root) / ".omi" / "workflows"
+    return d if any(f.name != "CATALOG.md" for f in d.glob("*.md")) else TEMPLATE / "dot-omi" / "workflows"
+
+
+def workflow_steps(text):
+    """Steps from the frontmatter: lines `- id: x | role: r | skills: a, b | input: .. | output: .. | gate: g | stop: ..`
+    under `steps:`."""
+    front = text.split("---", 2)[1] if text.startswith("---") else ""
+    steps, inside = [], False
+    for line in front.splitlines():
+        if re.match(r"steps\s*:", line):
+            inside = True
+        elif inside and line.strip().startswith("- "):
+            parts = [p.partition(":") for p in line.strip()[2:].split("|")]
+            steps.append({k.strip(): v.strip() for k, _, v in parts})
+        elif line.strip():
+            inside = False
+    return steps
+
+
+def step_skill_ids(root, step, m=None):
+    """The step role's default skills, the step's skills and the task's own skills; the role must exist."""
+    if step["role"] == COORDINATOR:
+        return task_skills(step)
+    return list(dict.fromkeys([*task_skills(get_role(root, step["role"])), *task_skills(step), *task_skills(m or {})]))
+
+
+def validate_workflow(root, f):
+    """Problems of one workflow file, as a list of strings (empty = valid)."""
+    m = meta(f)
+    errs = [f"missing frontmatter `{k}`" for k in ("id", "summary") if not m.get(k)]
+    if m.get("id") and m["id"] != f.stem:
+        errs.append(f"id `{m['id']}` differs from file name")
+    if not f.stem.startswith("omi-flow-"):
+        errs.append(f"id `{f.stem}` must start with `omi-flow-`")
+    steps = workflow_steps(m["_text"])
+    if not steps:
+        errs.append("no steps under `steps:`")
+    seen = set()
+    for i, s in enumerate(steps, 1):
+        sid = s.get("id") or f"#{i}"
+        missing = [k for k in STEP_KEYS if k not in s or (k != "skills" and not s[k])]
+        errs += [f"step {sid}: missing `{k}`" for k in missing]
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", sid):
+            errs.append(f"step {sid}: id must be lowercase letters, digits and dashes")
+        if sid in seen:
+            errs.append(f"step {sid}: duplicate id")
+        seen.add(sid)
+        if s.get("gate") and s["gate"] not in GATES:
+            errs.append(f"step {sid}: gate `{s['gate']}` is not one of {'|'.join(GATES)}")
+        if "role" not in missing:
+            try:
+                check_skills(root, step_skill_ids(root, s))
+            except SystemExit as e:
+                errs.append(f"step {sid}: {e}")
+    n = tokens(f)
+    if n > WORKFLOW_TOKENS:
+        errs.append(f"{n} tokens, at most {WORKFLOW_TOKENS} per workflow")
+    return errs
+
+
+def workflow_files(root):
+    return [f for f in sorted(workflows_dir(root).glob("*.md")) if f.name != "CATALOG.md"]
+
+
+def get_workflow(root, wid):
+    """Steps of a valid workflow; exits on an unknown or invalid one."""
+    files = {f.stem: f for f in workflow_files(root)}
+    if wid not in files:
+        sys.exit(f"unknown workflow `{wid}`: workflow ids start with omi-flow-; known workflows are "
+                 f"{', '.join(files) or 'none'}. Nothing changed.")
+    errs = validate_workflow(root, files[wid])
+    if errs:
+        sys.exit(f"workflow {wid}: " + "; ".join(errs))
+    return workflow_steps(meta(files[wid])["_text"])
+
+
+def workflows_catalog(root):
+    """Write .omi/workflows/CATALOG.md: `- id: when to use [step > step] [~N tokens]`."""
+    lines = ["# Workflow catalog", "", "<!-- generated by `python -m omi workflows`; do not edit -->"]
+    for f in workflow_files(root):
+        m = meta(f)
+        order = " > ".join(s.get("id", "?") for s in workflow_steps(m["_text"]))
+        lines.append(f"- {f.stem}: {' '.join(m.get('summary', '').split()) or '(no summary)'} [{order}] [~{tokens(f)} tokens]")
+    out = Path(root) / ".omi" / "workflows" / "CATALOG.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"wrote {out} ({len(lines) - 3} workflows)")
+
+
+def check_all_workflows(root):
+    """Validate every workflow and that the catalog lists exactly them; exits non-zero listing all problems."""
+    files = workflow_files(root)
+    bad = [f"{f.stem}: {e}" for f in files for e in validate_workflow(root, f)]
+    cat = workflows_dir(root) / "CATALOG.md"
+    listed = set(re.findall(r"^- (\S+?):", cat.read_text(encoding="utf-8"), re.M)) if cat.exists() else set()
+    if listed != {f.stem for f in files}:
+        bad.append("CATALOG.md is stale; run `python -m omi workflows`")
+    if bad:
+        sys.exit("workflows check failed:\n" + "\n".join(bad))
+    print(f"workflows ok ({len(files)} checked)")
+
+
+STEP_LOG = re.compile(r"^- (\S+) (started|done|skipped) ", re.M)
+
+
+def step_states(text):
+    """{step id: last recorded event} from the task's `## Steps` log."""
+    _, sep, rest = text.partition("\n## Steps\n")
+    return dict(STEP_LOG.findall(rest.split("\n## ", 1)[0])) if sep else {}
+
+
+def po_approved(text, sid):
+    """The Coordinator records the PO's words as a line `PO approval <step>: <text>`."""
+    return re.search(rf"^PO approval {re.escape(sid)}: *\S", text, re.M) is not None
+
+
+def set_front(text, key, value):
+    _, front, body = text.split("---", 2)
+    lines = [ln for ln in front.split("\n") if ln.partition(":")[0].strip() != key]
+    lines.insert(len(lines) - 1, f"{key}: {value}")
+    return f"---{chr(10).join(lines)}---{body}"
+
+
+def add_step_log(text, line):
+    head, sep, rest = text.partition("\n## Steps\n")
+    if not sep:
+        return text.rstrip("\n") + f"\n\n## Steps\n{line}\n"
+    body, nxt, tail = rest.partition("\n## ")
+    body = body.rstrip("\n") + "\n" if body.strip() else ""
+    return f"{head}{sep}{body}{line}\n" + (f"\n## {tail}" if nxt else "")
+
+
+def step(root, tid, action, why=None, now=None):
+    """Record a workflow step in the task file: `next` starts the following step, `done` closes the current one,
+    `skip` closes it with a reason. Gate steps cannot be skipped; a `po` gate needs the PO approval line."""
+    task = Path(root) / ".omi" / "tasks" / f"{tid}.md"
+    if not task.exists():
+        sys.exit(f"no task file {task}. Nothing changed.")
+    m = meta(task)
+    wid = m.get("workflow") or DEFAULT_WORKFLOW
+    steps = get_workflow(root, wid)
+    ids = [s["id"] for s in steps]
+    text, state, cur = m["_text"], step_states(m["_text"]), m.get("step") or ""
+    if cur and cur not in ids:
+        sys.exit(f"{tid}: step `{cur}` is not in workflow {wid} ({', '.join(ids)}). Nothing changed.")
+    at = ids.index(cur) if cur else -1
+    open_steps = [s for s in ids[:max(at, 0)] if state.get(s) not in ("done", "skipped")]
+    if open_steps:
+        sys.exit(f"{tid}: at step {cur} but {', '.join(open_steps)} not done or skipped; steps cannot be jumped over. "
+                 "Nothing changed.")
+    stamp = (now or datetime.datetime.now()).strftime("%Y-%m-%d %H:%M")
+    if action == "next":
+        if cur and state.get(cur) not in ("done", "skipped"):
+            sys.exit(f"{tid}: step {cur} is not done; run `omi step {tid} done` or `skip --why`. Nothing changed.")
+        if cur and steps[at]["gate"] == "po" and not po_approved(text, cur):
+            sys.exit(f"{tid}: step {cur} is a po gate; record `PO approval {cur}: <PO's words>` in the task first. "
+                     "Nothing changed.")
+        if at + 1 == len(ids):
+            print(f"{tid}: workflow {wid} is complete")
+            return 0
+        new = steps[at + 1]
+        if new["role"] != COORDINATOR:
+            get_role(root, m.get("role") or "omi-agent-engineer")  # unknown task role fails too
+        check_skills(root, step_skill_ids(root, new, m))
+        text = add_step_log(set_front(text, "step", new["id"]), f"- {new['id']} started {stamp}")
+        msg = (f"{tid}: step {new['id']} ({new['role']}, gate {new['gate']}): input {new['input']}; "
+               f"output {new['output']}; stop when {new['stop']}")
+    elif not cur:
+        sys.exit(f"{tid}: no step started; run `omi step {tid} next`. Nothing changed.")
+    elif state.get(cur) in ("done", "skipped"):
+        sys.exit(f"{tid}: step {cur} is already {state[cur]}; run `omi step {tid} next`. Nothing changed.")
+    elif action == "done":
+        if steps[at]["gate"] == "po" and not po_approved(text, cur):
+            sys.exit(f"{tid}: step {cur} is a po gate; record `PO approval {cur}: <PO's words>` in the task first. "
+                     "Nothing changed.")
+        text, msg = add_step_log(text, f"- {cur} done {stamp}"), f"{tid}: step {cur} done"
+    elif action == "skip":
+        if not (why or "").strip():
+            sys.exit(f"usage: omi step {tid} skip --why <reason>. Nothing changed.")
+        if steps[at]["gate"] != "none":
+            sys.exit(f"{tid}: step {cur} has gate {steps[at]['gate']} and cannot be skipped. Nothing changed.")
+        text = add_step_log(text, f"- {cur} skipped {stamp}: {' '.join(why.split())}")
+        msg = f"{tid}: step {cur} skipped"
+    else:
+        sys.exit("usage: omi step <TASK-ID> next|done|skip --why <reason>")
+    task.write_text(text, encoding="utf-8")
+    print(msg)
+    return 0
 
 
 def init(target="."):
@@ -983,6 +1184,11 @@ def main(argv=None):
             skills_catalog(".")
     elif cmd == "agents":
         agents_catalog(".")
+    elif cmd == "workflows":
+        check_all_workflows(".") if rest[:1] == ["--check"] else workflows_catalog(".")
+    elif cmd == "step" and len(rest) >= 2:
+        why = " ".join(rest[rest.index("--why") + 1:]) if "--why" in rest else None
+        sys.exit(step(main_checkout(".") or Path(".").resolve(), rest[0], rest[1], why))
     elif cmd == "run" and len(rest) >= 2 and not rest[1].startswith("--"):
         sys.exit(run_cmd(rest[0], rest[1], rest))
     elif cmd == "guard":
