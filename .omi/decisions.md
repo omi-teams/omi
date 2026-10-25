@@ -33,3 +33,4 @@
 - 2026-10-25 | task skills go to write roles only (TASK-049) | the reviewer read omi-skill-lean-implementation on TASK-048; read roles get role and step skills only | PO chat
 - 2026-10-25 | roles carry no default skills; skills live on workflow steps or task skills (TASK-050) | step skills (TASK-048) made defaults redundant; devops defaults filled the 3-skill budget and blocked step skills | PO chat
 - 2026-10-25 | AC ticks: Coordinator ticks reviewer-confirmed criteria; po accept gate refuses unticked ones (TASK-051); backfilled 9 reviewed done tasks, TASK-011/030 left for TASK-039 | 11 done tasks had unticked AC, no owner for ticking | PO chat
+- 2026-10-25 | incremental review real numbers (TASK-042 round 1 -> 2): reviewer cache 68311 -> 70028, output 2502 -> 1922 | base context dominates; diff savings are small; TASK-039 decides keep or revert per TASK-041 AC | TASK-042 Usage
