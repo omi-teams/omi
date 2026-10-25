@@ -3,7 +3,7 @@ id: TASK-034
 title: Workflows - bugfix, refactor
 status: in-progress
 depends: TASK-032
-scope: .omi/workflows/**, src/omi/template/dot-omi/workflows/**, .omi/decisions.md
+scope: .omi/workflows/**, src/omi/template/dot-omi/workflows/**, .omi/decisions.md, tests/**
 role: omi-agent-engineer
 skills: []  # writes markdown workflows; the step skills below go into the workflow files
 ---
