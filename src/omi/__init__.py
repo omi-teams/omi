@@ -9,6 +9,7 @@ import json
 import os
 import posixpath
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -897,29 +898,88 @@ USAGE_HEAD = "| role | model | effort | input | output | cache | duration | skil
 
 
 READERS = ("cat", "sed", "head", "tail", "less", "nl", "rg", "grep")
+SHELLS = ("bash", "sh", "zsh", "dash")
+# options whose value is the next token (not a file)
+VALUE_OPTS = {"head": ("-n", "-c"), "tail": ("-n", "-c"), "grep": ("-A", "-B", "-C", "-m"), "rg": ("-A", "-B", "-C", "-m", "-g", "-t")}
+
+
+def shell_tokens(command):
+    """shlex tokens of a command line; `;`, `&&`, `|`, newlines, `(`, `>` etc. come out as their own tokens."""
+    for text in (command, command.replace("'", " ").replace('"', " ")):
+        lex = shlex.shlex(text, posix=True, punctuation_chars=";&|()<>\n")
+        lex.whitespace, lex.whitespace_split = " \t\r", True
+        try:
+            return list(lex)
+        except ValueError:
+            continue
+    return []
 
 
 def read_commands(command, cwd=None):
-    """The parts of a shell command line that read files (cat, sed, head, ...); ls, rm, echo do not count.
-    Redirect targets are dropped (a write is not a read), `sed -i` is a write, and relative paths are
-    resolved against `cd` targets (and `cwd`) seen earlier in the command."""
-    found = []
-    command = re.sub(r"\d*>>?&?\s*[^\s;&|()]+", " ", command.replace("'", " ").replace('"', " "))
-    for seg in re.split(r"[;&|\n()]+", command):
-        toks = seg.split()
-        while toks and (toks[0] in ("bash", "sh", "zsh", "env") or toks[0].startswith("-")):
-            toks.pop(0)
-        if toks and toks[0] == "cd" and len(toks) > 1:
-            cwd = posixpath.normpath(posixpath.join(cwd or "", toks[1]))
-        elif toks and toks[0] in READERS and not any(t == "--in-place" or re.fullmatch(r"-i\S*", t) for t in toks[1:]):
-            if cwd:
-                toks = toks[:1] + [t if t.startswith(("-", "/")) else posixpath.normpath(posixpath.join(cwd, t)) for t in toks[1:]]
-            found.append(" ".join(toks))
+    """File operands of the read commands (cat, sed, head, ...) in a shell command line; ls, rm, echo do not count.
+    Shell wrappers (`/bin/bash -lc '...'`, `env bash -c`) are unwrapped, redirect targets are writes, `sed -i` is
+    a write, a grep/rg/sed pattern or script is not a file, and relative paths are resolved against `cd` targets
+    (and `cwd`) seen earlier in the command."""
+    found, seg = [], []
+    for tok in shell_tokens(command) + [";"]:
+        if tok and set(tok) <= set(";&|()<>\n") and not set(tok) & set("<>"):
+            found += _segment_reads(seg, cwd)
+            if seg and seg[0] == "cd" and len(seg) > 1:
+                cwd = posixpath.normpath(posixpath.join(cwd or "", seg[1]))
+            seg = []
+        else:
+            seg.append(tok)
     return found
 
 
+def _segment_reads(toks, cwd):
+    """read_commands for one simple command (tokens without separators)."""
+    files, words, it = [], [], iter(toks)
+    for t in it:
+        if t and set(t) <= set("<>&"):
+            target = next(it, "")
+            if words and words[-1].isdigit():  # fd number of `2>`
+                words.pop()
+            if t == "<":
+                files.append(target)
+        else:
+            words.append(t)
+    while words and (words[0].startswith("-") or re.fullmatch(r"\w+=.*", words[0]) or posixpath.basename(words[0]) == "env"):
+        words.pop(0)
+    if not words:
+        return []
+    name, args = posixpath.basename(words[0]), words[1:]
+    if name in SHELLS:
+        script = next((args[i + 1] for i, a in enumerate(args[:-1]) if re.fullmatch(r"-\w*c\w*", a)), None)
+        return read_commands(script, cwd) if script is not None else []
+    if name not in READERS:
+        return []
+    if name == "sed" and any(re.match(r"-\w*i", a) or a.startswith("--in-place") for a in args):
+        return []
+    operands, pattern, i = [], name in ("grep", "rg", "sed"), 0
+    while i < len(args):
+        a = args[i]
+        if a == "--":
+            operands += args[i + 1:]
+            break
+        if name in ("grep", "rg", "sed") and a in ("-e", "-f", "--regexp", "--expression", "--file"):
+            pattern = False
+            if a in ("-f", "--file") and i + 1 < len(args):
+                operands.append(args[i + 1])
+            i += 2
+            continue
+        if a in VALUE_OPTS.get(name, ()):
+            i += 2
+            continue
+        if not a.startswith("-") or a == "-":
+            operands.append(a)
+        i += 1
+    files += operands[1:] if pattern else operands
+    return [posixpath.normpath(posixpath.join(cwd or "", f)) for f in files if f and f != "-"]
+
+
 def opened_files(tool, out):
-    """Paths (Claude Read calls) or read-command parts (Claude Bash, Codex) the agent opened, from the tool-call log."""
+    """Paths the agent opened, from the tool-call log: Claude Read calls, file operands of read commands (Claude Bash, Codex)."""
     found = []
     for line in (out or "").splitlines():
         try:
@@ -943,13 +1003,13 @@ def opened_files(tool, out):
 
 
 def skills_read(root, ids, opened):
-    """Ids of the declared skills whose SKILL.md or declared reference shows up in the opened files/commands."""
+    """Ids of the declared skills whose SKILL.md or a declared reference is an opened path (whole path or `.../<rel>`)."""
     dirs = skill_dirs(root)
     done = []
     for sid in ids:
         rels = [Path(f).relative_to(root).as_posix() for f in skill_files(dirs[sid])]
         rels += [f"{dirs[sid].name}/{Path(f).relative_to(dirs[sid]).as_posix()}" for f in skill_files(dirs[sid])]
-        if any(r in o for r in rels for o in opened):
+        if any(o == r or o.endswith("/" + r) for r in rels for o in map(posixpath.normpath, filter(None, opened))):
             done.append(sid)
     return done
 

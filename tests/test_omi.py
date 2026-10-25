@@ -885,21 +885,28 @@ def test_usage():
         {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": "cat /work/.omi/skills/g/omi-skill-b/SKILL.md"}}]}},
         json.loads(claude)))
     assert omi.parse_usage("claude", stream) == ("DONE", 10, 20, 105)
-    assert omi.opened_files("claude", stream) == ["/work/.omi/skills/g/omi-skill-a/SKILL.md", "cat /work/.omi/skills/g/omi-skill-b/SKILL.md"]
+    assert omi.opened_files("claude", stream) == ["/work/.omi/skills/g/omi-skill-a/SKILL.md", "/work/.omi/skills/g/omi-skill-b/SKILL.md"]
     cx = "\n".join(json.dumps(e) for e in (
         {"type": "item.completed", "item": {"type": "command_execution", "command": "bash -lc 'cat /work/.omi/skills/g/omi-skill-b/ref.md'"}},
         {"type": "item.completed", "item": {"type": "agent_message", "text": "hi"}}))
-    assert omi.opened_files("codex", cx) == ["cat /work/.omi/skills/g/omi-skill-b/ref.md"]
+    assert omi.opened_files("codex", cx) == ["/work/.omi/skills/g/omi-skill-b/ref.md"]
     sk = "/work/.omi/skills/g/omi-skill-b/SKILL.md"
     for bad in (f"ls {sk}", f"rm {sk}", f"echo {sk}", f"echo x > {sk}", f"ls {sk} && echo cat"):
         assert omi.read_commands(bad) == [], bad
-    assert omi.read_commands(f"bash -lc 'ls && sed -n 1,5p {sk}'") == [f"sed -n 1,5p {sk}"]
-    assert omi.read_commands(f"rg foo {sk} | head") == [f"rg foo {sk}", "head"]
-    for bad in (f"cat x > {sk}", f"cat x >> {sk}", f"cat > {sk} <<EOF", f"sed -i s/a/b/ {sk}", f"sed -i.bak s/a/b/ {sk}"):
+    assert omi.read_commands(f"bash -lc 'ls && sed -n 1,5p {sk}'") == [sk]
+    assert omi.read_commands(f"rg foo {sk} | head") == [sk]
+    for wrap in (f"/bin/bash -lc 'cat {sk}'", f"/usr/bin/env bash -c 'cat {sk}'", f"env FOO=1 /bin/sh -c \"head -n 5 {sk}\""):
+        assert omi.read_commands(wrap) == [sk], wrap
+    for ok in (f"grep -i foo {sk}", f"rg -i foo {sk}", f"less -i {sk}", f"grep -e foo {sk}", f"sed -n 1p {sk}", f"cat < {sk}"):
+        assert omi.read_commands(ok) == [sk], ok
+    assert omi.read_commands(f"grep -c {sk} README.md") == ["README.md"]
+    assert omi.read_commands(f"grep -e {sk} README.md") == ["README.md"]
+    for bad in (f"cat x > {sk}", f"cat x >> {sk}", f"cat > {sk} <<EOF", f"sed -i s/a/b/ {sk}", f"sed -i.bak s/a/b/ {sk}",
+                f"sed -ni s/a/b/ {sk}", f"sed --in-place=.bak s/a/b/ {sk}", f"sed --in-place s/a/b/ {sk}"):
         assert not any(sk in c for c in omi.read_commands(bad)), bad
-    assert omi.read_commands(f"cat {sk} 2>/dev/null") == [f"cat {sk}"]
-    assert omi.read_commands("cd /work/.omi/skills/g/omi-skill-b && cat SKILL.md") == ["cat /work/.omi/skills/g/omi-skill-b/SKILL.md"]
-    assert omi.read_commands("cat SKILL.md", "/w/skills/x") == ["cat /w/skills/x/SKILL.md"]
+    assert omi.read_commands(f"cat {sk} 2>/dev/null") == [sk]
+    assert omi.read_commands("cd /work/.omi/skills/g/omi-skill-b && cat SKILL.md") == ["/work/.omi/skills/g/omi-skill-b/SKILL.md"]
+    assert omi.read_commands("cat SKILL.md", "/w/skills/x") == ["/w/skills/x/SKILL.md"]
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
         for sid in ("a", "b"):
@@ -917,6 +924,11 @@ def test_usage():
         assert omi.skills_read(root, ids, cmds("cat SKILL.md")) == []
         assert omi.skills_read(root, ids, cmds("cd .omi/skills/g/omi-skill-b && cat x > SKILL.md")) == []
         assert omi.skills_read(root, ids, cmds("cd .omi/skills/g/omi-skill-b && sed -i s/a/b/ SKILL.md")) == []
+        assert omi.skills_read(root, ids, cmds("/bin/bash -lc 'cd .omi/skills/g/omi-skill-a && cat SKILL.md'")) == ["omi-skill-a"]
+        assert omi.skills_read(root, ids, cmds("grep -i x omi-skill-b/SKILL.md")) == ["omi-skill-b"]
+        for bad in ("grep -c omi-skill-b/SKILL.md README.md", "cat omi-skill-b/SKILL.md.bak", "cat xomi-skill-b/SKILL.md",
+                    "sed -ni s/a/b/ omi-skill-b/SKILL.md", "echo omi-skill-b/SKILL.md | cat"):
+            assert omi.skills_read(root, ids, cmds(bad)) == [], bad
         neg = json.dumps({"type": "item.completed", "item": {"type": "command_execution", "command": "rm /work/.omi/skills/g/omi-skill-b/SKILL.md"}})
         assert omi.skills_read(root, ids, omi.opened_files("codex", neg)) == []
     # existing 7-column table gets the new column; old rows still parse

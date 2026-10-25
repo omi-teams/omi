@@ -29,6 +29,8 @@ Review round 3 FAIL (PO: fix round 3 on opus/high), fix all, edit only `## Check
 2. In-place filter only for `sed` (`-\w*i\w*`, `--in-place*`); `grep -i`, `rg -i`, `less -i` stay reads. Catch `sed -ni`, `--in-place=.bak`. Tests.
 3. `skills_read`: match file operands of read commands only, with a path boundary (whole operand equals or ends with `/<rel>`), not a substring of the command; `grep -c omi-skill-b/SKILL.md README.md` and `cat omi-skill-b/SKILL.md.bak` do not count. Tests.
 Prefer one small tokenizer (`shlex.split`) over more regexes.
+Round 3 fixes done: read_commands rewritten on one shlex tokenizer (shell_tokens) and now returns the file operands of read commands; shells unwrapped by basename (/bin/bash -lc, /usr/bin/env bash -c); in-place filter only for sed (-\w*i, --in-place*); grep/rg/sed pattern or script and -n/-A/... values are not files; skills_read matches whole operand or `.../<rel>`. Tests for all three points (incl. negatives grep -c, .bak, xomi-skill-b, sed -ni).
+Tests: python3 tests/test_omi.py ok
 Next: review.
 
 ## Usage
@@ -40,3 +42,4 @@ Next: review.
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1911 | 64304 | 30s |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 14 | 4367 | 168226 | 55s |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 4062 | 133982 | 45s |
+| omi-agent-engineer | claude-opus-5-5 | high | 26 | 11841 | 388403 | 122s |
