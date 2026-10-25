@@ -1110,6 +1110,29 @@ def usage_totals(text):
             f"review rounds: {sum(r[0] == 'omi-agent-reviewer' for r in rows)}")
 
 
+def tree_diff(wt, since, exclude=None):
+    """`git diff <since>` of the worktree including untracked files; the real index is not touched."""
+    with tempfile.TemporaryDirectory() as d:
+        env = {**os.environ, "GIT_INDEX_FILE": str(Path(d) / "index")}
+        run = lambda *a, **kw: subprocess.run(["git", "-C", str(wt), *a], env=env, capture_output=True,  # noqa: E731
+                                              encoding="utf-8", errors="replace", **kw)
+        if run("read-tree", "HEAD").returncode == 0:
+            new = run("ls-files", "--others", "--exclude-standard", "-z").stdout or ""
+            if new:
+                run("add", "-N", "--pathspec-from-file=-", "--pathspec-file-nul", input=new)
+        return run("diff", since, *(["--", ".", f":(exclude){exclude}"] if exclude else [])).stdout or ""
+
+
+def prior_review(text):
+    """(earlier reviewer rounds, sha7 of the last one if it failed, repo paths named after the last `Review round`)."""
+    rows = [[c.strip() for c in l.strip().strip("|").split("|")] for l in text.partition("\n## Usage")[2].splitlines()
+            if l.startswith("| omi-agent-reviewer |")]
+    last = re.fullmatch(r"FAIL ([0-9a-f]{7})", rows[-1][-1]) if rows else None
+    after = re.split(r"^.*Review round.*$", text.partition("\n## Usage")[0], flags=re.M)[-1] if "Review round" in text else ""
+    after = after.split("\n## ", 1)[0]
+    return len(rows), last and last.group(1), set(re.findall(r"[\w.-]+(?:/[\w.-]+)+|[\w-]+\.\w+", after))
+
+
 def main_checkout(wt):
     common = git(wt, "rev-parse", "--path-format=absolute", "--git-common-dir")
     return Path(common).parent if common else None
@@ -1268,10 +1291,20 @@ def run_role(role, wt, task_file, model=None, effort=None, tool="claude"):
     try:
         if read:
             base = git(wt, "merge-base", "development", "HEAD") or "development"
-            patch = Path(tmp.name) / "diff.patch"
-            patch.write_text(git(wt, "diff", base) or "", encoding="utf-8")
+            full = tree_diff(wt, base)
+            rounds, sha, named = prior_review(task.read_text(encoding="utf-8") if task.exists() else "")
+            patch, note = full, "\nDiff: /review/diff.patch (read-only; git does not work in this container)"
+            if sha and rounds < 2:
+                inc = tree_diff(wt, sha, task_rel)
+                changed = set(re.findall(r"^diff --git a/.* b/(.*)$", inc, re.M))
+                if changed and changed <= named:
+                    patch = inc
+                    (Path(tmp.name) / "full.patch").write_text(full, encoding="utf-8")
+                    note = ("\nDiff: /review/diff.patch (fixes since the last reviewed commit; read-only; git does not work in this container)"
+                            "\nIncremental round: previous findings are under `## Checkpoint`; full diff at /review/full.patch only if needed")
+            (Path(tmp.name) / "diff.patch").write_text(patch, encoding="utf-8")
             mounts.append(f"{tmp.name}:/review")
-            prompt_skills += "\nDiff: /review/diff.patch (read-only; git does not work in this container)"
+            prompt_skills += note
         cmd = (engineer_cmd if tool == "claude" else codex_cmd)(text, task_rel, model, effort, prompt_skills)
         t0 = time.monotonic()
         r = subprocess.run(worker_argv(wt, image, cmd, container_name(main.name, role, task.stem, model, effort),
@@ -1283,6 +1316,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool="claude"):
         print(result if result is not None else (r.stdout or ""))
         done = skills_read(wt, ids, opened_files(tool, r.stdout))
         verdict = (verdict_of(result) or "n/a") if read else "-"
+        if read and verdict != "n/a" and git(wt, "rev-parse", "--short=7", "HEAD"):
+            verdict += " " + git(wt, "rev-parse", "--short=7", "HEAD")
         record_usage(task, role, model, effort, nums, time.monotonic() - t0, skills_cell(ids, done), verdict)
         for sid in ids:
             if sid not in done:
