@@ -5,6 +5,7 @@ import getpass
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -246,6 +247,7 @@ def github(po=False):
     prev = before[1] if before else ""
     if not prev:
         sys.exit("no active squad gh account (or gh auth status failed); log in as the squad account first. Nothing changed.")
+    repo_info()  # squad account: a private repo exits here, before the PO logs in
     try:
         r = subprocess.run(["gh", "auth", "login", "--web", "-h", "github.com"])
         now = accounts()
@@ -275,10 +277,13 @@ def github(po=False):
                 left = sorted(set(cur[0]) - set(before[0])) if cur else ["(unknown: gh auth status failed)"]
                 if left:
                     sys.exit(f"WARNING: PO credentials may still be stored in gh: {left}. Run `gh auth logout -u <login>` now, then `gh auth switch -u {prev}`.")
+                if cur[1] != prev:
+                    sys.exit(f"WARNING: the active gh account is {cur[1] or '(none)'}, not the squad account {prev}. Run `gh auth switch -u {prev}` now.")
                 print(f"active gh account: {cur[1]}")
 
 
-def apply_github():
+def repo_info():
+    """nameWithOwner via the active gh account; exits if the repo is unreadable or private."""
     r = subprocess.run(["gh", "repo", "view", "--json", "nameWithOwner,visibility", "--jq", ".nameWithOwner+\" \"+.visibility"],
                        capture_output=True, text=True)
     if r.returncode:
@@ -286,6 +291,11 @@ def apply_github():
     repo, vis = r.stdout.split()
     if vis.upper() == "PRIVATE":
         sys.exit(f"{repo} is private; rulesets need a public repo on the GitHub Free plan. Make it public (or upgrade), then rerun. Nothing changed.")
+    return repo
+
+
+def apply_github():
+    repo = repo_info()
     if not gh(f"repos/{repo}")["permissions"]["admin"]:
         sys.exit(f"the gh token has no admin on {repo}; nothing changed. Use an admin token.")
     try:
@@ -406,8 +416,8 @@ def out_of_scope(wt, tid):
             return False
         if os.path.islink(Path(wt) / p):  # host tools could follow it out of the worktree
             return True
-        if any(c.lower().startswith(".git") for c in p.split("/")) and p not in globs:
-            return True  # .gitattributes, .gitmodules, .githooks...: host git processes them; only an exact scope entry allows
+        if any(c.lower().startswith(".git") or re.fullmatch(r"(?i)git(att|mod)?~\d+", c) for c in p.split("/")) and p not in globs:
+            return True  # .gitattributes, .githooks..., and their Windows 8.3 names (GIT~1): host git processes them; only an exact scope entry allows
         return not any(PurePosixPath(p).full_match(g) for g in globs)
     return [p for p in paths if bad(p)]
 
