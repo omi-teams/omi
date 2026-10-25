@@ -1,9 +1,9 @@
 ---
 id: TASK-033
 title: Workflows - feature, feature-ui, feature-sensitive
-status: planned
+status: in-progress
 depends: TASK-032, TASK-029, TASK-030
-scope: .omi/workflows/**, src/omi/template/dot-omi/workflows/**, .omi/decisions.md
+scope: .omi/workflows/**, src/omi/template/dot-omi/workflows/**, .omi/decisions.md, src/omi/__init__.py, tests/**
 ---
 ## Goal
 The default build path and its two heavier variants.
