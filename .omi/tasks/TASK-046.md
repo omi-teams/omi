@@ -1,7 +1,7 @@
 ---
 id: TASK-046
 title: Typed omi- names for every skill, agent and workflow, enforced by the validators
-status: planned
+status: in-progress
 depends: TASK-028
 scope: .omi/skills/**, .omi/agents/**, src/omi/template/dot-omi/skills/**, src/omi/template/dot-omi/agents/**, src/omi/__init__.py, tests/test_omi.py, .claude/skills/**, src/omi/template/dot-claude/skills/**, AGENTS.md, src/omi/template/AGENTS.md, README.md, docs/**, .omi/decisions.md
 ---
