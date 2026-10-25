@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
 
@@ -319,6 +320,8 @@ def status(cwd="."):
                         print("  " + drift(m["worktree"], k))
                     for line in checkpoint(m["_text"]).splitlines():
                         print(f"  {line}")
+                if usage_totals(m["_text"]):
+                    print("  " + usage_totals(m["_text"]))
     nxt = next((k for k, m in ts.items()
                 if m.get("status", "planned") == "planned" and set(split(m.get("depends"))) <= done), None)
     print(f"next: {nxt or 'none ready'}")
@@ -674,14 +677,76 @@ def engineer_cmd(agent_text, task_rel, model=None, effort=None, skills=""):
             "--append-system-prompt", body,
             "--model", model or m.get("model", "sonnet"), "--effort", effort or m.get("effort", "medium"),
             # the container is the boundary, not prompts; project hooks (omi guard) cannot run in it
-            "--permission-mode", "bypassPermissions", "--setting-sources", "user"]
+            "--permission-mode", "bypassPermissions", "--setting-sources", "user", "--output-format", "json"]
 
 
 def codex_cmd(agent_text, task_rel, model, effort, skills=""):
     body = agent_text.split("---", 2)[2].strip() if agent_text.startswith("---") else agent_text
     # the container is the boundary; codex's own sandbox cannot nest in it
     return ["codex", "exec", "-m", model, "-c", f"model_reasoning_effort={effort}",
-            "--dangerously-bypass-approvals-and-sandbox", f"{body}\n\nTask file: /work/{task_rel}\nWorktree: /work{skills}"]
+            "--dangerously-bypass-approvals-and-sandbox", "--json", f"{body}\n\nTask file: /work/{task_rel}\nWorktree: /work{skills}"]
+
+
+USAGE_HEAD = "| role | model | effort | input | output | cache | duration |"
+
+
+def parse_usage(tool, out):
+    """(result text, input, output, cache) from harness output; numbers are None when it gave none."""
+    rows = []
+    for line in (out or "").splitlines():
+        try:
+            rows.append(json.loads(line))
+        except ValueError:
+            pass
+    if not rows and out:
+        try:
+            rows = [json.loads(out)]
+        except ValueError:
+            pass
+    rows = [r for r in rows if isinstance(r, dict)]
+    if tool == "claude":
+        r = next((r for r in reversed(rows) if isinstance(r.get("usage"), dict)), None)
+        if not r:
+            return None, None, None, None
+        u = r["usage"]
+        return (r.get("result"), u.get("input_tokens"), u.get("output_tokens"),
+                (u.get("cache_read_input_tokens") or 0) + (u.get("cache_creation_input_tokens") or 0))
+    done = [r["usage"] for r in rows if r.get("type") == "turn.completed" and isinstance(r.get("usage"), dict)]
+    text = next((r["item"].get("text") for r in reversed(rows)
+                 if isinstance(r.get("item"), dict) and r["item"].get("type") == "agent_message"), None)
+    if not done:
+        return text, None, None, None
+    return (text, sum(u.get("input_tokens") or 0 for u in done), sum(u.get("output_tokens") or 0 for u in done),
+            sum(u.get("cached_input_tokens") or 0 for u in done))
+
+
+def record_usage(task, role, model, effort, nums, seconds):
+    """Append one row to the task file's `## Usage` table (created at the end if missing)."""
+    if not task.exists():
+        return
+    cell = lambda v: "n/a" if v is None else str(v)
+    row = f"| {role} | {model} | {effort or 'n/a'} | {cell(nums[0])} | {cell(nums[1])} | {cell(nums[2])} | {round(seconds)}s |"
+    text = task.read_text(encoding="utf-8")
+    if "\n## Usage" in text:
+        head, _, rest = text.partition("\n## Usage")
+        body, sep, tail = rest.partition("\n## ")
+        text = f"{head}\n## Usage{body.rstrip()}\n{row}\n" + (f"\n## {tail}" if sep else "")
+    else:
+        text = f"{text.rstrip()}\n\n## Usage\n{USAGE_HEAD}\n|---|---|---|---|---|---|---|\n{row}\n"
+    task.write_text(text, encoding="utf-8")
+
+
+def usage_totals(text):
+    """One line for status: summed tokens over the Usage rows and reviewer rounds, or ''."""
+    _, sep, rest = text.partition("\n## Usage")
+    if not sep:
+        return ""
+    rows = [[c.strip() for c in l.strip().strip("|").split("|")] for l in rest.split("\n## ", 1)[0].splitlines()
+            if l.startswith("|") and not l.startswith("|---") and not l.startswith("| role")]
+    rows = [r for r in rows if len(r) == 7]
+    tot = [sum(int(r[i]) for r in rows if r[i].isdigit()) if any(r[i].isdigit() for r in rows) else "n/a" for i in (3, 4, 5)]
+    return (f"usage: {len(rows)} runs, in {tot[0]} out {tot[1]} cache {tot[2]}, "
+            f"review rounds: {sum(r[0] == 'reviewer' for r in rows)}")
 
 
 def main_checkout(wt):
@@ -841,10 +906,15 @@ def run_role(role, wt, task_file, model=None, effort=None, tool="claude"):
             mounts.append(f"{tmp.name}:/review")
             prompt_skills += "\nDiff: /review/diff.patch (read-only; git does not work in this container)"
         cmd = (engineer_cmd if tool == "claude" else codex_cmd)(text, task_rel, model, effort, prompt_skills)
-        rc = subprocess.run(worker_argv(wt, image, cmd, container_name(main.name, role, task.stem, model, effort),
+        t0 = time.monotonic()
+        r = subprocess.run(worker_argv(wt, image, cmd, container_name(main.name, role, task.stem, model, effort),
                                          repo_label(main), worker_labels(role, task.stem, model, effort), ro=read,
                                          mounts=mounts, env_names=(key,)),
-                            env=env, stdin=subprocess.DEVNULL).returncode
+                            env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True, errors="replace")
+        rc = r.returncode
+        result, *nums = parse_usage(tool, r.stdout)
+        print(result if result is not None else (r.stdout or ""))
+        record_usage(task, role, model, effort, nums, time.monotonic() - t0)
     finally:
         if tmp:
             tmp.cleanup()
