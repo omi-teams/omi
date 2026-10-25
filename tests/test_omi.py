@@ -61,6 +61,19 @@ def test_init_guard_status():
         assert guard(root / "README.md") == 0
 
 
+def test_github_rulesets():
+    rs = omi.rulesets()
+    dev, po = rs["omi-development"], rs["omi-po-only"]
+    assert [r["type"] for r in dev["rules"]] == ["deletion", "non_fast_forward"]
+    assert dev["bypass_actors"] == []
+    assert po["conditions"]["ref_name"]["include"] == ["refs/heads/staging", "refs/heads/main"]
+    types = {r["type"]: r for r in po["rules"]}
+    assert {"pull_request", "update", "required_status_checks"} <= set(types)
+    assert types["required_status_checks"]["parameters"]["required_status_checks"] == [{"context": "test"}]
+    assert po["bypass_actors"][0]["actor_id"] == 5
+
+
 if __name__ == "__main__":
     test_init_guard_status()
+    test_github_rulesets()
     print("ok")

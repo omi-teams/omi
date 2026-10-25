@@ -8,6 +8,7 @@
 pip install -e .          # hoặc: pipx install .
 mkdir my-app && cd my-app
 omi init                  # cài khung squad, không ghi đè file sẵn có
+omi github                # (PO, quyền admin) tạo staging + ruleset: squad chỉ merge vào development
 claude                    # rồi gõ /omi-idea, /omi-task TASK-001, /omi-status
 ```
 

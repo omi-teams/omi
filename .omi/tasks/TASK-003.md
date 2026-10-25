@@ -20,6 +20,7 @@ One command configures GitHub so the squad can merge only into `development`, an
 
 ## Checkpoint
 Unblocked: PO is making the repo public (Free plan has no rulesets on private repos) and granting admin. Running `omi github` for real is the Coordinator's step after merge.
-Not done:
-Tests:
-Next:
+Done: all criteria implemented (omi github, rulesets() pure payload builder, test, README line).
+Not done: real run against GitHub (Coordinator, after merge).
+Tests: python tests/test_omi.py ok.
+Next: merge, run omi github.
