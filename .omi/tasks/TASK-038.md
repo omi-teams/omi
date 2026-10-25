@@ -14,6 +14,8 @@ The Coordinator picks a workflow at planning time and follows it step by step.
 - [ ] Resume works: after an interruption `omi status` shows the task step and the Coordinator continues from it.
 - [ ] Template and root copies identical; `python tests/test_omi.py` passes.
 
+- [ ] Carry-over from the TASK-033 review: `omi-flow-feature-ui` "Use instead" for a UI change in a sensitive area has no actionable path; say the Coordinator runs `omi-flow-feature-sensitive` and inserts the `design` and `qa` steps.
+
 ## Checkpoint
 Done:
 Not done:
