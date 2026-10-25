@@ -21,6 +21,7 @@ USAGE = """usage: omi <command>
   status       show tasks, checkpoints and the next suggested task
   guard        Claude Code PreToolUse hook: block writes outside task scope
   github       set up branches and rulesets: squad merges to development, only the PO to staging/main
+  clean        remove this repo's worker containers and old worker images
   token set    store the `claude setup-token` value in Windows Credential Manager
   worker <wt> <task-file> [--model M] [--effort E]   run the engineer in the Docker worker
   worker <wt> --prove   run docker/prove.sh in the worker (boundary check, no token)"""
@@ -427,18 +428,50 @@ def main_checkout(wt):
     return Path(common).parent if common else None
 
 
-def ensure_image(main):
+def image_repo(main):
+    return f"omi-worker-{re.sub(r'[^a-zA-Z0-9_.-]', '-', main.name.lower())}"
+
+
+def image_tag(main):
     d = main / "docker"
     if not (d / "Dockerfile").exists():
         d = TEMPLATE / "docker"
-    tag = f"omi-worker-{re.sub(r'[^a-zA-Z0-9_.-]', '-', main.name.lower())}:" + hashlib.sha256((d / "Dockerfile").read_bytes()).hexdigest()[:12]
+    return d, f"{image_repo(main)}:" + hashlib.sha256((d / "Dockerfile").read_bytes()).hexdigest()[:12]
+
+
+def old_images(main, keep):
+    """Images of this repo's worker other than `keep`."""
+    r = subprocess.run(["docker", "images", image_repo(main), "--format", "{{.Repository}}:{{.Tag}}"],
+                       capture_output=True, text=True, errors="replace")
+    return [i for i in r.stdout.split() if i != keep and i.startswith(image_repo(main) + ":")]
+
+
+def ensure_image(main):
+    d, tag = image_tag(main)
     if subprocess.run(["docker", "image", "inspect", tag], capture_output=True).returncode:
         r = subprocess.run(["docker", "build", "-t", tag, "--label", "omi-worker=1", str(d)],
                            capture_output=True, text=True, errors="replace")
         if r.returncode:
             print(r.stdout, r.stderr, sep="\n", file=sys.stderr)
             sys.exit("docker build failed.")
+        for i in old_images(main, tag):
+            subprocess.run(["docker", "rmi", i], capture_output=True)
     return tag
+
+
+def clean(cwd="."):
+    """Remove this repo's worker containers and every worker image except the current one."""
+    main = main_checkout(cwd) or Path(cwd).resolve()
+    prefix = re.sub(r"[^a-zA-Z0-9_.-]", "-", f"omi-{main.name}-")
+    r = subprocess.run(["docker", "ps", "-a", "-q", "--filter", "label=omi-worker=1", "--filter", "name=^" + prefix.replace(".", "\\.")],
+                       capture_output=True, text=True, errors="replace")
+    ids = r.stdout.split()
+    if ids:
+        subprocess.run(["docker", "rm", "-f", *ids], capture_output=True)
+    imgs = old_images(main, image_tag(main)[1])
+    for i in imgs:
+        subprocess.run(["docker", "rmi", i], capture_output=True)
+    print(f"removed {len(ids)} container(s), {len(imgs)} image(s)")
 
 
 def out_of_scope(wt, tid):
@@ -508,6 +541,8 @@ def main(argv=None):
         status(*rest[:1])
     elif cmd == "github":
         github("--po" in rest)
+    elif cmd == "clean":
+        clean()
     elif cmd == "guard":
         sys.exit(guard())
     elif cmd == "token" and rest[:1] == ["set"]:

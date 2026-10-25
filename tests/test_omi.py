@@ -427,6 +427,45 @@ def test_container_names():
     assert "--name" not in omi.worker_argv(Path("/w"), "img", ["x"])
 
 
+def test_clean_and_old_images():
+    real, realmc = omi.subprocess.run, omi.main_checkout
+    calls = []
+
+    class R:
+        def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
+
+    with tempfile.TemporaryDirectory() as d:
+        main = Path(d) / "My Repo"
+        main.mkdir()
+        cur = omi.image_tag(main)[1]
+        repo = omi.image_repo(main)
+        assert repo == "omi-worker-my-repo"
+
+        def run(cmd, **kw):
+            calls.append(cmd)
+            if cmd[:2] == ["docker", "ps"]:
+                return R("c1\nc2\n")
+            if cmd[:2] == ["docker", "images"]:
+                return R(f"{cur}\n{repo}:old1\n{repo}:old2\nomi-worker-other:x\n")
+            if cmd[:3] == ["docker", "image", "inspect"]:
+                return R(rc=1)
+            return R()
+
+        omi.subprocess.run, omi.main_checkout = run, lambda _: main
+        try:
+            omi.clean()
+            assert ["docker", "rm", "-f", "c1", "c2"] in calls
+            assert ["docker", "rmi", f"{repo}:old1"] in calls and ["docker", "rmi", f"{repo}:old2"] in calls
+            assert ["docker", "rmi", cur] not in calls and ["docker", "rmi", "omi-worker-other:x"] not in calls
+            ps = next(c for c in calls if c[:2] == ["docker", "ps"])
+            assert "label=omi-worker=1" in ps and "name=^omi-My-Repo-" in ps
+            calls.clear()
+            assert omi.ensure_image(main) == cur
+            assert ["docker", "rmi", f"{repo}:old1"] in calls and ["docker", "rmi", cur] not in calls
+        finally:
+            omi.subprocess.run, omi.main_checkout = real, realmc
+
+
 def test_credential_manager():
     import ctypes
     store = {}
@@ -495,6 +534,7 @@ def test_template_docker():
 if __name__ == "__main__":
     test_worker()
     test_container_names()
+    test_clean_and_old_images()
     test_credential_manager()
     test_template_docker()
     test_init_guard_status()
