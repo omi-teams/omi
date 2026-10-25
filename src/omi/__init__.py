@@ -1225,7 +1225,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool="claude"):
     cur = next((s for s in get_workflow(wt, tm.get("workflow") or DEFAULT_WORKFLOW) if s["id"] == tm.get("step")), None) \
         if tm.get("step") else None
     step_ids = task_skills(cur) if cur and cur["role"] == role else []  # the current step's own skills
-    ids = list(dict.fromkeys([*task_skills(am), *task_skills(tm), *step_ids]))
+    own_ids = task_skills(tm) if am["access"] == "write" else []  # task skills are for the implementer
+    ids = list(dict.fromkeys([*task_skills(am), *own_ids, *step_ids]))
     declared = check_skills(wt, ids)  # role defaults count against the budget
     effort = effort or am.get("effort")
     model = resolve_model(main, model or am.get("model"))

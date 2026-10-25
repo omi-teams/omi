@@ -17,7 +17,12 @@ A read role (reviewer, security-reviewer, qa-tester, ...) does not get the task'
 - [ ] Tests: a read role run on a task with `skills:` gets none of them (prompt and Usage `skills read` cell), a write role still does; `python tests/test_omi.py` passes.
 
 ## Checkpoint
-Done:
+Done: run_role adds task skills only for write roles; template comment (both copies); test. Tests pass.
 Not done:
 Tests:
 Next: TASK-036
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read |
+|---|---|---|---|---|---|---|---|
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 26 | 3507 | 300248 | 172s | 1/1 omi-skill-lean-implementation |

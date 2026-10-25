@@ -575,7 +575,10 @@ def test_run_read_role():
             st["info_rc"] = 0
             d = wt / ".omi" / "skills" / "g" / "omi-skill-zz"
             d.mkdir(parents=True)
-            (d / "SKILL.md").write_text("---\ndescription: use for zz\n---\nzz")
+            (d / "SKILL.md").write_text(
+                "---\nid: omi-skill-zz\ngroup: g\ndescription: use for zz\ntokens: 1\ntools: Read\nsource_repo: r\nsource_ref: v1.0\n"
+                "source_file: f\nsource_license: MIT\nsource_use: adapt\n---\n# zz\n"
+                + "".join(f"## {h}\nx\n" for h in ("When to use", "When not to use", "Inputs", "Steps", "Outputs and evidence", "Stop and escalate", "Tools needed")))
             omi.skills_catalog(wt)
             (wt / ".omi" / "workflows").mkdir(parents=True)
             task.parent.mkdir(parents=True, exist_ok=True)
@@ -593,6 +596,13 @@ def test_run_read_role():
             calls.clear()
             omi.run_role("omi-agent-engineer", wt, task)
             assert "omi-skill-zz" not in prompt()
+            # the task's own skills go to write roles only
+            task.write_text("---\nid: TASK-001\nskills: [omi-skill-zz]\n---\n")
+            calls.clear()
+            omi.run_role("omi-agent-engineer", wt, task)
+            assert "omi-skill-zz" in prompt()
+            assert go() == 0, out.getvalue()
+            assert "omi-skill-zz" not in prompt() and not task.read_text().splitlines()[-1].endswith("/1 |"), task.read_text()
         finally:
             sys.stdout = saved
             omi.subprocess.run, omi.shutil.which, omi.main_checkout, omi.WINDOWS, tok = real
