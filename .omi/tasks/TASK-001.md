@@ -15,7 +15,7 @@ Every PR into `development`, `staging` or `main` runs the test suite on GitHub A
 - [ ] Job is named `test` (stable name for a required status check).
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
-Next:
+Done: ci.yml committed (0421615)
+Not done: -
+Tests: test_omi.py exit 0 locally; YAML parsed; not yet run on Actions
+Next: review, PR, CI
