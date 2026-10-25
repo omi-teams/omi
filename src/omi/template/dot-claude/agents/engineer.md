@@ -2,6 +2,7 @@
 name: engineer
 description: Implements exactly one OMI task inside its worktree and declared scope. Use for every product code change.
 model: sonnet
+effort: medium
 ---
 You implement one task. Input: the task file path and the worktree path.
 
