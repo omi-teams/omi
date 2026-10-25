@@ -200,6 +200,7 @@ def status(cwd="."):
     ts = tasks(root)
     if not ts:
         print("no tasks yet - run omi-idea")
+        print_workers(root)
         return
     done = {k for k, m in ts.items() if m.get("status") == "done"}
     print(f"done: {len(done)}/{len(ts)}")
@@ -216,6 +217,7 @@ def status(cwd="."):
     nxt = next((k for k, m in ts.items()
                 if m.get("status", "planned") == "planned" and set(split(m.get("depends"))) <= done), None)
     print(f"next: {nxt or 'none ready'}")
+    print_workers(root)
 
 
 def guard(stdin=None):
@@ -485,10 +487,26 @@ def token():
     return (cred_read() if WINDOWS else None) or os.environ.get(TOKEN_ENV)
 
 
-def container_name(repo, role, tid=None, now=None):
-    """omi-<repo>-<task-id>-<role>-<HHMMSS>, limited to Docker's [a-zA-Z0-9_.-]."""
+DEFAULT_MODELS = {"haiku": "claude-haiku-5-5", "sonnet": "claude-sonnet-5-5", "opus": "claude-opus-5-5"}
+
+
+def resolve_model(root, model):
+    """Full model ID for an alias from .omi/config.json "models" (PO-editable); full IDs pass through."""
+    cfg = Path(root) / ".omi" / "config.json"
+    models = DEFAULT_MODELS | (json.loads(cfg.read_text(encoding="utf-8")).get("models", {}) if cfg.exists() else {})
+    if not model:
+        sys.exit("no model: pass --model or set `model` in the engineer agent. Nothing changed.")
+    if model in models:
+        return models[model]
+    if model in models.values() or re.fullmatch(r"claude-[a-zA-Z0-9_.-]+", model):
+        return model
+    sys.exit(f"unknown model alias '{model}': add it to \"models\" in .omi/config.json. Nothing changed.")
+
+
+def container_name(repo, role, tid=None, model=None, effort=None, now=None):
+    """omi-<repo>-<task-id>-<role>-<model-id>-<effort>-<HHMMSS>, limited to Docker's [a-zA-Z0-9_.-]; model/effort `none` for prove."""
     stamp = (now or datetime.datetime.now()).strftime("%H%M%S")
-    raw = "-".join(p for p in ("omi", repo, tid, role, stamp) if p)
+    raw = "-".join(p for p in ("omi", repo, tid, role, model or "none", effort or "none", stamp) if p)
     return re.sub(r"[^a-zA-Z0-9_.-]", "-", raw)
 
 
@@ -496,17 +514,51 @@ def repo_label(main):
     return re.sub(r"[^a-zA-Z0-9_.-]", "-", main.name.lower())
 
 
-def worker_argv(wt, image, cmd, name=None, repo=None):
+def worker_argv(wt, image, cmd, name=None, repo=None, labels=None):
     """docker run argv: only the worktree is rw, its .git file ro, non-root, no caps, rootfs ro, no socket.
     The token goes in by name only (-e NAME); its value lives in the child env, never in argv."""
     wt = Path(wt)
     return ["docker", "run", "--rm", "-i", *(["--name", name] if name else []), "--label", "omi-worker=1",
             *(["--label", f"omi-repo={repo}"] if repo else []),
+            *[x for k, v in (labels or {}).items() for x in ("--label", f"{k}={v}")],
             "--user", "node", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
             "--tmpfs", "/tmp:rw,noexec,nosuid,size=256m",
             "--tmpfs", "/home/node:rw,noexec,nosuid,uid=1000,gid=1000,size=256m",
             "-e", TOKEN_ENV, "-e", "HOME=/home/node",
             "-v", f"{wt}:/work", "-v", f"{wt / '.git'}:/work/.git:ro", "-w", "/work", image, *cmd]
+
+
+def worker_labels(role, task, model, effort):
+    return {"omi-role": role, "omi-task": task or "none", "omi-model": model or "none", "omi-effort": effort or "none",
+            "omi-started": datetime.datetime.now().isoformat(timespec="seconds")}
+
+
+def running_workers(main):
+    """Rows (task, role, model, effort, started) of this repo's running worker containers; empty without docker."""
+    fmt = "\t".join("{{.Label \"%s\"}}" % k for k in ("omi-task", "omi-role", "omi-model", "omi-effort", "omi-started"))
+    try:
+        r = subprocess.run(["docker", "ps", "--filter", "label=omi-worker=1", "--filter", f"label=omi-repo={repo_label(main)}",
+                            "--format", fmt], capture_output=True, text=True, errors="replace")
+    except OSError:
+        return []
+    return [l.split("\t") for l in r.stdout.splitlines() if l.count("\t") == 4] if r.returncode == 0 else []
+
+
+def age(started):
+    try:
+        secs = int((datetime.datetime.now() - datetime.datetime.fromisoformat(started)).total_seconds())
+    except ValueError:
+        return "?"
+    h, m = divmod(max(secs, 0) // 60, 60)
+    return f"{h}h{m:02d}m" if h else f"{m}m"
+
+
+def print_workers(root):
+    rows = running_workers(main_checkout(root) or root)
+    if rows:
+        print("running workers:")
+        for task, role, model, effort, started in rows:
+            print(f"  {task} {role} {model} {effort} {age(started)}")
 
 
 def engineer_cmd(agent_text, task_rel, model=None, effort=None, skills=""):
@@ -607,19 +659,27 @@ def worker(wt, task_file=None, model=None, effort=None, prove=False):
     if not prove and not secret:
         sys.exit(f"no token: run `omi token set` (Windows) or set {TOKEN_ENV}. Nothing changed.")
     declared = [] if prove else check_skills(wt, task_skills(meta(task) if task.exists() else {}))
+    if not prove:
+        agent = main / ".claude" / "agents" / "engineer.md"
+        agent = agent if agent.exists() else TEMPLATE / "dot-claude" / "agents" / "engineer.md"
+        am = parse(agent.read_text(encoding="utf-8"))
+        effort = effort or am.get("effort")
+        if not effort:
+            sys.exit("no effort: pass --effort or set `effort` in the engineer agent. Nothing changed.")
+        model = resolve_model(main, model or am.get("model"))
     image = ensure_image(main)
     env = dict(os.environ)
     env.pop(TOKEN_ENV, None)
     if prove:
         script = main / "docker" / "prove.sh"
         script = script if script.exists() else TEMPLATE / "docker" / "prove.sh"
-        return subprocess.run(worker_argv(wt, image, ["sh", "-s"], container_name(main.name, "prove"), repo_label(main)), env=env,
+        return subprocess.run(worker_argv(wt, image, ["sh", "-s"], container_name(main.name, "prove"), repo_label(main),
+                                     worker_labels("prove", None, None, None)), env=env,
                               input=script.read_bytes().replace(b"\r\n", b"\n")).returncode
-    agent = main / ".claude" / "agents" / "engineer.md"
-    agent = agent if agent.exists() else TEMPLATE / "dot-claude" / "agents" / "engineer.md"
     cmd = engineer_cmd(agent.read_text(encoding="utf-8"), task_rel, model, effort, skill_prompt(wt, declared))
     env[TOKEN_ENV] = secret
-    rc = subprocess.run(worker_argv(wt, image, cmd, container_name(main.name, "engineer", task.stem), repo_label(main)), env=env, stdin=subprocess.DEVNULL).returncode
+    rc = subprocess.run(worker_argv(wt, image, cmd, container_name(main.name, "engineer", task.stem, model, effort),
+                                     repo_label(main), worker_labels("engineer", task.stem, model, effort)), env=env, stdin=subprocess.DEVNULL).returncode
     bad = out_of_scope(wt, task.stem)
     for p in bad:
         print(f"OUT OF SCOPE: {p}")
