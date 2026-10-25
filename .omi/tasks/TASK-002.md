@@ -18,6 +18,7 @@ Land the fixes learned from running TASK-001, so the next task runs without the 
 
 ## Checkpoint
 Done: the two prompt edits committed on `task/TASK-002` (engineer.md template + installed copy; omi-task step 6). `.gitattributes` with `* text=auto eol=lf` added.
+Done: `effort: medium` added next to `model: sonnet` in engineer.md and reviewer.md (template + installed). AGENTS.md (root + template) quota rules give per-call model + effort lines, pinning note, and Codex equivalent.
 Not done: nothing in scope.
 Tests: `python tests/test_omi.py` exit 0.
 Next: PO review and PR.
