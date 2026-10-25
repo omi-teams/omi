@@ -2,7 +2,6 @@
 name: omi-task
 description: Run one OMI task end to end - worktree, engineer in the Docker worker, review, PR, CI, merge into development.
 argument-hint: TASK-NNN
-disable-model-invocation: true
 ---
 Task: $ARGUMENTS. If empty, propose the `next` task from `python -m omi status` and wait for the PO.
 
