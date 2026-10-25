@@ -7,7 +7,7 @@ scope: src/omi/__init__.py, tests/**
 role: omi-agent-engineer
 skills: []
 workflow: omi-flow-incident
-step:
+step: hotfix
 ---
 ## Goal
 Worker containers reach the model API through the egress proxy whatever the length of the run's container name.
@@ -24,7 +24,14 @@ Worker containers reach the model API through the egress proxy whatever the leng
 - [ ] `python3 tests/test_omi.py` passes.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
+Done: `PROXY_ALIAS = "omi-proxy"`; `network connect --alias omi-proxy`; `egress` yields the alias; test with the TASK-052 container name (63 chars, proxy name 69).
+Not done: -
+Tests: python3 tests/test_omi.py ok (Windows host). Real check 2026-10-25: `egress` with the 63-char name, Claude CLI 2.1.302 `claude -p 'say ok'` with the token -> `ok`; no container or network left.
 Next: TASK-052 (resume)
+
+## Steps
+- contain started 2026-10-25 23:16
+- contain skipped 2026-10-25 23:16: contained by Coordinator: workers paused (TASK-052 engineer stopped), no merges pending; devops cannot run while the bug stands
+- diagnose started 2026-10-25 23:16
+- diagnose skipped 2026-10-25 23:16: diagnosed by Coordinator: proxy container name 69 chars > 63-char DNS label, probe with a short name answers ok
+- hotfix started 2026-10-25 23:16

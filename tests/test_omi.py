@@ -748,8 +748,11 @@ def test_network_allowlist():
     buf = io.StringIO()
     sys.stdout, saved = buf, sys.stdout
     try:
-        with real_egress(Path("/My Repo"), "n", "img", ["api.anthropic.com"]) as (net, proxy):
-            assert (net, proxy) == ("omi-net-n", "n-proxy")
+        long = omi.container_name("omi-squad2", "omi-agent-engineer", "TASK-052", "sonnet", "medium")
+        with real_egress(Path("/My Repo"), long, "img", ["api.anthropic.com"]) as (net, proxy):
+            assert (net, proxy) == (f"omi-net-{long}", "omi-proxy")  # a DNS label is at most 63 chars
+            host = omi.worker_argv(Path("/w"), "img", ["x"], long, network=net, proxy=proxy)
+            assert "HTTPS_PROXY=http://omi-proxy:3128" in host and len(f"{long}-proxy") > 63
             inside = list(calls)
     finally:
         sys.stdout = saved
@@ -759,6 +762,7 @@ def test_network_allowlist():
     assert create[-3:] == ["python3", "/proxy.py", "api.anthropic.com"] and "--read-only" in create and "--cap-drop" in create
     assert not any("TOKEN" in a or ":/work" in a for a in create) and "omi-repo=my-repo" in create
     assert [c[1] for c in inside if c[1] in ("create", "start")] == ["create", "start"]
+    assert next(c for c in inside if c[1:3] == ["network", "connect"])[3:5] == ["--alias", "omi-proxy"]
     assert any(c[1:3] == ["network", "connect"] for c in inside)
     assert calls[-2][1:3] == ["rm", "-f"] and calls[-1][1:3] == ["network", "rm"]
     assert buf.getvalue().count("NETWORK BLOCKED: example.com:443 - add to \"network_allow\" in .omi/config.json") == 1
