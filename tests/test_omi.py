@@ -56,11 +56,11 @@ def test_init_guard_status():
         (wt / ".omi" / "tasks" / "TASK-001.md").write_text(
             "---\ntitle: A\nstatus: in-progress\nscope: **\n---\n## Checkpoint\nNext: wire it\n")
         assert guard(wt / "README.md") == 2, "self-widened scope"
-        assert guard(wt / "src" / "ok.py", "engineer") == 0
-        assert guard(wt / ".claude" / "settings.json", "engineer") == 2
-        assert guard(root / "src" / "x.py", "engineer") == 2, "engineer writing to main checkout"
+        assert guard(wt / "src" / "ok.py", "omi-agent-engineer") == 0
+        assert guard(wt / ".claude" / "settings.json", "omi-agent-engineer") == 2
+        assert guard(root / "src" / "x.py", "omi-agent-engineer") == 2, "engineer writing to main checkout"
         with tempfile.TemporaryDirectory() as other:
-            assert guard(Path(other) / "x.py", "engineer") == 2, "engineer writing to a non-git dir"
+            assert guard(Path(other) / "x.py", "omi-agent-engineer") == 2, "engineer writing to a non-git dir"
             assert guard(Path(other) / "x.py") == 0, "no agent identity: as before"
             assert guard(Path(other) / ".claude" / "settings.json") == 2, "user-level config"
         git(root, "branch", "task/TASK-099")
@@ -385,9 +385,9 @@ def test_worker():
             assert c[c.index("--permission-mode") + 1] == "bypassPermissions"
             assert "/work/.omi/tasks/TASK-001.md" in c[2] and "Checkpoint" in c[c.index("--append-system-prompt") + 1]
             name = argv[argv.index("--name") + 1]
-            assert re.fullmatch(r"omi-.+-TASK-001-engineer-claude-sonnet-5-5-medium-\d{6}", name), name
+            assert re.fullmatch(r"omi-.+-TASK-001-omi-agent-engineer-claude-sonnet-5-5-medium-\d{6}", name), name
             lab = [argv[i + 1] for i, a in enumerate(argv) if a == "--label"]
-            for k, v in (("omi-role", "engineer"), ("omi-task", "TASK-001"), ("omi-model", "claude-sonnet-5-5"), ("omi-effort", "medium")):
+            for k, v in (("omi-role", "omi-agent-engineer"), ("omi-task", "TASK-001"), ("omi-model", "claude-sonnet-5-5"), ("omi-effort", "medium")):
                 assert f"{k}={v}" in lab, lab
             assert any(l.startswith("omi-started=") for l in lab) and "omi-worker=1" in lab
             go(effort="high")
@@ -467,8 +467,8 @@ def test_roles():
             sys.stdout = saved
         assert not (root / ".claude" / "agents").exists()
         cat = (root / ".omi" / "agents" / "CATALOG.md").read_text()
-        assert "- engineer (write, sonnet/medium):" in cat and "- reviewer (read, sonnet/medium):" in cat
-        assert omi.get_role(root, "reviewer")["access"] == "read"
+        assert "- omi-agent-engineer (write, sonnet/medium):" in cat and "- omi-agent-reviewer (read, sonnet/medium):" in cat
+        assert omi.get_role(root, "omi-agent-reviewer")["access"] == "read"
         try:
             omi.get_role(root, "ghost")
         except SystemExit as e:
@@ -482,9 +482,18 @@ def test_roles():
         else:
             raise AssertionError("unknown task role accepted")
         assert omi.task_skill_ids(root, {"skills": "[a]"}) == ["a"]
-        (root / ".omi" / "agents" / "reviewer.md").write_text("---\nrole: reviewer\nmodel: sonnet\neffort: low\naccess: read\n"
+        (root / ".omi" / "agents" / "omi-agent-reviewer.md").write_text("---\nrole: omi-agent-reviewer\nmodel: sonnet\neffort: low\naccess: read\n"
                                                            "skills: [x, a]\nsummary: s\n---\nbody")
-        assert omi.task_skill_ids(root, {"role": "reviewer", "skills": "[a, b]"}) == ["x", "a", "b"]
+        assert omi.task_skill_ids(root, {"role": "omi-agent-reviewer", "skills": "[a, b]"}) == ["x", "a", "b"]
+        (root / ".omi" / "agents" / "reviewer.md").write_text("---\nrole: reviewer\nmodel: sonnet\neffort: low\naccess: read\n"
+                                                           "skills: []\nsummary: s\n---\nbody")
+        try:
+            omi.load_roles(root)
+        except SystemExit as e:
+            assert "must start with `omi-agent-`" in str(e) or "differs from file name" in str(e), str(e)
+        else:
+            raise AssertionError("role without omi-agent- prefix accepted")
+        (root / ".omi" / "agents" / "reviewer.md").unlink()
         assert "tests/test_omi.py" not in omi.test_command(root, root)[-1]
     a = omi.codex_cmd("---\n---\nbody", "t.md", "claude-sonnet-5-5", "low")
     assert a[:6] == ["codex", "exec", "-m", "claude-sonnet-5-5", "-c", "model_reasoning_effort=low"] and "/work/t.md" in a[-1]
@@ -531,19 +540,19 @@ def test_run_read_role():
                 st.update(info_rc=0)
                 st.update(kw)
                 try:
-                    return omi.run_role("reviewer", wt, task)
+                    return omi.run_role("omi-agent-reviewer", wt, task)
                 except SystemExit as e:
                     return str(e)
 
             assert go() == 0
             argv = docker_runs()[0][0]
             assert f"{wt}:/work:ro" in argv and f"{wt}:/work" not in argv, "read role must mount the worktree ro"
-            assert f"{wt / '.git'}:/work/.git:ro" in argv and "omi-role=reviewer" in argv
+            assert f"{wt / '.git'}:/work/.git:ro" in argv and "omi-role=omi-agent-reviewer" in argv
             assert any(a.endswith(":/review:ro") for a in argv) and "Diff: /review/diff.patch" in argv[argv.index("claude") + 2]
             assert "bypassPermissions" in argv  # the ro mount, not prompts, is the boundary
             # the write role keeps a rw mount
             calls.clear()
-            omi.run_role("engineer", wt, task)
+            omi.run_role("omi-agent-engineer", wt, task)
             assert f"{wt}:/work" in docker_runs()[0][0]
             # a failing check blocks the role: no container, failure reported
             for kw, word in (({"tests_rc": 1}, "tests failed"), ({"extra": "docs/x.md\0"}, "outside scope: docs/x.md")):
@@ -563,8 +572,8 @@ def test_run_read_role():
 def test_container_names():
     import datetime
     t = datetime.datetime(2026, 1, 1, 14, 32, 5)
-    assert omi.container_name("omi-squad2", "engineer", "TASK-018", "claude-sonnet-5-5", "high", t) == \
-        "omi-omi-squad2-TASK-018-engineer-claude-sonnet-5-5-high-143205"
+    assert omi.container_name("omi-squad2", "omi-agent-engineer", "TASK-018", "claude-sonnet-5-5", "high", t) == \
+        "omi-omi-squad2-TASK-018-omi-agent-engineer-claude-sonnet-5-5-high-143205"
     assert omi.container_name("my repo", "prove", now=t) == "omi-my-repo-prove-none-none-143205"
     with tempfile.TemporaryDirectory() as d:
         assert omi.resolve_model(d, "opus") == "claude-opus-5-5" and omi.resolve_model(d, "claude-x-1") == "claude-x-1"
@@ -575,14 +584,14 @@ def test_container_names():
                 assert bad is None or bad in str(e)
             else:
                 raise AssertionError(bad)
-    labels = omi.worker_labels("engineer", "TASK-1", "m", "low")
+    labels = omi.worker_labels("omi-agent-engineer", "TASK-1", "m", "low")
     a = omi.worker_argv(Path("/w"), "img", ["x"], "n", "r", labels)
-    assert "omi-model=m" in a and "omi-effort=low" in a and "omi-task=TASK-1" in a and "omi-role=engineer" in a
+    assert "omi-model=m" in a and "omi-effort=low" in a and "omi-task=TASK-1" in a and "omi-role=omi-agent-engineer" in a
     # status lists running workers (docker mocked); nothing when none
     import datetime as dt
     started = (dt.datetime.now() - dt.timedelta(minutes=75)).isoformat(timespec="seconds")
     real_run = omi.subprocess.run
-    rows = {"out": f"TASK-9\tengineer\tclaude-opus-5-5\thigh\t{started}\n"}
+    rows = {"out": f"TASK-9\tomi-agent-engineer\tclaude-opus-5-5\thigh\t{started}\n"}
     omi.subprocess.run = lambda cmd, **kw: type("R", (), {"stdout": rows["out"], "returncode": 0})()
     buf = io.StringIO()
     sys.stdout, saved = buf, sys.stdout
@@ -596,7 +605,7 @@ def test_container_names():
     finally:
         sys.stdout = saved
         omi.subprocess.run = real_run
-    assert "TASK-9 engineer claude-opus-5-5 high 1h15m" in shown and none == "", (shown, none)
+    assert "TASK-9 omi-agent-engineer claude-opus-5-5 high 1h15m" in shown and none == "", (shown, none)
     argv = omi.worker_argv(Path("/w"), "img", ["x"], "n1")
     assert argv[argv.index("--name") + 1] == "n1"
     assert "--name" not in omi.worker_argv(Path("/w"), "img", ["x"])
@@ -785,7 +794,7 @@ def test_skills():
 
 def test_skills_check():
     good = """---
-id: demo
+id: omi-skill-demo
 group: g
 description: Use when demoing.
 tokens: 300
@@ -799,7 +808,7 @@ source_use: rewrite
 """ + "".join(f"## {h}\n- x\n" for h in omi.SKILL_SECTIONS)
     with tempfile.TemporaryDirectory() as t:
         root = Path(t)
-        d = root / ".omi" / "skills" / "g" / "demo"
+        d = root / ".omi" / "skills" / "g" / "omi-skill-demo"
         d.mkdir(parents=True)
 
         def run(text):
@@ -821,7 +830,7 @@ source_use: rewrite
             (good.replace("v1.0", "main"), "source_ref"),
             (good.replace("v1.0", "HEAD"), "source_ref"),
             (good.replace("v1.0", "v1"), "source_ref"),
-            (good.replace("id: demo", "id: other"), "differs from directory"),
+            (good.replace("id: omi-skill-demo", "id: other"), "differs from directory"),
             (good.replace("group: g", "group: x"), "group"),
             (good.replace("## steps", "## plan"), "missing section `steps`"),
             (good.replace("tools: Read", "tools: Read\nallowed-tools: Bash"), "widen"),
@@ -829,8 +838,17 @@ source_use: rewrite
             (good + "x" * 8100, "per skill"),
         ]:
             out = run(text)
-            assert "demo:" in out and word in out, (word, out)
-    ws = Path(__file__).parent.parent / ".omi" / "skills" / "authoring" / "write-skill"
+            assert "omi-skill-demo:" in out and word in out, (word, out)
+        bare = root / ".omi" / "skills" / "g" / "demo"
+        bare.mkdir()
+        (bare / "SKILL.md").write_text(good.replace("omi-skill-demo", "demo"))
+        try:
+            omi.check_all_skills(root)
+        except SystemExit as e:
+            assert "must start with `omi-skill-`" in str(e), str(e)
+        else:
+            raise AssertionError("skill id without omi-skill- prefix accepted")
+    ws = Path(__file__).parent.parent / ".omi" / "skills" / "authoring" / "omi-skill-write-skill"
     assert not ws.exists() or omi.validate_skill(ws, 2000) == []
 
 
@@ -848,12 +866,12 @@ def test_usage():
     with tempfile.TemporaryDirectory() as d:
         task = Path(d) / "TASK-001.md"
         task.write_text("---\nid: TASK-001\n---\n## Checkpoint\nDone: x\n", encoding="utf-8")
-        omi.record_usage(task, "engineer", "sonnet", "medium", (10, 20, 105), 3.2)
-        omi.record_usage(task, "reviewer", "opus", "high", (None, None, None), 1)
-        omi.record_usage(task, "reviewer", "opus", "high", (1, 2, 3), 1)
+        omi.record_usage(task, "omi-agent-engineer", "sonnet", "medium", (10, 20, 105), 3.2)
+        omi.record_usage(task, "omi-agent-reviewer", "opus", "high", (None, None, None), 1)
+        omi.record_usage(task, "omi-agent-reviewer", "opus", "high", (1, 2, 3), 1)
         text = task.read_text(encoding="utf-8")
-        assert text.count("## Usage") == 1 and "| engineer | sonnet | medium | 10 | 20 | 105 | 3s |" in text
-        assert "| reviewer | opus | high | n/a | n/a | n/a | 1s |" in text
+        assert text.count("## Usage") == 1 and "| omi-agent-engineer | sonnet | medium | 10 | 20 | 105 | 3s |" in text
+        assert "| omi-agent-reviewer | opus | high | n/a | n/a | n/a | 1s |" in text
         assert omi.checkpoint(text) == "Done: x"
         assert omi.usage_totals(text) == "usage: 3 runs, in 11 out 22 cache 108, review rounds: 2"
     assert omi.usage_totals("## Goal\n") == ""
@@ -882,18 +900,31 @@ def test_usage():
         omi.os.environ[omi.TOKEN_ENV] = "tok"
         sys.stdout, saved = io.StringIO(), sys.stdout
         try:
-            omi.run_role("engineer", wt, task)
+            omi.run_role("omi-agent-engineer", wt, task)
         finally:
             sys.stdout = saved
             omi.subprocess.run, omi.shutil.which, omi.main_checkout, tok = real
             omi.os.environ.pop(omi.TOKEN_ENV, None)
             if tok is not None:
                 omi.os.environ[omi.TOKEN_ENV] = tok
-        assert "| engineer |" in task.read_text(encoding="utf-8") and "| 10 | 20 | 105 |" in task.read_text(encoding="utf-8")
+        assert "| omi-agent-engineer |" in task.read_text(encoding="utf-8") and "| 10 | 20 | 105 |" in task.read_text(encoding="utf-8")
+
+
+def test_git_non_ascii():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        (root / "README.md").write_text("ASCII\n", encoding="utf-8")
+        git(root, "add", "README.md")
+        git(root, "commit", "-q", "-m", "init")
+        (root / "README.md").write_text("ASCII\nTiếng Việt có dấu\n", encoding="utf-8")
+        diff = omi.git(root, "diff")
+        assert diff is not None and "Tiếng Việt có dấu" in diff, "git() must decode UTF-8 output"
 
 
 if __name__ == "__main__":
     test_usage()
+    test_git_non_ascii()
     test_skills()
     test_skills_check()
     test_worker()

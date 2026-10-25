@@ -38,7 +38,7 @@ TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"
 
 
 def git(cwd, *args):
-    r = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True)
+    r = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, encoding="utf-8", errors="replace")
     return r.stdout.strip() if r.returncode == 0 else None
 
 
@@ -118,6 +118,8 @@ def validate_skill(d, cap):
     errs = [f"missing frontmatter `{k}`" for k in SKILL_KEYS if not m.get(k)]
     if m.get("id") and m["id"] != d.name:
         errs.append(f"id `{m['id']}` differs from directory `{d.name}`")
+    if d.name and not d.name.startswith("omi-skill-"):
+        errs.append(f"id `{d.name}` must start with `omi-skill-`")
     if m.get("group") and m["group"] != d.parent.name:
         errs.append(f"group `{m['group']}` differs from directory `{d.parent.name}`")
     if m.get("source_use") and m["source_use"] not in SKILL_USES:
@@ -168,7 +170,7 @@ def check_skills(root, ids):
     listed = set(re.findall(r"^- (\S+) ", cat.read_text(encoding="utf-8"), re.M)) if cat.exists() else set()
     for sid in ids:
         if sid not in dirs:
-            sys.exit(f"unknown skill {sid}: no .omi/skills/<group>/{sid}/SKILL.md")
+            sys.exit(f"unknown skill {sid}: no .omi/skills/<group>/{sid}/SKILL.md (skill ids start with omi-skill-)")
         if sid not in listed:
             sys.exit(f"skill {sid} is missing from the catalog; run `python -m omi skills`")
     lim = skill_limits(root)
@@ -210,6 +212,8 @@ def load_roles(root):
         errs = [f"missing `{k}`" for k in ROLE_KEYS if k not in m or (k != "skills" and not m[k])]
         if m.get("role") and m["role"] != f.stem:
             errs.append(f"role `{m['role']}` differs from file name")
+        if not f.stem.startswith("omi-agent-"):
+            errs.append(f"role `{f.stem}` must start with `omi-agent-`")
         if m.get("access") not in (None, "write", "read"):
             errs.append("access is not write|read")
         if errs:
@@ -221,7 +225,7 @@ def load_roles(root):
 def get_role(root, role):
     roles = load_roles(root)
     if role not in roles:
-        sys.exit(f"unknown role `{role}`: known roles are {', '.join(roles)}. Nothing changed.")
+        sys.exit(f"unknown role `{role}`: role names start with omi-agent-; known roles are {', '.join(roles)}. Nothing changed.")
     return roles[role]
 
 
@@ -238,7 +242,7 @@ def agents_catalog(root):
 
 def task_skill_ids(root, m):
     """The task's role default skills plus its own `skills:`, without duplicates; the role must exist."""
-    role = get_role(root, m.get("role") or "engineer")
+    role = get_role(root, m.get("role") or "omi-agent-engineer")
     return list(dict.fromkeys([*task_skills(role), *task_skills(m)]))
 
 
@@ -340,7 +344,7 @@ def guard(stdin=None):
     d = path.parent
     while not d.exists() and d != d.parent:
         d = d.parent
-    engineer = data.get("agent_type") == "engineer"  # subagents share the session cwd; only the payload tells
+    engineer = data.get("agent_type") == "omi-agent-engineer"  # subagents share the session cwd; only the payload tells
     top = git(d, "rev-parse", "--show-toplevel")
     root = Path(top).resolve() if top else None
     branch = (git(d, "rev-parse", "--abbrev-ref", "HEAD") or "") if top else ""
@@ -603,7 +607,7 @@ def resolve_model(root, model):
     cfg = Path(root) / ".omi" / "config.json"
     models = DEFAULT_MODELS | (json.loads(cfg.read_text(encoding="utf-8")).get("models", {}) if cfg.exists() else {})
     if not model:
-        sys.exit("no model: pass --model or set `model` in the engineer agent. Nothing changed.")
+        sys.exit("no model: pass --model or set `model` in the omi-agent-engineer agent. Nothing changed.")
     if model in models:
         return models[model]
     if model in models.values() or re.fullmatch(r"claude-[a-zA-Z0-9_.-]+", model):
@@ -746,7 +750,7 @@ def usage_totals(text):
     rows = [r for r in rows if len(r) == 7]
     tot = [sum(int(r[i]) for r in rows if r[i].isdigit()) if any(r[i].isdigit() for r in rows) else "n/a" for i in (3, 4, 5)]
     return (f"usage: {len(rows)} runs, in {tot[0]} out {tot[1]} cache {tot[2]}, "
-            f"review rounds: {sum(r[0] == 'reviewer' for r in rows)}")
+            f"review rounds: {sum(r[0] == 'omi-agent-reviewer' for r in rows)}")
 
 
 def main_checkout(wt):
@@ -807,7 +811,7 @@ def out_of_scope(wt, tid, committed=False):
     shown = git(wt, "show", f"development:.omi/tasks/{tid}.md")
     globs = split(parse(shown).get("scope")) if shown else []
     r = subprocess.run(["git", "-C", str(wt), "status", "--porcelain", "-z", "-uall", "--no-renames"],
-                       capture_output=True, text=True)
+                       capture_output=True, encoding="utf-8", errors="replace")
     paths = [e[3:] for e in r.stdout.split("\0") if e]
     if committed:
         d = subprocess.run(["git", "-C", str(wt), "diff", "--name-only", "-z", "--no-renames", "development...HEAD"],
@@ -880,7 +884,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool="claude"):
         sys.exit(f"no token: run `omi token set` (Windows) or set {key}. Nothing changed.")
     tm = meta(task) if task.exists() else {}
     am = get_role(main, role)
-    get_role(main, tm.get("role") or "engineer")  # unknown task role fails too
+    get_role(main, tm.get("role") or "omi-agent-engineer")  # unknown task role fails too
     declared = check_skills(wt, list(dict.fromkeys([*task_skills(am), *task_skills(tm)])))  # role defaults count against the budget
     effort = effort or am.get("effort")
     model = resolve_model(main, model or am.get("model"))
@@ -928,7 +932,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool="claude"):
 
 def worker(wt, task_file=None, model=None, effort=None, prove=False):
     if not prove:
-        return run_role("engineer", wt, task_file, model, effort)
+        return run_role("omi-agent-engineer", wt, task_file, model, effort)
     wt = Path(wt).resolve()
     main = main_checkout(wt)
     if not main or not (wt / ".git").is_file():
