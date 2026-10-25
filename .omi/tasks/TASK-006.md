@@ -20,3 +20,4 @@ Done: Dockerfile, run.sh, prove.sh, docs/spikes/docker.md. Boundary checks all P
 Not done: live `claude` auth check (needs PO token); terms-of-use check. Go/no-go: pending live auth check.
 Tests: prove.sh all PASS.
 Next: PO runs the steps in docs/spikes/docker.md.
+Fix round 1 done: ro nested .git bind + prove check (PASS in container), bypassPermissions step, PowerShell steps, safe cleanup, claude-code pinned 2.1.302, token exposure line. Still pending: PO live check.

@@ -3,6 +3,7 @@
 ok(){ if eval "$2" >/dev/null 2>&1; then echo "FAIL $1"; else echo "PASS $1 (blocked)"; fi; }
 if echo x > /work/inside.txt; then echo "PASS write inside worktree"; else echo "FAIL write inside"; fi
 ok "write to /" "echo x > /evil"
+ok "overwrite /work/.git (ro nested mount)" "echo x > /work/.git"
 ok "write via ../" "echo x > /work/../evil"
 ok "write to /usr" "echo x > /usr/evil"
 ok "write main checkout" "echo x > /e/Github/Orgs/omi-teams/omi-squad2/evil"
