@@ -1,7 +1,7 @@
 ---
 id: TASK-048
 title: Run tasks through their workflow steps with step skills
-status: in-progress
+status: done
 depends: TASK-033, TASK-047
 scope: src/omi/__init__.py, tests/**, .claude/skills/omi-task/**, src/omi/template/**
 role: omi-agent-engineer
@@ -33,3 +33,4 @@ Next: TASK-036 (first task run through its workflow)
 |---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 34 | 7236 | 643285 | 138s | 1/1 omi-skill-lean-implementation |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 2662 | 237405 | 37s | 1/1 omi-skill-lean-implementation |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1898 | 97647 | 27s | 1/1 omi-skill-lean-implementation |
