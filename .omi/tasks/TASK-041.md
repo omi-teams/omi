@@ -16,6 +16,8 @@ After a failed review, the next round gets only the fixes and the previous findi
 
 - [ ] The review diff includes files the engineer added but did not stage (`git add -N`) or the docs state that the diff must be committed first.
 
+- [ ] Also fix from the TASK-040 review: when the harness JSON has `usage` but no `result`, `omi run` prints the raw output instead of `None`.
+
 ## Checkpoint
 Done:
 Not done:
