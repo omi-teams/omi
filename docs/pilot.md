@@ -42,3 +42,9 @@ Outside the pilot session, the PO created the GitHub repo (the squad may not cre
 | 3 | The Coordinator runs on the session default model (opus here), the largest cost by far. | TASK-014 (PO decides the default) |
 | 4 | `omi github --po` prints the switch-back line twice (`gh auth logout` already switches). Cosmetic. | TASK-014 |
 | 5 | The PO created the repo as private; on the Free plan rulesets need a public repo, so the PO had to be told to switch. | TASK-014: `omi github` checks visibility first |
+| 6 | The ruleset required a check named `test`, but the matrix CI reports `test (ubuntu-latest)` and the other OS variants, so the gate could never pass and the PO had to bypass it. | TASK-018: `omi github` takes the names from the latest check runs on `development`; with none yet it requires nothing |
+| 7 | CI runs twice per PR (`push` and `pull_request` on task branches). | Noted; not changed |
+
+## UAT and acceptance
+
+The Coordinator did the UAT of the release candidate. The PO accepted it by merging the staging and main PRs with the admin bypass (because of problem 6).

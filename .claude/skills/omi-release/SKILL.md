@@ -1,10 +1,10 @@
 ---
 name: omi-release
 description: Prepare a UAT release - rc tag, development -> staging PR, then staging -> main PR. The PO only tests and merges.
-argument-hint: "[promote]"
+argument-hint: "[promote|tag]"
 disable-model-invocation: true
 ---
-Phase: $ARGUMENTS. Empty = phase 1 (candidate). `promote` = phase 2 (staging -> main).
+Phase: $ARGUMENTS. Empty = phase 1 (candidate). `promote` = phase 2 (staging -> main). `tag` = phase 3 (after the PO merges staging -> main).
 
 Never merge into staging or main (ruleset `omi-po-only`: only admin merges). Open the PR and stop. The PO must merge promotion PRs with "Create a merge commit", never squash or rebase, or staging/main diverge from development and the next release range and the revert-merge rollback break. Deploy is out of scope (stack-specific).
 
@@ -27,4 +27,10 @@ Phase 2 - promote:
 1. `git fetch origin --tags`. Run `gh pr list --base staging --state all --limit 1 --json state,body`. Require `state == "MERGED"`; read `<rc>` from the body. Also require `git log origin/main..origin/staging` to be non-empty. Otherwise report why and stop.
 2. Run `gh pr list --base main --state open`. If any is open, report it and stop.
 3. `gh pr create --base main --head staging --title "release: <rc>" --body-file <file>`. The body points to the same `<rc>`, reuses the release notes and rollback plan, tells the PO (Vietnamese) to choose "Create a merge commit", and states that staging was accepted by the PO.
-4. Report the PR URL in at most 3 lines and stop. The PO merges it.
+4. Report the PR URL in at most 3 lines and stop. The PO merges it, then tells you to run `/omi-release tag`.
+
+Phase 3 - tag (run after the PO merges staging -> main):
+1. `git fetch origin --tags`. Require `git diff --quiet origin/main origin/staging` (origin/main's tree equals the candidate's, ignoring merge commits). Otherwise report the mismatch and stop.
+2. Set `<v>` = `v<YYYY.MM.DD>` (today). If `git ls-remote --tags origin <v>` shows it, use `<v>.2`, `<v>.3`, ... the first one that does not exist.
+3. `git tag <v> origin/main` then `git push origin <v>`. Never move, force-push or delete an existing tag.
+4. Report `<v>` in one line and stop.

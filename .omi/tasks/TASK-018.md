@@ -16,7 +16,7 @@ In the pilot, staging/main required a check named `test`, but the matrix CI repo
 - [ ] Tests cover the name discovery with `gh` stubbed.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
-Next:
+Done: all criteria (ci_checks + rulesets(checks) in src/omi/__init__.py, omi-release phase 3 tag in both copies, docs/pilot.md, test_ci_checks_and_apply).
+Not done: none.
+Tests: python3 tests/test_omi.py passes.
+Next: Coordinator review and commit.

@@ -111,14 +111,72 @@ def test_github_rulesets():
     assert dev["bypass_actors"] == []
     assert po["conditions"]["ref_name"]["include"] == ["refs/heads/staging", "refs/heads/main"]
     types = {r["type"]: r for r in po["rules"]}
-    assert {"pull_request", "update", "required_status_checks"} <= set(types)
-    assert types["required_status_checks"]["parameters"]["required_status_checks"] == [{"context": "test"}]
+    assert {"pull_request", "update"} <= set(types) and "required_status_checks" not in types
+    po = omi.rulesets(["test (ubuntu-latest)", "test (macos-latest)"])["omi-po-only"]
+    types = {r["type"]: r for r in po["rules"]}
+    assert types["required_status_checks"]["parameters"]["required_status_checks"] == [
+        {"context": "test (ubuntu-latest)"}, {"context": "test (macos-latest)"}]
     assert po["bypass_actors"][0]["actor_id"] == 5
 
     tags = rs["omi-tags"]
     assert tags["target"] == "tag" and tags["bypass_actors"] == po["bypass_actors"]
     assert tags["conditions"]["ref_name"]["include"] == ["refs/tags/rc-*", "refs/tags/v*"]
     assert sorted(r["type"] for r in tags["rules"]) == ["deletion", "update"]  # no "creation": squad can tag
+
+
+def test_ci_checks_and_apply():
+    real_run, real_gh, real_info = omi.subprocess.run, omi.gh, omi.repo_info
+    st = {"runs": [{"name": "test (ubuntu-latest)"}, {"name": "test (windows-latest)"}, {"name": "test (ubuntu-latest)"}],
+          "live": None, "puts": []}
+
+    def fake(*a, body=None):
+        u = a[-1]
+        if body is not None and a[1] == "PUT":
+            st["live"] = body
+            st["puts"].append(body)
+            return None
+        if "check-runs" in u:
+            return {"check_runs": st["runs"]}
+        if u.endswith("/rulesets"):
+            return [{"name": "omi-po-only", "id": 1}] if st["live"] else []
+        if u.endswith("/rulesets/1"):
+            return st["live"]
+        if "git/ref" in u:
+            return {"object": {"sha": "x"}}
+        if body is not None:
+            return None
+        return {"permissions": {"admin": True}}
+
+    omi.gh, omi.repo_info = fake, lambda: "o/r"
+    try:
+        assert omi.ci_checks("o/r") == ["test (ubuntu-latest)", "test (windows-latest)"]
+        st["runs"] = []
+        assert omi.ci_checks("o/r") == []
+        omi.gh = lambda *a, **k: (_ for _ in ()).throw(SystemExit("404"))
+        assert omi.ci_checks("o/r") == []
+        omi.gh = fake
+        import contextlib, io
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            omi.apply_github()
+        assert "no CI check runs" in out.getvalue()
+        st["live"] = omi.rulesets()["omi-po-only"]  # no required checks stored
+        st["runs"] = [{"name": "test (ubuntu-latest)"}]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            omi.apply_github()
+        assert "update ruleset omi-po-only" in out.getvalue() and len(st["puts"]) == 1
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            omi.apply_github()
+        assert "unchanged ruleset omi-po-only" in out.getvalue()
+        st["runs"] = [{"name": "test (ubuntu-latest)"}, {"name": "test (macos-latest)"}]
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            omi.apply_github()
+        assert "update ruleset omi-po-only" in out.getvalue()
+    finally:
+        omi.subprocess.run, omi.gh, omi.repo_info = real_run, real_gh, real_info
 
 
 def test_same_and_no_gh():
@@ -413,6 +471,7 @@ if __name__ == "__main__":
     test_template_docker()
     test_init_guard_status()
     test_github_rulesets()
+    test_ci_checks_and_apply()
     test_same_and_no_gh()
     test_github_po()
     test_github_private()

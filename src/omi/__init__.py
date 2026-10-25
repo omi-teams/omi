@@ -187,8 +187,8 @@ def guard(stdin=None):
     return 2
 
 
-def rulesets():
-    """{name: payload} of the GitHub rulesets omi github applies."""
+def rulesets(checks=()):
+    """{name: payload} of the GitHub rulesets omi github applies; checks = required check-run names."""
     def ruleset(name, refs, rules, bypass, target="branch"):
         kind = "heads" if target == "branch" else "tags"
         return {"name": name, "target": target, "enforcement": "active", "bypass_actors": bypass,
@@ -198,12 +198,13 @@ def rulesets():
     pr = {"required_approving_review_count": 0, "dismiss_stale_reviews_on_push": False,
           "require_code_owner_review": False, "require_last_push_approval": False,
           "required_review_thread_resolution": False}
-    checks = {"required_status_checks": [{"context": "test"}], "strict_required_status_checks_policy": False}
+    status = [("required_status_checks", {"required_status_checks": [{"context": c} for c in checks],
+                                           "strict_required_status_checks_policy": False})] if checks else []
     return {r["name"]: r for r in (
         ruleset("omi-development", ["development"], [("deletion", None), ("non_fast_forward", None)], []),
         ruleset("omi-po-only", ["staging", "main"],
                 [("deletion", None), ("non_fast_forward", None), ("update", None),
-                 ("pull_request", pr), ("required_status_checks", checks)], admin),
+                 ("pull_request", pr), *status], admin),
         # creating rc-* tags stays allowed (omi-release); moving or deleting them is admin only
         ruleset("omi-tags", ["rc-*", "v*"], [("update", None), ("deletion", None)], admin, "tag"))}
 
@@ -214,6 +215,15 @@ def gh(*args, body=None):
     if r.returncode:
         sys.exit(f"gh api {' '.join(args)} failed: {r.stderr.strip() or r.stdout.strip()}")
     return json.loads(r.stdout) if r.stdout.strip() else None
+
+
+def ci_checks(repo):
+    """Sorted check-run names of the latest commit on development ([] if none yet)."""
+    try:
+        runs = gh(f"repos/{repo}/commits/development/check-runs?per_page=100")["check_runs"]
+    except SystemExit:  # no development branch or no access: same as no CI yet
+        return []
+    return sorted({c["name"] for c in runs})
 
 
 def same(live, want):
@@ -305,8 +315,11 @@ def apply_github():
         sha = gh(f"repos/{repo}/git/ref/heads/main")["object"]["sha"]
         gh("-X", "POST", f"repos/{repo}/git/refs", body={"ref": "refs/heads/staging", "sha": sha})
         print("create branch staging (from main)")
+    checks = ci_checks(repo)
+    print(f"checks  required on staging/main: {', '.join(checks)}" if checks else
+          "no CI check runs on development yet; staging/main get no required checks. Rerun omi github after CI has run.")
     existing = {x["name"]: x["id"] for x in gh(f"repos/{repo}/rulesets")}
-    for name, payload in rulesets().items():
+    for name, payload in rulesets(checks).items():
         if name in existing:
             if same(gh(f"repos/{repo}/rulesets/{existing[name]}"), {k: v for k, v in payload.items() if k != "name"}):
                 print(f"unchanged ruleset {name}")
