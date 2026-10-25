@@ -16,5 +16,6 @@ Run the full journey on a real product idea and measure the cost: PO interventio
 ## Checkpoint
 Done: PO chose `split-bill` (Python CLI that splits a group bill). Pilot repo: E:/Github/Orgs/omi-teams/omi-pilot-splitbill, GitHub omi-teams/omi-pilot-splitbill (public).
 Not done: PO runs omi github, then /omi-idea, 2x /omi-task, /omi-release in a session in the pilot repo.
+Problems so far: (1) omi-idea commits on main and creates development but never pushes; the Coordinator pushed by hand. (2) Order dependency: omi github must run after main is pushed, because the main ruleset then blocks the direct push.
 Tests:
 Next: after the pilot, measure tokens per role and PO interventions from ~/.claude/projects transcripts; write docs/pilot.md.
