@@ -1,7 +1,7 @@
 ---
 id: TASK-033
 title: Workflows - feature, feature-ui, feature-sensitive
-status: in-progress
+status: done
 depends: TASK-032, TASK-029, TASK-030
 scope: .omi/workflows/**, src/omi/template/dot-omi/workflows/**, .omi/decisions.md, src/omi/__init__.py, tests/**
 ---
@@ -16,7 +16,13 @@ The default build path and its two heavier variants.
 - [ ] Carry-over from the TASK-032 review: validate `<TASK-ID>` in `omi step` against `^[A-Za-z0-9_-]+$` (no path traversal); only count a `PO approval <step>:` line inside `## Steps`; the default workflow is `omi-flow-feature` (the TASK-032 AC said `feature`), so `omi step` works only once this task adds it.
 
 ## Checkpoint
-Done:
+Done: 3 workflows (+ template copy, catalog); omi step id validation and ## Steps-only PO approval; tests updated
 Not done:
-Tests:
+Tests: python3 tests/test_omi.py ok; workflows --check ok
 Next: TASK-034
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read |
+|---|---|---|---|---|---|---|---|
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 26 | 7452 | 429951 | 83s | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 2002 | 135738 | 31s | - |

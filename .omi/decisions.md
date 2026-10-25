@@ -28,3 +28,4 @@
 - 2026-10-25 | omi-status ends with a next-task pick-list | the PO picks instead of typing omi-task | PO chat
 - 2026-10-25 | reviewer skip is a fixed path rule (docs/**, .omi/tasks/**, .omi/decisions.md only) | TASK-029..031 skipped review although they changed agent prompts and src/omi/template; the old 'docs or .omi/' wording left it to judgment. Those 3 are left to TASK-039 | PO chat
 - 2026-10-25 | add TASK-047: record skill files each role actually read | no evidence today that a role read its declared skills | PO chat
+- 2026-10-25 | omi step: task id must match ^[A-Za-z0-9_-]+$; a PO approval line counts only inside ## Steps; feature workflows omi-flow-feature, -feature-ui, -feature-sensitive added | TASK-032 review carry-over (path traversal, forged approval) | TASK-033
