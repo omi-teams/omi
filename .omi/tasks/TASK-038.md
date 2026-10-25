@@ -3,7 +3,7 @@ id: TASK-038
 title: Wire workflows into omi-idea, omi-task and AGENTS.md
 status: in-progress
 depends: TASK-048, TASK-040, TASK-033, TASK-034, TASK-035, TASK-036, TASK-037
-scope: .claude/skills/**, src/omi/template/**, AGENTS.md, README.md, tests/**, src/omi/__init__.py, .omi/workflows/**
+scope: .claude/skills/**, src/omi/template/**, AGENTS.md, README.md, tests/**, src/omi/__init__.py, .omi/workflows/**, .omi/tasks/_template.md
 role: omi-agent-engineer
 skills: []  # step build adds omi-skill-lean-implementation
 workflow: omi-flow-feature-sensitive  # changes the agent harness
