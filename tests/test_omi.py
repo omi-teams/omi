@@ -31,8 +31,9 @@ def test_init_guard_status():
         git(root, "commit", "-qm", "init")
         git(root, "branch", "development")
 
-        def guard(path):
-            payload = {"tool_input": {"file_path": str(path)}, "cwd": str(root)}
+        def guard(path, agent=None):
+            payload = {"tool_input": {"file_path": str(path)}, "cwd": str(root), "hook_event_name": "PreToolUse",
+                       "tool_name": "Write", **({"agent_id": "a1b2c3", "agent_type": agent} if agent else {})}
             return omi.guard(io.BytesIO(json.dumps(payload).encode()))
 
         assert guard(root / "README.md") == 0, "no task running: main checkout is free"
@@ -48,6 +49,24 @@ def test_init_guard_status():
         assert guard(root / "src" / "x.py") == 2, "engineer escaping to main checkout"
         assert guard(root / ".omi" / "tasks" / "TASK-002.md") == 0, "coordinator state"
         assert guard(root / "docs" / "product.md") == 0
+
+        # scope is read from development: widening the worktree copy changes nothing
+        (wt / ".omi" / "tasks" / "TASK-001.md").write_text(
+            "---\ntitle: A\nstatus: in-progress\nscope: **\n---\n## Checkpoint\nNext: wire it\n")
+        assert guard(wt / "README.md") == 2, "self-widened scope"
+        assert guard(wt / "src" / "ok.py", "engineer") == 0
+        assert guard(wt / ".claude" / "settings.json", "engineer") == 2
+        assert guard(root / "src" / "x.py", "engineer") == 2, "engineer writing to main checkout"
+        with tempfile.TemporaryDirectory() as other:
+            assert guard(Path(other) / "x.py", "engineer") == 2, "engineer writing to a non-git dir"
+            assert guard(Path(other) / "x.py") == 0, "no agent identity: as before"
+            assert guard(Path(other) / ".claude" / "settings.json") == 2, "user-level config"
+        git(root, "branch", "task/TASK-099")
+        git(root, "worktree", "add", "-q", str(root / "wt99"), "task/TASK-099")
+        assert guard(root / "wt99" / "src" / "x.py") == 2, "task not on development: deny"
+        git(root, "worktree", "remove", "--force", str(root / "wt99"))
+        (wt / ".omi" / "tasks" / "TASK-001.md").write_text(
+            "---\ntitle: A\nstatus: in-progress\nscope: src/**\n---\n## Checkpoint\nNext: wire it\n")
 
         out = io.StringIO()
         sys.stdout, real = out, sys.stdout
