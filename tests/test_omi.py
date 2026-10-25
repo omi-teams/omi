@@ -155,14 +155,27 @@ def test_ci_checks_and_apply():
         assert omi.ci_checks("o/r") == ["test (ubuntu-latest)", "test (windows-latest)"]
         st["runs"] = []
         assert omi.ci_checks("o/r") == []
-        omi.gh = lambda *a, **k: (_ for _ in ()).throw(SystemExit("gh api x failed: HTTP 404"))
+        omi.gh = lambda *a, **k: (_ for _ in ()).throw(omi.GhError("gh api x failed: HTTP 404", 404))
         assert omi.ci_checks("o/r") == []
-        omi.gh = lambda *a, **k: (_ for _ in ()).throw(SystemExit("gh api x failed: HTTP 500"))
+        omi.gh = lambda *a, **k: (_ for _ in ()).throw(omi.GhError("gh api x failed: HTTP 500", 500))
         try:
             omi.ci_checks("o/r")
             assert False, "non-404 error must abort"
         except SystemExit as e:
             assert "500" in str(e)
+        # real gh(): "404" in repo/sha must not count as a 404 status
+        class R:
+            returncode, stdout, stderr = 1, "", "gh: Server Error (HTTP 500)"
+        omi.subprocess.run = lambda *a, **k: R()
+        omi.gh = real_gh
+        try:
+            omi.ci_checks("app404/r404")
+            assert False, "HTTP 500 must abort even if the path contains 404"
+        except SystemExit as e:
+            assert "required checks left untouched" in str(e)
+        R.stderr = "gh: Not Found (HTTP 404)"
+        assert omi.ci_checks("o/r") == []
+        omi.subprocess.run = real_run
         omi.gh = fake
         st["newer"] = [{"name": "test (new)", "status": "queued"}]  # fresh commit, CI not finished
         st["runs"] = [done("test (ubuntu-latest)")]

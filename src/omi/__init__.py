@@ -211,11 +211,20 @@ def rulesets(checks=()):
         ruleset("omi-tags", ["rc-*", "v*"], [("update", None), ("deletion", None)], admin, "tag"))}
 
 
+class GhError(SystemExit):
+    """gh api failure; status is the HTTP status from gh's own output (never from argv), or None."""
+    def __init__(self, msg, status=None):
+        super().__init__(msg)
+        self.status = status
+
+
 def gh(*args, body=None):
     r = subprocess.run(["gh", "api", *args, *(["--input", "-"] if body else [])],
                        input=json.dumps(body) if body else None, capture_output=True, text=True)
     if r.returncode:
-        sys.exit(f"gh api {' '.join(args)} failed: {r.stderr.strip() or r.stdout.strip()}")
+        out = r.stderr.strip() or r.stdout.strip()
+        m = re.search(r"HTTP (\d{3})", out)
+        raise GhError(f"gh api {' '.join(args)} failed: {out}", int(m.group(1)) if m else None)
     return json.loads(r.stdout) if r.stdout.strip() else None
 
 
@@ -225,15 +234,15 @@ def ci_checks(repo):
     [] only if development has none; any other gh error aborts."""
     try:
         commits = gh(f"repos/{repo}/commits?sha=development&per_page=20")
-    except SystemExit as e:
-        if "404" in str(e):
+    except GhError as e:
+        if e.status == 404:
             return []
         raise SystemExit(f"cannot read CI checks on development; required checks left untouched. {e}")
     for c in commits or []:
         try:
             runs = gh(f"repos/{repo}/commits/{c['sha']}/check-runs?per_page=100")["check_runs"]
-        except SystemExit as e:
-            if "404" in str(e):
+        except GhError as e:
+            if e.status == 404:
                 continue
             raise SystemExit(f"cannot read CI checks on development; required checks left untouched. {e}")
         if any(r.get("status") == "completed" for r in runs):
