@@ -19,9 +19,9 @@ claude                    # rồi gõ /omi-idea, /omi-task TASK-001, /omi-status
 | File | Vai trò |
 | --- | --- |
 | `AGENTS.md` | Luật của Coordinator; Claude Code và Codex dùng chung |
-| `.omi/agents/*.md` | Vai trò (engineer, reviewer) là prompt file, chỉ nạp khi task gọi; `omi agents` sinh `CATALOG.md`; `omi run <role> <TASK-ID>` chạy trong Docker (role `read`: worktree mount read-only, chỉ chạy sau khi test/scope/skills pass) |
+| `.omi/agents/*.md` | Vai trò (omi-agent-engineer, omi-agent-reviewer) là prompt file, chỉ nạp khi task gọi; `omi agents` sinh `CATALOG.md`; `omi run <role> <TASK-ID>` chạy trong Docker (role `read`: worktree mount read-only, chỉ chạy sau khi test/scope/skills pass) |
 | `.claude/skills/omi-*` | Quy trình `idea`, `task`, `status`, chỉ nạp khi gọi |
-| `docker/` | Image cho worker: engineer chạy `claude -p` trong container, chỉ ghi được vào worktree |
+| `docker/` | Image cho worker: omi-agent-engineer chạy `claude -p` trong container, chỉ ghi được vào worktree |
 | `.claude/settings.json` | Hook: tự chèn `omi status` đầu phiên; `omi guard` chặn ghi ngoài scope |
 | `.omi/tasks/TASK-NNN.md` | Mỗi task một file: brief, scope, acceptance criteria, checkpoint |
 | `.omi/decisions.md` | Nhật ký quyết định của PO |
@@ -31,14 +31,14 @@ claude                    # rồi gõ /omi-idea, /omi-task TASK-001, /omi-status
 - **Việc gì script làm được thì không dùng LLM:** `omi status` (đọc file + git), `omi guard` (kiểm tra scope), CI.
 - **Context luôn nạp nhỏ nhất có thể:** `AGENTS.md` ngắn; quy trình chi tiết nằm trong skills, chỉ nạp khi gọi.
 - **File hướng dẫn cho agent viết tiếng Anh** (tiếng Việt tốn token gấp 2–3 lần). Agent vẫn trao đổi với PO bằng tiếng Việt.
-- **3 vai trò thay vì 17:** Coordinator, engineer, reviewer. Mặc định dùng `sonnet`, việc cơ học dùng `haiku`, chỉ dùng `opus` khi thật cần.
+- **3 vai trò thay vì 17:** Coordinator, omi-agent-engineer, omi-agent-reviewer. Mặc định dùng `sonnet`, việc cơ học dùng `haiku`, chỉ dùng `opus` khi thật cần.
 - **Mỗi lần một task.** Không review với thay đổi chỉ ở docs/`.omi`. Tối đa 2 vòng sửa, sau đó hỏi PO.
 - **Agent nhận đường dẫn task file,** không nhận context dán sẵn. Báo cáo không quá 10 dòng.
 
 ## Giới hạn đã biết
 
 - `omi guard` chặn Edit/Write của Coordinator và reviewer trên host. Engineer chạy trong Docker (`omi worker`): hệ điều hành chặn mọi thao tác ghi ngoài worktree, kể cả qua shell; thay đổi ngoài scope bị liệt kê sau khi chạy và Coordinator loại bỏ trước khi commit.
-- `omi worker` cần Docker đang chạy và token từ `claude setup-token` (`omi token set` lưu vào Windows Credential Manager; OS khác dùng biến môi trường `CLAUDE_CODE_OAUTH_TOKEN`). Không có phương án chạy engineer trên host.
+- `omi worker` cần Docker đang chạy và token từ `claude setup-token` (`omi token set` lưu vào Windows Credential Manager; OS khác dùng biến môi trường `CLAUDE_CODE_OAUTH_TOKEN`). Không có phương án chạy omi-agent-engineer trên host.
 - Codex chưa có hook, nên scope chỉ dựa vào hướng dẫn trong prompt.
 - Hook gọi `python -m omi`: nếu `python` không chạy được hoặc chưa cài `omi`, hook không chặn được gì (fail-open).
 

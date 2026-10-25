@@ -607,7 +607,7 @@ def resolve_model(root, model):
     cfg = Path(root) / ".omi" / "config.json"
     models = DEFAULT_MODELS | (json.loads(cfg.read_text(encoding="utf-8")).get("models", {}) if cfg.exists() else {})
     if not model:
-        sys.exit("no model: pass --model or set `model` in the engineer agent. Nothing changed.")
+        sys.exit("no model: pass --model or set `model` in the omi-agent-engineer agent. Nothing changed.")
     if model in models:
         return models[model]
     if model in models.values() or re.fullmatch(r"claude-[a-zA-Z0-9_.-]+", model):

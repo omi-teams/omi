@@ -18,7 +18,7 @@ Every skill, agent (role) and workflow name carries `omi-` plus its kind, so it 
 
 ## Checkpoint
 Done: 15 skill folders and ids renamed to omi-skill-<name> (root and template); engineer/reviewer renamed to omi-agent-* (files, role:, defaults, usage rows, container labels); validators reject bad prefixes (skills --check, agents); write-skill documents omi-flow-; catalogs regenerated; tests updated and passing.
-Not done: old role/skill values in open task files (`role: engineer`) do not resolve; no alias kept (criterion 16 conflicts with criterion 15, PO to decide). .omi/tasks/_template.md still says `engineer` (outside scope). project-overview.md still has old names in prose (outside scope). Workflow prefix validator is TASK-032.
+Not done: old role/skill values in open task files (`role: engineer`) do not resolve; no alias kept (criterion 16 conflicts with criterion 15, PO to decide). project-overview.md still has old names in prose (outside scope). Workflow prefix validator is TASK-032.
 Tests: python tests/test_omi.py passes (exit 0).
 Next: TASK-026
 
@@ -26,3 +26,12 @@ Next: TASK-026
 | role | model | effort | input | output | cache | duration |
 |---|---|---|---|---|---|---|
 | engineer | claude-haiku-5-5 | low | 44 | 19632 | 1131971 | 132s |
+| reviewer | claude-sonnet-5-5 | medium | 12 | 3252 | 302099 | 34s |
+| engineer | claude-haiku-5-5 | low | 16 | 3996 | 192443 | 34s |
+
+## Fix round 1 (only this)
+1. `docs/verification.md` lines 8 and 27: revert to the original text (`git diff development -- docs/verification.md`); they record past runs and must stay as history.
+2. `README.md` lines ~22, 24, 34, 41: prose that still names the roles `engineer` / `reviewer` -> `omi-agent-engineer` / `omi-agent-reviewer` (role names only, not the plain English word elsewhere).
+3. Checkpoint in this file: remove the stale note saying the task templates are outside scope; they are now changed and in scope.
+4. `src/omi/__init__.py` around line 610: error text "the engineer agent" -> "the omi-agent-engineer agent".
+Run the whole `python3 tests/test_omi.py` and report its last line.

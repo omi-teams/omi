@@ -5,7 +5,7 @@ Claude Code 2.1.302, 2026-10-25.
 | Check | Result | Evidence |
 |---|---|---|
 | SessionStart hook injects `omi status` | PASS | Output present at session start with no tool call (coordinator). |
-| `omi-agent-engineer` / `omi-agent-reviewer` listed as agent types | PASS | Both appear in the Agent tool's type list. |
+| `engineer` / `reviewer` listed as agent types | PASS | Both appear in the Agent tool's type list. |
 | Main checkout Write blocked while worktree exists | PASS | `OMI: src/omi/_guard_probe.py is product code; TASK-004 is running, write inside its worktree.` |
 | Engineer model matches frontmatter (`sonnet`) | PASS | System prompt model ID: `claude-sonnet-5-5`. |
 | Out-of-scope Write in worktree blocked | PASS | Write `src/omi/_probe.py` -> `OMI: src/omi/_probe.py is outside the scope of TASK-004. Stop and report NEEDS SCOPE to the Coordinator.` File not created. |
@@ -24,7 +24,7 @@ Throwaway repos, task "add `calc.py` with `add`/`sub` plus tests"; step 1 (`add`
 | Claude resume: step 1 not redone | PASS | Engineer prompt asked only for `sub()`; diff added only `sub` + `test_sub`; `add` commit untouched. |
 | Claude resume: task finished | PASS | Reviewer run, `status: done`, no-remote squash merge into `development`, `python -m unittest` = 2 tests OK. |
 | Codex resume: follows AGENTS.md, reads Checkpoint, no redo | PASS | Ran `python -m omi status`, read the omi-task skill and agent files, verified worktree vs checkpoint, replied in Vietnamese per AGENTS.md; never touched `add`. |
-| Codex runs roles with `codex exec` | FAIL then PASS after fix | Before: with `codex` not on PATH, Codex used its built-in subagents (collab_tool_call) or stopped. After the AGENTS.md fix: `where.exe codex` failed, it located the exe and launched `codex exec ... 'Act as engineer. Follow .claude/agents/omi-agent-engineer.md ...'`. |
+| Codex runs roles with `codex exec` | FAIL then PASS after fix | Before: with `codex` not on PATH, Codex used its built-in subagents (collab_tool_call) or stopped. After the AGENTS.md fix: `where.exe codex` failed, it located the exe and launched `codex exec ... 'Act as engineer. Follow .claude/agents/engineer.md ...'`. |
 | Codex finishes the task end to end | PASS (stopped at merge, fixed) | PO run `codex exec -s danger-full-access "omi-task TASK-001"` in a fresh sandbox: engineer via `codex exec -s danger-full-access`, reviewer via `codex exec -s read-only`; commit `1cd06a7` adds only `sub`, review PASS, 2 tests OK. It then set `blocked` and asked the PO, because AGENTS.md said "merge only after green CI" while the repo had no remote. Fixed: AGENTS.md now says CI applies when the repo has a remote. |
 
 ## Failures and notes
