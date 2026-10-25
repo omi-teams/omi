@@ -1,7 +1,7 @@
 ---
 id: TASK-030
 title: Roles - verification (security-reviewer, qa-tester)
-status: in-progress
+status: done
 depends: TASK-028, TASK-024
 scope: .omi/agents/**, src/omi/template/dot-omi/agents/**, .omi/decisions.md
 ---
