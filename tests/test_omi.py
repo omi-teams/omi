@@ -966,6 +966,7 @@ def test_skills():
         omi.sys.stdout, saved = io.StringIO(), sys.stdout
         omi.skills_catalog(root)
         sys.stdout = saved
+        fails(["ma", "mb", "mc", "md"], "total", "at most 6000")  # each under 2000, no config override
         (root / ".omi" / "config.json").write_text('{"skill_limits": {"tokens": 5000}}')
         fails(["ma", "mb", "mc"], "total", "at most 5000", "5")
         (root / ".omi" / "config.json").write_text('{"skill_limits": {"skills": 1}}')  # old key ignored
@@ -1315,7 +1316,8 @@ def test_workflows():
         try:
             omi.init(root)
             assert (wf / "CATALOG.md").exists(), "init creates the workflows folder"
-            for sid, size in (("omi-skill-a", 100), ("omi-skill-b", 100), ("omi-skill-c", 100), ("omi-skill-big", 9000)):
+            for sid, size in (("omi-skill-a", 100), ("omi-skill-b", 100), ("omi-skill-c", 100), ("omi-skill-big", 9000),
+                              ("omi-skill-h1", 7900), ("omi-skill-h2", 7900), ("omi-skill-h3", 7900), ("omi-skill-h4", 7900)):
                 d = root / ".omi" / "skills" / "g" / sid
                 d.mkdir(parents=True)
                 (d / "SKILL.md").write_text(f"---\ndescription: use for {sid}\n---\n" + "x" * size)
@@ -1346,6 +1348,8 @@ def test_workflows():
                    ("omi-flow-g", ok[2].replace("gate: review", "gate: maybe"), "gate `maybe`"),
                    ("omi-flow-n", ok[2].replace("skills: ", "skills: omi-skill-a, omi-skill-b, omi-skill-c, omi-skill-big"),
                     "step review: skill budget", "omi-skill-big is", "per skill"),
+                   ("omi-flow-t", ok[2].replace("skills: ", "skills: omi-skill-h1, omi-skill-h2, omi-skill-h3, omi-skill-h4"),
+                    "step review: skill budget", "tokens in total", "at most 6000"),
                    ("omi-flow-k", ok[1].replace("omi-skill-a", "omi-skill-big"), "omi-skill-big is", "per skill"),
                    ("omi-flow-m", ok[0].replace(" | stop: AC written", ""), "step plan: missing `stop`")]
             for name, row, *words in bad:
