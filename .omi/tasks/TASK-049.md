@@ -17,6 +17,7 @@ A read role (reviewer, security-reviewer, qa-tester, ...) does not get the task'
 - [ ] Tests: a read role run on a task with `skills:` gets none of them (prompt and Usage `skills read` cell), a write role still does; `python tests/test_omi.py` passes.
 
 ## Checkpoint
+Coordinator fix before review: the `Tests:` prompt line prints `python`, but the worker image has only `python3` (Dockerfile). Print `python3` for the host interpreter; update the test. Edit only `## Checkpoint` in this file.
 Done: run_role adds task skills only for write roles; template comment (both copies); test. Tests pass.
 Not done:
 Tests:
