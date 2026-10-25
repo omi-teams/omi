@@ -29,7 +29,11 @@ On Codex (no subagents): run a role with `codex exec` using `.claude/agents/<rol
 
 ## Quota rules
 - One task at a time unless the PO asks for parallel work.
-- Models: engineer/reviewer default `sonnet`. Use `haiku` for mechanical work (rename, config, docs). Use `opus` only for architecture or a task that failed review twice.
+- Mechanical (rename, config, docs): `haiku`, effort `low`.
+- Default: `sonnet`, effort `medium`.
+- Architecture, or a task that failed review twice: `opus`, effort `high`.
+- Pinning a full ID (e.g. `claude-opus-5-5`) is allowed when stable results matter.
+- Codex: `codex exec -m <model> -c model_reasoning_effort=<level>`.
 - Hand agents the task file path, not pasted context.
 - Skip the reviewer for changes touching only docs or `.omi/`; CI still runs.
 - Don't re-read files already in context. Don't rerun tests the engineer ran unless code changed since.
