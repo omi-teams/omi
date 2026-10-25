@@ -37,6 +37,7 @@ Done: verdict cell `<V> <sha7>`; `tree_diff` (untracked included, real index unt
 Saving (test scenario, tokens = bytes/4): full 6296, incremental 56.
 Not done: real Usage numbers (Coordinator, next real FAIL round). Docs not touched (diff includes unstaged files, so no commit-first note needed).
 Tests: python3 tests/test_omi.py passes.
+Windows fix done: tests/test_omi.py:1095 now `a.rsplit(":", 2)[0]` (only mount parsing in tests); suite passes on Linux.
 Next: TASK-042
 
 ## Steps
@@ -48,3 +49,4 @@ Next: TASK-042
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 24 | 9083 | 384220 | 101s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 10 | 906 | 99686 | 19s | 1/1 omi-skill-lean-implementation | - |

@@ -1092,7 +1092,7 @@ def test_review_round_flow():
 
     def run(cmd, **kw):
         if cmd[:2] == ["docker", "run"]:
-            m = next(a.split(":")[0] for a in cmd if a.endswith(":/review:ro"))
+            m = next(a.rsplit(":", 2)[0] for a in cmd if a.endswith(":/review:ro"))
             seen["files"] = sorted(p.name for p in Path(m).iterdir())
             seen["prompt"] = cmd[cmd.index("claude") + 2]
             return R(json.dumps({"result": "VERDICT: FAIL", "usage": {"input_tokens": 1}}))
