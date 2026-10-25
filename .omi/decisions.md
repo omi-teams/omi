@@ -31,3 +31,4 @@
 - 2026-10-25 | omi step: task id must match ^[A-Za-z0-9_-]+$; a PO approval line counts only inside ## Steps; feature workflows omi-flow-feature, -feature-ui, -feature-sensitive added | TASK-032 review carry-over (path traversal, forged approval) | TASK-033
 - 2026-10-25 | split TASK-048 out of TASK-038 and run it before TASK-036 | verify skill loading and workflow steps on the remaining workflow tasks instead of after TASK-038 | PO chat
 - 2026-10-25 | task skills go to write roles only (TASK-049) | the reviewer read omi-skill-lean-implementation on TASK-048; read roles get role and step skills only | PO chat
+- 2026-10-25 | roles carry no default skills; skills live on workflow steps or task skills (TASK-050) | step skills (TASK-048) made defaults redundant; devops defaults filled the 3-skill budget and blocked step skills | PO chat
