@@ -16,6 +16,7 @@ Find out whether a worker running Claude Code in a container on Windows, authent
 - [ ] `docs/spikes/docker.md` records the result, the cost (startup time, RAM) and a go/no-go recommendation.
 
 ## Checkpoint
-Not done: needs a PO decision first. The spike uses subscription quota inside a container; check the terms of use for automated use.
-Tests:
-Next:
+Done: Dockerfile, run.sh, prove.sh, docs/spikes/docker.md. Boundary checks all PASS. Image removed after tests (rebuild per doc).
+Not done: live `claude` auth check (needs PO token); terms-of-use check. Go/no-go: pending live auth check.
+Tests: prove.sh all PASS.
+Next: PO runs the steps in docs/spikes/docker.md.
