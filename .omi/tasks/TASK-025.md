@@ -1,7 +1,7 @@
 ---
 id: TASK-025
 title: Skill group - delivery and operations
-status: in-progress
+status: done
 depends: TASK-022
 scope: .omi/skills/delivery-ops/**, .omi/skills/CATALOG.md, tests/test_omi.py, src/omi/template/dot-omi/skills/delivery-ops/**, .omi/decisions.md
 ---
@@ -9,10 +9,10 @@ scope: .omi/skills/delivery-ops/**, .omi/skills/CATALOG.md, tests/test_omi.py, s
 Skills for release, rollback, incidents and the Windows/Docker environment, from OMI's own experience and primary docs (not a summary repo).
 
 ## Acceptance criteria
-- [ ] Skills: `release-checklist`, `rollback`, `incident`, `docker-worker-pitfalls`, `windows-powershell`.
-- [ ] Each cites a concrete squad step or past problem (TASK-006, TASK-010, TASK-015, TASK-018) and the primary doc it is based on.
-- [ ] Each passes `--check`, is at most 2000 tokens, and records source and license.
-- [ ] Catalog regenerated; the template copy is identical.
+- [x] Skills: `release-checklist`, `rollback`, `incident`, `docker-worker-pitfalls`, `windows-powershell`.
+- [x] Each cites a concrete squad step or past problem (TASK-006, TASK-010, TASK-015, TASK-018) and the primary doc it is based on.
+- [x] Each passes `--check`, is at most 2000 tokens, and records source and license.
+- [x] Catalog regenerated; the template copy is identical.
 
 ## Checkpoint
 Done: 5 skills in .omi/skills/delivery-ops (release-checklist, rollback, incident, docker-worker-pitfalls, windows-powershell), 534-706 tokens each; template copy identical; CATALOG regenerated.
@@ -27,3 +27,4 @@ The container has no network, so base every skill on files in this repo: `.claud
 | role | model | effort | input | output | cache | duration |
 |---|---|---|---|---|---|---|
 | engineer | claude-sonnet-5-5 | medium | 22 | 8653 | 396933 | 78s |
+| reviewer | claude-sonnet-5-5 | medium | 12 | 2002 | 198218 | 25s |
