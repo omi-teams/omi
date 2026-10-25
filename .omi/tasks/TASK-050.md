@@ -1,13 +1,13 @@
 ---
 id: TASK-050
 title: Move role default skills onto workflow steps
-status: in-progress
+status: done
 depends: TASK-036
 scope: .omi/agents/**, src/omi/template/dot-omi/agents/**, .omi/workflows/**, src/omi/template/dot-omi/workflows/**, tests/**
 role: omi-agent-engineer
 skills: []  # step build adds omi-skill-lean-implementation
 workflow: omi-flow-feature
-step: review
+step: accept
 ---
 ## Goal
 No role carries default skills; each workflow step names the skills its work needs, so a run loads only those and no role blocks the 3-skill budget.
@@ -42,6 +42,10 @@ Next: TASK-037
 - build started 2026-10-25 22:17
 - build done 2026-10-25 22:18
 - review started 2026-10-25 22:18
+- review done 2026-10-25 22:21
+- accept started 2026-10-25 22:21
+PO approval accept: Chấp nhận, merge (Recommended)
+- accept done 2026-10-25 22:22
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read |
@@ -49,3 +53,5 @@ Next: TASK-037
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 14 | 2798 | 161346 | 58s | 1/1 omi-skill-lean-implementation |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1947 | 120134 | 28s | - |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 14 | 1623 | 142309 | 38s | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 2004 | 124488 | 32s | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 1856 | 162803 | 33s | - |
