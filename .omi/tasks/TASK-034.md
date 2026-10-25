@@ -1,7 +1,7 @@
 ---
 id: TASK-034
 title: Workflows - bugfix, refactor
-status: in-progress
+status: done
 depends: TASK-032
 scope: .omi/workflows/**, src/omi/template/dot-omi/workflows/**, .omi/decisions.md, tests/**
 role: omi-agent-engineer
@@ -28,3 +28,4 @@ Next: TASK-035
 |---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 14 | 3899 | 158215 | 49s | - |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 10 | 863 | 93352 | 21s | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1492 | 97922 | 28s | - |
