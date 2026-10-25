@@ -23,6 +23,9 @@ A run's skills are limited by tokens only (2000 per skill, 6000 per run); the "3
 - [ ] `python3 tests/test_omi.py` passes.
 
 ## Checkpoint
+Review round 1 FAIL: (PASS with findings; the token total is now the only guard, so test it)
+1. tests/test_omi.py:968: add a case with no config override where skills total just over 6000 tokens (each under 2000) and assert it fails with the total-tokens message.
+2. tests/test_omi.py:1347: add a workflow step case whose skills total over 6000 (each under 2000) and assert `omi step next` refuses it.
 Done: count limit removed (code, texts, template copies); tests updated
 Not done: -
 Tests: python3 tests/test_omi.py ok; omi skills --check ok
@@ -32,9 +35,14 @@ Next: review
 - plan started 2026-10-25 23:10
 - plan done 2026-10-25 23:10
 - build started 2026-10-25 23:10
+- build done 2026-10-25 23:21
+- review started 2026-10-25 23:21
+- review failed 2026-10-25 23:22
+- build started 2026-10-25 23:22
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 0 | 0 | 0 | 201s | 0/1 | - |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 2649 | 211364 | 48s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 1951 | 122083 | 38s | - | PASS bbc37dc |
