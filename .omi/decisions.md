@@ -6,3 +6,4 @@
 - 2026-10-25 | Make omi-squad2 public | PO: rulesets need public repo on Free plan; matches vision | TASK-003
 - 2026-10-25 | Defer separate omi-skills repo and extra workflows (change request, incident, skills pinning, doctor/update) until the TASK-009 pilot shows real gaps | PO: minimise quota; avoid speculative skills | TASK-011
 - 2026-10-25 | Add TASK-012 (guard hardening), tag ruleset in TASK-010, Docker pitfalls in TASK-006 | review of ../omi-squad found scope self-widening, outside writes and unprotected rc tags | TASK-012
+- 2026-10-25 | PO GitHub account not kept logged in on the squad machine; PO runs `omi github` with a one-off token and merges staging/main in the web UI | squad shell could otherwise use the PO token (guard does not cover Bash) | TASK-010
