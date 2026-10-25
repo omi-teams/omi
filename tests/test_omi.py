@@ -271,7 +271,7 @@ def test_worker():
         try:
             def go(task=task, **kw):
                 calls.clear()
-                st.update(info_rc=0)
+                st.update(info_rc=0, build_fail=0)
                 st.update(kw)
                 try:
                     return omi.worker(wt, task, effort=kw.get("effort"))
@@ -292,6 +292,8 @@ def test_worker():
             assert c[c.index("--permission-mode") + 1] == "bypassPermissions"
             assert "/work/.omi/tasks/TASK-001.md" in c[2] and "Checkpoint" in c[c.index("--append-system-prompt") + 1]
             go(effort="high")
+            argv = next(c[0] for c in calls if c[0][:2] == ["docker", "run"])
+            assert argv[argv.index("--effort") + 1] == "high"
             # build log: silent on success, shown (stderr) on failure
             out.truncate(0); out.seek(0)
             go(build_fail=0)
@@ -320,8 +322,6 @@ def test_worker():
             assert omi.out_of_scope(wt, "TASK-001") == ["src/ok.py"]
             omi.os.path.islink = real_islink
             omi.subprocess.run = run0
-            argv = next(c[0] for c in calls if c[0][:2] == ["docker", "run"])
-            assert argv[argv.index("--effort") + 1] == "high"
 
             def ran():
                 return [c[0][:2] for c in calls if c[0][:2] in (["docker", "run"], ["docker", "build"])]
