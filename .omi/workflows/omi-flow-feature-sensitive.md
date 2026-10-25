@@ -6,7 +6,7 @@ steps:
 - id: architect | role: omi-agent-architect | skills: | input: task file | output: options and one recommendation in the task file | gate: none | stop: recommendation recorded and trust boundaries named
 - id: build | role: omi-agent-engineer | skills: omi-skill-lean-implementation | input: task file with recommendation | output: diff, tests passing, Checkpoint updated | gate: none | stop: every criterion has a passing test
 - id: review | role: omi-agent-reviewer | skills: | input: task file, diff | output: VERDICT PASS or FAIL | gate: review | stop: VERDICT PASS
-- id: security | role: omi-agent-security-reviewer | skills: omi-skill-diff-security-review | input: task file, diff | output: findings with location and how verified, VERDICT | gate: review | stop: VERDICT PASS
+- id: security | role: omi-agent-security-reviewer | skills: omi-skill-diff-security-review, omi-skill-ci-workflow-audit | input: task file, diff | output: findings with location and how verified, VERDICT | gate: review | stop: VERDICT PASS
 - id: accept | role: coordinator | skills: | input: both PASS verdicts | output: PO approval line in ## Steps | gate: po | stop: PO accepts the result
 ---
 # Feature, sensitive

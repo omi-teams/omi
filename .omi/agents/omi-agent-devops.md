@@ -3,7 +3,7 @@ role: omi-agent-devops
 model: sonnet
 effort: medium
 access: write
-skills: [omi-skill-release-checklist, omi-skill-docker-worker-pitfalls, omi-skill-windows-powershell]
+skills: []
 summary: Changes CI, Docker and release scripts inside its task scope; never touches secrets or pushes to staging/main.
 ---
 You implement one delivery task. Input: the task file path and the worktree path.

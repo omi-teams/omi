@@ -7,7 +7,7 @@ scope: .omi/agents/**, src/omi/template/dot-omi/agents/**, .omi/workflows/**, sr
 role: omi-agent-engineer
 skills: []  # step build adds omi-skill-lean-implementation
 workflow: omi-flow-feature
-step:
+step: build
 ---
 ## Goal
 No role carries default skills; each workflow step names the skills its work needs, so a run loads only those and no role blocks the 3-skill budget.
@@ -27,7 +27,17 @@ No role carries default skills; each workflow step names the skills its work nee
 - [ ] `python3 tests/test_omi.py` passes.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
+Done: all 9 roles skills: [], step skills moved, incident contain/merge-prod -> devops, catalogs regenerated, template copies identical.
+Not done: none.
+Tests: python3 tests/test_omi.py ok; workflows --check ok; skills check ok for planned tasks.
 Next: TASK-037
+
+## Steps
+- plan started 2026-10-25 22:17
+- plan done 2026-10-25 22:17
+- build started 2026-10-25 22:17
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read |
+|---|---|---|---|---|---|---|---|
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 14 | 2798 | 161346 | 58s | 1/1 omi-skill-lean-implementation |
