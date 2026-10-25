@@ -4,6 +4,7 @@ import json
 import shutil
 import subprocess
 import sys
+from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
 
 TEMPLATE = Path(__file__).parent / "template"
@@ -26,8 +27,11 @@ def split(value):
 
 
 def meta(path):
+    return parse(path.read_text(encoding="utf-8"))
+
+
+def parse(text):
     """Frontmatter of a task file as a dict, plus the raw text under '_text'."""
-    text = path.read_text(encoding="utf-8")
     m = {"_text": text}
     if text.startswith("---"):
         for line in text.split("---", 2)[1].splitlines():
@@ -131,23 +135,39 @@ def guard(stdin=None):
     d = path.parent
     while not d.exists() and d != d.parent:
         d = d.parent
+    engineer = data.get("agent_type") == "engineer"  # subagents share the session cwd; only the payload tells
     top = git(d, "rev-parse", "--show-toplevel")
-    if not top:
-        return 0  # not inside a project
-    root = Path(top).resolve()
-    branch = git(d, "rev-parse", "--abbrev-ref", "HEAD") or ""
+    root = Path(top).resolve() if top else None
+    branch = (git(d, "rev-parse", "--abbrev-ref", "HEAD") or "") if top else ""
     try:
         rel = PurePosixPath(path.resolve().relative_to(root).as_posix())
-    except ValueError:
+    except (ValueError, TypeError):
         rel = None
-    if branch.startswith("task/"):
+    if path.parent.name == ".claude" and fnmatch(path.name, "settings*.json") and not (
+            branch.startswith("task/") and rel):
+        reason = "is Claude Code config; only a task whose scope names it may change it."
+        if engineer or not top:
+            print(f"OMI: {path} {reason}", file=sys.stderr)
+            return 2
+    if not top:
+        reason = "is outside the task worktree."
+        if not engineer:
+            return 0  # not inside a project
+    elif branch.startswith("task/"):
         tid = branch[5:]
+        # scope comes from development: the worktree copy is agent-writable, so it can't be trusted
+        shown = git(root, "show", f"development:.omi/tasks/{tid}.md")
         task_file = root / ".omi" / "tasks" / f"{tid}.md"
-        if rel and task_file.exists() and (
+        if shown is None:
+            reason = f"cannot be checked: {tid} is not on development yet. Stop and report to the Coordinator."
+        elif rel and task_file.exists() and (
                 rel == PurePosixPath(f".omi/tasks/{tid}.md")
-                or any(rel.full_match(g) for g in split(meta(task_file).get("scope")))):
+                or any(rel.full_match(g) for g in split(parse(shown).get("scope")))):
             return 0
-        reason = f"is outside the scope of {tid}. Stop and report NEEDS SCOPE to the Coordinator."
+        else:
+            reason = f"is outside the scope of {tid}. Stop and report NEEDS SCOPE to the Coordinator."
+    elif engineer:
+        reason = "is outside the task worktree."
     else:
         # main checkout: while a task runs, product code changes belong in its worktree
         active = task_worktrees(root)

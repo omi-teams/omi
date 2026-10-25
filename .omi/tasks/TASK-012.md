@@ -17,7 +17,7 @@ scope: src/omi/__init__.py, tests/**, src/omi/template/AGENTS.md, AGENTS.md
 - [ ] `tests/test_omi.py` covers each new block with a negative case.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
-Next:
+Done: all 6 criteria (guard hardening, AGENTS.md lines, tests)
+Not done: -
+Tests: python tests/test_omi.py passes
+Next: review
