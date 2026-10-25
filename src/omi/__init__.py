@@ -371,8 +371,9 @@ def step_states(text):
 
 
 def po_approved(text, sid):
-    """The Coordinator records the PO's words as a line `PO approval <step>: <text>`."""
-    return re.search(rf"^PO approval {re.escape(sid)}: *\S", text, re.M) is not None
+    """The Coordinator records the PO's words as a line `PO approval <step>: <text>` inside `## Steps`."""
+    _, sep, rest = text.partition("\n## Steps\n")
+    return bool(sep) and re.search(rf"^PO approval {re.escape(sid)}: *\S", rest.split("\n## ", 1)[0], re.M) is not None
 
 
 def set_front(text, key, value):
@@ -394,6 +395,8 @@ def add_step_log(text, line):
 def step(root, tid, action, why=None, now=None):
     """Record a workflow step in the task file: `next` starts the following step, `done` closes the current one,
     `skip` closes it with a reason. Gate steps cannot be skipped; a `po` gate needs the PO approval line."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", tid):
+        sys.exit(f"invalid task id `{tid}`: use letters, digits, `-` and `_`. Nothing changed.")
     task = Path(root) / ".omi" / "tasks" / f"{tid}.md"
     if not task.exists():
         sys.exit(f"no task file {task}. Nothing changed.")

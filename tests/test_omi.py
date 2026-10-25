@@ -1050,7 +1050,7 @@ def test_workflows():
             assert [s["gate"] for s in omi.get_workflow(root, "omi-flow-demo")] == ["none", "none", "review", "po"]
             r = subprocess.run([sys.executable, "-m", "omi", "workflows", "--check"], cwd=root, capture_output=True, text=True,
                                env={**omi.os.environ, "PYTHONPATH": str(Path(__file__).parents[1] / "src")})
-            assert r.returncode == 0 and "workflows ok (1 checked)" in r.stdout, r.stdout + r.stderr
+            assert r.returncode == 0 and "workflows ok (4 checked)" in r.stdout, r.stdout + r.stderr
 
             # unknown ids, gates, budgets and size fail the check
             fails(lambda: omi.get_workflow(root, "omi-flow-ghost"), "unknown workflow `omi-flow-ghost`", "omi-flow-demo")
@@ -1120,15 +1120,27 @@ def test_workflows():
             task.write_text("---\nid: TASK-001\nworkflow: omi-flow-ghost\n---\n")
             fails(lambda: go("next"), "unknown workflow `omi-flow-ghost`")
             task.write_text("---\nid: TASK-001\n---\n")
-            fails(lambda: go("next"), f"unknown workflow `{omi.DEFAULT_WORKFLOW}`")
+            go("next")  # default workflow omi-flow-feature now exists
+            assert front()["step"] == "plan"
             task.write_text("---\nid: TASK-001\nworkflow: omi-flow-demo\nrole: omi-agent-ghost\nstep: plan\n---\n"
                             "## Steps\n- plan done 2026-10-25 10:00\n")
             fails(lambda: go("next"), "unknown role `omi-agent-ghost`")
             fails(lambda: omi.step(root, "TASK-404", "next"), "no task file")
+            fails(lambda: omi.step(root, "../TASK-001", "next"), "invalid task id")
+            # a PO approval line outside ## Steps does not count
+            task.write_text("---\nid: TASK-001\nworkflow: omi-flow-demo\nstep: accept\n---\nPO approval accept: sneaky\n\n"
+                            "## Steps\n- plan done 2026-10-25 10:00\n- build done 2026-10-25 10:00\n- review done 2026-10-25 10:00\n"
+                            "- accept started 2026-10-25 10:00\n\n## Checkpoint\nPO approval accept: x\n")
+            fails(lambda: go("done"), "po gate")
         finally:
             sys.stdout = saved
     repo = Path(__file__).parents[1]
     assert (repo / ".omi" / "tasks" / "_template.md").read_text() == (omi.TEMPLATE / "dot-omi" / "tasks" / "_template.md").read_text()
+    for name in ("omi-flow-feature", "omi-flow-feature-ui", "omi-flow-feature-sensitive"):
+        a, b = repo / ".omi" / "workflows" / f"{name}.md", omi.TEMPLATE / "dot-omi" / "workflows" / f"{name}.md"
+        assert a.read_text() == b.read_text() and not omi.validate_workflow(repo, a), name
+        assert "Review-fail rule" in a.read_text() and "PO gates" in a.read_text()
+    assert (repo / ".omi" / "workflows" / "CATALOG.md").read_text() == (omi.TEMPLATE / "dot-omi" / "workflows" / "CATALOG.md").read_text()
     assert "workflow: omi-flow-feature" in (repo / ".omi" / "tasks" / "_template.md").read_text()
 
 
