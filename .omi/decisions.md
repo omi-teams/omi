@@ -27,3 +27,4 @@
 - 2026-10-25 | omi-task is model-invocable | the PO's AskUserQuestion pick is the approval; the Coordinator starts the chosen task without the PO typing /omi-task. omi-release stays PO-typed | PO chat
 - 2026-10-25 | omi-status ends with a next-task pick-list | the PO picks instead of typing omi-task | PO chat
 - 2026-10-25 | reviewer skip is a fixed path rule (docs/**, .omi/tasks/**, .omi/decisions.md only) | TASK-029..031 skipped review although they changed agent prompts and src/omi/template; the old 'docs or .omi/' wording left it to judgment. Those 3 are left to TASK-039 | PO chat
+- 2026-10-25 | add TASK-047: record skill files each role actually read | no evidence today that a role read its declared skills | PO chat
