@@ -12,6 +12,7 @@ Find out whether a worker running Claude Code in a container on Windows, authent
 - [ ] A Dockerfile plus a run script that mount the worktree read-write and nothing else writable from the project.
 - [ ] Auth uses `claude setup-token` passed through an env var. The token never enters the image, git or logs.
 - [ ] A shell write outside the worktree fails; a write inside succeeds.
+- [ ] Avoid the known pitfalls from `../omi-squad` labs: CLI binaries on a `noexec` tmpfs fail with exit 126 (bake them into the image), and a Codex auth copy must keep `last_refresh`.
 - [ ] `docs/spikes/docker.md` records the result, the cost (startup time, RAM) and a go/no-go recommendation.
 
 ## Checkpoint
