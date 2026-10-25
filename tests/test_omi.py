@@ -735,7 +735,8 @@ def test_skills():
         finally:
             sys.stdout = saved
         cat = (root / ".omi" / "skills" / "CATALOG.md").read_text()
-        assert "- small (g): use for small [~" in cat and cat.count("\n- ") == 4
+        made = ["small", "big", "mid", "withref"]  # only the skills this test creates; init copies template skills too
+        assert "- small (g): use for small [~" in cat and sum(cat.count(f"\n- {s} (") for s in made) == 4
         assert "- withref (h): use for withref [~" in cat and "~1" in cat
         assert omi.tokens(root / ".omi" / "skills" / "g" / "small" / "SKILL.md") == omi.tokens(
             *omi.skill_files(root / ".omi" / "skills" / "g" / "small")) and omi.task_skills({"skills": "[a, b]"}) == ["a", "b"]
