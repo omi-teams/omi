@@ -7,7 +7,9 @@ import hashlib
 import io
 import json
 import os
+import posixpath
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -882,7 +884,7 @@ def engineer_cmd(agent_text, task_rel, model=None, effort=None, skills=""):
             "--append-system-prompt", body,
             "--model", model or m.get("model", "sonnet"), "--effort", effort or m.get("effort", "medium"),
             # the container is the boundary, not prompts; project hooks (omi guard) cannot run in it
-            "--permission-mode", "bypassPermissions", "--setting-sources", "user", "--output-format", "json"]
+            "--permission-mode", "bypassPermissions", "--setting-sources", "user", "--output-format", "stream-json", "--verbose"]
 
 
 def codex_cmd(agent_text, task_rel, model, effort, skills=""):
@@ -892,7 +894,128 @@ def codex_cmd(agent_text, task_rel, model, effort, skills=""):
             "--dangerously-bypass-approvals-and-sandbox", "--json", f"{body}\n\nTask file: /work/{task_rel}\nWorktree: /work{skills}"]
 
 
-USAGE_HEAD = "| role | model | effort | input | output | cache | duration |"
+USAGE_HEAD = "| role | model | effort | input | output | cache | duration | skills read |"
+
+
+READERS = ("cat", "sed", "head", "tail", "less", "nl", "rg", "grep")
+SHELLS = ("bash", "sh", "zsh", "dash")
+# options whose value is the next token (not a file)
+VALUE_OPTS = {"head": ("-n", "-c"), "tail": ("-n", "-c"), "grep": ("-A", "-B", "-C", "-m"), "rg": ("-A", "-B", "-C", "-m", "-g", "-t")}
+
+
+def shell_tokens(command):
+    """shlex tokens of a command line; `;`, `&&`, `|`, newlines, `(`, `>` etc. come out as their own tokens."""
+    for text in (command, command.replace("'", " ").replace('"', " ")):
+        lex = shlex.shlex(text, posix=True, punctuation_chars=";&|()<>\n")
+        lex.whitespace, lex.whitespace_split = " \t\r", True
+        try:
+            return list(lex)
+        except ValueError:
+            continue
+    return []
+
+
+def read_commands(command, cwd=None):
+    """File operands of the read commands (cat, sed, head, ...) in a shell command line; ls, rm, echo do not count.
+    Shell wrappers (`/bin/bash -lc '...'`, `env bash -c`) are unwrapped, redirect targets are writes, `sed -i` is
+    a write, a grep/rg/sed pattern or script is not a file, and relative paths are resolved against `cd` targets
+    (and `cwd`) seen earlier in the command."""
+    found, seg = [], []
+    for tok in shell_tokens(command) + [";"]:
+        if tok and set(tok) <= set(";&|()<>\n") and not set(tok) & set("<>"):
+            found += _segment_reads(seg, cwd)
+            if seg and seg[0] == "cd" and len(seg) > 1:
+                cwd = posixpath.normpath(posixpath.join(cwd or "", seg[1]))
+            seg = []
+        else:
+            seg.append(tok)
+    return found
+
+
+def _segment_reads(toks, cwd):
+    """read_commands for one simple command (tokens without separators)."""
+    files, words, it = [], [], iter(toks)
+    for t in it:
+        if t and set(t) <= set("<>&"):
+            target = next(it, "")
+            if words and words[-1].isdigit():  # fd number of `2>`
+                words.pop()
+            if t == "<":
+                files.append(target)
+        else:
+            words.append(t)
+    while words and (words[0].startswith("-") or re.fullmatch(r"\w+=.*", words[0]) or posixpath.basename(words[0]) == "env"):
+        words.pop(0)
+    if not words:
+        return []
+    name, args = posixpath.basename(words[0]), words[1:]
+    if name in SHELLS:
+        script = next((args[i + 1] for i, a in enumerate(args[:-1]) if re.fullmatch(r"-\w*c\w*", a)), None)
+        return read_commands(script, cwd) if script is not None else []
+    if name not in READERS:
+        return []
+    if name == "sed" and any(re.match(r"-\w*i", a) or a.startswith("--in-place") for a in args):
+        return []
+    operands, pattern, i = [], name in ("grep", "rg", "sed"), 0
+    while i < len(args):
+        a = args[i]
+        if a == "--":
+            operands += args[i + 1:]
+            break
+        if name in ("grep", "rg", "sed") and a in ("-e", "-f", "--regexp", "--expression", "--file"):
+            pattern = False
+            if a in ("-f", "--file") and i + 1 < len(args):
+                operands.append(args[i + 1])
+            i += 2
+            continue
+        if a in VALUE_OPTS.get(name, ()):
+            i += 2
+            continue
+        if not a.startswith("-") or a == "-":
+            operands.append(a)
+        i += 1
+    files += operands[1:] if pattern else operands
+    return [posixpath.normpath(posixpath.join(cwd or "", f)) for f in files if f and f != "-"]
+
+
+def opened_files(tool, out):
+    """Paths the agent opened, from the tool-call log: Claude Read calls, file operands of read commands (Claude Bash, Codex)."""
+    found = []
+    for line in (out or "").splitlines():
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(e, dict):
+            continue
+        if tool == "claude" and e.get("type") == "assistant" and isinstance(e.get("message"), dict):
+            for c in e["message"].get("content") or []:
+                if not isinstance(c, dict) or c.get("type") != "tool_use":
+                    continue
+                args = c.get("input") or {}
+                if c.get("name") == "Read":
+                    found.append(str(args.get("file_path") or ""))
+                elif c.get("name") == "Bash":
+                    found += read_commands(str(args.get("command") or ""))
+        elif tool == "codex" and isinstance(e.get("item"), dict) and e["item"].get("type") == "command_execution":
+            found += read_commands(str(e["item"].get("command") or ""), e["item"].get("cwd") or e.get("cwd"))
+    return found
+
+
+def skills_read(root, ids, opened):
+    """Ids of the declared skills whose SKILL.md or a declared reference is an opened path (whole path or `.../<rel>`)."""
+    dirs = skill_dirs(root)
+    done = []
+    for sid in ids:
+        rels = [Path(f).relative_to(root).as_posix() for f in skill_files(dirs[sid])]
+        rels += [f"{dirs[sid].name}/{Path(f).relative_to(dirs[sid]).as_posix()}" for f in skill_files(dirs[sid])]
+        if any(o == r or o.endswith("/" + r) for r in rels for o in map(posixpath.normpath, filter(None, opened))):
+            done.append(sid)
+    return done
+
+
+def skills_cell(ids, done):
+    return f"{len(done)}/{len(ids)} {' '.join(done)}".strip() if ids else "-"
 
 
 def parse_usage(tool, out):
@@ -925,19 +1048,26 @@ def parse_usage(tool, out):
             sum(u.get("cached_input_tokens") or 0 for u in done))
 
 
-def record_usage(task, role, model, effort, nums, seconds):
+def record_usage(task, role, model, effort, nums, seconds, skills="-"):
     """Append one row to the task file's `## Usage` table (created at the end if missing)."""
     if not task.exists():
         return
     cell = lambda v: "n/a" if v is None else str(v)
-    row = f"| {role} | {model} | {effort or 'n/a'} | {cell(nums[0])} | {cell(nums[1])} | {cell(nums[2])} | {round(seconds)}s |"
+    row = f"| {role} | {model} | {effort or 'n/a'} | {cell(nums[0])} | {cell(nums[1])} | {cell(nums[2])} | {round(seconds)}s | {skills} |"
     text = task.read_text(encoding="utf-8")
     if "\n## Usage" in text:
         head, _, rest = text.partition("\n## Usage")
         body, sep, tail = rest.partition("\n## ")
+        lines = body.split("\n")
+        for i, l in enumerate(lines):
+            if l.startswith("| role") and "skills read" not in l:
+                lines[i] = l.rstrip() + " skills read |"
+                if i + 1 < len(lines) and lines[i + 1].startswith("|---"):
+                    lines[i + 1] = lines[i + 1].rstrip() + "---|"
+        body = "\n".join(lines)
         text = f"{head}\n## Usage{body.rstrip()}\n{row}\n" + (f"\n## {tail}" if sep else "")
     else:
-        text = f"{text.rstrip()}\n\n## Usage\n{USAGE_HEAD}\n|---|---|---|---|---|---|---|\n{row}\n"
+        text = f"{text.rstrip()}\n\n## Usage\n{USAGE_HEAD}\n|---|---|---|---|---|---|---|---|\n{row}\n"
     task.write_text(text, encoding="utf-8")
 
 
@@ -948,7 +1078,7 @@ def usage_totals(text):
         return ""
     rows = [[c.strip() for c in l.strip().strip("|").split("|")] for l in rest.split("\n## ", 1)[0].splitlines()
             if l.startswith("|") and not l.startswith("|---") and not l.startswith("| role")]
-    rows = [r for r in rows if len(r) == 7]
+    rows = [r for r in rows if len(r) in (7, 8)]
     tot = [sum(int(r[i]) for r in rows if r[i].isdigit()) if any(r[i].isdigit() for r in rows) else "n/a" for i in (3, 4, 5)]
     return (f"usage: {len(rows)} runs, in {tot[0]} out {tot[1]} cache {tot[2]}, "
             f"review rounds: {sum(r[0] == 'omi-agent-reviewer' for r in rows)}")
@@ -1086,7 +1216,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool="claude"):
     tm = meta(task) if task.exists() else {}
     am = get_role(main, role)
     get_role(main, tm.get("role") or "omi-agent-engineer")  # unknown task role fails too
-    declared = check_skills(wt, list(dict.fromkeys([*task_skills(am), *task_skills(tm)])))  # role defaults count against the budget
+    ids = list(dict.fromkeys([*task_skills(am), *task_skills(tm)]))
+    declared = check_skills(wt, ids)  # role defaults count against the budget
     effort = effort or am.get("effort")
     model = resolve_model(main, model or am.get("model"))
     read = am["access"] == "read"
@@ -1119,7 +1250,11 @@ def run_role(role, wt, task_file, model=None, effort=None, tool="claude"):
         rc = r.returncode
         result, *nums = parse_usage(tool, r.stdout)
         print(result if result is not None else (r.stdout or ""))
-        record_usage(task, role, model, effort, nums, time.monotonic() - t0)
+        done = skills_read(wt, ids, opened_files(tool, r.stdout))
+        record_usage(task, role, model, effort, nums, time.monotonic() - t0, skills_cell(ids, done))
+        for sid in ids:
+            if sid not in done:
+                print(f"SKILL NOT READ: {sid}")
     finally:
         if tmp:
             tmp.cleanup()
