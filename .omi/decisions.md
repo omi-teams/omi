@@ -26,3 +26,4 @@
 - 2026-10-25 | Reject Vercel web-design-guidelines as a skill source; UI UX Pro Max stays reference-only | Vercel skill only fetches its rules from a URL at runtime and the repo has no LICENSE file; UI UX Pro Max license unknown, nothing copied | TASK-026
 - 2026-10-25 | omi-task is model-invocable | the PO's AskUserQuestion pick is the approval; the Coordinator starts the chosen task without the PO typing /omi-task. omi-release stays PO-typed | PO chat
 - 2026-10-25 | omi-status ends with a next-task pick-list | the PO picks instead of typing omi-task | PO chat
+- 2026-10-25 | reviewer skip is a fixed path rule (docs/**, .omi/tasks/**, .omi/decisions.md only) | TASK-029..031 skipped review although they changed agent prompts and src/omi/template; the old 'docs or .omi/' wording left it to judgment. Those 3 are left to TASK-039 | PO chat

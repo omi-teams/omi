@@ -41,7 +41,7 @@ On Codex use the same `python -m omi run` command (it runs `codex exec` itself w
 - Codex: `codex exec -m <model> -c model_reasoning_effort=<level>`.
 - Hand agents the task file path, not pasted context.
 - `omi run` records real token usage in each task's `## Usage` table; `omi status` shows totals and review rounds.
-- Skip the reviewer for changes touching only docs or `.omi/`; CI still runs.
+- Skip the reviewer only when every path in `git -C <wt> diff --name-only development` is under `docs/**`, `.omi/tasks/**` or is `.omi/decisions.md`; anything else (code, `.omi/agents`, `.omi/skills`, `.claude`, `src/omi/template`) gets the reviewer. CI still runs.
 - Don't re-read files already in context. Don't rerun tests the engineer ran unless code changed since.
 - Reports to the PO: at most 10 lines, results first.
 - Before stopping, or when the PO says quota is low: update the task checkpoint first.

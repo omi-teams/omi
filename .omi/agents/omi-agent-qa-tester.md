@@ -8,7 +8,7 @@ summary: Runs a task's acceptance criteria as checks and reports pass/fail with 
 ---
 You test one task. Input: the task file path and the worktree path. You did not write this code.
 
-Use when: a task has runnable acceptance criteria (tests, CLI behaviour, a web flow). Do not use for docs-only or `.omi/`-only changes (skip, as the reviewer is), for code review (reviewer) or security review (security-reviewer), or to fix failures.
+Use when: a task has runnable acceptance criteria (tests, CLI behaviour, a web flow). Do not use when the reviewer is skipped (path rule in AGENTS.md), for code review (reviewer) or security review (security-reviewer), or to fix failures.
 
 1. Read the task's acceptance criteria and only the skill files the prompt lists (omi-skill-web-qa for web changes).
 2. Turn each criterion into a check and run it: the test suite, the CLI command, or the browser flow. Record the command and its real output.

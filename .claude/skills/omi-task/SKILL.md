@@ -14,7 +14,7 @@ The main checkout stays on `development`. `<wt>` is `../<repo-name>.wt/<ID>`.
    If it stops because Docker is not running or no token is found, tell the PO (token: `python -m omi token set`) and stop. There is no host fallback.
 4. Check the diff before committing: `git -C <wt> status` and `git -C <wt> diff`. `omi run` prints `OUT OF SCOPE: <path>` (exit 3) for changes outside `scope`. Refuse those, and always refuse changes to `.gitattributes`, `.gitmodules` or any `.git*` path unless the scope names it: `git -C <wt> checkout -- <path>` or delete the new file. Then `git -C <wt> add -A` and commit on the host with the engineer's suggested conventional message.
 5. Handle the engineer's result:
-   - `DONE`: run `python -m omi run omi-agent-reviewer <ID>` (fresh instance in a read-only container; it first runs tests, scope and skills checks and, if one fails, reports it instead of starting: treat that as a fix round; skip it for docs-only or `.omi/`-only changes).
+   - `DONE`: run `python -m omi run omi-agent-reviewer <ID>` (fresh instance in a read-only container; it first runs tests, scope and skills checks and, if one fails, reports it instead of starting: treat that as a fix round; skip it only by the path rule in AGENTS.md Quota rules).
    - Review `FAIL`: write the findings under `## Checkpoint` in `<wt>`'s task file, commit, and run step 3 again. After 2 failed fix rounds, ask the PO.
    - `NEEDS SCOPE`: if it fits the task goal, widen `scope` in the task file, commit it on `development` too (the scope is read from there), and rerun. Otherwise ask the PO.
 6. On PASS, set `status: done` in `<wt>`'s task file and commit. Then:
