@@ -1,7 +1,7 @@
 ---
 id: TASK-032
 title: Workflow engine (format, validator, step state, gates)
-status: planned
+status: in-progress
 depends: TASK-028
 scope: src/omi/__init__.py, src/omi/template/**, .omi/workflows/**, .omi/tasks/_template.md, tests/**
 ---
