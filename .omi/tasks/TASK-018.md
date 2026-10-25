@@ -13,6 +13,7 @@ In the pilot, staging/main required a check named `test`, but the matrix CI repo
 - [ ] Re-running after CI changes updates the required checks (and prints `unchanged` when they match).
 - [ ] docs/pilot.md records: the check-name mismatch; UAT done by the Coordinator and accepted by the PO via bypass merge; and CI running twice per PR (push + pull_request on task branches).
 - [ ] `omi-release` gets a phase `tag` (run after the PO merges staging -> main): it checks that `origin/main`'s tree equals the candidate's, then tags `origin/main` as `v<YYYY.MM.DD>` (append `.N` if that tag exists) and pushes it. It never moves or deletes an existing tag. Phase 2 tells the PO to run it after merging. The template and root skill copies are identical.
+- [ ] (PO request) `omi worker` gives each container a readable name: `omi-<repo>-<task-id>-engineer-<HHMMSS>` (e.g. `omi-omi-squad2-TASK-018-engineer-143205`), `--prove` uses `...-prove-<HHMMSS>`; names are sanitized to Docker's `[a-zA-Z0-9_.-]`. The image keeps its label and is named `omi-worker-<repo>:<hash>`.
 - [ ] Tests cover the name discovery with `gh` stubbed.
 
 ## Checkpoint
@@ -20,3 +21,4 @@ Done: all criteria (ci_checks + rulesets(checks) in src/omi/__init__.py, omi-rel
 Not done: none.
 Tests: python3 tests/test_omi.py passes.
 Next: Coordinator review and commit.
+Round 2 (Coordinator): the PO asked for readable container names (new criterion above). Everything else from round 1 is done and committed; only add the naming and its test.
