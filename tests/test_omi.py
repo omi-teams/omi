@@ -1164,6 +1164,19 @@ def test_workflows():
                             "## Steps\n- plan done 2026-10-25 10:00\n- build done 2026-10-25 10:00\n- review done 2026-10-25 10:00\n"
                             "- accept started 2026-10-25 10:00\n\n## Checkpoint\nPO approval accept: x\n")
             fails(lambda: go("done"), "po gate")
+            # a task with a worktree keeps its step state in the worktree copy, not the main checkout
+            wt = root / "wt"
+            (wt / ".omi" / "tasks").mkdir(parents=True)
+            wtask = wt / ".omi" / "tasks" / "TASK-001.md"
+            wtask.write_text("---\nid: TASK-001\nworkflow: omi-flow-demo\nstatus: in-progress\n---\n")
+            task.write_text("---\nid: TASK-001\nworkflow: omi-flow-demo\n---\n")
+            real_wts, omi.task_worktrees = omi.task_worktrees, lambda r: {"TASK-001": str(wt)}
+            try:
+                assert go("next") == 0
+                assert omi.meta(wtask)["step"] == "plan" and "step" not in omi.meta(task)
+                assert omi.tasks(root)["TASK-001"]["step"] == "plan"  # what `omi status` prints
+            finally:
+                omi.task_worktrees = real_wts
         finally:
             sys.stdout = saved
     repo = Path(__file__).parents[1]

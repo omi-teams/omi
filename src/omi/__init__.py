@@ -398,6 +398,9 @@ def step(root, tid, action, why=None, now=None):
     if not re.fullmatch(r"[A-Za-z0-9_-]+", tid):
         sys.exit(f"invalid task id `{tid}`: use letters, digits, `-` and `_`. Nothing changed.")
     task = Path(root) / ".omi" / "tasks" / f"{tid}.md"
+    wt_task = Path(task_worktrees(root).get(tid, root)) / ".omi" / "tasks" / f"{tid}.md"
+    if wt_task.exists():
+        task = wt_task  # step state lives on the task branch
     if not task.exists():
         sys.exit(f"no task file {task}. Nothing changed.")
     m = meta(task)
@@ -1219,7 +1222,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool="claude"):
     tm = meta(task) if task.exists() else {}
     am = get_role(main, role)
     get_role(main, tm.get("role") or "omi-agent-engineer")  # unknown task role fails too
-    cur = next((s for s in get_workflow(wt, tm.get("workflow") or "omi-flow-feature") if s["id"] == tm.get("step")), None) \
+    cur = next((s for s in get_workflow(wt, tm.get("workflow") or DEFAULT_WORKFLOW) if s["id"] == tm.get("step")), None) \
         if tm.get("step") else None
     step_ids = task_skills(cur) if cur and cur["role"] == role else []  # the current step's own skills
     ids = list(dict.fromkeys([*task_skills(am), *task_skills(tm), *step_ids]))

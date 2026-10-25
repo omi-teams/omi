@@ -25,9 +25,11 @@ Coordinator check before review, fix (edit only `## Checkpoint` here):
 Done: all criteria (step skills in run_role, Tests: line, omi-task both copies +2 lines, status shows step)
 Not done: -
 Tests: python3 tests/test_omi.py ok
+Fix round: step writes the worktree copy (task_worktrees), run_role uses DEFAULT_WORKFLOW, test with mocked worktree layout; status shows step via tasks() worktree copy.
 Next: TASK-036 (first task run through its workflow)
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read |
 |---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 34 | 7236 | 643285 | 138s | 1/1 omi-skill-lean-implementation |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 2662 | 237405 | 37s | 1/1 omi-skill-lean-implementation |
