@@ -10,6 +10,7 @@ Continue from it. Don't re-explore the repo.
 ## Commands the PO types
 - `omi-idea`: follow `.claude/skills/omi-idea/SKILL.md`
 - `omi-task <ID>`: follow `.claude/skills/omi-task/SKILL.md`
+- `omi-release [promote]`: follow `.claude/skills/omi-release/SKILL.md`
 - `omi-status`: run `python -m omi status`, show the output verbatim.
 
 ## State (files in the repo are the only source of truth)
