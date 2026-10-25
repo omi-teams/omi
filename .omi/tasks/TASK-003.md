@@ -1,7 +1,7 @@
 ---
 id: TASK-003
 title: Add omi github to enforce PO-only merges with rulesets
-status: blocked
+status: in-progress
 depends: TASK-002
 scope: src/omi/__init__.py, tests/**, README.md
 ---
@@ -17,7 +17,7 @@ One command configures GitHub so the squad can merge only into `development`, an
 - [ ] A test covers the payload that gets built (no network).
 
 ## Checkpoint
-Blocked: the squad account `minibox-claude-code` has WRITE, not admin. The PO either grants admin for the run or runs `omi github` themselves.
+Unblocked: PO is making the repo public (Free plan has no rulesets on private repos) and granting admin. Running `omi github` for real is the Coordinator's step after merge.
 Not done:
 Tests:
 Next:
