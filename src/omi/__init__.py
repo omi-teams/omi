@@ -143,12 +143,10 @@ def guard(stdin=None):
         rel = PurePosixPath(path.resolve().relative_to(root).as_posix())
     except (ValueError, TypeError):
         rel = None
-    if path.parent.name == ".claude" and fnmatch(path.name, "settings*.json") and not (
+    if path.parent.name.lower() == ".claude" and fnmatch(path.name.lower(), "settings*.json") and not (
             branch.startswith("task/") and rel):
-        reason = "is Claude Code config; only a task whose scope names it may change it."
-        if engineer or not top:
-            print(f"OMI: {path} {reason}", file=sys.stderr)
-            return 2
+        print(f"OMI: {path} is Claude Code config; only a task whose scope names it may change it.", file=sys.stderr)
+        return 2
     if not top:
         reason = "is outside the task worktree."
         if not engineer:
@@ -180,9 +178,10 @@ def guard(stdin=None):
 
 def rulesets():
     """{name: payload} of the GitHub rulesets omi github applies."""
-    def ruleset(name, refs, rules, bypass):
-        return {"name": name, "target": "branch", "enforcement": "active", "bypass_actors": bypass,
-                "conditions": {"ref_name": {"include": [f"refs/heads/{r}" for r in refs], "exclude": []}},
+    def ruleset(name, refs, rules, bypass, target="branch"):
+        kind = "heads" if target == "branch" else "tags"
+        return {"name": name, "target": target, "enforcement": "active", "bypass_actors": bypass,
+                "conditions": {"ref_name": {"include": [f"refs/{kind}/{r}" for r in refs], "exclude": []}},
                 "rules": [{"type": t, **({"parameters": p} if p else {})} for t, p in rules]}
     admin = [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}]
     pr = {"required_approving_review_count": 0, "dismiss_stale_reviews_on_push": False,
@@ -193,7 +192,9 @@ def rulesets():
         ruleset("omi-development", ["development"], [("deletion", None), ("non_fast_forward", None)], []),
         ruleset("omi-po-only", ["staging", "main"],
                 [("deletion", None), ("non_fast_forward", None), ("update", None),
-                 ("pull_request", pr), ("required_status_checks", checks)], admin))}
+                 ("pull_request", pr), ("required_status_checks", checks)], admin),
+        # creating rc-* tags stays allowed (omi-release); moving or deleting them is admin only
+        ruleset("omi-tags", ["rc-*", "v*"], [("update", None), ("deletion", None)], admin, "tag"))}
 
 
 def gh(*args, body=None):
@@ -204,7 +205,19 @@ def gh(*args, body=None):
     return json.loads(r.stdout) if r.stdout.strip() else None
 
 
+def same(live, want):
+    """True if live holds everything we send (GitHub adds extra fields); lists compare in any order."""
+    if isinstance(want, dict):
+        return isinstance(live, dict) and all(k in live and same(live[k], v) for k, v in want.items())
+    if isinstance(want, list):
+        return isinstance(live, list) and len(live) == len(want) and all(
+            any(same(l, w) for l in live) for w in want)
+    return live == want
+
+
 def github():
+    if not shutil.which("gh"):
+        sys.exit("gh is not installed (https://cli.github.com); omi github needs it.")
     r = subprocess.run(["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
                        capture_output=True, text=True)
     if r.returncode:
@@ -222,6 +235,9 @@ def github():
     existing = {x["name"]: x["id"] for x in gh(f"repos/{repo}/rulesets")}
     for name, payload in rulesets().items():
         if name in existing:
+            if same(gh(f"repos/{repo}/rulesets/{existing[name]}"), {k: v for k, v in payload.items() if k != "name"}):
+                print(f"unchanged ruleset {name}")
+                continue
             gh("-X", "PUT", f"repos/{repo}/rulesets/{existing[name]}", body=payload)
             print(f"update ruleset {name}")
         else:

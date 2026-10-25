@@ -100,6 +100,8 @@ def test_init_guard_status():
 
         git(root, "worktree", "remove", "--force", str(wt))
         assert guard(root / "README.md") == 0
+        assert guard(root / ".claude" / "settings.json") == 2, "main checkout config, no worktree"
+        assert guard(root / ".CLAUDE" / "Settings.json") == 2, "case-insensitive"
 
 
 def test_github_rulesets():
@@ -113,8 +115,34 @@ def test_github_rulesets():
     assert types["required_status_checks"]["parameters"]["required_status_checks"] == [{"context": "test"}]
     assert po["bypass_actors"][0]["actor_id"] == 5
 
+    tags = rs["omi-tags"]
+    assert tags["target"] == "tag" and tags["bypass_actors"] == po["bypass_actors"]
+    assert tags["conditions"]["ref_name"]["include"] == ["refs/tags/rc-*", "refs/tags/v*"]
+    assert sorted(r["type"] for r in tags["rules"]) == ["deletion", "update"]  # no "creation": squad can tag
+
+
+def test_same_and_no_gh():
+    po = omi.rulesets()["omi-po-only"]
+    live = json.loads(json.dumps(po))
+    live["id"] = 7
+    live["rules"].reverse()
+    live["rules"][0].setdefault("parameters", {})
+    assert omi.same(live, po)
+    live["rules"].pop()
+    assert not omi.same(live, po)
+    real = omi.shutil.which
+    omi.shutil.which = lambda _: None
+    try:
+        omi.github()
+        assert False
+    except SystemExit as e:
+        assert "gh is not installed" in str(e)
+    finally:
+        omi.shutil.which = real
+
 
 if __name__ == "__main__":
     test_init_guard_status()
     test_github_rulesets()
+    test_same_and_no_gh()
     print("ok")
