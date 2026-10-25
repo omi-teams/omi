@@ -870,11 +870,36 @@ def test_usage():
         omi.record_usage(task, "omi-agent-reviewer", "opus", "high", (None, None, None), 1)
         omi.record_usage(task, "omi-agent-reviewer", "opus", "high", (1, 2, 3), 1)
         text = task.read_text(encoding="utf-8")
-        assert text.count("## Usage") == 1 and "| omi-agent-engineer | sonnet | medium | 10 | 20 | 105 | 3s |" in text
-        assert "| omi-agent-reviewer | opus | high | n/a | n/a | n/a | 1s |" in text
+        assert text.count("## Usage") == 1 and "| omi-agent-engineer | sonnet | medium | 10 | 20 | 105 | 3s | - |" in text
+        assert "| omi-agent-reviewer | opus | high | n/a | n/a | n/a | 1s | - |" in text
         assert omi.checkpoint(text) == "Done: x"
         assert omi.usage_totals(text) == "usage: 3 runs, in 11 out 22 cache 108, review rounds: 2"
     assert omi.usage_totals("## Goal\n") == ""
+    old = "\n## Usage\n| role | model | effort | input | output | cache | duration |\n|---|---|---|---|---|---|---|\n| r | m | e | 1 | 2 | 3 | 4s |\n"
+    assert omi.usage_totals(old) == "usage: 1 runs, in 1 out 2 cache 3, review rounds: 0"
+    assert omi.skills_cell([], []) == "-" and omi.skills_cell(["a", "b"], ["b"]) == "1/2 b"
+    assert omi.skills_cell(["a"], []) == "0/1"
+    use = lambda p: {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Read", "input": {"file_path": p}}]}}
+    stream = "\n".join(json.dumps(e) for e in (
+        {"type": "system", "subtype": "init"}, use("/work/.omi/skills/g/omi-skill-a/SKILL.md"),
+        {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": "cat /work/.omi/skills/g/omi-skill-b/SKILL.md"}}]}},
+        json.loads(claude)))
+    assert omi.parse_usage("claude", stream) == ("DONE", 10, 20, 105)
+    assert omi.opened_files("claude", stream) == ["/work/.omi/skills/g/omi-skill-a/SKILL.md"]
+    cx = "\n".join(json.dumps(e) for e in (
+        {"type": "item.completed", "item": {"type": "command_execution", "command": "bash -lc 'cat /work/.omi/skills/g/omi-skill-b/ref.md'"}},
+        {"type": "item.completed", "item": {"type": "agent_message", "text": "hi"}}))
+    assert omi.opened_files("codex", cx) == ["bash -lc 'cat /work/.omi/skills/g/omi-skill-b/ref.md'"]
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        for sid in ("a", "b"):
+            sd = root / ".omi" / "skills" / "g" / f"omi-skill-{sid}"
+            sd.mkdir(parents=True)
+            (sd / "SKILL.md").write_text("---\nreferences: ref.md\n---\n", encoding="utf-8")
+            (sd / "ref.md").write_text("x", encoding="utf-8")
+        ids = ["omi-skill-a", "omi-skill-b"]
+        assert omi.skills_read(root, ids, omi.opened_files("claude", stream)) == ["omi-skill-a"]
+        assert omi.skills_read(root, ids, omi.opened_files("codex", cx)) == ["omi-skill-b"]
     # run_role records the harness numbers
     real = omi.subprocess.run, omi.shutil.which, omi.main_checkout, omi.os.environ.get(omi.TOKEN_ENV)
 

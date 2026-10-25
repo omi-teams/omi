@@ -882,7 +882,7 @@ def engineer_cmd(agent_text, task_rel, model=None, effort=None, skills=""):
             "--append-system-prompt", body,
             "--model", model or m.get("model", "sonnet"), "--effort", effort or m.get("effort", "medium"),
             # the container is the boundary, not prompts; project hooks (omi guard) cannot run in it
-            "--permission-mode", "bypassPermissions", "--setting-sources", "user", "--output-format", "json"]
+            "--permission-mode", "bypassPermissions", "--setting-sources", "user", "--output-format", "stream-json", "--verbose"]
 
 
 def codex_cmd(agent_text, task_rel, model, effort, skills=""):
@@ -892,7 +892,41 @@ def codex_cmd(agent_text, task_rel, model, effort, skills=""):
             "--dangerously-bypass-approvals-and-sandbox", "--json", f"{body}\n\nTask file: /work/{task_rel}\nWorktree: /work{skills}"]
 
 
-USAGE_HEAD = "| role | model | effort | input | output | cache | duration |"
+USAGE_HEAD = "| role | model | effort | input | output | cache | duration | skills read |"
+
+
+def opened_files(tool, out):
+    """Paths (Claude Read calls) or command lines (Codex) the agent opened, from the tool-call log."""
+    found = []
+    for line in (out or "").splitlines():
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(e, dict):
+            continue
+        if tool == "claude" and e.get("type") == "assistant" and isinstance(e.get("message"), dict):
+            for c in e["message"].get("content") or []:
+                if isinstance(c, dict) and c.get("type") == "tool_use" and c.get("name") == "Read":
+                    found.append(str((c.get("input") or {}).get("file_path") or ""))
+        elif tool == "codex" and isinstance(e.get("item"), dict) and e["item"].get("type") == "command_execution":
+            found.append(str(e["item"].get("command") or ""))
+    return found
+
+
+def skills_read(root, ids, opened):
+    """Ids of the declared skills whose SKILL.md or declared reference shows up in the opened files/commands."""
+    dirs = skill_dirs(root)
+    done = []
+    for sid in ids:
+        rels = [Path(f).relative_to(root).as_posix() for f in skill_files(dirs[sid])]
+        if any(r in o for r in rels for o in opened):
+            done.append(sid)
+    return done
+
+
+def skills_cell(ids, done):
+    return f"{len(done)}/{len(ids)} {' '.join(done)}".strip() if ids else "-"
 
 
 def parse_usage(tool, out):
@@ -925,19 +959,19 @@ def parse_usage(tool, out):
             sum(u.get("cached_input_tokens") or 0 for u in done))
 
 
-def record_usage(task, role, model, effort, nums, seconds):
+def record_usage(task, role, model, effort, nums, seconds, skills="-"):
     """Append one row to the task file's `## Usage` table (created at the end if missing)."""
     if not task.exists():
         return
     cell = lambda v: "n/a" if v is None else str(v)
-    row = f"| {role} | {model} | {effort or 'n/a'} | {cell(nums[0])} | {cell(nums[1])} | {cell(nums[2])} | {round(seconds)}s |"
+    row = f"| {role} | {model} | {effort or 'n/a'} | {cell(nums[0])} | {cell(nums[1])} | {cell(nums[2])} | {round(seconds)}s | {skills} |"
     text = task.read_text(encoding="utf-8")
     if "\n## Usage" in text:
         head, _, rest = text.partition("\n## Usage")
         body, sep, tail = rest.partition("\n## ")
         text = f"{head}\n## Usage{body.rstrip()}\n{row}\n" + (f"\n## {tail}" if sep else "")
     else:
-        text = f"{text.rstrip()}\n\n## Usage\n{USAGE_HEAD}\n|---|---|---|---|---|---|---|\n{row}\n"
+        text = f"{text.rstrip()}\n\n## Usage\n{USAGE_HEAD}\n|---|---|---|---|---|---|---|---|\n{row}\n"
     task.write_text(text, encoding="utf-8")
 
 
@@ -948,7 +982,7 @@ def usage_totals(text):
         return ""
     rows = [[c.strip() for c in l.strip().strip("|").split("|")] for l in rest.split("\n## ", 1)[0].splitlines()
             if l.startswith("|") and not l.startswith("|---") and not l.startswith("| role")]
-    rows = [r for r in rows if len(r) == 7]
+    rows = [r for r in rows if len(r) in (7, 8)]
     tot = [sum(int(r[i]) for r in rows if r[i].isdigit()) if any(r[i].isdigit() for r in rows) else "n/a" for i in (3, 4, 5)]
     return (f"usage: {len(rows)} runs, in {tot[0]} out {tot[1]} cache {tot[2]}, "
             f"review rounds: {sum(r[0] == 'omi-agent-reviewer' for r in rows)}")
@@ -1086,7 +1120,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool="claude"):
     tm = meta(task) if task.exists() else {}
     am = get_role(main, role)
     get_role(main, tm.get("role") or "omi-agent-engineer")  # unknown task role fails too
-    declared = check_skills(wt, list(dict.fromkeys([*task_skills(am), *task_skills(tm)])))  # role defaults count against the budget
+    ids = list(dict.fromkeys([*task_skills(am), *task_skills(tm)]))
+    declared = check_skills(wt, ids)  # role defaults count against the budget
     effort = effort or am.get("effort")
     model = resolve_model(main, model or am.get("model"))
     read = am["access"] == "read"
@@ -1119,7 +1154,11 @@ def run_role(role, wt, task_file, model=None, effort=None, tool="claude"):
         rc = r.returncode
         result, *nums = parse_usage(tool, r.stdout)
         print(result if result is not None else (r.stdout or ""))
-        record_usage(task, role, model, effort, nums, time.monotonic() - t0)
+        done = skills_read(wt, ids, opened_files(tool, r.stdout))
+        record_usage(task, role, model, effort, nums, time.monotonic() - t0, skills_cell(ids, done))
+        for sid in ids:
+            if sid not in done:
+                print(f"SKILL NOT READ: {sid}")
     finally:
         if tmp:
             tmp.cleanup()

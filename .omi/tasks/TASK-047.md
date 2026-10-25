@@ -18,7 +18,12 @@ Evidence that a role read its declared skills: `omi run` records the skill files
 - [ ] Tests: stream-json parsing (usage, report, read paths), Codex event parsing, the `n/m` cell, the warning; `python tests/test_omi.py` passes.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
-Next:
+Done: stream-json cmd, opened_files/skills_read/skills_cell, skills read column (7- and 8-col tables parse), SKILL NOT READ warning, unit tests.
+Not done: no end-to-end run_role test of the SKILL NOT READ print.
+Tests: python3 tests/test_omi.py ok
+Next: review.
+
+## Usage
+| role | model | effort | input | output | cache | duration |
+|---|---|---|---|---|---|---|
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 20 | 6236 | 291198 | 60s |
