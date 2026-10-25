@@ -14,7 +14,7 @@ Follow-ups from the TASK-003 review, plus tag protection for `omi-release` candi
 - [ ] If `gh` is not installed, every command that needs it prints a one-line message instead of a traceback.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
-Next:
+Done: all 3 criteria (unchanged check via same(), omi-tags tag ruleset, gh-missing message in github()).
+Not done: nothing. Coordinator applies `omi github` after merge.
+Tests: python tests/test_omi.py ok
+Next: review
