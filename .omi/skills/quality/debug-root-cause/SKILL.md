@@ -10,7 +10,7 @@ source_file: skills/systematic-debugging/SKILL.md
 source_license: MIT
 source_use: adapt
 ---
-<!-- Adapted from Superpowers systematic-debugging (https://github.com/obra/superpowers) v6.3.0, MIT, Copyright (c) 2025 Jesse Vincent. Changes: condensed to four phases, omi escalation added. -->
+<!-- Adapted from Superpowers systematic-debugging (https://github.com/obra/superpowers) v6.3.0, MIT, Copyright (c) 2025 Jesse Vincent. Changes: condensed to eight steps, omi escalation added. -->
 # Debug to the root cause
 
 Rule: no fix before you can state the root cause and the evidence for it.

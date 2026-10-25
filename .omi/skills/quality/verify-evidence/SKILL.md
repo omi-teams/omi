@@ -2,7 +2,7 @@
 id: verify-evidence
 group: quality
 description: Use when about to say work is done, fixed or passing, before reporting DONE, committing or approving a review.
-tokens: 536
+tokens: 537
 tools: Read, Bash
 source_repo: https://github.com/obra/superpowers
 source_ref: v6.3.0

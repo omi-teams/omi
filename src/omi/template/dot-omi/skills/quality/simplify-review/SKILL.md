@@ -2,11 +2,11 @@
 id: simplify-review
 group: quality
 description: Use when reviewing a diff for over-engineering, needless dependencies or speculative abstractions; lists what to cut.
-tokens: 538
+tokens: 547
 tools: Read, Grep, Bash
 source_repo: https://github.com/DietrichGebert/ponytail
 source_ref: v4.10.0
-source_file: skills/ponytail-review/SKILL.md
+source_file: skills/ponytail-review/SKILL.md, skills/ponytail-audit/SKILL.md
 source_license: MIT
 source_use: adapt
 ---
