@@ -1,7 +1,7 @@
 ---
 id: TASK-026
 title: Skill group - stack extensions (UI, QA web, data)
-status: in-progress
+status: done
 depends: TASK-022, TASK-046
 scope: .omi/skills/CATALOG.md, docs/research/_src/**, tests/test_omi.py, .omi/skills/ui/**, .omi/skills/qa-web/**, .omi/skills/data/**, src/omi/template/dot-omi/skills/**, .omi/decisions.md
 ---
@@ -9,13 +9,13 @@ scope: .omi/skills/CATALOG.md, docs/research/_src/**, tests/test_omi.py, .omi/sk
 Stack-specific skills that load only when a task declares them.
 
 ## Acceptance criteria
-- [ ] UI: one skill per need after the TASK-020 overlap resolution (Taste MIT, UI UX Pro Max, Vercel web guidelines); accessibility basics included.
-- [ ] QA web: browser regression with screenshot evidence, from Playwright CLI (Apache-2.0).
-- [ ] Data: query/index/schema/row-level-permission review, from Supabase and PostgreSQL docs; not tied to Supabase.
-- [ ] Large reference data (palettes, rule lists) stays in reference files outside SKILL.md and counts toward the task budget only when declared.
-- [ ] Each passes `--check`, records source, commit, file, license; catalog regenerated; template copy identical.
+- [x] UI: one skill per need after the TASK-020 overlap resolution (Taste MIT, UI UX Pro Max, Vercel web guidelines); accessibility basics included.
+- [x] QA web: browser regression with screenshot evidence, from Playwright CLI (Apache-2.0).
+- [x] Data: query/index/schema/row-level-permission review, from Supabase and PostgreSQL docs; not tied to Supabase.
+- [x] Large reference data (palettes, rule lists) stays in reference files outside SKILL.md and counts toward the task budget only when declared.
+- [x] Each passes `--check`, records source, commit, file, license; catalog regenerated; template copy identical.
 
-- [ ] Every new skill id starts with `omi-skill-` (e.g. `omi-skill-ui-direction`, `omi-skill-web-qa`, `omi-skill-data-review`).
+- [x] Every new skill id starts with `omi-skill-` (e.g. `omi-skill-ui-direction`, `omi-skill-web-qa`, `omi-skill-data-review`).
 
 ## Checkpoint
 Done: 4 skills (ui-direction, ui-a11y-review, web-qa, data-review), template copy, catalog, decision, _src deleted
@@ -32,3 +32,4 @@ Follow `.omi/skills/authoring/write-skill/SKILL.md` and `python -m omi skills --
 | role | model | effort | input | output | cache | duration |
 |---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 22 | 9893 | 465579 | 92s |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1461 | 93093 | 20s |
