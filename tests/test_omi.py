@@ -833,7 +833,66 @@ source_use: rewrite
     assert not ws.exists() or omi.validate_skill(ws, 2000) == []
 
 
+def test_usage():
+    claude = json.dumps({"type": "result", "result": "DONE", "duration_ms": 5,
+                         "usage": {"input_tokens": 10, "output_tokens": 20,
+                                   "cache_read_input_tokens": 100, "cache_creation_input_tokens": 5}})
+    assert omi.parse_usage("claude", claude) == ("DONE", 10, 20, 105)
+    codex = "\n".join(json.dumps(e) for e in (
+        {"type": "item.completed", "item": {"type": "agent_message", "text": "hi"}},
+        {"type": "turn.completed", "usage": {"input_tokens": 7, "cached_input_tokens": 3, "output_tokens": 2}},
+        {"type": "turn.completed", "usage": {"input_tokens": 1, "cached_input_tokens": 0, "output_tokens": 1}}))
+    assert omi.parse_usage("codex", codex) == ("hi", 8, 3, 3)
+    assert omi.parse_usage("claude", "garbage") == (None, None, None, None)
+    with tempfile.TemporaryDirectory() as d:
+        task = Path(d) / "TASK-001.md"
+        task.write_text("---\nid: TASK-001\n---\n## Checkpoint\nDone: x\n", encoding="utf-8")
+        omi.record_usage(task, "engineer", "sonnet", "medium", (10, 20, 105), 3.2)
+        omi.record_usage(task, "reviewer", "opus", "high", (None, None, None), 1)
+        omi.record_usage(task, "reviewer", "opus", "high", (1, 2, 3), 1)
+        text = task.read_text(encoding="utf-8")
+        assert text.count("## Usage") == 1 and "| engineer | sonnet | medium | 10 | 20 | 105 | 3s |" in text
+        assert "| reviewer | opus | high | n/a | n/a | n/a | 1s |" in text
+        assert omi.checkpoint(text) == "Done: x"
+        assert omi.usage_totals(text) == "usage: 3 runs, in 11 out 22 cache 108, review rounds: 2"
+    assert omi.usage_totals("## Goal\n") == ""
+    # run_role records the harness numbers
+    real = omi.subprocess.run, omi.shutil.which, omi.main_checkout, omi.os.environ.get(omi.TOKEN_ENV)
+
+    class R:
+        def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
+
+    def run(cmd, **kw):
+        if cmd[:2] == ["docker", "run"]:
+            return R(claude)
+        if "status" in cmd:
+            return R(" M src/a.py\0")
+        if "show" in cmd:
+            return R("---\nscope: src/**\n---\n")
+        return R()
+
+    with tempfile.TemporaryDirectory() as d:
+        wt = Path(d).resolve()
+        (wt / ".git").write_text("gitdir: /x")
+        task = wt / ".omi" / "tasks" / "TASK-001.md"
+        task.parent.mkdir(parents=True)
+        task.write_text("---\nid: TASK-001\nscope: src/**\n---\n## Goal\ng\n", encoding="utf-8")
+        omi.subprocess.run, omi.shutil.which, omi.main_checkout = run, lambda _: "docker", (lambda _: wt)
+        omi.os.environ[omi.TOKEN_ENV] = "tok"
+        sys.stdout, saved = io.StringIO(), sys.stdout
+        try:
+            omi.run_role("engineer", wt, task)
+        finally:
+            sys.stdout = saved
+            omi.subprocess.run, omi.shutil.which, omi.main_checkout, tok = real
+            omi.os.environ.pop(omi.TOKEN_ENV, None)
+            if tok is not None:
+                omi.os.environ[omi.TOKEN_ENV] = tok
+        assert "| engineer |" in task.read_text(encoding="utf-8") and "| 10 | 20 | 105 |" in task.read_text(encoding="utf-8")
+
+
 if __name__ == "__main__":
+    test_usage()
     test_skills()
     test_skills_check()
     test_worker()

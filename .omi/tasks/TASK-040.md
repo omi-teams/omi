@@ -14,7 +14,7 @@ Real token numbers instead of estimates, recorded where the PO and later tasks c
 - [ ] Tests with a fake harness output; `python tests/test_omi.py` passes.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
+Done: usage parse/record/totals in src/omi/__init__.py (claude --output-format json, codex --json); status shows totals+review rounds; 1 line in AGENTS.md (+template copy); test_usage.
+Not done: nothing.
+Tests: python tests/test_omi.py ok
 Next: TASK-029
