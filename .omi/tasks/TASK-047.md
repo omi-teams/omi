@@ -1,7 +1,7 @@
 ---
 id: TASK-047
 title: Record which skill files each role actually read
-status: planned
+status: in-progress
 depends: TASK-032
 scope: src/omi/__init__.py, tests/**
 role: omi-agent-engineer
