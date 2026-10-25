@@ -1,7 +1,7 @@
 ---
 id: TASK-004
 title: Verify hooks and agents live in a fresh Claude Code session
-status: planned
+status: in-progress
 depends: TASK-002
 scope: docs/verification.md
 ---
