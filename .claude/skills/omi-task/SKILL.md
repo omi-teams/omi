@@ -9,6 +9,7 @@ The main checkout stays on `development`. `<wt>` is `../<repo-name>.wt/<ID>`.
 
 1. Check that every `depends` task is done and that the task's `role` (a file in `.omi/agents`) and `skills` (chosen from `.omi/skills/CATALOG.md`, regenerate with `python -m omi skills`) pass `python -m omi skills check <task-file>` (role default skills count too). Set `status: in-progress`, then commit on `development`.
 2. If `<wt>` already exists, this is a resume: read its Checkpoint and verify it with `git -C <wt> status` and `git -C <wt> log development..HEAD`. Otherwise run `git worktree add <wt> -b task/<ID> development`.
+   Drive the task through its `workflow:` (default `omi-flow-feature`) with `python -m omi step <ID> next` before and `done` after each step; `omi run` loads the current step's skills. `coordinator` steps are yours; before `done` on a `po` gate, record `PO approval <step>: <PO's words>` in `## Steps`.
 3. Run the engineer in the Docker worker (never spawn an `omi-agent-engineer` subagent, never run it on the host):
    `python -m omi run <role> <ID> [--model M --effort E]` (role from the task, default `omi-agent-engineer`; add `--tool codex` to use Codex). Pass `--model/--effort` only when the AGENTS.md quota rules differ from `.omi/agents/<role>.md`. It prints the engineer's report.
    If it stops because Docker is not running or no token is found, tell the PO (token: `python -m omi token set`) and stop. There is no host fallback.

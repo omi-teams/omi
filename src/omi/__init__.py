@@ -398,6 +398,9 @@ def step(root, tid, action, why=None, now=None):
     if not re.fullmatch(r"[A-Za-z0-9_-]+", tid):
         sys.exit(f"invalid task id `{tid}`: use letters, digits, `-` and `_`. Nothing changed.")
     task = Path(root) / ".omi" / "tasks" / f"{tid}.md"
+    wt_task = Path(task_worktrees(root).get(tid, root)) / ".omi" / "tasks" / f"{tid}.md"
+    if wt_task.exists():
+        task = wt_task  # step state lives on the task branch
     if not task.exists():
         sys.exit(f"no task file {task}. Nothing changed.")
     m = meta(task)
@@ -523,7 +526,7 @@ def status(cwd="."):
     for st in STATUSES:
         for k, m in ts.items():
             if m.get("status", "planned") == st:
-                print(f"[{st}] {k} {m.get('title', '')}")
+                print(f"[{st}] {k} {m.get('title', '')}" + (f" (step: {m['step']})" if st == "in-progress" and m.get("step") else ""))
                 if st != "planned":
                     if "worktree" in m:
                         print(f"  worktree: {m['worktree']}")
@@ -1219,7 +1222,10 @@ def run_role(role, wt, task_file, model=None, effort=None, tool="claude"):
     tm = meta(task) if task.exists() else {}
     am = get_role(main, role)
     get_role(main, tm.get("role") or "omi-agent-engineer")  # unknown task role fails too
-    ids = list(dict.fromkeys([*task_skills(am), *task_skills(tm)]))
+    cur = next((s for s in get_workflow(wt, tm.get("workflow") or DEFAULT_WORKFLOW) if s["id"] == tm.get("step")), None) \
+        if tm.get("step") else None
+    step_ids = task_skills(cur) if cur and cur["role"] == role else []  # the current step's own skills
+    ids = list(dict.fromkeys([*task_skills(am), *task_skills(tm), *step_ids]))
     declared = check_skills(wt, ids)  # role defaults count against the budget
     effort = effort or am.get("effort")
     model = resolve_model(main, model or am.get("model"))
@@ -1235,6 +1241,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool="claude"):
     env.pop(TOKEN_ENV, None)
     env[key] = secret
     prompt_skills = skill_prompt(wt, declared)
+    prompt_skills += "\nTests: " + " ".join("python" if a == sys.executable else a for a in test_command(wt, main))
     text = am["_text"]
     tmp = tempfile.TemporaryDirectory() if read else None
     try:
