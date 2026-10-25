@@ -78,6 +78,16 @@ def test_init_guard_status():
             sys.stdout = real
         text = out.getvalue()
         assert "Next: wire it" in text and "next: TASK-003" in text, text
+        assert "(step:" not in text
+        (wt / ".omi" / "tasks" / "TASK-001.md").write_text(
+            "---\ntitle: A\nstatus: in-progress\nstep: build\nscope: src/**\n---\n## Checkpoint\nNext: wire it\n")
+        out.truncate(0); out.seek(0)
+        sys.stdout = out
+        try:
+            omi.status(root)
+        finally:
+            sys.stdout = real
+        assert "TASK-001 A (step: build)" in out.getvalue(), out.getvalue()
 
         def show():
             out = io.StringIO()
@@ -561,6 +571,28 @@ def test_run_read_role():
             # no host fallback when Docker is down
             e = go(info_rc=1)
             assert "Docker is not running" in e and not docker_runs()
+            # the current step's skills join the prompt; the prompt names the test command
+            st["info_rc"] = 0
+            d = wt / ".omi" / "skills" / "g" / "omi-skill-zz"
+            d.mkdir(parents=True)
+            (d / "SKILL.md").write_text("---\ndescription: use for zz\n---\nzz")
+            omi.skills_catalog(wt)
+            (wt / ".omi" / "workflows").mkdir(parents=True)
+            task.parent.mkdir(parents=True, exist_ok=True)
+            (wt / ".omi" / "workflows" / "omi-flow-zz.md").write_text(
+                "---\nid: omi-flow-zz\nsummary: s\nsteps:\n"
+                "- id: build | role: omi-agent-engineer | skills: omi-skill-zz | input: i | output: o | gate: none | stop: s\n"
+                "- id: review | role: omi-agent-reviewer | skills: | input: i | output: o | gate: review | stop: s\n---\nx\n")
+            prompt = lambda: docker_runs()[0][0][docker_runs()[0][0].index("claude") + 2]  # noqa: E731
+            task.write_text("---\nid: TASK-001\nworkflow: omi-flow-zz\nstep: build\n---\n")
+            calls.clear()
+            assert omi.run_role("omi-agent-engineer", wt, task) == 0
+            assert "omi-skill-zz" in prompt() and "\nTests: python " in prompt(), prompt()
+            assert task.read_text().splitlines()[-1].endswith("| 0/1 |"), task.read_text()  # Usage `skills read` cell
+            task.write_text("---\nid: TASK-001\nworkflow: omi-flow-zz\nstep: review\n---\n")  # step role differs
+            calls.clear()
+            omi.run_role("omi-agent-engineer", wt, task)
+            assert "omi-skill-zz" not in prompt()
         finally:
             sys.stdout = saved
             omi.subprocess.run, omi.shutil.which, omi.main_checkout, omi.WINDOWS, tok = real
