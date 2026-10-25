@@ -23,3 +23,4 @@ Tests: python3 tests/test_omi.py passes.
 Next: Coordinator review and commit.
 Round 2 (Coordinator): the PO asked for readable container names (new criterion above). Everything else from round 1 is done and committed; only add the naming and its test.
 Round 2 done: container_name() + --name in worker_argv, image omi-worker-<repo>:<hash>, test_container_names. python3 tests/test_omi.py passes.
+Round 3 (review PASS, Coordinator asks for hardening): in `ci_checks()` (1) return [] only when development has no commits with check runs (404 or empty); any other gh error must abort `omi github` with a message, never drop required checks; (2) walk back from the latest development commit (up to 20) to the newest commit that has completed check runs, and use those names, so a fresh chore commit whose CI has not started does not remove the gate. Add tests for both.
