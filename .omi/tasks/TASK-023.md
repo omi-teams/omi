@@ -3,7 +3,7 @@ id: TASK-023
 title: Skill group - squad workflow
 status: in-progress
 depends: TASK-022
-scope: .omi/skills/workflow/**, .omi/skills/CATALOG.md, docs/research/_src/**, src/omi/template/dot-omi/skills/workflow/**, .omi/decisions.md
+scope: .omi/skills/workflow/**, .omi/skills/CATALOG.md, docs/research/_src/**, src/omi/template/dot-omi/skills/workflow/**, .omi/decisions.md, tests/test_omi.py
 ---
 ## Goal
 Skills for discovery, planning and handoff, distilled per the TASK-020 table (Superpowers brainstorming/writing-plans, BMAD, GSD).
