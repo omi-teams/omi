@@ -1,7 +1,7 @@
 ---
 id: TASK-049
 title: Task skills go to write roles only
-status: in-progress
+status: done
 depends: TASK-048
 scope: src/omi/__init__.py, tests/**, .omi/tasks/_template.md, src/omi/template/dot-omi/tasks/_template.md
 role: omi-agent-engineer
@@ -28,3 +28,4 @@ Next: TASK-036
 |---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 26 | 3507 | 300248 | 172s | 1/1 omi-skill-lean-implementation |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 10 | 888 | 97291 | 26s | 1/1 omi-skill-lean-implementation |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1213 | 63976 | 34s | 1/1 omi-skill-lean-implementation |
