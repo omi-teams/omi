@@ -20,6 +20,7 @@ A task cannot pass its `po` accept gate while an acceptance criterion is still `
 ## Acceptance criteria
 - [ ] `omi step <ID> done` on a `po` gate is refused while `## Acceptance criteria` has `- [ ]` lines, listing them; allowed once all are `- [x]`.
 - [ ] omi-task step 6 tells the Coordinator to tick reviewer-confirmed criteria; copies identical; at most 1 net added line.
+- [ ] Carry-over from the TASK-041 review: omi-task step 5 FAIL writes the findings under a line `Review round <N> FAIL:` (the incremental review reads the files named after it); `prior_review` takes only path-like tokens (`dir/file`, or `name.ext` with a known extension, or `path:line`), not `e.g`, `1.5`, `v2.0`; `rev-parse` runs once.
 - [ ] `python3 tests/test_omi.py` passes.
 
 ## Checkpoint
