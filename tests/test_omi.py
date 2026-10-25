@@ -1053,6 +1053,97 @@ def test_usage():
         assert "| 1/2 omi-skill-a |" in task.read_text(encoding="utf-8")
 
 
+def test_incremental_review():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        (root / "a.py").write_text("x = 1\n", encoding="utf-8")
+        git(root, "add", "a.py")
+        git(root, "commit", "-q", "-m", "init")
+        base = omi.git(root, "rev-parse", "HEAD")
+        for i in range(30):
+            (root / f"big{i}.py").write_text("".join(f"line {j}\n" for j in range(80)), encoding="utf-8")
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "work")
+        sha = omi.git(root, "rev-parse", "--short=7", "HEAD")
+        (root / "a.py").write_text("x = 2\n", encoding="utf-8")
+        (root / "new.py").write_text("y = 1\n", encoding="utf-8")  # untracked fix
+        index = (root / ".git" / "index").read_bytes()
+        full, inc = omi.tree_diff(root, base), omi.tree_diff(root, sha)
+        assert (root / ".git" / "index").read_bytes() == index, "real index must not change"
+        assert "new.py" in full and "new.py" in inc and "big3.py" in full and "big3.py" not in inc
+        f, i = -(-len(full.encode()) // 4), -(-len(inc.encode()) // 4)
+        print(f"incremental review: full {f} tokens, incremental {i} tokens")
+        assert i < f
+    rows = "| omi-agent-reviewer | m | e | 1 | 1 | 1 | 1s | - | FAIL abc1234 |\n"
+    text = "## Checkpoint\n### Review round 1\n- old.py:3 bad\n- src/b.py wrong\n\n## Usage\n|---|\n" + rows
+    assert omi.prior_review(text) == (1, "abc1234", {"old.py", "src/b.py"})
+    assert omi.prior_review(text + rows)[0] == 2
+    assert omi.prior_review(text.replace("FAIL", "PASS"))[1] is None
+    assert omi.prior_review("## Usage\n|---|\n| r | m | e | 1 | 1 | 1 | 1s | - | FAIL |\n") == (0, None, set())
+
+
+def test_review_round_flow():
+    real = omi.subprocess.run, omi.shutil.which, omi.main_checkout, omi.os.environ.get(omi.TOKEN_ENV)
+    seen = {}
+
+    class R:
+        def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
+
+    def run(cmd, **kw):
+        if cmd[:2] == ["docker", "run"]:
+            m = next(a.split(":")[0] for a in cmd if a.endswith(":/review:ro"))
+            seen["files"] = sorted(p.name for p in Path(m).iterdir())
+            seen["prompt"] = cmd[cmd.index("claude") + 2]
+            return R(json.dumps({"result": "VERDICT: FAIL", "usage": {"input_tokens": 1}}))
+        if "rev-parse" in cmd:
+            return R("abc1234\n")
+        if "ls-files" in cmd:
+            return R("")
+        if "diff" in cmd and "--name-only" in cmd:
+            return R("src/a.py\0")
+        if "diff" in cmd:
+            return R("diff --git a/src/a.py b/src/a.py\n" if cmd[-1] != "." and "abc1234" in cmd else "full\n")
+        if "status" in cmd:
+            return R(" M src/a.py\0")
+        if "show" in cmd:
+            return R("---\nscope: src/**\n---\n")
+        if cmd[0] == sys.executable:
+            return R("ok")
+        return R()
+
+    with tempfile.TemporaryDirectory() as d:
+        wt = Path(d).resolve()
+        (wt / ".git").write_text("gitdir: /x")
+        task = wt / ".omi" / "tasks" / "TASK-001.md"
+        task.parent.mkdir(parents=True)
+        task.write_text("---\nid: TASK-001\nscope: src/**\n---\n## Checkpoint\n### Review round 1\n- src/a.py bad\n", encoding="utf-8")
+        omi.subprocess.run, omi.shutil.which, omi.main_checkout = run, lambda _: "docker", (lambda _: wt)
+        omi.os.environ[omi.TOKEN_ENV] = "tok"
+        sys.stdout, saved = io.StringIO(), sys.stdout
+        try:
+            omi.run_role("omi-agent-reviewer", wt, task)  # round 1: full diff, records the sha
+            assert seen["files"] == ["diff.patch"] and "Incremental" not in seen["prompt"]
+            assert task.read_text().splitlines()[-1].endswith("| FAIL abc1234 |"), task.read_text()
+            omi.run_role("omi-agent-reviewer", wt, task)  # round 2: only the fixes
+            assert seen["files"] == ["diff.patch", "full.patch"] and "Incremental round" in seen["prompt"]
+            omi.run_role("omi-agent-reviewer", wt, task)  # round 3: full again
+            assert seen["files"] == ["diff.patch"] and "Incremental" not in seen["prompt"]
+            # usage but no result: the raw output is printed, never None
+            run_raw = json.dumps({"usage": {"input_tokens": 1, "output_tokens": 2}})
+            omi.subprocess.run = lambda cmd, **kw: R(run_raw) if cmd[:2] == ["docker", "run"] else run(cmd, **kw)
+            sys.stdout = io.StringIO()
+            omi.run_role("omi-agent-engineer", wt, task)
+            printed = sys.stdout.getvalue()
+        finally:
+            sys.stdout = saved
+            omi.subprocess.run, omi.shutil.which, omi.main_checkout, tok = real
+            omi.os.environ.pop(omi.TOKEN_ENV, None)
+            if tok is not None:
+                omi.os.environ[omi.TOKEN_ENV] = tok
+        assert printed.strip() == run_raw, printed
+
+
 def test_git_non_ascii():
     with tempfile.TemporaryDirectory() as d:
         root = Path(d).resolve()
@@ -1242,6 +1333,8 @@ if __name__ == "__main__":
     test_worker()
     test_roles()
     test_run_read_role()
+    test_incremental_review()
+    test_review_round_flow()
     test_container_names()
     test_clean_and_old_images()
     test_credential_manager()

@@ -7,7 +7,7 @@ scope: src/omi/__init__.py, .omi/agents/**, src/omi/template/**, tests/**
 role: omi-agent-engineer
 skills: []  # step build adds omi-skill-lean-implementation
 workflow: omi-flow-feature
-step:
+step: build
 ---
 ## Goal
 After a failed review, the next round gets only the fixes and the previous findings, not the whole diff again, when that is safe.
@@ -32,7 +32,18 @@ After a failed review, the next round gets only the fixes and the previous findi
 - [ ] Also fix from the TASK-040 review: when the harness JSON has `usage` but no `result`, `omi run` prints the raw output instead of `None`.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
+Done: verdict cell `<V> <sha7>`; `tree_diff` (untracked included, real index untouched); `prior_review`; incremental diff + full.patch + prompt note in `run_role` (round 2 only, files must be named after last `Review round`); raw-output print test for usage-without-result (code already printed raw output; now covered by a test).
+Saving (test scenario, tokens = bytes/4): full 6296, incremental 56.
+Not done: real Usage numbers (Coordinator, next real FAIL round). Docs not touched (diff includes unstaged files, so no commit-first note needed).
+Tests: python3 tests/test_omi.py passes.
 Next: TASK-042
+
+## Steps
+- plan started 2026-10-25 22:40
+- plan done 2026-10-25 22:40
+- build started 2026-10-25 22:40
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read | verdict |
+|---|---|---|---|---|---|---|---|---|
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 24 | 9083 | 384220 | 101s | 1/1 omi-skill-lean-implementation | - |
