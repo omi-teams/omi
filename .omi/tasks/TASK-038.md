@@ -1,13 +1,13 @@
 ---
 id: TASK-038
 title: Wire workflows into omi-idea, omi-task and AGENTS.md
-status: in-progress
+status: done
 depends: TASK-048, TASK-040, TASK-033, TASK-034, TASK-035, TASK-036, TASK-037
 scope: .claude/skills/**, src/omi/template/**, AGENTS.md, README.md, tests/**, src/omi/__init__.py, .omi/workflows/**, .omi/tasks/_template.md
 role: omi-agent-engineer
 skills: []  # step build adds omi-skill-lean-implementation
 workflow: omi-flow-feature-sensitive  # changes the agent harness
-step: build
+step: accept
 ---
 ## Goal
 The Coordinator picks a workflow at planning time and follows it step by step; fix rounds return to the build step with its skills; review verdicts are on record.
@@ -48,9 +48,19 @@ Next: review
 - architect started 2026-10-25 22:30
 - architect done 2026-10-25 22:31
 - build started 2026-10-25 22:31
+- build done 2026-10-25 22:34
+- review started 2026-10-25 22:34
+- review done 2026-10-25 22:34
+- security started 2026-10-25 22:34
+- security done 2026-10-25 22:35
+- accept started 2026-10-25 22:35
+PO approval accept: Chấp nhận, merge (Recommended)
+- accept done 2026-10-25 22:37
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read |
 |---|---|---|---|---|---|---|---|
 | omi-agent-architect | claude-opus-5-5 | high | 12 | 6126 | 178448 | 74s | - |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 28 | 7919 | 544593 | 103s | 1/1 omi-skill-lean-implementation |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1842 | 94782 | 32s | - |
+| omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 8 | 1436 | 144985 | 24s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit |
