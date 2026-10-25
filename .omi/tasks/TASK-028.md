@@ -1,7 +1,7 @@
 ---
 id: TASK-028
 title: Agent framework in .omi/agents (run, catalog, read-only reviewer container)
-status: planned
+status: in-progress
 depends: TASK-021
 scope: src/omi/__init__.py, src/omi/template/**, .omi/agents/**, .claude/agents/**, .claude/skills/omi-task/**, .omi/tasks/_template.md, tests/**, AGENTS.md, README.md
 ---
