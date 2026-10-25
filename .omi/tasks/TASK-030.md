@@ -1,7 +1,7 @@
 ---
 id: TASK-030
 title: Roles - verification (security-reviewer, qa-tester)
-status: in-progress
+status: done
 depends: TASK-028, TASK-024
 scope: .omi/agents/**, src/omi/template/dot-omi/agents/**, .omi/decisions.md
 ---
@@ -16,7 +16,12 @@ Two independent read-only roles that give evidence beyond the general reviewer.
 - [ ] Catalog regenerated; template copy identical.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
+Done: both roles, catalog regenerated (7 roles), template copy identical
+Not done: -
+Tests: none in scope; catalog generator ran OK
 Next: TASK-031
+
+## Usage
+| role | model | effort | input | output | cache | duration |
+|---|---|---|---|---|---|---|
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 2979 | 172944 | 30s |
