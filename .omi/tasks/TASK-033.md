@@ -1,7 +1,7 @@
 ---
 id: TASK-033
 title: Workflows - feature, feature-ui, feature-sensitive
-status: in-progress
+status: done
 depends: TASK-032, TASK-029, TASK-030
 scope: .omi/workflows/**, src/omi/template/dot-omi/workflows/**, .omi/decisions.md, src/omi/__init__.py, tests/**
 ---
@@ -25,3 +25,4 @@ Next: TASK-034
 | role | model | effort | input | output | cache | duration | skills read |
 |---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 26 | 7452 | 429951 | 83s | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 2002 | 135738 | 31s | - |
