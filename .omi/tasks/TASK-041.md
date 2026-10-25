@@ -32,6 +32,7 @@ After a failed review, the next round gets only the fixes and the previous findi
 - [ ] Also fix from the TASK-040 review: when the harness JSON has `usage` but no `result`, `omi run` prints the raw output instead of `None`.
 
 ## Checkpoint
+Coordinator check before review, fix (edit only `## Checkpoint` here): on the Windows host `tests/test_omi.py:1096` fails with `FileNotFoundError ... 'C'`: the fake docker splits the mount `host:/review` on the first `:`, and a Windows host path is `C:...`. Split with `rsplit(":", 1)` (check other mount parsing in tests too). The suite must pass on Windows and Linux.
 Done: verdict cell `<V> <sha7>`; `tree_diff` (untracked included, real index untouched); `prior_review`; incremental diff + full.patch + prompt note in `run_role` (round 2 only, files must be named after last `Review round`); raw-output print test for usage-without-result (code already printed raw output; now covered by a test).
 Saving (test scenario, tokens = bytes/4): full 6296, incremental 56.
 Not done: real Usage numbers (Coordinator, next real FAIL round). Docs not touched (diff includes unstaged files, so no commit-first note needed).
