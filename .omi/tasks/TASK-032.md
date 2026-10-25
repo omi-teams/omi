@@ -1,7 +1,7 @@
 ---
 id: TASK-032
 title: Workflow engine (format, validator, step state, gates)
-status: in-progress
+status: done
 depends: TASK-028
 scope: src/omi/__init__.py, src/omi/template/**, .omi/workflows/**, .omi/tasks/_template.md, tests/**
 ---
@@ -27,3 +27,4 @@ Next: TASK-033
 | role | model | effort | input | output | cache | duration |
 |---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-opus-5-5 | high | 34 | 22439 | 754140 | 224s |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 3235 | 110173 | 38s |
