@@ -14,6 +14,7 @@ On resume, the Coordinator sees at once when a worktree has moved past its check
 - [ ] The test covers both a clean case and a stale case.
 
 ## Checkpoint
-Not done:
-Tests:
-Next:
+Done: drift() line in omi status per worktree (ahead, uncommitted, checkpoint stale); test covers clean + stale.
+Not done: nothing.
+Tests: python tests/test_omi.py ok.
+Next: review.

@@ -29,6 +29,7 @@ def test_init_guard_status():
         (tasks / "TASK-003.md").write_text("---\ntitle: C\nstatus: planned\n---\n")
         git(root, "add", "-A")
         git(root, "commit", "-qm", "init")
+        git(root, "branch", "development")
 
         def guard(path):
             payload = {"tool_input": {"file_path": str(path)}, "cwd": str(root)}
@@ -56,6 +57,27 @@ def test_init_guard_status():
             sys.stdout = real
         text = out.getvalue()
         assert "Next: wire it" in text and "next: TASK-003" in text, text
+
+        def show():
+            out = io.StringIO()
+            sys.stdout, real = out, sys.stdout
+            try:
+                omi.status(root)
+            finally:
+                sys.stdout = real
+            return out.getvalue()
+
+        text = show()
+        assert "ahead of development: 0, uncommitted: yes" in text and "stale" not in text, text
+        git(wt, "commit", "-qam", "checkpoint")  # clean: checkpoint is the newest commit
+        text = show()
+        assert "ahead of development: 1, uncommitted: no" in text and "stale" not in text, text
+        (wt / "src").mkdir()
+        (wt / "src" / "a.py").write_text("x = 1")
+        git(wt, "add", "-A")
+        git(wt, "commit", "-qm", "code")  # stale: commit after the checkpoint
+        text = show()
+        assert "ahead of development: 2" in text and "checkpoint stale" in text, text
 
         git(root, "worktree", "remove", "--force", str(wt))
         assert guard(root / "README.md") == 0
