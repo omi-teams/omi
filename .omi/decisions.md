@@ -11,3 +11,4 @@
 - 2026-10-25 | Coordinator session default model = sonnet in the template (settings.json "model") | pilot: the Coordinator on opus was ~80% of cache reads; sonnet is enough for clarify/plan/delegate | TASK-014
 - 2026-10-25 | Close TASK-011 without new skills; rejected for now: brainstorm/AC (omi-idea covered it in the pilot), verification (CI + reviewer caught nothing missing), diff security review (reviewer role already checks security) | pilot showed no skill gap; skills cost always-on discovery context | TASK-011
 - 2026-10-25 | Container token in Windows Credential Manager; no host fallback when Docker is down (stop and tell the PO) | PO choice 1A/2A; avoids plaintext token and silent loss of the shell-write boundary | TASK-015
+- 2026-10-25 | Release tags: date-based v<YYYY.MM.DD>[.N] on main after the PO merge | PO wants a v* tag; date versions need no version bookkeeping | TASK-018
