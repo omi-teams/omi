@@ -1,7 +1,7 @@
 ---
 id: TASK-029
 title: Roles - planning and design (architect, designer-ui, researcher)
-status: planned
+status: in-progress
 depends: TASK-028, TASK-023
 scope: .omi/agents/**, src/omi/template/dot-omi/agents/**, .omi/decisions.md
 ---
