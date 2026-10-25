@@ -1,7 +1,7 @@
 ---
 id: TASK-052
 title: Skill budget by tokens only
-status: planned
+status: in-progress
 depends: TASK-044
 scope: src/omi/__init__.py, tests/**, AGENTS.md, src/omi/template/**, .omi/tasks/_template.md, .omi/skills/workflow/omi-skill-task-brief/**
 role: omi-agent-engineer
