@@ -1,7 +1,7 @@
 ---
 id: TASK-014
 title: Fix pilot findings in omi-idea, omi github and the Coordinator model
-status: planned
+status: in-progress
 depends: TASK-009
 scope: src/omi/__init__.py, src/omi/template/**, .claude/skills/omi-idea/**, tests/**, README.md
 ---
