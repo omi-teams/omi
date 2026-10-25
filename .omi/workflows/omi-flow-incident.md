@@ -5,7 +5,7 @@ steps:
 - id: contain | role: omi-agent-devops | skills: omi-skill-incident | input: incident report, release and gate state | output: incident record with impact, start time and containment (freeze merges, pause workers) | gate: none | stop: damage stopped growing and the record exists
 - id: diagnose | role: omi-agent-engineer | skills: omi-skill-debug-root-cause | input: incident record, logs, failing run | output: root cause with evidence and the choice hotfix or rollback | gate: none | stop: root cause named with evidence, or stop and ask the PO
 - id: hotfix | role: omi-agent-engineer | skills: omi-skill-lean-implementation | input: root cause, task file, worktree | output: either the minimal fix with a regression test (tests passing) or the revert diff / previous rc redeploy plan if rollback was chosen | gate: review | stop: VERDICT PASS from a fresh reviewer
-- id: merge-prod | role: omi-agent-devops | skills: omi-skill-rollback, omi-skill-release-checklist | input: reviewed hotfix or the bad promotion merge or rc tag | output: PO approval line in ## Steps, then hotfix merged or promotion reverted or previous rc redeployed | gate: po | stop: PO approved and service is healthy again
+- id: merge-prod | role: omi-agent-devops | skills: omi-skill-rollback, omi-skill-release-checklist | input: reviewed hotfix or the bad promotion merge or rc tag | output: PO approval line in ## Steps, then the merge, revert or redeploy commands or runbook prepared for the PO to run (devops never merges, tags or pushes to staging/main) | gate: po | stop: PO approved and service is healthy again
 - id: postmortem | role: coordinator | skills: omi-skill-incident | input: incident record, root cause, actions taken | output: postmortem note with timeline, cause, fix and follow-up tasks, logged in decisions.md | gate: none | stop: note written and follow-ups are task files
 ---
 # Incident
@@ -14,10 +14,10 @@ steps:
 **Use instead:** `omi-flow-bugfix` for a defect that hurts nobody yet; `omi-flow-feature-sensitive` for planned changes to CI or secrets.
 
 ## Models
-- contain: Coordinator, sonnet/low.
+- contain: devops, sonnet/low.
 - diagnose: engineer, sonnet/medium; opus/high if the cause is unknown after one attempt.
 - hotfix: engineer, sonnet/medium; reviewer sonnet/medium, fresh instance each round.
-- merge-prod: Coordinator prepares; the PO approves.
+- merge-prod: devops prepares; the PO approves.
 - postmortem: Coordinator, sonnet/low.
 
 ## Stop conditions

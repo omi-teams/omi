@@ -33,6 +33,7 @@ Review round 1 FAIL, fix both (edit only `## Checkpoint` here), in both copies, 
 Done: all 9 roles skills: [], step skills moved, incident contain/merge-prod -> devops, catalogs regenerated, template copies identical.
 Not done: none.
 Tests: python3 tests/test_omi.py ok; workflows --check ok; skills check ok for planned tasks.
+Review round 1 fixes applied: incident Models contain/merge-prod -> devops; merge-prod output now PO approval line then commands/runbook prepared for the PO; both copies identical, catalog regenerated.
 Next: TASK-037
 
 ## Steps
@@ -47,3 +48,4 @@ Next: TASK-037
 |---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 14 | 2798 | 161346 | 58s | 1/1 omi-skill-lean-implementation |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1947 | 120134 | 28s | - |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 14 | 1623 | 142309 | 38s | - |
