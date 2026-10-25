@@ -1,7 +1,7 @@
 ---
 id: TASK-017
 title: Make the worker image able to run this project's tests
-status: planned
+status: in-progress
 depends: TASK-016
 scope: src/omi/template/docker/**, src/omi/__init__.py, tests/**
 ---
