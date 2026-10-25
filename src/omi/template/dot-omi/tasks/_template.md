@@ -4,6 +4,7 @@ title: Short imperative title
 status: planned
 depends:
 scope: src/feature/**, tests/test_feature.py
+skills: []  # ids from .omi/skills/CATALOG.md; max 3, 6000 tokens
 ---
 ## Goal
 One outcome, in one or two sentences.

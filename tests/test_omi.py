@@ -550,7 +550,79 @@ def test_template_docker():
         assert (Path(t) / "docker" / "Dockerfile").exists()
 
 
+def test_skills():
+    with tempfile.TemporaryDirectory() as t:
+        root = Path(t)
+        out = io.StringIO()
+        sys.stdout, saved = out, sys.stdout
+        try:
+            omi.init(root)
+            assert (root / ".omi" / "skills").is_dir()
+
+            def skill(group, sid, body, refs=""):
+                d = root / ".omi" / "skills" / group / sid
+                d.mkdir(parents=True, exist_ok=True)
+                (d / "SKILL.md").write_text(f"---\nname: {sid}\ndescription: use for {sid}\n{refs}---\n{body}")
+                return d
+
+            skill("g", "small", "x" * 400)
+            skill("g", "big", "x" * 9000)
+            skill("h", "mid", "x" * 6000)
+            d = skill("h", "withref", "x" * 400, "references: r.md\n")
+            (d / "r.md").write_text("y" * 8000)
+            omi.skills_catalog(root)
+        finally:
+            sys.stdout = saved
+        cat = (root / ".omi" / "skills" / "CATALOG.md").read_text()
+        assert "- small (g): use for small [~" in cat and cat.count("\n- ") == 4
+        assert "- withref (h): use for withref [~" in cat and "~1" in cat
+        assert omi.tokens(root / ".omi" / "skills" / "g" / "small" / "SKILL.md") == omi.tokens(
+            *omi.skill_files(root / ".omi" / "skills" / "g" / "small")) and omi.task_skills({"skills": "[a, b]"}) == ["a", "b"]
+
+        def fails(ids, *words):
+            try:
+                omi.check_skills(root, ids)
+            except SystemExit as e:
+                assert all(w in str(e) for w in words), str(e)
+                return
+            raise AssertionError(f"{ids} should fail")
+
+        assert omi.check_skills(root, []) == []
+        files = omi.check_skills(root, ["small"])
+        assert [f.name for f in files] == ["SKILL.md"]
+        fails(["nope"], "unknown skill nope")
+        fails(["big"], "big is", "per skill")  # ~2250 tokens > 2000
+        fails(["withref"], "withref is")  # reference counts
+        skill("g", "new", "z")
+        fails(["new"], "missing from the catalog")
+        for i in "abcd":
+            skill("g", f"s{i}", "x" * 100)
+        omi.sys.stdout, saved = io.StringIO(), sys.stdout
+        omi.skills_catalog(root)
+        sys.stdout = saved
+        fails(["sa", "sb", "sc", "sd"], "4 skills", "at most 3")
+        for i in "abc":
+            skill("g", f"m{i}", "x" * 7000)
+        omi.sys.stdout, saved = io.StringIO(), sys.stdout
+        omi.skills_catalog(root)
+        sys.stdout = saved
+        assert len(omi.check_skills(root, ["ma", "mb", "mc"])) == 3  # ~1750 each: 5250 total fits 6000
+        for i in "de":
+            skill("g", f"m{i}", "x" * 7900)
+        omi.sys.stdout, saved = io.StringIO(), sys.stdout
+        omi.skills_catalog(root)
+        sys.stdout = saved
+        (root / ".omi" / "config.json").write_text('{"skill_limits": {"tokens": 5000}}')
+        fails(["ma", "mb", "mc"], "total", "at most 5000", "5")
+        (root / ".omi" / "config.json").write_text('{"skill_limits": {"skills": 4}}')
+        assert len(omi.check_skills(root, ["sa", "sb", "sc", "sd"])) == 4
+    prompt = omi.skill_prompt(Path("/r"), [Path("/r/.omi/skills/g/a/SKILL.md")])
+    assert "/work/.omi/skills/g/a/SKILL.md" in prompt and "CATALOG" not in prompt and omi.skill_prompt(Path("/r"), []) == ""
+    assert "Skills (read only" in omi.engineer_cmd("---\n---\nbody", "t.md", skills=prompt)[2]
+
+
 if __name__ == "__main__":
+    test_skills()
     test_worker()
     test_container_names()
     test_clean_and_old_images()
