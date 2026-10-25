@@ -1,7 +1,7 @@
 ---
 id: TASK-011
 title: Distill core omi-skills from pilot gaps
-status: planned
+status: done
 depends: TASK-009
 scope: src/omi/template/dot-claude/skills/**, src/omi/template/AGENTS.md, .omi/decisions.md
 ---
@@ -15,7 +15,6 @@ Add only the skills and workflows the TASK-009 pilot proved missing, distilled f
 - [ ] Skills load on demand; AGENTS.md grows by at most a few lines.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
-Next:
+Done: closed with no new skills. The TASK-009 pilot found 5 problems, all workflow/tooling (fixed in TASK-014); engineer and reviewer did each task right the first time. Rejected candidates are logged in .omi/decisions.md.
+Tests: n/a
+Next: reopen as a new task when a pilot shows a concrete skill gap.

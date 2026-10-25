@@ -9,3 +9,4 @@
 - 2026-10-25 | PO GitHub account not kept logged in on the squad machine; PO runs `omi github` with a one-off token and merges staging/main in the web UI | squad shell could otherwise use the PO token (guard does not cover Bash) | TASK-010
 - 2026-10-25 | Add TASK-013 (omi github --po) while TASK-009 pilot is paused | PO asked for fewer steps; every OMI project needs this step | TASK-013
 - 2026-10-25 | Coordinator session default model = sonnet in the template (settings.json "model") | pilot: the Coordinator on opus was ~80% of cache reads; sonnet is enough for clarify/plan/delegate | TASK-014
+- 2026-10-25 | Close TASK-011 without new skills; rejected for now: brainstorm/AC (omi-idea covered it in the pilot), verification (CI + reviewer caught nothing missing), diff security review (reviewer role already checks security) | pilot showed no skill gap; skills cost always-on discovery context | TASK-011
