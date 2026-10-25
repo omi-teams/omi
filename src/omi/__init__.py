@@ -23,6 +23,7 @@ USAGE = """usage: omi <command>
   github       set up branches and rulesets: squad merges to development, only the PO to staging/main
   clean [--all]   remove this repo's worker containers and old worker images (--all: the current image too)
   skills [check <task-file>]   write .omi/skills/CATALOG.md; or check a task's skills against the budget
+  skills --check   validate every skill against the contract (parts, size, source, no widened permissions)
   token set    store the `claude setup-token` value in Windows Credential Manager
   worker <wt> <task-file> [--model M] [--effort E]   run the engineer in the Docker worker
   worker <wt> --prove   run docker/prove.sh in the worker (boundary check, no token)"""
@@ -92,6 +93,52 @@ def skills_catalog(root):
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"wrote {out} ({len(lines) - 3} skills)")
+
+
+SKILL_KEYS = ("id", "group", "description", "tokens", "tools", "source_repo", "source_ref", "source_file", "source_license", "source_use")
+SKILL_SECTIONS = ("when to use", "when not to use", "inputs", "steps", "outputs and evidence", "stop and escalate", "tools needed")
+SKILL_USES = ("reference", "adapt", "rewrite")
+SKILL_WIDENING = re.compile(  # phrases by which a skill would widen permissions or scope
+    r"ignore (the )?(task )?scope|outside (the )?scope|widen(ing)? (the )?(scope|permissions)|"
+    r"disable (the )?(guard|hook)|--dangerously|bypass(ing)? (the )?(guard|permissions?)|skip (the )?guard", re.I)
+SKILL_FORBIDDEN_KEYS = ("allowed-tools", "allowed_tools", "permissions", "scope")
+
+
+def validate_skill(d, cap):
+    """Problems of one skill dir against the contract, as a list of strings (empty = valid)."""
+    d = Path(d)
+    m = meta(d / "SKILL.md")
+    body = m["_text"].split("---", 2)[-1]
+    errs = [f"missing frontmatter `{k}`" for k in SKILL_KEYS if not m.get(k)]
+    if m.get("id") and m["id"] != d.name:
+        errs.append(f"id `{m['id']}` differs from directory `{d.name}`")
+    if m.get("group") and m["group"] != d.parent.name:
+        errs.append(f"group `{m['group']}` differs from directory `{d.parent.name}`")
+    if m.get("source_use") and m["source_use"] not in SKILL_USES:
+        errs.append(f"source_use `{m['source_use']}` is not one of {'|'.join(SKILL_USES)}")
+    if m.get("tokens") and not m["tokens"].isdigit():
+        errs.append("tokens is not a number")
+    heads = [h.strip().lower() for h in re.findall(r"^#{1,6}\s+(.+)$", body, re.M)]
+    errs += [f"missing section `{s}`" for s in SKILL_SECTIONS if s not in heads]
+    errs += [f"frontmatter `{k}` would widen permissions or scope" for k in SKILL_FORBIDDEN_KEYS if k in m]
+    errs += [f"widens permissions or scope: `{x.group(0)}`" for x in SKILL_WIDENING.finditer(body)]
+    try:
+        n = tokens(*skill_files(d))
+    except SystemExit as e:
+        return errs + [str(e)]
+    if n > cap:
+        errs.append(f"{n} tokens, at most {cap} per skill")
+    return errs
+
+
+def check_all_skills(root):
+    """Validate every skill under root; exits non-zero listing all problems."""
+    cap = skill_limits(root)["skill_tokens"]
+    dirs = skill_dirs(root)
+    bad = [f"{sid}: {e}" for sid, d in dirs.items() for e in validate_skill(d, cap)]
+    if bad:
+        sys.exit("skills check failed:\n" + "\n".join(bad))
+    print(f"skills ok ({len(dirs)} checked)")
 
 
 def skill_limits(root):
@@ -703,7 +750,9 @@ def main(argv=None):
     elif cmd == "clean":
         clean(all_images="--all" in rest)
     elif cmd == "skills":
-        if rest[:1] == ["check"] and len(rest) > 1:
+        if rest[:1] == ["--check"]:
+            check_all_skills(".")
+        elif rest[:1] == ["check"] and len(rest) > 1:
             check_skills(".", task_skills(meta(Path(rest[1]))))
             print("skills ok")
         else:

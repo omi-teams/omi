@@ -3,7 +3,7 @@ id: TASK-022
 title: Skill standard, validator and authoring skill
 status: in-progress
 depends: TASK-021
-scope: src/omi/__init__.py, src/omi/template/**, .omi/skills/authoring/**, tests/**
+scope: src/omi/__init__.py, src/omi/template/**, .omi/skills/authoring/**, tests/**, .omi/skills/CATALOG.md
 ---
 ## Goal
 Every omi-skill follows one contract and is checked by a command, so quality does not depend on the author.
@@ -15,7 +15,7 @@ Every omi-skill follows one contract and is checked by a command, so quality doe
 - [ ] Tests cover a valid skill and each failure; `python tests/test_omi.py` passes.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
+Done: contract + validate_skill/check_all_skills + `skills --check` in src/omi/__init__.py; authoring/write-skill; test_skills_check.
+Not done: nothing.
+Tests: python3 tests/test_omi.py ok
 Next: TASK-023
