@@ -591,7 +591,7 @@ def test_run_read_role():
             calls.clear()
             assert omi.run_role("omi-agent-engineer", wt, task) == 0
             assert "omi-skill-zz" in prompt() and "\nTests: python3 " in prompt(), prompt()
-            assert task.read_text().splitlines()[-1].endswith("| 0/1 |"), task.read_text()  # Usage `skills read` cell
+            assert task.read_text().splitlines()[-1].endswith("| 0/1 | - |"), task.read_text()  # Usage `skills read` cell
             task.write_text("---\nid: TASK-001\nworkflow: omi-flow-zz\nstep: review\n---\n")  # step role differs
             calls.clear()
             omi.run_role("omi-agent-engineer", wt, task)
@@ -912,13 +912,24 @@ def test_usage():
         omi.record_usage(task, "omi-agent-reviewer", "opus", "high", (None, None, None), 1)
         omi.record_usage(task, "omi-agent-reviewer", "opus", "high", (1, 2, 3), 1)
         text = task.read_text(encoding="utf-8")
-        assert text.count("## Usage") == 1 and "| omi-agent-engineer | sonnet | medium | 10 | 20 | 105 | 3s | - |" in text
-        assert "| omi-agent-reviewer | opus | high | n/a | n/a | n/a | 1s | - |" in text
+        assert text.count("## Usage") == 1 and "| omi-agent-engineer | sonnet | medium | 10 | 20 | 105 | 3s | - | - |" in text
+        assert "| omi-agent-reviewer | opus | high | n/a | n/a | n/a | 1s | - | - |" in text
         assert omi.checkpoint(text) == "Done: x"
         assert omi.usage_totals(text) == "usage: 3 runs, in 11 out 22 cache 108, review rounds: 2"
     assert omi.usage_totals("## Goal\n") == ""
     old = "\n## Usage\n| role | model | effort | input | output | cache | duration |\n|---|---|---|---|---|---|---|\n| r | m | e | 1 | 2 | 3 | 4s |\n"
     assert omi.usage_totals(old) == "usage: 1 runs, in 1 out 2 cache 3, review rounds: 0"
+    assert omi.verdict_of("x\nVERDICT: FAIL\n**VERDICT: PASS**") == "PASS" and omi.verdict_of("no verdict") is None
+    assert omi.verdict_of("VERDICT: FAIL") == "FAIL" and omi.verdict_of(None) is None
+    with tempfile.TemporaryDirectory() as d:
+        task = Path(d) / "TASK-003.md"
+        task.write_text("# t\n\n## Usage\n| role | model | effort | input | output | cache | duration | skills read |\n"
+                        "|---|---|---|---|---|---|---|---|\n| r | m | e | 1 | 2 | 3 | 4s | - |\n", encoding="utf-8")
+        omi.record_usage(task, "omi-agent-reviewer", "m", "e", (1, 1, 1), 1, "-", "FAIL")
+        text = task.read_text(encoding="utf-8")
+        assert "| skills read | verdict |\n|---|---|---|---|---|---|---|---|---|\n| r | m | e | 1 | 2 | 3 | 4s | - |\n" in text
+        assert text.rstrip().endswith("| omi-agent-reviewer | m | e | 1 | 1 | 1 | 1s | - | FAIL |")
+        assert omi.usage_totals(text) == "usage: 2 runs, in 2 out 3 cache 4, review rounds: 1"
     assert omi.skills_cell([], []) == "-" and omi.skills_cell(["a", "b"], ["b"]) == "1/2 b"
     assert omi.skills_cell(["a"], []) == "0/1"
     use = lambda p: {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Read", "input": {"file_path": p}}]}}
@@ -979,8 +990,8 @@ def test_usage():
         task.write_text("# t\n\n## Usage\n| role | model | effort | input | output | cache | duration |\n|---|---|---|---|---|---|---|\n| r | m | e | 1 | 2 | 3 | 4s |\n", encoding="utf-8")
         omi.record_usage(task, "r2", "m", "e", (1, 1, 1), 1, "1/1 x")
         text = task.read_text(encoding="utf-8")
-        assert "| duration | skills read |\n|---|---|---|---|---|---|---|---|\n| r | m | e | 1 | 2 | 3 | 4s |\n" in text
-        assert text.rstrip().endswith("| r2 | m | e | 1 | 1 | 1 | 1s | 1/1 x |")
+        assert "| duration | skills read | verdict |\n|---|---|---|---|---|---|---|---|---|\n| r | m | e | 1 | 2 | 3 | 4s |\n" in text
+        assert text.rstrip().endswith("| r2 | m | e | 1 | 1 | 1 | 1s | 1/1 x | - |")
         assert omi.usage_totals(text) == "usage: 2 runs, in 2 out 3 cache 4, review rounds: 0"
     # run_role records the harness numbers
     real = omi.subprocess.run, omi.shutil.which, omi.main_checkout, omi.os.environ.get(omi.TOKEN_ENV)
@@ -1157,6 +1168,29 @@ def test_workflows():
             text = task.read_text()
             assert re.search(r"## Steps\n- plan started .+\n- plan skipped .+: PO wrote the AC already\n- build started", text), text
             assert omi.step_states(text) == {"plan": "skipped", "build": "done", "review": "done", "accept": "done"}
+            # back: a started review gate fails and the nearest earlier write step restarts
+            task.write_text("---\nid: TASK-001\nworkflow: omi-flow-demo\nstep: plan\n---\n## Steps\n- plan started 2026-01-01 10:00\n")
+            fails(lambda: go("back"), "not a review gate")
+            go("done"), go("next")
+            fails(lambda: go("back"), "not a review gate")  # build is not a review gate
+            go("done"), go("next")
+            assert front()["step"] == "review"
+            assert go("back") == 0 and front()["step"] == "build"
+            assert re.search(r"- review failed .+\n- build started .+\n$", task.read_text()), task.read_text()
+            fails(lambda: go("back"), "not a review gate")
+            go("done"), go("next")
+            assert front()["step"] == "review"  # next from build reaches review again
+            go("done")
+            fails(lambda: go("back"), "already done")
+            # feature-sensitive: back from security skips the review step and lands on build
+            sens = ("id: build | role: omi-agent-engineer | skills: | input: t | output: d | gate: none | stop: ok",
+                    "id: review | role: omi-agent-reviewer | skills: | input: d | output: v | gate: review | stop: PASS",
+                    "id: security | role: omi-agent-reviewer | skills: | input: d | output: v | gate: review | stop: PASS")
+            flow("omi-flow-sens", *sens)
+            task.write_text("---\nid: TASK-001\nworkflow: omi-flow-sens\nstep:\n---\n")
+            go("next"), go("done"), go("next"), go("done"), go("next")
+            assert front()["step"] == "security" and go("back") == 0 and front()["step"] == "build"
+            (wf / "omi-flow-sens.md").unlink()
 
             # unknown workflow on the task, default workflow, unknown task role
             task.write_text("---\nid: TASK-001\nworkflow: omi-flow-ghost\n---\n")

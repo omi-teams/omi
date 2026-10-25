@@ -3,11 +3,11 @@ id: TASK-038
 title: Wire workflows into omi-idea, omi-task and AGENTS.md
 status: in-progress
 depends: TASK-048, TASK-040, TASK-033, TASK-034, TASK-035, TASK-036, TASK-037
-scope: .claude/skills/**, src/omi/template/**, AGENTS.md, README.md, tests/**, src/omi/__init__.py, .omi/workflows/**
+scope: .claude/skills/**, src/omi/template/**, AGENTS.md, README.md, tests/**, src/omi/__init__.py, .omi/workflows/**, .omi/tasks/_template.md
 role: omi-agent-engineer
 skills: []  # step build adds omi-skill-lean-implementation
 workflow: omi-flow-feature-sensitive  # changes the agent harness
-step: architect
+step: build
 ---
 ## Goal
 The Coordinator picks a workflow at planning time and follows it step by step; fix rounds return to the build step with its skills; review verdicts are on record.
@@ -37,17 +37,20 @@ Architect (step architect): RECOMMEND A, the brief as written; Coordinator took 
 - `verdict_of(report)`: last line matching `^\W*VERDICT:\W*(PASS|FAIL)`; Usage column `verdict`: `-` for write roles, `n/a` for a read role without a verdict; `record_usage` upgrades old headers (adds `skills read` and/or `verdict`); `usage_totals` accepts 7, 8 or 9 cells.
 - feature-ui wording (workflow step tables are fixed): "a UI change in a sensitive area: run `omi-flow-feature-sensitive`; the Coordinator also runs `omi run omi-agent-designer-ui <ID>` before build and `omi run omi-agent-qa-tester <ID>` after security".
 - Tests: back review->build then next reaches review; back from security in feature-sensitive -> build; back refused when not on a review gate, not started, or done; status shows `step:`; verdict PASS/FAIL/missing; 7/8-column tables upgrade.
-Done:
-Not done:
-Tests:
-Next: TASK-041
+Done: step back, verdict column, skills/AGENTS/feature-ui wording, catalog regenerated, tests.
+Not done: -
+Tests: python3 tests/test_omi.py ok
+Next: review
 
 ## Steps
 - plan started 2026-10-25 22:30
 - plan done 2026-10-25 22:30
 - architect started 2026-10-25 22:30
+- architect done 2026-10-25 22:31
+- build started 2026-10-25 22:31
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read |
 |---|---|---|---|---|---|---|---|
 | omi-agent-architect | claude-opus-5-5 | high | 12 | 6126 | 178448 | 74s | - |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 28 | 7919 | 544593 | 103s | 1/1 omi-skill-lean-implementation |

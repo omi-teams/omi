@@ -12,7 +12,7 @@ steps:
 # Feature with UI
 
 **When to use:** the change alters what a user sees or does. Why not `omi-flow-feature`: it has no design spec and no browser check, so layout, a11y and visual regressions slip through.
-**Use instead:** `omi-flow-feature-sensitive` if it also touches auth, data or secrets (run it, and ask the PO to add design and QA).
+**Use instead:** for a UI change in a sensitive area (auth, data, secrets) run `omi-flow-feature-sensitive`; the Coordinator also runs `omi run omi-agent-designer-ui <ID>` before build and `omi run omi-agent-qa-tester <ID>` after security.
 
 ## Models
 - plan: Coordinator, sonnet/low.

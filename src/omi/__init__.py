@@ -32,7 +32,7 @@ USAGE = """usage: omi <command>
   token set    store the `claude setup-token` value in Windows Credential Manager
   agents       write .omi/agents/CATALOG.md (one line per role)
   workflows [--check]   write .omi/workflows/CATALOG.md (one line per workflow); --check validates every workflow
-  step <TASK-ID> next|done|skip --why <reason>   record the task's workflow step (gates cannot be skipped)
+  step <TASK-ID> next|done|back|skip --why <reason>   record the task's workflow step (gates cannot be skipped)
   run <role> <TASK-ID> [--model M] [--effort E] [--tool claude|codex]   run a role in Docker (read roles: ro worktree, after the deterministic checks)
   worker <wt> <task-file> [--model M] [--effort E]   run the engineer in the Docker worker
   worker <wt> --prove   run docker/prove.sh in the worker (boundary check, no token)"""
@@ -361,7 +361,7 @@ def check_all_workflows(root):
     print(f"workflows ok ({len(files)} checked)")
 
 
-STEP_LOG = re.compile(r"^- (\S+) (started|done|skipped) ", re.M)
+STEP_LOG = re.compile(r"^- (\S+) (started|done|skipped|failed) ", re.M)
 
 
 def step_states(text):
@@ -394,7 +394,8 @@ def add_step_log(text, line):
 
 def step(root, tid, action, why=None, now=None):
     """Record a workflow step in the task file: `next` starts the following step, `done` closes the current one,
-    `skip` closes it with a reason. Gate steps cannot be skipped; a `po` gate needs the PO approval line."""
+    `skip` closes it with a reason, `back` fails a started review gate and restarts the nearest earlier write step.
+    Gate steps cannot be skipped; a `po` gate needs the PO approval line."""
     if not re.fullmatch(r"[A-Za-z0-9_-]+", tid):
         sys.exit(f"invalid task id `{tid}`: use letters, digits, `-` and `_`. Nothing changed.")
     task = Path(root) / ".omi" / "tasks" / f"{tid}.md"
@@ -436,6 +437,16 @@ def step(root, tid, action, why=None, now=None):
         sys.exit(f"{tid}: no step started; run `omi step {tid} next`. Nothing changed.")
     elif state.get(cur) in ("done", "skipped"):
         sys.exit(f"{tid}: step {cur} is already {state[cur]}; run `omi step {tid} next`. Nothing changed.")
+    elif action == "back":
+        if steps[at]["gate"] != "review":
+            sys.exit(f"{tid}: step {cur} is not a review gate; `back` only fails a started review step. Nothing changed.")
+        prev = next((s for s in reversed(steps[:at])
+                     if s["role"] != COORDINATOR and get_role(root, s["role"])["access"] == "write"), None)
+        if not prev:
+            sys.exit(f"{tid}: no write step before {cur} to go back to. Nothing changed.")
+        text = add_step_log(set_front(text, "step", prev["id"]), f"- {cur} failed {stamp}")
+        text = add_step_log(text, f"- {prev['id']} started {stamp}")
+        msg = f"{tid}: step {cur} failed; back to {prev['id']} ({prev['role']}), then `omi step {tid} done` and `next`"
     elif action == "done":
         if steps[at]["gate"] == "po" and not po_approved(text, cur):
             sys.exit(f"{tid}: step {cur} is a po gate; record `PO approval {cur}: <PO's words>` in the task first. "
@@ -449,7 +460,7 @@ def step(root, tid, action, why=None, now=None):
         text = add_step_log(text, f"- {cur} skipped {stamp}: {' '.join(why.split())}")
         msg = f"{tid}: step {cur} skipped"
     else:
-        sys.exit("usage: omi step <TASK-ID> next|done|skip --why <reason>")
+        sys.exit("usage: omi step <TASK-ID> next|done|back|skip --why <reason>")
     task.write_text(text, encoding="utf-8")
     print(msg)
     return 0
@@ -900,7 +911,7 @@ def codex_cmd(agent_text, task_rel, model, effort, skills=""):
             "--dangerously-bypass-approvals-and-sandbox", "--json", f"{body}\n\nTask file: /work/{task_rel}\nWorktree: /work{skills}"]
 
 
-USAGE_HEAD = "| role | model | effort | input | output | cache | duration | skills read |"
+USAGE_HEAD = "| role | model | effort | input | output | cache | duration | skills read | verdict |"
 
 
 READERS = ("cat", "sed", "head", "tail", "less", "nl", "rg", "grep")
@@ -1054,26 +1065,35 @@ def parse_usage(tool, out):
             sum(u.get("cached_input_tokens") or 0 for u in done))
 
 
-def record_usage(task, role, model, effort, nums, seconds, skills="-"):
+def verdict_of(report):
+    """The last `VERDICT: PASS|FAIL` line of a report, or None."""
+    found = re.findall(r"^\W*VERDICT:\W*(PASS|FAIL)", report or "", re.M)
+    return found[-1] if found else None
+
+
+def record_usage(task, role, model, effort, nums, seconds, skills="-", verdict="-"):
     """Append one row to the task file's `## Usage` table (created at the end if missing)."""
     if not task.exists():
         return
     cell = lambda v: "n/a" if v is None else str(v)
-    row = f"| {role} | {model} | {effort or 'n/a'} | {cell(nums[0])} | {cell(nums[1])} | {cell(nums[2])} | {round(seconds)}s | {skills} |"
+    row = f"| {role} | {model} | {effort or 'n/a'} | {cell(nums[0])} | {cell(nums[1])} | {cell(nums[2])} | {round(seconds)}s | {skills} | {verdict} |"
     text = task.read_text(encoding="utf-8")
     if "\n## Usage" in text:
         head, _, rest = text.partition("\n## Usage")
         body, sep, tail = rest.partition("\n## ")
         lines = body.split("\n")
         for i, l in enumerate(lines):
-            if l.startswith("| role") and "skills read" not in l:
-                lines[i] = l.rstrip() + " skills read |"
-                if i + 1 < len(lines) and lines[i + 1].startswith("|---"):
-                    lines[i + 1] = lines[i + 1].rstrip() + "---|"
+            if l.startswith("| role"):
+                for col in ("skills read", "verdict"):
+                    if col not in l:
+                        l += f" {col} |"
+                        if i + 1 < len(lines) and lines[i + 1].startswith("|---"):
+                            lines[i + 1] += "---|"
+                lines[i] = l
         body = "\n".join(lines)
         text = f"{head}\n## Usage{body.rstrip()}\n{row}\n" + (f"\n## {tail}" if sep else "")
     else:
-        text = f"{text.rstrip()}\n\n## Usage\n{USAGE_HEAD}\n|---|---|---|---|---|---|---|---|\n{row}\n"
+        text = f"{text.rstrip()}\n\n## Usage\n{USAGE_HEAD}\n|---|---|---|---|---|---|---|---|---|\n{row}\n"
     task.write_text(text, encoding="utf-8")
 
 
@@ -1084,7 +1104,7 @@ def usage_totals(text):
         return ""
     rows = [[c.strip() for c in l.strip().strip("|").split("|")] for l in rest.split("\n## ", 1)[0].splitlines()
             if l.startswith("|") and not l.startswith("|---") and not l.startswith("| role")]
-    rows = [r for r in rows if len(r) in (7, 8)]
+    rows = [r for r in rows if len(r) in (7, 8, 9)]
     tot = [sum(int(r[i]) for r in rows if r[i].isdigit()) if any(r[i].isdigit() for r in rows) else "n/a" for i in (3, 4, 5)]
     return (f"usage: {len(rows)} runs, in {tot[0]} out {tot[1]} cache {tot[2]}, "
             f"review rounds: {sum(r[0] == 'omi-agent-reviewer' for r in rows)}")
@@ -1262,7 +1282,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool="claude"):
         result, *nums = parse_usage(tool, r.stdout)
         print(result if result is not None else (r.stdout or ""))
         done = skills_read(wt, ids, opened_files(tool, r.stdout))
-        record_usage(task, role, model, effort, nums, time.monotonic() - t0, skills_cell(ids, done))
+        verdict = (verdict_of(result) or "n/a") if read else "-"
+        record_usage(task, role, model, effort, nums, time.monotonic() - t0, skills_cell(ids, done), verdict)
         for sid in ids:
             if sid not in done:
                 print(f"SKILL NOT READ: {sid}")
