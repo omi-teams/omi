@@ -3,7 +3,7 @@ id: omi-flow-feature-ui
 summary: Feature with a UI change: UI spec first, then implement, review, browser QA with screenshots, PO acceptance. Use when screens or interaction change; plain feature is enough for backend or non-visual work.
 steps:
 - id: plan | role: coordinator | skills: omi-skill-task-brief | input: PO idea | output: task file with scope and acceptance criteria | gate: none | stop: task file complete and PO picked it
-- id: design | role: omi-agent-designer-ui | skills: omi-skill-ui-direction | input: task file | output: UI spec in the task file | gate: none | stop: spec covers states, a11y and layout
+- id: design | role: omi-agent-designer-ui | skills: omi-skill-ui-direction, omi-skill-ui-a11y-review | input: task file | output: UI spec in the task file | gate: none | stop: spec covers states, a11y and layout
 - id: build | role: omi-agent-engineer | skills: omi-skill-lean-implementation | input: task file with UI spec | output: diff, tests passing, Checkpoint updated | gate: none | stop: every criterion has a passing test
 - id: review | role: omi-agent-reviewer | skills: | input: task file, diff | output: VERDICT PASS or FAIL | gate: review | stop: VERDICT PASS
 - id: qa | role: omi-agent-qa-tester | skills: omi-skill-web-qa | input: task file, running build | output: pass/fail per criterion with screenshots | gate: review | stop: all criteria pass
