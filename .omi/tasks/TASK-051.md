@@ -1,7 +1,7 @@
 ---
 id: TASK-051
 title: Accept step refuses unticked acceptance criteria
-status: planned
+status: in-progress
 depends: TASK-038
 scope: src/omi/__init__.py, tests/**, .claude/skills/omi-task/**, src/omi/template/dot-claude/skills/omi-task/**
 role: omi-agent-engineer
