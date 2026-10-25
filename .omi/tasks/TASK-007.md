@@ -15,6 +15,6 @@ Show that a task interrupted mid-way can be finished in a new session, on Claude
 
 ## Checkpoint
 Done: Claude resume PASS; Codex resume PASS; AGENTS.md template fixed; results in docs/verification.md.
-Not done: Codex end-to-end finish (sandbox blocks .git writes; needs PO run with full access); root AGENTS.md still has old line.
+Not done: Codex end-to-end finish (sandbox blocks .git writes; needs PO run with full access). Root AGENTS.md synced.
 Tests: no code changed; unittest result in report.
 Next: PO reviews; optionally rerun Codex with full access.
