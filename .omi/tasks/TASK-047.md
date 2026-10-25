@@ -23,6 +23,7 @@ Review round 2 FAIL, fix both (edit only `## Checkpoint` in this file, never oth
 1. `read_commands`: a segment that writes to the path is not a read: drop segments with `>`/`>>` redirects to it and `sed -i`. Negative tests.
 2. Codex `cd dir && cat SKILL.md` or `cat ../x/SKILL.md` must count: match on `<skill dir name>/<file name>` or a bare `SKILL.md`/reference name after a `cd` into the skill dir (resolve against `cd` targets in the same command, or the event's `cwd` if present). Tests.
 Tests: python3 tests/test_omi.py ok
+Round 2 fixes done: read_commands strips redirects, skips sed -i, resolves cd/cwd; skills_read also matches <skill dir>/<file>. Negative + cd/cwd tests added; tests ok.
 Next: review.
 
 ## Usage
@@ -32,3 +33,4 @@ Next: review.
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1933 | 71841 | 25s |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 20 | 6236 | 291198 | 60s |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1911 | 64304 | 30s |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 14 | 4367 | 168226 | 55s |

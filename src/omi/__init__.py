@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import os
+import posixpath
 import re
 import shutil
 import subprocess
@@ -898,14 +899,21 @@ USAGE_HEAD = "| role | model | effort | input | output | cache | duration | skil
 READERS = ("cat", "sed", "head", "tail", "less", "nl", "rg", "grep")
 
 
-def read_commands(command):
-    """The parts of a shell command line that read files (cat, sed, head, ...); ls, rm, echo do not count."""
+def read_commands(command, cwd=None):
+    """The parts of a shell command line that read files (cat, sed, head, ...); ls, rm, echo do not count.
+    Redirect targets are dropped (a write is not a read), `sed -i` is a write, and relative paths are
+    resolved against `cd` targets (and `cwd`) seen earlier in the command."""
     found = []
-    for seg in re.split(r"[;&|\n()]+", command.replace("'", " ").replace('"', " ")):
+    command = re.sub(r"\d*>>?&?\s*[^\s;&|()]+", " ", command.replace("'", " ").replace('"', " "))
+    for seg in re.split(r"[;&|\n()]+", command):
         toks = seg.split()
         while toks and (toks[0] in ("bash", "sh", "zsh", "env") or toks[0].startswith("-")):
             toks.pop(0)
-        if toks and toks[0] in READERS:
+        if toks and toks[0] == "cd" and len(toks) > 1:
+            cwd = posixpath.normpath(posixpath.join(cwd or "", toks[1]))
+        elif toks and toks[0] in READERS and not any(t == "--in-place" or re.fullmatch(r"-i\S*", t) for t in toks[1:]):
+            if cwd:
+                toks = toks[:1] + [t if t.startswith(("-", "/")) else posixpath.normpath(posixpath.join(cwd, t)) for t in toks[1:]]
             found.append(" ".join(toks))
     return found
 
@@ -930,7 +938,7 @@ def opened_files(tool, out):
                 elif c.get("name") == "Bash":
                     found += read_commands(str(args.get("command") or ""))
         elif tool == "codex" and isinstance(e.get("item"), dict) and e["item"].get("type") == "command_execution":
-            found += read_commands(str(e["item"].get("command") or ""))
+            found += read_commands(str(e["item"].get("command") or ""), e["item"].get("cwd") or e.get("cwd"))
     return found
 
 
@@ -940,6 +948,7 @@ def skills_read(root, ids, opened):
     done = []
     for sid in ids:
         rels = [Path(f).relative_to(root).as_posix() for f in skill_files(dirs[sid])]
+        rels += [f"{dirs[sid].name}/{Path(f).relative_to(dirs[sid]).as_posix()}" for f in skill_files(dirs[sid])]
         if any(r in o for r in rels for o in opened):
             done.append(sid)
     return done
