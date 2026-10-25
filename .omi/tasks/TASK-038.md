@@ -18,6 +18,8 @@ The Coordinator picks a workflow at planning time and follows it step by step.
 
 - [ ] `omi run <role> <ID>` adds the current step's skills (when the task has `step:` and the step role matches) to the role defaults and task skills, so the step skill is in the prompt, budget-checked, and shown in the Usage `skills read` cell. Test it.
 
+- [ ] The role prompt names the test command (`Tests: <test_command(...)>`), so roles stop guessing pytest; the host already runs it before read roles.
+
 ## Checkpoint
 Done:
 Not done:
