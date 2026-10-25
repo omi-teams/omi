@@ -3,7 +3,7 @@ id: TASK-007
 title: Verify resume and Claude-to-Codex handover
 status: in-progress
 depends: TASK-005
-scope: docs/verification.md, src/omi/template/AGENTS.md
+scope: docs/verification.md, src/omi/template/AGENTS.md, AGENTS.md
 ---
 ## Goal
 Show that a task interrupted mid-way can be finished in a new session, on Claude Code or Codex, without redoing verified work.
