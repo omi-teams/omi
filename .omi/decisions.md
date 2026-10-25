@@ -25,3 +25,4 @@
 - 2026-10-25 | Naming rule: typed omi- names - skills omi-skill-<n>, agents omi-agent-<n>, workflows omi-flow-<n>; PO commands omi-idea/task/release/status unchanged; enforced by validators (TASK-046) | PO wants kind and ownership obvious in any list, no collision with PO commands | TASK-046
 - 2026-10-25 | Reject Vercel web-design-guidelines as a skill source; UI UX Pro Max stays reference-only | Vercel skill only fetches its rules from a URL at runtime and the repo has no LICENSE file; UI UX Pro Max license unknown, nothing copied | TASK-026
 - 2026-10-25 | omi-task is model-invocable | the PO's AskUserQuestion pick is the approval; the Coordinator starts the chosen task without the PO typing /omi-task. omi-release stays PO-typed | PO chat
+- 2026-10-25 | omi-status ends with a next-task pick-list | the PO picks instead of typing omi-task | PO chat
