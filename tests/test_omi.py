@@ -169,12 +169,16 @@ def test_github_po():
             return R("", 1 if st["logout_fail"] else 0)
         if sub == ["auth", "switch"]:
             st["calls"].append("switch")
-            st["active"] = cmd[-1]
+            if not st["switch_fail"]:
+                st["active"] = cmd[-1]
+        if sub == ["repo", "view"]:
+            st["calls"].append("view")
+            return R("o/r PRIVATE" if st["private"] else "o/r PUBLIC")
         return R()
 
     def go(fail_apply=False, **kw):
         st.update(accts=["squad"], active="squad", new="po", calls=[], status_fail=False,
-                  status_fail_after=False, login_rc=0, logout_fail=False)
+                  status_fail_after=False, login_rc=0, logout_fail=False, private=False, switch_fail=False)
         st.update(kw)
         def apply():
             st["calls"].append("apply")
@@ -188,7 +192,7 @@ def test_github_po():
 
     omi.subprocess.run, omi.shutil.which = run, lambda _: "gh"
     try:
-        assert go() is None and st["calls"] == ["login", "apply", "logout", "switch"], st["calls"]
+        assert go() is None and st["calls"] == ["view", "login", "apply", "logout", "switch"], st["calls"]
         # logout already restored prev: no extra switch
         orig = run
         def run2(cmd, **kw):
@@ -199,19 +203,23 @@ def test_github_po():
         assert go() is None and "switch" not in st["calls"], st["calls"]
         omi.subprocess.run = run
         assert st["accts"] == ["squad"] and st["active"] == "squad"
-        assert go(fail_apply=True) == "boom" and st["calls"] == ["login", "apply", "logout", "switch"]
+        assert go(fail_apply=True) == "boom" and st["calls"] == ["view", "login", "apply", "logout", "switch"]
         assert st["accts"] == ["squad"]
         e = go(new="")  # same-account guard: no logout
         assert "own account" in e and "logout" not in st["calls"] and "apply" not in st["calls"]
         e = go(active="")  # empty prev: abort before login
         assert "no active squad" in e and st["calls"] == []
         e = go(login_rc=1)  # login fails after saving the token: still cleaned up
-        assert "login failed" in e and st["calls"] == ["login", "logout", "switch"] and st["accts"] == ["squad"]
+        assert "login failed" in e and st["calls"] == ["view", "login", "logout", "switch"] and st["accts"] == ["squad"]
         e = go(status_fail_after=True)  # cannot read accounts after login: loud failure
         assert "WARNING" in e and "apply" not in st["calls"]
         e = go(logout_fail=True)  # logout fails: warning + non-zero, switch still attempted
-        assert "WARNING" in e and "po" in e and st["calls"] == ["login", "apply", "logout", "switch"]
+        assert "WARNING" in e and "po" in e and st["calls"] == ["view", "login", "apply", "logout", "switch"]
         assert st["active"] == "squad"
+        e = go(private=True)  # private repo: checked with the squad account, no PO login
+        assert "private" in e and st["calls"] == ["view"], st["calls"]
+        e = go(switch_fail=True)  # active account not restored: warning + non-zero
+        assert "WARNING" in e and "not the squad account squad" in e and st["accts"] == ["squad"]
     finally:
         omi.subprocess.run, omi.shutil.which, omi.apply_github = realrun, realwhich, realapply
 
@@ -285,6 +293,10 @@ def test_worker():
             run0 = omi.subprocess.run
             omi.subprocess.run = lambda cmd, **kw: status if "status" in cmd else run0(cmd, **kw)
             assert omi.out_of_scope(wt, "TASK-001") == ["src/.gitattributes"]
+            status = R(" M GIT~1/x\0 M src/GITATT~1\0 M a/gitmod~2\0 M src/GITHUB.py\0 M src/ok.py\0")
+            omi.subprocess.run = lambda cmd, **kw: status if "status" in cmd else run0(cmd, **kw)
+            assert omi.out_of_scope(wt, "TASK-001") == ["GIT~1/x", "src/GITATT~1", "a/gitmod~2"]
+            status = R(" M src/.gitattributes\0 M src/ok.py\0")
             omi.subprocess.run = lambda cmd, **kw: (R("---\nscope: src/.gitattributes, src/ok.py\n---\n") if "show" in cmd
                                                     else status)
             assert omi.out_of_scope(wt, "TASK-001") == []

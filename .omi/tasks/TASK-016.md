@@ -15,7 +15,7 @@ Close three small gaps reviewers noted in TASK-013/014/015. This is also the fir
 - [ ] Tests cover each case; `python tests/test_omi.py` passes.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
-Next:
+Done: all 3 criteria (repo_info() pre-login visibility check; post-cleanup active-account warning+exit; 8.3 short-name flagging) + tests in test_github_po / test_worker.
+Not done: -
+Tests: all tests pass up to test_template_docker, which fails only because the container has no git; PurePosixPath.full_match (py3.13) is missing on py3.11 here, so I shimmed it for the run.
+Next: Coordinator runs full suite on host.
