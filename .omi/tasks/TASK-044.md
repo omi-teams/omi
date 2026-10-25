@@ -1,13 +1,13 @@
 ---
 id: TASK-044
 title: Network allowlist for worker containers
-status: in-progress
+status: done
 depends: TASK-028
 scope: src/omi/__init__.py, src/omi/template/**, tests/**, README.md
 role: omi-agent-engineer
 skills: [omi-skill-docker-worker-pitfalls, omi-skill-windows-powershell]
 workflow: omi-flow-feature-sensitive  # worker security boundary
-step: review
+step: accept
 ---
 ## Goal
 Every worker container (engineer and read roles) reaches only the model API and the hosts the PO allows.
@@ -20,10 +20,10 @@ Every worker container (engineer and read roles) reaches only the model API and 
 - `omi clean` also removes the proxy container and network it creates.
 
 ## Acceptance criteria
-- [ ] Containers run on a restricted network or through an egress proxy; the default allowlist is the model API host(s) only, editable in `.omi/config.json`.
-- [ ] A request to any other host from inside the container fails; a test or documented manual check proves it.
-- [ ] No token is exposed to the proxy beyond what the harness already sends; works on Docker Desktop for Windows.
-- [ ] Blocked-host failures name the host and how to allow it; `python tests/test_omi.py` passes.
+- [x] Containers run on a restricted network or through an egress proxy; the default allowlist is the model API host(s) only, editable in `.omi/config.json`.
+- [x] A request to any other host from inside the container fails; a test or documented manual check proves it.
+- [x] No token is exposed to the proxy beyond what the harness already sends; works on Docker Desktop for Windows.
+- [x] Blocked-host failures name the host and how to allow it; `python tests/test_omi.py` passes.
 
 ## Checkpoint
 Review round 1 FAIL: (reviewer PASS with findings, security-reviewer ran without its step skills; fix all)
@@ -57,6 +57,11 @@ Next: TASK-045
 - build done 2026-10-25 23:02
 - review started 2026-10-25 23:02
 - review done 2026-10-25 23:03
+- security started 2026-10-25 23:06
+- security done 2026-10-25 23:07
+- accept started 2026-10-25 23:07
+PO approval accept: Chấp nhận, merge (Recommended)
+- accept done 2026-10-25 23:08
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -66,3 +71,4 @@ Next: TASK-045
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 3520 | 87324 | 45s | - | PASS 6f0e339 |
 | omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 6 | 3029 | 86394 | 40s | - | PASS 6f0e339 |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 22 | 5486 | 367995 | 89s | 2/2 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell | - |
+| omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 6 | 2109 | 96580 | 36s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS f018ae6 |
