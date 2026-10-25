@@ -10,10 +10,12 @@ One command configures GitHub so the squad can merge only into `development`, an
 
 ## Acceptance criteria
 - [ ] `omi github` creates `staging` from `main` if missing.
-- [ ] Ruleset on `development`: PR required, required status check `test`, no force push or deletion.
+- [ ] Ruleset on `development`: no force push, no deletion only (the Coordinator pushes `.omi/` state directly; PR + CI there is enforced by the squad process).
 - [ ] Ruleset on `staging`/`main`: PR required, check `test`, updates restricted with bypass only for the repository admin role.
 - [ ] Re-running it updates the existing rulesets and creates no duplicates; it prints what changed.
 - [ ] If the token lacks admin, it stops with a clear message and changes nothing.
+- [ ] After applying, if the current user is a repo admin, it prints a warning: admins bypass the staging/main rule, so the squad account must be set back to Write.
+- [ ] Uses `gh api` via subprocess (no new dependencies); repo is taken from `gh repo view`.
 - [ ] A test covers the payload that gets built (no network).
 
 ## Checkpoint
