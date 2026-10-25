@@ -12,7 +12,8 @@ STATUSES = ("in-progress", "review", "blocked", "planned")
 USAGE = """usage: omi <command>
   init [dir]   install the squad into a project (never overwrites)
   status       show tasks, checkpoints and the next suggested task
-  guard        Claude Code PreToolUse hook: block writes outside task scope"""
+  guard        Claude Code PreToolUse hook: block writes outside task scope
+  github       set up branches and rulesets: squad merges to development, only the PO to staging/main"""
 
 
 def git(cwd, *args):
@@ -146,6 +147,58 @@ def guard(stdin=None):
     return 2
 
 
+def rulesets():
+    """{name: payload} of the GitHub rulesets omi github applies."""
+    def ruleset(name, refs, rules, bypass):
+        return {"name": name, "target": "branch", "enforcement": "active", "bypass_actors": bypass,
+                "conditions": {"ref_name": {"include": [f"refs/heads/{r}" for r in refs], "exclude": []}},
+                "rules": [{"type": t, **({"parameters": p} if p else {})} for t, p in rules]}
+    admin = [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}]
+    pr = {"required_approving_review_count": 0, "dismiss_stale_reviews_on_push": False,
+          "require_code_owner_review": False, "require_last_push_approval": False,
+          "required_review_thread_resolution": False}
+    checks = {"required_status_checks": [{"context": "test"}], "strict_required_status_checks_policy": False}
+    return {r["name"]: r for r in (
+        ruleset("omi-development", ["development"], [("deletion", None), ("non_fast_forward", None)], []),
+        ruleset("omi-po-only", ["staging", "main"],
+                [("deletion", None), ("non_fast_forward", None), ("update", None),
+                 ("pull_request", pr), ("required_status_checks", checks)], admin))}
+
+
+def gh(*args, body=None):
+    r = subprocess.run(["gh", "api", *args, *(["--input", "-"] if body else [])],
+                       input=json.dumps(body) if body else None, capture_output=True, text=True)
+    if r.returncode:
+        sys.exit(f"gh api {' '.join(args)} failed: {r.stderr.strip() or r.stdout.strip()}")
+    return json.loads(r.stdout) if r.stdout.strip() else None
+
+
+def github():
+    r = subprocess.run(["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
+                       capture_output=True, text=True)
+    if r.returncode:
+        sys.exit(f"cannot read repo from gh: {r.stderr.strip()}")
+    repo = r.stdout.strip()
+    if not gh(f"repos/{repo}")["permissions"]["admin"]:
+        sys.exit(f"the gh token has no admin on {repo}; nothing changed. Use an admin token.")
+    try:
+        gh(f"repos/{repo}/git/ref/heads/staging")
+        print("ok     branch staging exists")
+    except SystemExit:  # ponytail: any lookup failure counts as missing; POST then reports a real error
+        sha = gh(f"repos/{repo}/git/ref/heads/main")["object"]["sha"]
+        gh("-X", "POST", f"repos/{repo}/git/refs", body={"ref": "refs/heads/staging", "sha": sha})
+        print("create branch staging (from main)")
+    existing = {x["name"]: x["id"] for x in gh(f"repos/{repo}/rulesets")}
+    for name, payload in rulesets().items():
+        if name in existing:
+            gh("-X", "PUT", f"repos/{repo}/rulesets/{existing[name]}", body=payload)
+            print(f"update ruleset {name}")
+        else:
+            gh("-X", "POST", f"repos/{repo}/rulesets", body=payload)
+            print(f"create ruleset {name}")
+    print("WARNING: admins bypass the staging/main rule. If the squad uses an admin account, set it back to Write.")
+
+
 def main(argv=None):
     sys.stdout.reconfigure(encoding="utf-8")
     args = sys.argv[1:] if argv is None else argv
@@ -154,6 +207,8 @@ def main(argv=None):
         init(*rest[:1])
     elif cmd == "status":
         status(*rest[:1])
+    elif cmd == "github":
+        github()
     elif cmd == "guard":
         sys.exit(guard())
     else:
