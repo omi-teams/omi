@@ -21,10 +21,10 @@ No role carries default skills; each workflow step names the skills its work nee
 - Tests: `python3 tests/test_omi.py`; fix only tests that relied on a real role's default skills.
 
 ## Acceptance criteria
-- [ ] Every role file has `skills: []`; agents catalog regenerated; template copies identical (`diff -r`).
-- [ ] The step skills above are declared; `python -m omi workflows --check` passes; workflow template copies identical.
-- [ ] `python -m omi skills check` passes for every `.omi/tasks/TASK-*.md` with status planned.
-- [ ] `python3 tests/test_omi.py` passes.
+- [x] Every role file has `skills: []`; agents catalog regenerated; template copies identical (`diff -r`).
+- [x] The step skills above are declared; `python -m omi workflows --check` passes; workflow template copies identical.
+- [x] `python -m omi skills check` passes for every `.omi/tasks/TASK-*.md` with status planned.
+- [x] `python3 tests/test_omi.py` passes.
 
 ## Checkpoint
 Review round 1 FAIL, fix both (edit only `## Checkpoint` here), in both copies, then regenerate the workflows catalog:

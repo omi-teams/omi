@@ -15,6 +15,8 @@ Two independent read-only roles that give evidence beyond the general reviewer.
 - [ ] Skipped for docs-only or `.omi/`-only changes, as the reviewer is.
 - [ ] Catalog regenerated; template copy identical.
 
+Note 2026-10-25: acceptance criteria left unticked: no reviewer verdict on record; verified in TASK-039.
+
 ## Checkpoint
 Done: both roles, catalog regenerated (7 roles), template copy identical
 Not done: -

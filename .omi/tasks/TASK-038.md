@@ -21,15 +21,15 @@ The Coordinator picks a workflow at planning time and follows it step by step; f
 - Pattern to copy: `step()` and `record_usage` in `src/omi/__init__.py`; tests next to `test_workflows` in `tests/test_omi.py`. Tests: `python3 tests/test_omi.py`.
 
 ## Acceptance criteria
-- [ ] omi-idea / omi-task choose the lightest fitting workflow from the catalog and write `workflow:` into the task; (omi-task already drives `omi step`, TASK-048).
-- [ ] AGENTS.md grows by at most 4 lines; the catalogs are the only workflow text loaded by default.
-- [ ] Resume works: after an interruption `omi status` shows the task step and the Coordinator continues from it.
-- [ ] Template and root copies identical; `python tests/test_omi.py` passes.
+- [x] omi-idea / omi-task choose the lightest fitting workflow from the catalog and write `workflow:` into the task; (omi-task already drives `omi step`, TASK-048).
+- [x] AGENTS.md grows by at most 4 lines; the catalogs are the only workflow text loaded by default.
+- [x] Resume works: after an interruption `omi status` shows the task step and the Coordinator continues from it.
+- [x] Template and root copies identical; `python tests/test_omi.py` passes.
 
-- [ ] Carry-over from the TASK-033 review: `omi-flow-feature-ui` "Use instead" for a UI change in a sensitive area has no actionable path; say the Coordinator runs `omi-flow-feature-sensitive` and inserts the `design` and `qa` steps.
+- [x] Carry-over from the TASK-033 review: `omi-flow-feature-ui` "Use instead" for a UI change in a sensitive area has no actionable path; say the Coordinator runs `omi-flow-feature-sensitive` and inserts the `design` and `qa` steps.
 
-- [ ] `omi step <ID> back` (or `next` from a FAILed `review` gate) returns to the previous write step, so a fix round runs with that step's skills; log it in `## Steps`.
-- [ ] `omi run` saves the reviewer's `VERDICT: PASS|FAIL` in the Usage row (or `## Steps`), so the verdict is on record, not only in terminal output.
+- [x] `omi step <ID> back` (or `next` from a FAILed `review` gate) returns to the previous write step, so a fix round runs with that step's skills; log it in `## Steps`.
+- [x] `omi run` saves the reviewer's `VERDICT: PASS|FAIL` in the Usage row (or `## Steps`), so the verdict is on record, not only in terminal output.
 
 ## Checkpoint
 Architect (step architect): RECOMMEND A, the brief as written; Coordinator took A.

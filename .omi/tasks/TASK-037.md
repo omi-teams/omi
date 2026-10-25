@@ -20,10 +20,10 @@ The release flow exists as two workflows, and `omi-release` only starts them, wi
 - Regenerate with `python -m omi workflows`; `python -m omi workflows --check`; tests `python3 tests/test_omi.py`.
 
 ## Acceptance criteria
-- [ ] `omi-flow-release` and `omi-flow-promote` workflows reproduce every step and PO gate of the current omi-release skill (merges into staging/main stay with the PO).
-- [ ] `omi-release` becomes a thin entry that starts the workflow; no step of the old flow is lost (checked against the old file in the review).
-- [ ] `python3 tests/test_omi.py` and `python -m omi workflows --check` pass; template copies identical (`diff -r` for workflows and the skill).
-- [ ] In the Checkpoint, a table maps each old step (phase.step) to its new location.
+- [x] `omi-flow-release` and `omi-flow-promote` workflows reproduce every step and PO gate of the current omi-release skill (merges into staging/main stay with the PO).
+- [x] `omi-release` becomes a thin entry that starts the workflow; no step of the old flow is lost (checked against the old file in the review).
+- [x] `python3 tests/test_omi.py` and `python -m omi workflows --check` pass; template copies identical (`diff -r` for workflows and the skill).
+- [x] In the Checkpoint, a table maps each old step (phase.step) to its new location.
 
 ## Checkpoint
 Done: omi-flow-release, omi-flow-promote (+template copies, CATALOG), thin omi-release skill (root+template).

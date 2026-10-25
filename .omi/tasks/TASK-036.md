@@ -19,10 +19,10 @@ Two workflows exist for work that goes off-plan: a change request after a task w
 - Regenerate with `python -m omi workflows`; check with `python -m omi workflows --check`; tests: `python3 tests/test_omi.py` (the workflow count there is derived, no edit expected).
 
 ## Acceptance criteria
-- [ ] `omi-flow-change-request`: impact on tasks and cost, options + one recommendation, PO decision recorded in decisions.md, then replan; no work starts before the decision.
-- [ ] `omi-flow-incident`: contain, diagnose, hotfix or rollback, postmortem note; the production merge stays a PO gate.
-- [ ] Each passes `python -m omi workflows --check`; `CATALOG.md` regenerated in both copies; `diff -r .omi/workflows src/omi/template/dot-omi/workflows` is empty.
-- [ ] change-request: its decide step has gate `po`; incident: the production merge step has gate `po` and the hotfix step gate `review`.
+- [x] `omi-flow-change-request`: impact on tasks and cost, options + one recommendation, PO decision recorded in decisions.md, then replan; no work starts before the decision.
+- [x] `omi-flow-incident`: contain, diagnose, hotfix or rollback, postmortem note; the production merge stays a PO gate.
+- [x] Each passes `python -m omi workflows --check`; `CATALOG.md` regenerated in both copies; `diff -r .omi/workflows src/omi/template/dot-omi/workflows` is empty.
+- [x] change-request: its decide step has gate `po`; incident: the production merge step has gate `po` and the hotfix step gate `review`.
 
 ## Checkpoint
 Coordinator check before review, fix (edit only `## Checkpoint` here): `omi-flow-incident` says "Rollback chosen: skip `hotfix`", but `hotfix` has gate `review` and `omi step` refuses to skip a gate step. Make the step a "hotfix or revert" step: output is either the minimal fix with a regression test or the revert diff; both go through the review gate; no skip. Update line 7 and line 25 in both copies; keep `--check` green.

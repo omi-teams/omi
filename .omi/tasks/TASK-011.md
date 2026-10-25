@@ -14,6 +14,8 @@ Add only the skills and workflows the TASK-009 pilot proved missing, distilled f
 - [ ] Candidates considered include core skills (brainstorm/AC, verification, diff security review) and the change-request workflow; rejected ones are logged in `.omi/decisions.md` with the reason.
 - [ ] Skills load on demand; AGENTS.md grows by at most a few lines.
 
+Note 2026-10-25: acceptance criteria left unticked: no reviewer verdict on record; verified in TASK-039.
+
 ## Checkpoint
 Done: closed with no new skills. The TASK-009 pilot found 5 problems, all workflow/tooling (fixed in TASK-014); engineer and reviewer did each task right the first time. Rejected candidates are logged in .omi/decisions.md.
 Tests: n/a

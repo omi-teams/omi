@@ -11,11 +11,11 @@ skills: []
 Evidence that a role read its declared skills: `omi run` records the skill files the agent really opened, from its tool-call log, not from what the agent says.
 
 ## Acceptance criteria
-- [ ] Claude runs use `--output-format stream-json --verbose` (Codex keeps `--json`); token usage and the final report are still parsed as today.
-- [ ] From the tool-call events, collect the declared skill files (SKILL.md and declared references) that were opened by a Read tool call (or, for Codex, a command that reads the file).
-- [ ] The `## Usage` row gets a `skills read` column: `n/m` plus the ids read; tasks without skills show `-`. Existing tables without the column still parse.
-- [ ] When a declared skill was not read, `omi run` prints `SKILL NOT READ: <id>` after the report (warning, exit code unchanged).
-- [ ] Tests: stream-json parsing (usage, report, read paths), Codex event parsing, the `n/m` cell, the warning; `python tests/test_omi.py` passes.
+- [x] Claude runs use `--output-format stream-json --verbose` (Codex keeps `--json`); token usage and the final report are still parsed as today.
+- [x] From the tool-call events, collect the declared skill files (SKILL.md and declared references) that were opened by a Read tool call (or, for Codex, a command that reads the file).
+- [x] The `## Usage` row gets a `skills read` column: `n/m` plus the ids read; tasks without skills show `-`. Existing tables without the column still parse.
+- [x] When a declared skill was not read, `omi run` prints `SKILL NOT READ: <id>` after the report (warning, exit code unchanged).
+- [x] Tests: stream-json parsing (usage, report, read paths), Codex event parsing, the `n/m` cell, the warning; `python tests/test_omi.py` passes.
 
 ## Checkpoint
 Round 1 fixes done: run_role test for SKILL NOT READ; old 7-column Usage header extended; read_commands limits Bash/Codex reads.

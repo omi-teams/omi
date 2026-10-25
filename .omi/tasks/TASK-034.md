@@ -11,10 +11,10 @@ skills: []  # writes markdown workflows; the step skills below go into the workf
 Workflows for changing existing code safely.
 
 ## Acceptance criteria
-- [ ] `omi-flow-bugfix`: reproduce with a failing test, fix the root cause (grep all callers), regression test, reviewer.
-- [ ] `omi-flow-refactor`: tests green before, behaviour unchanged, tests green after, reviewer; no scope growth.
-- [ ] Each has PO gates, stop conditions and the review-fail rule; passes `--check`; catalog regenerated; template copy identical.
-- [ ] Step skills: bugfix fix step uses `omi-skill-debug-root-cause`; refactor review step uses `omi-skill-simplify-review`. Follow the layout of `.omi/workflows/omi-flow-feature.md`.
+- [x] `omi-flow-bugfix`: reproduce with a failing test, fix the root cause (grep all callers), regression test, reviewer.
+- [x] `omi-flow-refactor`: tests green before, behaviour unchanged, tests green after, reviewer; no scope growth.
+- [x] Each has PO gates, stop conditions and the review-fail rule; passes `--check`; catalog regenerated; template copy identical.
+- [x] Step skills: bugfix fix step uses `omi-skill-debug-root-cause`; refactor review step uses `omi-skill-simplify-review`. Follow the layout of `.omi/workflows/omi-flow-feature.md`.
 
 ## Checkpoint
 Done: omi-flow-bugfix and omi-flow-refactor (+ template copies, catalog regenerated, `workflows --check` ok, template identical).
