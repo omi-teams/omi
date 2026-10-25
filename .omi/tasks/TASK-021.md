@@ -3,7 +3,7 @@ id: TASK-021
 title: Skill loading control (catalog, task skills field, budget check)
 status: in-progress
 depends: TASK-020
-scope: src/omi/__init__.py, src/omi/template/**, .omi/tasks/_template.md, .claude/skills/omi-task/**, .claude/agents/**, tests/**, AGENTS.md
+scope: src/omi/__init__.py, src/omi/template/**, .omi/tasks/_template.md, .claude/skills/omi-task/**, .claude/agents/**, tests/**, AGENTS.md, .omi/skills/.gitkeep, src/omi/template/dot-omi/skills/.gitkeep
 ---
 ## Goal
 Skills load only when a task declares them. Nothing is listed in always-on context except a one-line-per-skill catalog.
@@ -18,7 +18,7 @@ Skills load only when a task declares them. Nothing is listed in always-on conte
 - [ ] Tests: budget pass/fail, unknown id, catalog generation; `python tests/test_omi.py` passes.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
+Done: all criteria. omi skills / skills check, check_skills at omi worker start, skill_prompt passes only declared files to engineer; reviewer.md says the same (no reviewer runner exists yet, TASK-028); template, AGENTS.md (+1 line), omi-task skill, test_skills.
+Not done: budget config is `.omi/config.json` "skill_limits" (PO edits, logs in decisions by convention, not enforced by code).
+Tests: python3 tests/test_omi.py -> ok
 Next: TASK-022

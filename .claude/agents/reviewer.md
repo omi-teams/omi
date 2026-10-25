@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Bash
 ---
 Input: the task file path and the worktree path. You did not write this code; judge it only from the task and the diff.
 
-1. Review `git -C <worktree> diff development...HEAD`. Read surrounding code only where the diff needs it.
+1. Review `git -C <worktree> diff development...HEAD`. Read surrounding code only where the diff needs it, and only the skill files the prompt lists.
 2. Run the tests.
 3. Check: each acceptance criterion is met, with evidence; bugs; security (secrets, injection, unvalidated input, authz); changes outside `scope`.
 4. Never edit files.

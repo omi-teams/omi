@@ -8,7 +8,7 @@ Task: $ARGUMENTS. If empty, propose the `next` task from `python -m omi status` 
 
 The main checkout stays on `development`. `<wt>` is `../<repo-name>.wt/<ID>`.
 
-1. Check that every `depends` task is done. Set `status: in-progress`, then commit on `development`.
+1. Check that every `depends` task is done and that the task's `skills` (chosen from `.omi/skills/CATALOG.md`, regenerate with `python -m omi skills`) pass `python -m omi skills check <task-file>`. Set `status: in-progress`, then commit on `development`.
 2. If `<wt>` already exists, this is a resume: read its Checkpoint and verify it with `git -C <wt> status` and `git -C <wt> log development..HEAD`. Otherwise run `git worktree add <wt> -b task/<ID> development`.
 3. Run the engineer in the Docker worker (never spawn an `engineer` subagent, never run it on the host):
    `python -m omi worker <wt> <wt>/.omi/tasks/<ID>.md [--model M --effort E]`. Pass `--model/--effort` only when the AGENTS.md quota rules differ from the agent frontmatter. It prints the engineer's report.
