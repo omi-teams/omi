@@ -885,11 +885,16 @@ def test_usage():
         {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": "cat /work/.omi/skills/g/omi-skill-b/SKILL.md"}}]}},
         json.loads(claude)))
     assert omi.parse_usage("claude", stream) == ("DONE", 10, 20, 105)
-    assert omi.opened_files("claude", stream) == ["/work/.omi/skills/g/omi-skill-a/SKILL.md"]
+    assert omi.opened_files("claude", stream) == ["/work/.omi/skills/g/omi-skill-a/SKILL.md", "cat /work/.omi/skills/g/omi-skill-b/SKILL.md"]
     cx = "\n".join(json.dumps(e) for e in (
         {"type": "item.completed", "item": {"type": "command_execution", "command": "bash -lc 'cat /work/.omi/skills/g/omi-skill-b/ref.md'"}},
         {"type": "item.completed", "item": {"type": "agent_message", "text": "hi"}}))
-    assert omi.opened_files("codex", cx) == ["bash -lc 'cat /work/.omi/skills/g/omi-skill-b/ref.md'"]
+    assert omi.opened_files("codex", cx) == ["cat /work/.omi/skills/g/omi-skill-b/ref.md"]
+    sk = "/work/.omi/skills/g/omi-skill-b/SKILL.md"
+    for bad in (f"ls {sk}", f"rm {sk}", f"echo {sk}", f"echo x > {sk}", f"ls {sk} && echo cat"):
+        assert omi.read_commands(bad) == [], bad
+    assert omi.read_commands(f"bash -lc 'ls && sed -n 1,5p {sk}'") == [f"sed -n 1,5p {sk}"]
+    assert omi.read_commands(f"rg foo {sk} | head") == [f"rg foo {sk}", "head"]
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
         for sid in ("a", "b"):
@@ -898,17 +903,30 @@ def test_usage():
             (sd / "SKILL.md").write_text("---\nreferences: ref.md\n---\n", encoding="utf-8")
             (sd / "ref.md").write_text("x", encoding="utf-8")
         ids = ["omi-skill-a", "omi-skill-b"]
-        assert omi.skills_read(root, ids, omi.opened_files("claude", stream)) == ["omi-skill-a"]
+        assert omi.skills_read(root, ids, omi.opened_files("claude", stream)) == ["omi-skill-a", "omi-skill-b"]
         assert omi.skills_read(root, ids, omi.opened_files("codex", cx)) == ["omi-skill-b"]
+        neg = json.dumps({"type": "item.completed", "item": {"type": "command_execution", "command": "rm /work/.omi/skills/g/omi-skill-b/SKILL.md"}})
+        assert omi.skills_read(root, ids, omi.opened_files("codex", neg)) == []
+    # existing 7-column table gets the new column; old rows still parse
+    with tempfile.TemporaryDirectory() as d:
+        task = Path(d) / "TASK-002.md"
+        task.write_text("# t\n\n## Usage\n| role | model | effort | input | output | cache | duration |\n|---|---|---|---|---|---|---|\n| r | m | e | 1 | 2 | 3 | 4s |\n", encoding="utf-8")
+        omi.record_usage(task, "r2", "m", "e", (1, 1, 1), 1, "1/1 x")
+        text = task.read_text(encoding="utf-8")
+        assert "| duration | skills read |\n|---|---|---|---|---|---|---|---|\n| r | m | e | 1 | 2 | 3 | 4s |\n" in text
+        assert text.rstrip().endswith("| r2 | m | e | 1 | 1 | 1 | 1s | 1/1 x |")
+        assert omi.usage_totals(text) == "usage: 2 runs, in 2 out 3 cache 4, review rounds: 0"
     # run_role records the harness numbers
     real = omi.subprocess.run, omi.shutil.which, omi.main_checkout, omi.os.environ.get(omi.TOKEN_ENV)
 
     class R:
         def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
 
+    run_out = [claude]
+
     def run(cmd, **kw):
         if cmd[:2] == ["docker", "run"]:
-            return R(claude)
+            return R(run_out[0])
         if "status" in cmd:
             return R(" M src/a.py\0")
         if "show" in cmd:
@@ -933,6 +951,29 @@ def test_usage():
             if tok is not None:
                 omi.os.environ[omi.TOKEN_ENV] = tok
         assert "| omi-agent-engineer |" in task.read_text(encoding="utf-8") and "| 10 | 20 | 105 |" in task.read_text(encoding="utf-8")
+        # one declared skill read, one not: warning printed, exit code unchanged, cell recorded
+        for sid in ("a", "b"):
+            sd = wt / ".omi" / "skills" / "g" / f"omi-skill-{sid}"
+            sd.mkdir(parents=True)
+            (sd / "SKILL.md").write_text("---\ndescription: d\n---\n", encoding="utf-8")
+        omi.skills_catalog(wt)
+        task.write_text("---\nid: TASK-001\nscope: src/**\nskills: omi-skill-a, omi-skill-b\n---\n## Goal\ng\n", encoding="utf-8")
+        run_out[0] = "\n".join(json.dumps(e) for e in (use("/work/.omi/skills/g/omi-skill-a/SKILL.md"), json.loads(claude)))
+        omi.subprocess.run, omi.shutil.which, omi.main_checkout = run, lambda _: "docker", (lambda _: wt)
+        omi.os.environ[omi.TOKEN_ENV] = "tok"
+        sys.stdout, saved = io.StringIO(), sys.stdout
+        try:
+            rc = omi.run_role("omi-agent-engineer", wt, task)
+            printed = sys.stdout.getvalue()
+        finally:
+            sys.stdout = saved
+            omi.subprocess.run, omi.shutil.which, omi.main_checkout, tok = real
+            omi.os.environ.pop(omi.TOKEN_ENV, None)
+            if tok is not None:
+                omi.os.environ[omi.TOKEN_ENV] = tok
+        assert "SKILL NOT READ: omi-skill-b" in printed and "SKILL NOT READ: omi-skill-a" not in printed
+        assert rc == 0
+        assert "| 1/2 omi-skill-a |" in task.read_text(encoding="utf-8")
 
 
 def test_git_non_ascii():

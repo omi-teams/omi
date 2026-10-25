@@ -895,8 +895,23 @@ def codex_cmd(agent_text, task_rel, model, effort, skills=""):
 USAGE_HEAD = "| role | model | effort | input | output | cache | duration | skills read |"
 
 
+READERS = ("cat", "sed", "head", "tail", "less", "nl", "rg", "grep")
+
+
+def read_commands(command):
+    """The parts of a shell command line that read files (cat, sed, head, ...); ls, rm, echo do not count."""
+    found = []
+    for seg in re.split(r"[;&|\n()]+", command.replace("'", " ").replace('"', " ")):
+        toks = seg.split()
+        while toks and (toks[0] in ("bash", "sh", "zsh", "env") or toks[0].startswith("-")):
+            toks.pop(0)
+        if toks and toks[0] in READERS:
+            found.append(" ".join(toks))
+    return found
+
+
 def opened_files(tool, out):
-    """Paths (Claude Read calls) or command lines (Codex) the agent opened, from the tool-call log."""
+    """Paths (Claude Read calls) or read-command parts (Claude Bash, Codex) the agent opened, from the tool-call log."""
     found = []
     for line in (out or "").splitlines():
         try:
@@ -907,10 +922,15 @@ def opened_files(tool, out):
             continue
         if tool == "claude" and e.get("type") == "assistant" and isinstance(e.get("message"), dict):
             for c in e["message"].get("content") or []:
-                if isinstance(c, dict) and c.get("type") == "tool_use" and c.get("name") == "Read":
-                    found.append(str((c.get("input") or {}).get("file_path") or ""))
+                if not isinstance(c, dict) or c.get("type") != "tool_use":
+                    continue
+                args = c.get("input") or {}
+                if c.get("name") == "Read":
+                    found.append(str(args.get("file_path") or ""))
+                elif c.get("name") == "Bash":
+                    found += read_commands(str(args.get("command") or ""))
         elif tool == "codex" and isinstance(e.get("item"), dict) and e["item"].get("type") == "command_execution":
-            found.append(str(e["item"].get("command") or ""))
+            found += read_commands(str(e["item"].get("command") or ""))
     return found
 
 
@@ -969,6 +989,13 @@ def record_usage(task, role, model, effort, nums, seconds, skills="-"):
     if "\n## Usage" in text:
         head, _, rest = text.partition("\n## Usage")
         body, sep, tail = rest.partition("\n## ")
+        lines = body.split("\n")
+        for i, l in enumerate(lines):
+            if l.startswith("| role") and "skills read" not in l:
+                lines[i] = l.rstrip() + " skills read |"
+                if i + 1 < len(lines) and lines[i + 1].startswith("|---"):
+                    lines[i + 1] = lines[i + 1].rstrip() + "---|"
+        body = "\n".join(lines)
         text = f"{head}\n## Usage{body.rstrip()}\n{row}\n" + (f"\n## {tail}" if sep else "")
     else:
         text = f"{text.rstrip()}\n\n## Usage\n{USAGE_HEAD}\n|---|---|---|---|---|---|---|---|\n{row}\n"
