@@ -1,7 +1,7 @@
 ---
 id: TASK-031
 title: Roles - delivery (devops, docs-writer)
-status: planned
+status: in-progress
 depends: TASK-028, TASK-025
 scope: .omi/agents/**, src/omi/template/dot-omi/agents/**, .omi/decisions.md
 ---
