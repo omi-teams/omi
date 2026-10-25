@@ -1,6 +1,10 @@
-"""OMI Squad CLI: init, status, guard. Stdlib only."""
+"""OMI Squad CLI: init, status, guard, token, worker. Stdlib only."""
 
+import ctypes
+import getpass
+import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -14,7 +18,13 @@ USAGE = """usage: omi <command>
   init [dir]   install the squad into a project (never overwrites)
   status       show tasks, checkpoints and the next suggested task
   guard        Claude Code PreToolUse hook: block writes outside task scope
-  github       set up branches and rulesets: squad merges to development, only the PO to staging/main"""
+  github       set up branches and rulesets: squad merges to development, only the PO to staging/main
+  token set    store the `claude setup-token` value in Windows Credential Manager
+  worker <wt> <task-file> [--model M] [--effort E]   run the engineer in the Docker worker
+  worker <wt> --prove   run docker/prove.sh in the worker (boundary check, no token)"""
+WINDOWS = sys.platform == "win32"
+CRED_TARGET = "omi/CLAUDE_CODE_OAUTH_TOKEN"
+TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"
 
 
 def git(cwd, *args):
@@ -299,6 +309,148 @@ def apply_github():
     print("WARNING: admins bypass the staging/main rule. If the squad uses an admin account, set it back to Write.")
 
 
+class CRED(ctypes.Structure):  # CREDENTIALW
+    _fields_ = [("Flags", ctypes.c_uint32), ("Type", ctypes.c_uint32), ("TargetName", ctypes.c_wchar_p),
+                ("Comment", ctypes.c_wchar_p), ("LastWritten", ctypes.c_uint32 * 2),
+                ("CredentialBlobSize", ctypes.c_uint32), ("CredentialBlob", ctypes.POINTER(ctypes.c_char)),
+                ("Persist", ctypes.c_uint32), ("AttributeCount", ctypes.c_uint32), ("Attributes", ctypes.c_void_p),
+                ("TargetAlias", ctypes.c_wchar_p), ("UserName", ctypes.c_wchar_p)]
+
+
+def advapi():
+    return ctypes.WinDLL("advapi32")
+
+
+def cred_write(secret):
+    data = secret.encode()
+    buf = ctypes.create_string_buffer(data, len(data))
+    c = CRED(Type=1, TargetName=CRED_TARGET, UserName="omi", Persist=2,  # GENERIC, LOCAL_MACHINE
+             CredentialBlobSize=len(data), CredentialBlob=ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)))
+    if not advapi().CredWriteW(ctypes.byref(c), 0):
+        sys.exit("could not store the token in Windows Credential Manager.")
+
+
+def cred_read():
+    p = ctypes.POINTER(CRED)()
+    api = advapi()
+    if not api.CredReadW(CRED_TARGET, 1, 0, ctypes.byref(p)):
+        return None
+    try:
+        return ctypes.string_at(p.contents.CredentialBlob, p.contents.CredentialBlobSize).decode()
+    finally:
+        api.CredFree(p)
+
+
+def token_set():
+    if not WINDOWS:
+        print(f"no credential store support here; export {TOKEN_ENV} in the shell that runs omi worker.")
+        return
+    secret = getpass.getpass("paste the `claude setup-token` value (hidden): ").strip()
+    if not secret:
+        sys.exit("empty token; nothing stored.")
+    cred_write(secret)
+    print(f"stored in Windows Credential Manager as {CRED_TARGET}")
+
+
+def token():
+    return (cred_read() if WINDOWS else None) or os.environ.get(TOKEN_ENV)
+
+
+def worker_argv(wt, image, cmd):
+    """docker run argv: only the worktree is rw, its .git file ro, non-root, no caps, rootfs ro, no socket.
+    The token goes in by name only (-e NAME); its value lives in the child env, never in argv."""
+    wt = Path(wt)
+    return ["docker", "run", "--rm", "-i", "--label", "omi-worker=1",
+            "--user", "node", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+            "--tmpfs", "/tmp:rw,noexec,nosuid,size=256m",
+            "--tmpfs", "/home/node:rw,noexec,nosuid,uid=1000,gid=1000,size=256m",
+            "-e", TOKEN_ENV, "-e", "HOME=/home/node",
+            "-v", f"{wt}:/work", "-v", f"{wt / '.git'}:/work/.git:ro", "-w", "/work", image, *cmd]
+
+
+def engineer_cmd(agent_text, task_rel, model=None, effort=None):
+    m = parse(agent_text)
+    body = agent_text.split("---", 2)[2].strip() if agent_text.startswith("---") else agent_text
+    return ["claude", "-p", f"Task file: /work/{task_rel}\nWorktree: /work",
+            "--append-system-prompt", body,
+            "--model", model or m.get("model", "sonnet"), "--effort", effort or m.get("effort", "medium"),
+            # the container is the boundary, not prompts; project hooks (omi guard) cannot run in it
+            "--permission-mode", "bypassPermissions", "--setting-sources", "user"]
+
+
+def main_checkout(wt):
+    common = git(wt, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    return Path(common).parent if common else None
+
+
+def ensure_image(main):
+    d = main / "docker"
+    if not (d / "Dockerfile").exists():
+        d = TEMPLATE / "docker"
+    tag = "omi-worker:" + hashlib.sha256((d / "Dockerfile").read_bytes()).hexdigest()[:12]
+    if subprocess.run(["docker", "image", "inspect", tag], capture_output=True).returncode:
+        if subprocess.run(["docker", "build", "-t", tag, "--label", "omi-worker=1", str(d)]).returncode:
+            sys.exit("docker build failed.")
+    return tag
+
+
+def out_of_scope(wt, tid):
+    """Changed paths in wt that the task's scope (read from development) does not allow."""
+    shown = git(wt, "show", f"development:.omi/tasks/{tid}.md")
+    globs = split(parse(shown).get("scope")) if shown else []
+    r = subprocess.run(["git", "-C", str(wt), "status", "--porcelain", "-z", "-uall", "--no-renames"],
+                       capture_output=True, text=True)
+    paths = [e[3:] for e in r.stdout.split("\0") if e]
+    def bad(p):
+        if p == f".omi/tasks/{tid}.md":
+            return False
+        if os.path.islink(Path(wt) / p):  # host tools could follow it out of the worktree
+            return True
+        if any(c.lower().startswith(".git") for c in p.split("/")) and p not in globs:
+            return True  # .gitattributes, .gitmodules, .githooks...: host git processes them; only an exact scope entry allows
+        return not any(PurePosixPath(p).full_match(g) for g in globs)
+    return [p for p in paths if bad(p)]
+
+
+def worker(wt, task_file=None, model=None, effort=None, prove=False):
+    wt = Path(wt).resolve()
+    main = main_checkout(wt)
+    if not main or not (wt / ".git").is_file():
+        sys.exit(f"{wt} is not a git worktree. Nothing changed.")
+    if not prove:
+        task = Path(task_file).resolve()
+        try:
+            task_rel = task.relative_to(wt).as_posix()
+        except ValueError:
+            sys.exit(f"{task} is not inside {wt}. Nothing changed.")
+    if not shutil.which("docker") or subprocess.run(["docker", "info"], capture_output=True).returncode:
+        sys.exit("Docker is not running; start Docker Desktop and retry. Nothing changed.")
+    secret = None if prove else token()
+    if not prove and not secret:
+        sys.exit(f"no token: run `omi token set` (Windows) or set {TOKEN_ENV}. Nothing changed.")
+    image = ensure_image(main)
+    env = dict(os.environ)
+    env.pop(TOKEN_ENV, None)
+    if prove:
+        script = main / "docker" / "prove.sh"
+        script = script if script.exists() else TEMPLATE / "docker" / "prove.sh"
+        return subprocess.run(worker_argv(wt, image, ["sh", "-s"]), env=env,
+                              input=script.read_bytes().replace(b"\r\n", b"\n")).returncode
+    agent = main / ".claude" / "agents" / "engineer.md"
+    agent = agent if agent.exists() else TEMPLATE / "dot-claude" / "agents" / "engineer.md"
+    cmd = engineer_cmd(agent.read_text(encoding="utf-8"), task_rel, model, effort)
+    env[TOKEN_ENV] = secret
+    rc = subprocess.run(worker_argv(wt, image, cmd), env=env, stdin=subprocess.DEVNULL).returncode
+    bad = out_of_scope(wt, task.stem)
+    for p in bad:
+        print(f"OUT OF SCOPE: {p}")
+    return rc or (3 if bad else 0)
+
+
+def flag(rest, name):
+    return rest[rest.index(name) + 1] if name in rest[:-1] else None
+
+
 def main(argv=None):
     sys.stdout.reconfigure(encoding="utf-8")
     args = sys.argv[1:] if argv is None else argv
@@ -311,5 +463,12 @@ def main(argv=None):
         github("--po" in rest)
     elif cmd == "guard":
         sys.exit(guard())
+    elif cmd == "token" and rest[:1] == ["set"]:
+        token_set()
+    elif cmd == "worker" and rest:
+        prove = "--prove" in rest
+        if not prove and (len(rest) < 2 or rest[1].startswith("--")):
+            sys.exit("usage: omi worker <wt> <task-file> [--model M] [--effort E]")
+        sys.exit(worker(rest[0], None if prove else rest[1], flag(rest, "--model"), flag(rest, "--effort"), prove))
     else:
         print(USAGE)

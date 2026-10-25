@@ -229,7 +229,161 @@ def test_github_private():
         omi.subprocess.run = real
 
 
+def test_worker():
+    real = omi.subprocess.run, omi.shutil.which, omi.main_checkout, omi.WINDOWS, omi.os.environ.get(omi.TOKEN_ENV)
+    calls = []
+    st = {}
+
+    class R:
+        def __init__(s, out="", rc=0): s.stdout, s.returncode = out, rc
+
+    def run(cmd, **kw):
+        calls.append((cmd, kw))
+        if cmd[:2] == ["docker", "info"]:
+            return R(rc=st["info_rc"])
+        if "show" in cmd:
+            return R("---\nscope: src/**\n---\n")
+        if "status" in cmd:
+            return R(" M src/a.py\0?? .gitattributes\0 M .omi/tasks/TASK-001.md\0")
+        return R()
+
+    with tempfile.TemporaryDirectory() as d:
+        wt = Path(d).resolve()
+        (wt / ".git").write_text("gitdir: /x")
+        task = wt / ".omi" / "tasks" / "TASK-001.md"
+        omi.subprocess.run, omi.shutil.which = run, lambda _: "docker"
+        omi.main_checkout, omi.WINDOWS = (lambda _: wt), False  # no docker/ or agents here: template copies
+        omi.os.environ[omi.TOKEN_ENV] = "tok-SECRET"
+        out = io.StringIO()
+        sys.stdout, saved = out, sys.stdout
+        try:
+            def go(task=task, **kw):
+                calls.clear()
+                st.update(info_rc=0)
+                st.update(kw)
+                try:
+                    return omi.worker(wt, task, effort=kw.get("effort"))
+                except SystemExit as e:
+                    return str(e)
+
+            assert go() == 3, "out-of-scope change"
+            assert "OUT OF SCOPE: .gitattributes" in out.getvalue() and "src/a.py" not in out.getvalue()
+            argv, kw = next(c for c in calls if c[0][:2] == ["docker", "run"])
+            assert not any("tok-SECRET" in a for a in argv), "token in argv"
+            assert argv[argv.index("-e") + 1] == omi.TOKEN_ENV and kw["env"][omi.TOKEN_ENV] == "tok-SECRET"
+            assert kw["stdin"] is omi.subprocess.DEVNULL
+            for f in ("--read-only", "no-new-privileges", "node", f"{wt}:/work", f"{wt / '.git'}:/work/.git:ro"):
+                assert f in argv, f
+            assert argv[argv.index("--cap-drop") + 1] == "ALL" and not any("docker.sock" in a for a in argv)
+            c = argv[argv.index("claude"):]
+            assert c[c.index("--model") + 1] == "sonnet" and c[c.index("--effort") + 1] == "medium"
+            assert c[c.index("--permission-mode") + 1] == "bypassPermissions"
+            assert "/work/.omi/tasks/TASK-001.md" in c[2] and "Checkpoint" in c[c.index("--append-system-prompt") + 1]
+            go(effort="high")
+            # .git* components flagged unless named exactly; symlinks flagged
+            status = R(" M src/.gitattributes\0 M src/ok.py\0")
+            run0 = omi.subprocess.run
+            omi.subprocess.run = lambda cmd, **kw: status if "status" in cmd else run0(cmd, **kw)
+            assert omi.out_of_scope(wt, "TASK-001") == ["src/.gitattributes"]
+            omi.subprocess.run = lambda cmd, **kw: (R("---\nscope: src/.gitattributes, src/ok.py\n---\n") if "show" in cmd
+                                                    else status)
+            assert omi.out_of_scope(wt, "TASK-001") == []
+            real_islink = omi.os.path.islink
+            omi.os.path.islink = lambda p: str(p).endswith("ok.py")
+            assert omi.out_of_scope(wt, "TASK-001") == ["src/ok.py"]
+            omi.os.path.islink = real_islink
+            omi.subprocess.run = run0
+            argv = next(c[0] for c in calls if c[0][:2] == ["docker", "run"])
+            assert argv[argv.index("--effort") + 1] == "high"
+
+            def ran():
+                return [c[0][:2] for c in calls if c[0][:2] in (["docker", "run"], ["docker", "build"])]
+            e = go(info_rc=1)
+            assert "Docker is not running" in e and not ran(), (e, calls)
+            omi.shutil.which = lambda _: None
+            assert "Docker is not running" in go() and not calls
+            omi.shutil.which = lambda _: "docker"
+            assert "not inside" in go(task=wt.parent / "x.md") and not calls
+            del omi.os.environ[omi.TOKEN_ENV]
+            e = go()
+            assert "no token" in e and not ran(), e
+        finally:
+            sys.stdout = saved
+            omi.subprocess.run, omi.shutil.which, omi.main_checkout, omi.WINDOWS, tok = real
+            omi.os.environ.pop(omi.TOKEN_ENV, None)
+            if tok is not None:
+                omi.os.environ[omi.TOKEN_ENV] = tok
+
+
+def test_credential_manager():
+    import ctypes
+    store = {}
+
+    class Fake:
+        keep = []
+
+        def CredWriteW(self, pcred, flags):
+            c = pcred._obj
+            assert c.Type == 1 and c.Persist == 2
+            store[c.TargetName] = ctypes.string_at(c.CredentialBlob, c.CredentialBlobSize)
+            return 1
+
+        def CredReadW(self, target, typ, flags, pp):
+            if target not in store:
+                return 0
+            buf = ctypes.create_string_buffer(store[target], len(store[target]))
+            c = omi.CRED(TargetName=target, CredentialBlobSize=len(store[target]),
+                         CredentialBlob=ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)))
+            self.keep += [buf, c]
+            pp._obj.contents = c
+            return 1
+
+        def CredFree(self, p):
+            store["freed"] = True
+
+    real = omi.advapi, omi.WINDOWS, omi.getpass.getpass, omi.os.environ.pop(omi.TOKEN_ENV, None)
+    fake = Fake()
+    omi.advapi, omi.WINDOWS = (lambda: fake), True
+    out = io.StringIO()
+    sys.stdout, saved = out, sys.stdout
+    try:
+        assert omi.token() is None
+        omi.getpass.getpass = lambda prompt: " tok-123 \n"
+        omi.token_set()
+        assert store[omi.CRED_TARGET] == b"tok-123"
+        assert omi.token() == "tok-123" and store["freed"]
+        assert "tok-123" not in out.getvalue(), "token echoed"
+        omi.WINDOWS = False
+        omi.token_set()
+        assert omi.TOKEN_ENV in out.getvalue()
+        omi.os.environ[omi.TOKEN_ENV] = "env-tok"
+        assert omi.token() == "env-tok"
+    finally:
+        sys.stdout = saved
+        omi.advapi, omi.WINDOWS, omi.getpass.getpass, tok = real
+        omi.os.environ.pop(omi.TOKEN_ENV, None)
+        if tok is not None:
+            omi.os.environ[omi.TOKEN_ENV] = tok
+
+
+def test_template_docker():
+    d = omi.TEMPLATE / "docker"
+    text = (d / "Dockerfile").read_text()
+    assert "python3" in text and "@anthropic-ai/claude-code@2." in text and (d / "prove.sh").exists()
+    with tempfile.TemporaryDirectory() as t:
+        out = io.StringIO()
+        sys.stdout, saved = out, sys.stdout
+        try:
+            omi.init(t)
+        finally:
+            sys.stdout = saved
+        assert (Path(t) / "docker" / "Dockerfile").exists()
+
+
 if __name__ == "__main__":
+    test_worker()
+    test_credential_manager()
+    test_template_docker()
     test_init_guard_status()
     test_github_rulesets()
     test_same_and_no_gh()
