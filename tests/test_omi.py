@@ -1050,7 +1050,7 @@ def test_workflows():
             assert [s["gate"] for s in omi.get_workflow(root, "omi-flow-demo")] == ["none", "none", "review", "po"]
             r = subprocess.run([sys.executable, "-m", "omi", "workflows", "--check"], cwd=root, capture_output=True, text=True,
                                env={**omi.os.environ, "PYTHONPATH": str(Path(__file__).parents[1] / "src")})
-            assert r.returncode == 0 and "workflows ok (4 checked)" in r.stdout, r.stdout + r.stderr
+            assert r.returncode == 0 and f"workflows ok ({len(list(wf.glob('omi-flow-*.md')))} checked)" in r.stdout, r.stdout + r.stderr
 
             # unknown ids, gates, budgets and size fail the check
             fails(lambda: omi.get_workflow(root, "omi-flow-ghost"), "unknown workflow `omi-flow-ghost`", "omi-flow-demo")
