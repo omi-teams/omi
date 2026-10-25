@@ -7,7 +7,7 @@ scope: .omi/workflows/**, src/omi/template/dot-omi/workflows/**, .omi/decisions.
 role: omi-agent-engineer
 skills: []  # writes markdown workflows; step build adds omi-skill-lean-implementation
 workflow: omi-flow-feature
-step:
+step: build
 ---
 ## Goal
 Two workflows exist for work that goes off-plan: a change request after a task was approved, and an incident after a release or gate broke.
@@ -25,7 +25,17 @@ Two workflows exist for work that goes off-plan: a change request after a task w
 - [ ] change-request: its decide step has gate `po`; incident: the production merge step has gate `po` and the hotfix step gate `review`.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
+Done: both workflows + CATALOG.md in .omi/workflows and template copy (identical); contain/merge-prod run as coordinator because devops already has 3 role skills (budget 3)
+Not done: -
+Tests: workflows --check ok (9), tests/test_omi.py ok
 Next: TASK-037
+
+## Steps
+- plan started 2026-10-25 22:07
+- plan done 2026-10-25 22:07
+- build started 2026-10-25 22:07
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read |
+|---|---|---|---|---|---|---|---|
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 4986 | 228066 | 69s | 1/1 omi-skill-lean-implementation |
