@@ -26,6 +26,11 @@ Run independent tasks in parallel only when the PO asks, with conflicts caught b
 - [ ] `python tests/test_omi.py` passes, including an overlap test.
 
 ## Checkpoint
+Review round 1 FAIL:
+1. tests/test_omi.py: add tests: two `task/*` worktrees map to two paths in `task_worktrees`; `record_usage` on TASK-A leaves TASK-B untouched; `clean` selects containers by repo label, not task id (stub `subprocess.run`).
+2. tests/test_omi.py: test `main(["parallel", ...])` wiring: exit 1 with conflicts on stderr, `parallel ok: <IDs>` on success, a single ID falls through to usage.
+3. src/omi/__init__.py:1439: replace `sys.exit(... else print(...))` with `if conflicts: sys.exit(...)` then `print(...)`.
+4. src/omi/__init__.py:538: dedupe IDs, or report `duplicate id`; test it.
 Done: omi parallel (+usage), tests, SKILL.md, AGENTS.md (root+template)
 Not done: -
 Tests: python3 tests/test_omi.py ok
@@ -35,8 +40,13 @@ Next: TASK-039
 - plan started 2026-10-25 22:51
 - plan done 2026-10-25 22:51
 - build started 2026-10-25 22:51
+- build done 2026-10-25 22:53
+- review started 2026-10-25 22:53
+- review failed 2026-10-25 22:54
+- build started 2026-10-25 22:54
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 4691 | 242055 | 60s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 2502 | 68311 | 35s | - | FAIL 5d0e4d3 |
