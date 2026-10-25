@@ -1,7 +1,7 @@
 ---
 id: TASK-021
 title: Skill loading control (catalog, task skills field, budget check)
-status: planned
+status: in-progress
 depends: TASK-020
 scope: src/omi/__init__.py, src/omi/template/**, .omi/tasks/_template.md, .claude/skills/omi-task/**, .claude/agents/**, tests/**, AGENTS.md
 ---
