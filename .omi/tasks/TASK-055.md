@@ -56,3 +56,4 @@ Round 3: quota_hit now reads only CLI error events; codex Usage cell always `<mo
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 24 | 5539 | 417147 | 75s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 3796 | 96369 | 45s | - | PASS 14a739e |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 3988 | 225671 | 45s | 2/2 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 3931 | 100394 | 47s | - | PASS f9153bc |
