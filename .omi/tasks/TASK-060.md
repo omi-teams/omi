@@ -1,7 +1,7 @@
 ---
 id: TASK-060
 title: Stream the agent's stderr live again
-status: planned
+status: in-progress
 depends: TASK-056
 scope: src/omi/__init__.py, tests/**
 role: omi-agent-engineer
