@@ -663,7 +663,7 @@ def step(root, tid, action, why=None, now=None):
         text = add_step_log(text, f"- {prev['id']} started {stamp}")
         msg = f"{tid}: step {cur} failed; back to {prev['id']} ({prev['role']}), then `omi step {tid} done` and `next`"
     elif action == "done":
-        if (re.findall(r"hook post-run (FAILED|passed)", text) or [""])[-1] == "FAILED":
+        if (re.findall(r"^\d{4}-\d\d-\d\d \d\d:\d\d hook post-run (FAILED|passed)", text, re.M) or [""])[-1] == "FAILED":
             sys.exit(f"{tid}: the last post-run hook failed; fix it and rerun `omi run` first. Nothing changed.")
         if steps[at]["gate"] == "po" and not po_approved(text, cur):
             sys.exit(f"{tid}: step {cur} is a po gate; record `PO approval {cur}: <PO's words>` in the task first. "
@@ -1408,9 +1408,17 @@ def run_hook(wt, main, event, tid, image):
     image = image or ensure_image(main)
     env = dict(os.environ)
     env.pop(TOKEN_ENV, None)
-    argv = worker_argv(wt, image, HOOK_RUNNERS[script.suffix], None, repo_label(main), worker_labels(f"hook-{event}", tid, None, None),
+    name = container_name(repo_label(main), f"hook-{event}", tid)
+    argv = worker_argv(wt, image, HOOK_RUNNERS[script.suffix], name, repo_label(main), worker_labels(f"hook-{event}", tid, None, None),
                        ro=True, env_names=(), offline=True)
-    r = subprocess.run(argv, env=env, input=script.read_bytes().replace(b"\r\n", b"\n"), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    cfg = Path(main) / ".omi" / "config.json"
+    limit = (json.loads(cfg.read_text(encoding="utf-8")) if cfg.exists() else {}).get("hook_timeout", 600)
+    try:
+        r = subprocess.run(argv, env=env, input=script.read_bytes().replace(b"\r\n", b"\n"), stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT, timeout=limit)
+    except subprocess.TimeoutExpired as e:
+        subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+        return 124, (e.stdout or b"").decode("utf-8", "replace") + f"hook {event} timed out after {limit} s\n"
     return r.returncode, r.stdout.decode("utf-8", "replace")
 
 

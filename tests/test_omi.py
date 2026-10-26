@@ -627,6 +627,34 @@ def test_hooks():
                 assert "post-run hook failed" in str(e), e
             st["hook_rc"] = 0
             assert go() == 0 and omi.step(main, "TASK-001", "done") == 0
+            # the guard reads only the Reports header line: hook output cannot fake `passed`
+            st["hook_rc"] = 3
+            assert go() == 6
+            task.write_text(re.sub(r"- plan done.*\n", "", task.read_text()) + "> hook post-run passed\n")
+            try:
+                omi.step(main, "TASK-001", "done")
+                raise AssertionError("step done passed on faked output")
+            except SystemExit as e:
+                assert "post-run hook failed" in str(e), e
+            st["hook_rc"] = 0
+            assert go() == 0
+            # a hanging hook is killed by name and fails with a timeout message
+            (main / ".omi" / "hooks" / "post-run.py").write_text("import time")
+            (main / ".omi" / "config.json").write_text('{"hook_timeout": 7}')
+            real_run = omi.subprocess.run
+
+            def hang(cmd, **kw):
+                if cmd[:2] == ["docker", "run"] and cmd[-2:] == ["python3", "-"]:
+                    assert kw["timeout"] == 7 and "--name" in cmd
+                    calls.append((cmd, kw))
+                    raise omi.subprocess.TimeoutExpired(cmd, 7)
+                return real_run(cmd, **kw)
+            omi.subprocess.run = hang
+            calls.clear()
+            assert go() == 6 and "hook post-run timed out after 7 s" in task.read_text()
+            assert any(c[0][:3] == ["docker", "rm", "-f"] and c[0][3] == hooks()[0][0][hooks()[0][0].index("--name") + 1] for c in calls)
+            omi.subprocess.run = real_run
+            (main / ".omi" / "config.json").unlink()
             # read roles run no hooks
             calls.clear()
             (main / ".omi" / "hooks" / "pre-run.sh").write_text("exit 1")
@@ -673,7 +701,7 @@ def test_hooks():
             (w / "tests").mkdir(parents=True)
             (w / "tests" / "test_x.py").write_text("")
             r = subprocess.run([sh, str(omi.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh")], cwd=w, capture_output=True, text=True, env=env)
-            assert "no tests found" not in r.stdout, r
+            assert "no tests found" not in r.stdout and "pytest not in the worker image" in r.stdout, r
     text = (omi.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh").read_text()
     assert all(w in text for w in ("pytest", "go test", "npm test"))
     for f in (Path("AGENTS.md"), omi.TEMPLATE / "AGENTS.md", Path(".claude/skills/omi-task/SKILL.md"),

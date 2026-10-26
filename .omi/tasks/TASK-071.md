@@ -24,6 +24,7 @@ Scripts `.omi/hooks/<event>.sh|.py` for events `pre-run`, `post-run`, `pre-merge
 - [ ] All tests pass.
 
 ## Checkpoint
+Round 3 fixes done: step guard regex anchored to the Reports header (test: faked `> hook post-run passed` output still blocks); run_hook has `--name` + `hook_timeout` (default 600), on timeout `docker rm -f` and rc 124 with message (fake-subprocess test); tests/ case asserts the pytest message. Tests ok. Next: Coordinator review and commit.
 Review PASS + security PASS; fix round 3 asked by the PO (PO: "Sửa vòng 3 rồi merge"):
 - `step()` post-run guard: the regex `hook post-run (FAILED|passed)` matches anywhere, including `> ` hook output lines the agent's tests can print, so a failing run can fake `passed`. Anchor it to the Reports header line only: `re.findall(r"^\d{4}-\d\d-\d\d \d\d:\d\d hook post-run (FAILED|passed)", text, re.M)`. Test: a FAILED header whose output contains "hook post-run passed" still blocks `step done`.
 - `run_hook`: add a timeout (`hook_timeout` seconds in `.omi/config.json`, default 600) and `--name` from `container_name(...)`; on timeout `docker rm -f` the container and return a non-zero rc with "hook <event> timed out after N s". Test with a fake subprocess.
@@ -127,6 +128,14 @@ Next: Coordinator review and commit.
 > UNVERIFIED: the template `post-run.sh` has not run in a real container (the `:ro` worktree may block go/python cache writes); a Docker run would confirm. `python3 tests/test_omi.py` prints ok.
 > 
 > The isolation looks sound: `--network none`, `env_names=()`, the token popped from the child env, the script read from the main checkout, and `:ro`. No workflow files changed.
+2026-10-26 14:27 omi-agent-engineer (claude):
+> DONE. All three round-3 fixes are in, and `python3 tests/test_omi.py` prints `ok` on Linux. I did not run it on the Windows host or in real Docker.
+> - **Files changed:** `src/omi/__init__.py`, `tests/test_omi.py`, `.omi/tasks/TASK-071.md` (checkpoint).
+> - **Guard:** the `step done` check now matches only a Reports header line (date, time, `hook post-run FAILED|passed`). A new test shows that a FAILED header followed by an output line "hook post-run passed" still blocks `step done`.
+> - **Timeout:** `run_hook` now names the container with `container_name(...)` and takes `hook_timeout` from `.omi/config.json` (default 600). On timeout it runs `docker rm -f <name>` and returns rc 124 with "hook <event> timed out after N s". The new test uses a fake subprocess and checks the Reports text and the `rm -f` call.
+> - **Test tweak:** the "only under tests/" case now also asserts `"pytest not in the worker image" in r.stdout`.
+> - **Commit:** `fix: anchor post-run guard, add hook timeout and container name (TASK-071)`, ending with `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`.
+> - **Open issue:** the template `post-run.sh` has still not run in a real container.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -137,3 +146,4 @@ Next: Coordinator review and commit.
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 14 | 2635 | 177514 | 53s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 4 | 2889 | 54999 | 44s | - | PASS a872b9d |
 | omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 6 | 2017 | 101684 | 43s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS a872b9d |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 3686 | 267365 | 61s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
