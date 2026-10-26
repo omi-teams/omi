@@ -1,21 +1,21 @@
 ---
 id: TASK-062
 title: Prove Codex end to end with a real key, including the quota switch
-status: in-progress
+status: done
 depends: TASK-055, TASK-065
 scope: docs/research/omi-eval.md, .omi/tasks/**, .omi/config.json
 role: omi-agent-engineer
 skills: []
 workflow: omi-flow-spike
-step: write
+step: decide
 ---
 ## Goal
 The biggest unproven part: `omi run --tool codex` with the PO's ChatGPT login (TASK-065; an API key also works but costs API money), and the agent quota switch.
 
 ## Acceptance criteria
-- [ ] One small sandbox task run with `--tool codex` (codex-default model, or a `codex_models` entry the PO picks): DONE, tests pass, Usage row shows `(codex)`, key never in argv or logs.
-- [ ] Quota switch exercised with a forced trigger (e.g. a sandbox-only fake limit event fed to `quota_hit`, or a real limit if one occurs); evidence recorded; the QUOTA patterns are updated if real output differs.
-- [ ] Results in docs/research/omi-eval.md; what stays unproven is listed.
+- [x] One small sandbox task run with `--tool codex` (codex-default model, or a `codex_models` entry the PO picks): DONE, tests pass, Usage row shows `(codex)`, key never in argv or logs.
+- [x] Quota switch exercised with a forced trigger (e.g. a sandbox-only fake limit event fed to `quota_hit`, or a real limit if one occurs); evidence recorded; the QUOTA patterns are updated if real output differs.
+- [x] Results in docs/research/omi-eval.md; what stays unproven is listed.
 
 ## Checkpoint
 Done: docs section "Codex thật và chuyển tool khi hết quota (TASK-062)" appended to docs/research/omi-eval.md (docs-writer).
@@ -35,6 +35,10 @@ Write (docs-writer): append a Vietnamese section "Codex thật và chuyển tool
 - research started 2026-10-26 11:38
 - research skipped 2026-10-26 11:40: evidence is the Coordinator-run sandbox runs recorded in the Checkpoint
 - write started 2026-10-26 11:40
+- write done 2026-10-26 11:41
+- decide started 2026-10-26 11:41
+PO approval decide: "Chấp nhận, merge"
+- decide done 2026-10-26 11:45
 
 ## Reports
 2026-10-26 11:40 omi-agent-docs-writer (claude):
