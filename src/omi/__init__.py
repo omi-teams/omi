@@ -1,5 +1,6 @@
 """OMI Squad CLI: init, status, guard, skills, agents, workflows, step, run, token, worker. Stdlib only."""
 
+import base64
 import contextlib
 import ctypes
 import datetime
@@ -890,6 +891,49 @@ def token(tool="claude"):
     return (cred_read(target) if WINDOWS else None) or os.environ.get(env)
 
 
+CODEX_AUTH_ENV = "OMI_CODEX_AUTH"  # not CODEX_ACCESS_TOKEN: codex reads that name itself as an agent identity token
+CODEX_LOGIN_HINT = "run `codex` once on the host (or `codex login`) and retry"
+# written into the container's tmpfs home before codex runs; the variable is dropped right after
+CODEX_AUTH_BOOT = ('mkdir -p "$HOME/.codex" && printenv ' + CODEX_AUTH_ENV + ' > "$HOME/.codex/auth.json" && '
+                   'chmod 600 "$HOME/.codex/auth.json" && unset ' + CODEX_AUTH_ENV + ' && exec "$@"')
+
+
+def codex_login():
+    """(slim auth.json text, None) from the host ChatGPT login, or (None, problem). Only the access token goes in;
+    the refresh token is replaced by a placeholder (the schema needs the field), so the container cannot refresh."""
+    path = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex") / "auth.json"
+    try:
+        auth = json.loads(path.read_text(encoding="utf-8"))
+        tok = auth["tokens"]
+        access = tok["access_token"]
+        if auth.get("auth_mode") not in (None, "chatgpt") or not access:
+            raise KeyError
+    except (OSError, ValueError, KeyError, TypeError):
+        return None, f"no ChatGPT login at {path}: {CODEX_LOGIN_HINT}"
+    try:
+        part = access.split(".")[1]
+        exp = json.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4))).get("exp")
+    except (IndexError, ValueError, AttributeError):
+        exp = None  # not a readable JWT: let codex decide
+    if isinstance(exp, (int, float)) and exp <= time.time():
+        return None, f"the ChatGPT login in {path} has expired: {CODEX_LOGIN_HINT}"
+    slim = {"auth_mode": "chatgpt", "OPENAI_API_KEY": None, "last_refresh": auth.get("last_refresh"),
+            "tokens": {"access_token": access, "id_token": tok.get("id_token"), "account_id": tok.get("account_id"),
+                       "refresh_token": "omi-no-refresh"}}
+    return json.dumps(slim), None
+
+
+def tool_secret(tool):
+    """(env name, value, problem) for a tool; codex: stored API key, env OPENAI_API_KEY, then the host ChatGPT login."""
+    if tool == "claude":
+        return TOKEN_ENV, token(), None
+    key = token("codex")
+    if key:
+        return CODEX_ENV, key, None
+    auth, problem = codex_login()
+    return CODEX_AUTH_ENV, auth, problem
+
+
 DEFAULT_MODELS = {"haiku": "claude-haiku-5-5", "sonnet": "claude-sonnet-5-5", "opus": "claude-opus-5-5"}
 CODEX_DEFAULT = "codex-default"  # no -m: the Codex CLI picks its own model
 CODEX_ID = r"(gpt|o\d|codex)[a-zA-Z0-9_.-]*"
@@ -999,9 +1043,13 @@ def network_allow(root):
     return list(allow)
 
 
-def allow_for(root, *tools):
+CHATGPT_HOSTS = ["chatgpt.com"]  # codex with a ChatGPT login talks to this besides api.openai.com
+
+
+def allow_for(root, *tools, chatgpt=False):
     """network_allow plus each tool's own API host (deduplicated), so a repo config that lists only one still works."""
-    return list(dict.fromkeys([*network_allow(root), *(TOOL_API_HOST[t] for t in tools)]))
+    extra = CHATGPT_HOSTS if chatgpt and "codex" in tools else []
+    return list(dict.fromkeys([*network_allow(root), *(TOOL_API_HOST[t] for t in tools), *extra]))
 
 
 def prove_rc(out, rc):
@@ -1525,12 +1573,13 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
     if tool not in ("claude", "codex"):
         sys.exit(f"unknown tool `{tool}`: claude or codex. Nothing changed.")
     other = "codex" if tool == "claude" else "claude"
-    envs = {"claude": TOKEN_ENV, "codex": CODEX_ENV}
     need_docker()  # read roles too: no host fallback
-    secret = token(tool)
-    if not secret:
-        cmd = "omi token set" + (" --tool codex" if tool == "codex" else "")
-        sys.exit(f"no token: run `{cmd}` (Windows) or set {envs[tool]}. Nothing changed.")
+    secret = tool_secret(tool)
+    if not secret[1]:
+        if tool == "codex":
+            sys.exit(f"no codex credentials: run `omi token set --tool codex` (Windows) or set {CODEX_ENV}, "
+                     f"or use your ChatGPT login ({secret[2]}). Nothing changed.")
+        sys.exit(f"no token: run `omi token set` (Windows) or set {TOKEN_ENV}. Nothing changed.")
     cur = next((s for s in get_workflow(wt, tm.get("workflow") or DEFAULT_WORKFLOW) if s["id"] == tm.get("step")), None) \
         if tm.get("step") else None
     step_ids = task_skills(cur) if cur and cur["role"] == role else []  # the current step's own skills
@@ -1558,16 +1607,20 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
         """One container run with tool t; returns (process, report text, usage numbers, usage-row skills, seconds)."""
         env = dict(os.environ)
         env.pop(TOKEN_ENV, None)
-        env[envs[t]] = secret
+        env_name, value, _ = secret
+        env[env_name] = value
         mdl, eff = models[t], efforts[t]
         cmd = (engineer_cmd if t == "claude" else codex_cmd)(text, task_rel, mdl, eff, prompt_skills + note)
+        chatgpt = env_name == CODEX_AUTH_ENV
+        if chatgpt:
+            cmd = ["sh", "-c", CODEX_AUTH_BOOT, "sh", *cmd]
         t0 = time.monotonic()
 
         def run_once(name):
-            with egress(main, name, image, allow_for(main, t)) as (net, proxy):
+            with egress(main, name, image, allow_for(main, t, chatgpt=chatgpt)) as (net, proxy):
                 with subprocess.Popen(worker_argv(wt, image, cmd, name, repo_label(main),
                                                   {**worker_labels(role, task.stem, mdl, eff), **compose_labels(name, "agent")}, ro=read,
-                                                  mounts=mounts, env_names=(envs[t],), network=net, proxy=proxy),
+                                                  mounts=mounts, env_names=(env_name,), network=net, proxy=proxy),
                                       env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                       encoding="utf-8", errors="replace") as p:
                     err = []
@@ -1634,7 +1687,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
         print(f"tool: {tool} ({models[tool]})")
         r, result, done = attempt(tool, secret)
         if quota_hit(tool, r.stdout, r.returncode):
-            other_secret, problem = token(other), None
+            other_secret, problem = tool_secret(other), None
             try:
                 models[other] = resolve_model(main, want_model, other)
             except SystemExit:  # a full ID of one tool: the other uses the role's alias, else its default
@@ -1645,8 +1698,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
                         models[other] = CODEX_DEFAULT
                     else:
                         problem = f"no {other} model for {want_model}"
-            if not other_secret:
-                problem = f"no {other} token"
+            if not other_secret[1]:
+                problem = other_secret[2] or f"no {other} token"
             if problem:
                 return stop_quota(f"{tool} hit its usage limit and {other} cannot continue ({problem})")
             append_note(task, "Checkpoint", f"QUOTA: {tool} hit its usage limit; {role} continued with {other} on the partial diff.")
