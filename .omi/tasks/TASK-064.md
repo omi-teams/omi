@@ -1,21 +1,21 @@
 ---
 id: TASK-064
 title: Decode subprocess output as UTF-8 (Vietnamese mojibake on Windows)
-status: in-progress
+status: done
 depends: TASK-060
 scope: src/omi/__init__.py, tests/**
 role: omi-agent-engineer
 skills: []
 workflow: omi-flow-bugfix
-step: review
+step: accept
 ---
 ## Goal
 Bug: on Windows (locale cp1252) agent reports and other subprocess output are decoded with the locale, so UTF-8 text from containers and CLIs turns into mojibake (`â†’` for `→`, broken Vietnamese in `## Reports`). Root cause: `subprocess.run/Popen(..., text=True)` without `encoding`.
 
 ## Acceptance criteria
-- [ ] Every `text=True` subprocess call in src/omi/__init__.py passes `encoding="utf-8"` (keep `errors="replace"` where present); a test fails if a `text=True` call without an encoding is added (scan the source).
-- [ ] A test feeds UTF-8 bytes with `→` and Vietnamese through the agent run path and asserts they reach `## Reports` unchanged.
-- [ ] `python tests/test_omi.py` passes on Windows and Linux.
+- [x] Every `text=True` subprocess call in src/omi/__init__.py passes `encoding="utf-8"` (keep `errors="replace"` where present); a test fails if a `text=True` call without an encoding is added (scan the source).
+- [x] A test feeds UTF-8 bytes with `→` and Vietnamese through the agent run path and asserts they reach `## Reports` unchanged.
+- [x] `python tests/test_omi.py` passes on Windows and Linux.
 
 ## Checkpoint
 Done: all 13 `text=True` calls in src/omi/__init__.py now use `encoding="utf-8"` (+ `errors="replace"`, added where missing); AST test `test_subprocess_text_encoding` added and registered in main; FakePopen decodes bytes with the call's encoding (cp1252 default, simulating Windows).
@@ -31,6 +31,10 @@ Next: Coordinator review and commit.
 - fix started 2026-10-26 11:15
 - fix skipped 2026-10-26 11:15: the reproduce run wrote the guard test and the fix together
 - review started 2026-10-26 11:15
+- review done 2026-10-26 11:16
+- accept started 2026-10-26 11:16
+PO approval accept: "Chấp nhận, tiếp TASK-065"
+- accept done 2026-10-26 11:18
 
 ## Reports
 2026-10-26 11:14 omi-agent-engineer (claude):
