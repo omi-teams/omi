@@ -1190,6 +1190,86 @@ def test_rules():
                 omi.os.environ[omi.TOKEN_ENV] = real[4]
 
 
+def test_plans():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        omi.init(root)
+        plans = root / ".omi" / "plans"
+        assert (plans / "PLAN-000.md").is_file()
+        assert "- PLAN-000 (done): Example plan" in (plans / "CATALOG.md").read_text()
+        for base in (Path(__file__).resolve().parents[1], omi.TEMPLATE):
+            task_dir = base / ("dot-omi" if base == omi.TEMPLATE else ".omi") / "tasks"
+            assert omi.meta(task_dir / "_template.md")["plan"] == ""
+            assert "Coordinator-owned" in (task_dir / "_template.md").read_text().split("plan:", 1)[1].splitlines()[0]
+            assert ".omi/plans/PLAN-NNN.md" in (base / "AGENTS.md").read_text()
+        plan = plans / "PLAN-001.md"
+        original = "---\nid: PLAN-001\ntitle: Ship feature\nstatus: active\n---\n## Goal\nShip it\n## Done criteria\nDone\n"
+        plan.write_text(original)
+        cli = [sys.executable, "-m", "omi", "plans"]
+        env = dict(omi.os.environ, PYTHONPATH=str(Path(omi.__file__).parent.parent))
+        result = subprocess.run(cli, cwd=root, env=env, capture_output=True, text=True)
+        assert result.returncode == 0 and "2 plans" in result.stdout, result.stderr
+        cat = (plans / "CATALOG.md").read_text()
+        assert "- PLAN-001 (active): Ship feature" in cat
+        for old, new, error in (("id: PLAN-001", "id: wrong", "differs from file name"),
+                                ("id: PLAN-001", "unused:", "differs from file name"),
+                                ("title: Ship feature", "title:", "missing `title`"),
+                                ("status: active", "status: planned", "active or done"),
+                                ("status: active", "unused:", "active or done")):
+            plan.write_text(original.replace(old, new))
+            result = subprocess.run(cli, cwd=root, env=env, capture_output=True, text=True)
+            assert result.returncode != 0 and "PLAN-001:" in result.stderr and error in result.stderr, result.stderr
+            assert (plans / "CATALOG.md").read_text() == cat
+        plan.write_text(original)
+        (plans / "PLAN-002.md").write_text(original.replace("PLAN-001", "PLAN-002").replace("Ship feature", "Empty"))
+        task_dir = root / ".omi" / "tasks"
+        for n, state, pid in ((1, "done", "PLAN-001"), (2, "review", "PLAN-001"),
+                              (3, "done", "PLAN-000"), (4, "done", "")):
+            (task_dir / f"TASK-{n:03}.md").write_text(f"---\nid: TASK-{n:03}\nstatus: {state}\nplan: {pid}\n---\n")
+        out = io.StringIO()
+        with omi.contextlib.redirect_stdout(out):
+            omi.status(root)
+        text = out.getvalue()
+        assert "PLAN-001 Ship feature: done 1/2" in text, text
+        assert "PLAN-002 Empty: done 0/0" in text, text
+        assert "PLAN-000" not in text, text
+        for f in task_dir.glob("TASK-*.md"):
+            f.unlink()
+        with omi.contextlib.redirect_stdout(io.StringIO()) as out:
+            omi.status(root)
+        assert "PLAN-001 Ship feature: done 0/0" in out.getvalue()
+        task = task_dir / "TASK-001.md"
+        before = "---\nid: TASK-001\nplan: PLAN-001  # keep\n---\n## Checkpoint\nold\n"
+        task.write_text(before.replace("PLAN-001  # keep", "PLAN-000").replace("old", "new"))
+        assert omi.revert_front(task, before) == ["plan"]
+        assert task.read_text() == before.replace("old", "new")
+        before = "---\nid: TASK-001\n---\nbody\n"
+        task.write_text(before.replace("id: TASK-001", "id: TASK-001\nplan: PLAN-001"))
+        assert omi.revert_front(task, before) == ["plan"] and task.read_text() == before
+        before = "---\nid: TASK-001\nplan: PLAN-001\n---\nbody\n"
+        task.write_text(before.replace("plan: PLAN-001\n", ""))
+        assert omi.revert_front(task, before) == ["plan"] and task.read_text() == before
+        omi.check_task_plan(root, {})
+        omi.check_task_plan(root, {"plan": ""})
+        omi.check_task_plan(root, {"plan": "PLAN-001"})
+        # Unknown plan fails in the actual run entry point before Docker or credentials.
+        wt = root / "wt"
+        wt.mkdir()
+        (wt / ".git").write_text("gitdir: unused")
+        task = wt / "TASK-001.md"
+        task.write_text("---\nid: TASK-001\nplan: PLAN-999\n---\n")
+        real = omi.main_checkout
+        omi.main_checkout = lambda _: root
+        try:
+            try:
+                omi.run_role("omi-agent-engineer", wt, task)
+                raise AssertionError("unknown plan accepted")
+            except SystemExit as e:
+                assert "unknown plan PLAN-999" in str(e) and ".omi/plans/PLAN-999.md" in str(e), str(e)
+        finally:
+            omi.main_checkout = real
+
+
 def test_references():
     with tempfile.TemporaryDirectory() as d:
         root = Path(d).resolve()
@@ -2241,6 +2321,7 @@ if __name__ == "__main__":
     test_skills()
     test_rules()
     test_references()
+    test_plans()
     test_skills_check()
     test_workflows()
     test_worker()
