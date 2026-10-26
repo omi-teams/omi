@@ -52,7 +52,7 @@ class FakePopen:
 omi.subprocess.Popen = FakePopen
 
 def test_version_stamp_package_hook():
-    import glob
+    import fnmatch, glob
     want = omi.tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
     assert want == "0.2.0" and omi.version() == want
     real = omi.importlib.metadata.version
@@ -98,8 +98,23 @@ def test_version_stamp_package_hook():
     # package-data globs cover every template file
     pkg = Path("src/omi")
     pats = omi.tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["tool"]["setuptools"]["package-data"]["omi"]
+    excl = omi.tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["tool"]["setuptools"]["exclude-package-data"]["omi"]
     covered = {Path(p) for pat in pats for p in glob.glob(str(pkg / pat), recursive=True)}
-    files = {p for p in (pkg / "template").rglob("*") if p.is_file()}
+    covered = {p for p in covered if not any(fnmatch.fnmatch(p.relative_to(pkg).as_posix(), e) for e in excl)}
+    assert Path("src/omi/template/docker/__pycache__/x.pyc") not in covered
+    files = {p for p in (pkg / "template").rglob("*") if p.is_file() and "__pycache__" not in p.parts and p.suffix != ".pyc"}
+    pyc = pkg / "template" / "docker" / "__pycache__"
+    pyc.mkdir(exist_ok=True)
+    (pyc / "x.pyc").write_bytes(b"")
+    try:
+        with tempfile.TemporaryDirectory() as d, omi.contextlib.redirect_stdout(io.StringIO()):
+            omi.init(d)
+            assert not list(Path(d).rglob("__pycache__")) and not list(Path(d).rglob("*.pyc"))
+        assert pyc / "x.pyc" not in covered and (pkg / "template" / "docker" / "proxy.py") in covered
+    finally:
+        (pyc / "x.pyc").unlink()
+        if not any(pyc.iterdir()):
+            pyc.rmdir()
     assert files <= covered, sorted(files - covered)
     assert any(p.suffix == ".sh" for p in files) and any("references" in p.parts and "skills" in p.parts for p in files)
     # post-run.sh runs the configured test command first

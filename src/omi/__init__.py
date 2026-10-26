@@ -704,7 +704,7 @@ def semver(v):
 def init(target="."):
     target = Path(target).resolve()
     for src in sorted(TEMPLATE.rglob("*")):
-        if src.is_dir():
+        if src.is_dir() or "__pycache__" in src.parts or src.suffix == ".pyc":
             continue
         # template stores dot-dirs as dot-xxx so packaging doesn't drop them
         parts = ["." + p[4:] if p.startswith("dot-") else p for p in src.relative_to(TEMPLATE).parts]

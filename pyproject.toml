@@ -13,3 +13,6 @@ omi = "omi:main"
 
 [tool.setuptools.package-data]
 omi = ["template/*", "template/**/*", "template/**/.*"]
+
+[tool.setuptools.exclude-package-data]
+omi = ["**/__pycache__/*", "*.pyc"]

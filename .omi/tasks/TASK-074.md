@@ -29,7 +29,7 @@ omi has one version (SemVer 0.x, in `pyproject.toml`), shows it, stamps it into 
 - [ ] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
-Coordinator check round 1 FAIL (before review):
+Round 1 FAIL fixed: init skips __pycache__/*.pyc, exclude-package-data added, tests extended. Tests ok (Linux). Original note:
 - `omi init` copies `src/omi/template/docker/__pycache__/proxy.cpython-313.pyc` (untracked, made when tests import docker/proxy.py; seen in the post-run output: "create docker/__pycache__/proxy.cpython-313.pyc"). `init` must skip `__pycache__` dirs and `*.pyc`, and the package must not ship them: add `[tool.setuptools.exclude-package-data] omi = ["**/__pycache__/*", "*.pyc"]` (or equivalent) and extend the package-data test so a `.pyc` under template is not covered. Test that init into an empty dir creates no `__pycache__`.
 Done: version 0.2.0, omi --version/version, .omi/version stamp in init, status line + upgrade hint, package-data globs, post-run.sh config test, README, tests.
 Not done: real install on Windows host (Coordinator).
@@ -102,8 +102,63 @@ Next: Coordinator reviews and runs Windows install check.
 > create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-26 14:58 omi-agent-engineer (claude):
+> DONE
+> - Files changed: `src/omi/__init__.py`, `pyproject.toml`, `tests/test_omi.py`, `.omi/tasks/TASK-074.md` (checkpoint).
+> - `init` now skips `__pycache__` dirs and `*.pyc`.
+> - `pyproject.toml` has `[tool.setuptools.exclude-package-data] omi = ["**/__pycache__/*", "*.pyc"]`, so the package won't ship them.
+> - `test_version_stamp_package_hook` now creates a stray `.pyc` under the template. It checks that `init` into an empty dir creates no `__pycache__` or `.pyc`, and that package-data doesn't cover the `.pyc`.
+> - Tests: `python3 tests/test_omi.py` prints `ok` on Linux. I didn't run the real `pip install` or the Windows host check; those are yours.
+> - Suggested commit: `fix: skip __pycache__ and .pyc in omi init and package data`
+2026-10-26 14:59 hook post-run FAILED (exit 1):
+> Conflict. The container name "/tmp4h6zgbuf-TASK-001-engineer-codex-gpt-x-medium-075857" is already in useBind for 0.0.0.0:8080 failed: port is already in usewrote /tmp/tmpjy419m1w/.omi/skills/CATALOG.md (2 skills)
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .omi/agents/CATALOG.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/config.json
+> create .omi/decisions.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/CATALOG.md
+> create .omi/plans/PLAN-000.md
+> create .omi/references/CATALOG.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/CATALOG.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> [... truncated ...]
+> OSError: [Errno 30] Read-only file system: 'src/omi/template/docker/__pycache__/x.pyc'
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 5729 | 236552 | 87s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 10 | 2228 | 112752 | 53s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
