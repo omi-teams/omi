@@ -1005,8 +1005,9 @@ class NameTaken(Exception):
     """docker refused a container or network name that another run already holds."""
 
 
-def name_taken(err):
-    return "already in use" in err or "already exists" in err
+def name_taken(err, name):
+    """True only for Docker's own conflict message for this exact name (not e.g. "port already in use")."""
+    return f'The container name "/{name}" is already in use' in err or f"network with name {name} already exists" in err
 
 
 @contextlib.contextmanager
@@ -1022,7 +1023,7 @@ def egress(main, name, image, allow):
     try:
         r = docker("network", "create", "--internal", *labels, net)
         if r.returncode:
-            if name_taken(r.stderr):
+            if name_taken(r.stderr, net):
                 raise NameTaken(net)
             sys.exit(f"cannot create the worker network: {r.stderr.strip()}. Nothing changed.")
         made["net"] = True
@@ -1032,7 +1033,7 @@ def egress(main, name, image, allow):
                     ["network", "connect", "--alias", PROXY_ALIAS, net, proxy], ["start", proxy]):
             r = docker(*cmd)
             if r.returncode:
-                if cmd[0] == "create" and name_taken(r.stderr):
+                if cmd[0] == "create" and name_taken(r.stderr, proxy):
                     raise NameTaken(proxy)
                 sys.exit(f"cannot start the egress proxy (docker {cmd[0]}): {r.stderr.strip()}. Nothing changed.")
             if cmd[0] == "create":
@@ -1541,7 +1542,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
                                                  mounts=mounts, env_names=(envs[t],), network=net, proxy=proxy),
                                     env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                     text=True, errors="replace")
-            if r.returncode and name_taken(r.stderr or ""):
+            if r.returncode and name_taken(r.stderr or "", name):
                 raise NameTaken(name)
             sys.stderr.write(r.stderr or "")
             return r
@@ -1657,6 +1658,8 @@ def worker(wt, task_file=None, model=None, effort=None, prove=False):
                                                worker_labels("prove", None, None, None), network=net, proxy=proxy), env=env,
                                    input=script.read_bytes().replace(b"\r\n", b"\n"), stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT)
+            if r.returncode and name_taken(r.stdout.decode("utf-8", "replace"), name):
+                raise NameTaken(name)
             break
         except NameTaken:
             continue

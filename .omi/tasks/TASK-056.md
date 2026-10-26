@@ -23,8 +23,9 @@ Done: all 3 criteria + README + tests; round 2 (PO at accept):
 - fix 1: quota fallback sets `codex-default` only when the other tool is codex; claude gets `problem`.
 - fix 2: name taken (network, proxy or `docker run`) raises `NameTaken`; `egress` removes only what the run created; retry once with a 2-char salt (`container_name(..., salt=)`), also for `--prove`. Tested.
 - fix 3: 63-char test uses a worst-case real name (long codex model, xhigh); codex->claude fallback test added.
+- round 3 (coordinator): `name_taken(err, name)` matches only Docker's exact conflict message for that name (`The container name "/<name>" is already in use`, `network with name <net> already exists`); `--prove` checks its merged output the same way. "port already in use" does not rerun the agent (tested).
 Not done: -
-Tests: python3 tests/test_omi.py ok
+Tests: python3 tests/test_omi.py ok (exit 0)
 Next: review
 
 PO at accept: fix the review notes first (round 2):
@@ -74,6 +75,13 @@ Coordinator round 3: `name_taken` must match only Docker's own conflict message 
 > - Tests: `python3 tests/test_omi.py` passes (exit 0).
 > - Open issues: the `--prove` retry catches only the network/proxy conflict, since `docker run` stderr is merged into stdout there. The task file changed on disk during my run; my checkpoint edit kept its contents intact.
 > - Co-Authored-By trailer for the commit: `Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>`
+2026-10-26 10:06 omi-agent-engineer (claude):
+> DONE
+> Files changed: `src/omi/__init__.py` (`name_taken(err, name)` now matches only Docker's exact conflict messages for that name; `--prove` checks its merged output the same way), `tests/test_omi.py` (exact-message conflict cases, a "port already in use" case that must not rerun the agent, a `NAME` placeholder in the quota fake), `.omi/tasks/TASK-056.md` (checkpoint).
+> Test: `python3 tests/test_omi.py` exits 0.
+> Commit: `fix(omi): match only Docker's exact name-conflict message before retrying`
+> Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>
+> Open issues: the `--prove` path has no test of its own for the retry; it is covered only by the shared `name_taken` logic.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -81,3 +89,4 @@ Coordinator round 3: `name_taken` must match only Docker's own conflict message 
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 28 | 7254 | 490938 | 75s | 2/2 omi-skill-docker-worker-pitfalls omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 3680 | 110694 | 45s | - | PASS c17901d |
 | omi-agent-engineer | claude-haiku-5-5 | low | 28 | 23730 | 615350 | 128s | 1/1 omi-skill-docker-worker-pitfalls | - |
+| omi-agent-engineer | claude-haiku-5-5 | low | 24 | 6896 | 368364 | 53s | 1/1 omi-skill-docker-worker-pitfalls | - |

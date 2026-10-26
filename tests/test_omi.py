@@ -841,13 +841,14 @@ def test_network_allowlist():
     sh = (omi.TEMPLATE / "docker" / "prove.sh").read_text()
     assert "api.anthropic.com" in sh and "example.com" in sh and "1.1.1.1" in sh and "network_allow" in sh
     # a name already in use: NameTaken, and only what this run created is removed (never another run's proxy)
-    for taken in ("network", "proxy"):
+    conflicts = {"network": "network with name omi-net-n already exists", "proxy": 'The container name "/n-proxy" is already in use'}
+    for taken in ("network", "proxy", "port"):
         seen = []
 
         def run3(cmd, **kw):
             seen.append(cmd)
             if (cmd[1:3] == ["network", "create"]) if taken == "network" else (cmd[1] == "create"):
-                return R(rc=1, err="Conflict. The container name is already in use")
+                return R(rc=1, err=conflicts.get(taken, "Bind for 0.0.0.0:8080 failed: port is already in use"))
             return R("omi-proxy ready\n" if cmd[1] == "logs" else "")
 
         omi.subprocess.run = run3
@@ -856,13 +857,21 @@ def test_network_allowlist():
                 with real_egress(Path("/My Repo"), "n", "img", ["a.com"]):
                     pass
             except omi.NameTaken:
-                pass
+                assert taken != "port", "a port conflict must not count as a taken name"
+            except SystemExit as e:
+                assert taken == "port" and "cannot" in str(e), e
             else:
                 raise AssertionError("taken name accepted")
         finally:
             omi.subprocess.run = real
         cmds = [c[1:3] for c in seen]
-        assert ["rm", "-f"] not in cmds and (["network", "rm"] in cmds) == (taken == "proxy"), (taken, cmds)
+        if taken != "port":
+            assert ["rm", "-f"] not in cmds and (["network", "rm"] in cmds) == (taken == "proxy"), (taken, cmds)
+    # only Docker's own message for this exact name counts
+    assert omi.name_taken('Conflict. The container name "/x" is already in use', "x")
+    assert omi.name_taken("network with name omi-net-x already exists", "omi-net-x")
+    assert not omi.name_taken('Conflict. The container name "/x" is already in use', "y")
+    assert not omi.name_taken("Bind failed: port already in use", "x")
 
 
 def test_clean_and_old_images():
@@ -1416,7 +1425,9 @@ def test_tool_choice_and_quota_switch():
         def run(cmd, **kw):
             if cmd[:2] == ["docker", "run"]:
                 calls.append(cmd)
-                return outs.pop(0)
+                r = outs.pop(0)
+                r.stderr = r.stderr.replace("NAME", cmd[cmd.index("--name") + 1])  # the conflict names this run's container
+                return r
             if cmd[:2] == ["git", "-C"] and "show" in cmd:
                 return R("---\nscope: src/**\n---\n")
             return R()
@@ -1477,10 +1488,17 @@ def test_tool_choice_and_quota_switch():
             assert any("claude-sonnet-5-5" in a for a in calls[1]) and not any("gpt-5.1-codex" in a for a in calls[1])
             assert "| claude-sonnet-5-5 |" in task.read_text()
             # a container name already in use: one retry with a 2-char suffix on the stamp
-            assert go(R("", 125, 'Conflict. The container name "/x" is already in use'), R(ok_codex), tool="codex") == 0
+            assert go(R("", 125, 'Conflict. The container name "/NAME" is already in use'), R(ok_codex), tool="codex") == 0
             assert len(calls) == 2 and "--name" in calls[0]
             first, second = (c[c.index("--name") + 1] for c in calls)
             assert re.fullmatch(r".*-\d{6}", first) and re.fullmatch(r".*-\d{6}[0-9a-f]{2}", second), (first, second)
+            # a port clash or any other stderr with "already in use" does not rerun the agent
+            calls.clear()
+            try:
+                go(R("", 125, "Bind for 0.0.0.0:8080 failed: port is already in use"))
+            except SystemExit:
+                pass
+            assert len(calls) == 1, calls
             # the other tool also at its limit, or without a token: exit 5, QUOTA line, one run only when no token
             assert go(R(claude_quota, 1), R(codex_quota, 1)) == 5 and "QUOTA: claude and codex" in sys.stdout.getvalue()
             del omi.os.environ[omi.CODEX_ENV]
