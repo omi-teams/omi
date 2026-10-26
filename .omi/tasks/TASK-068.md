@@ -1,26 +1,26 @@
 ---
 id: TASK-068
 title: Add rules auto-loaded by task scope, with their own token budget
-status: in-progress
+status: done
 depends:
 scope: src/omi/__init__.py, tests/**, src/omi/template/**, .omi/rules/**, .omi/config.json, AGENTS.md
 role: omi-agent-engineer
 skills: [omi-skill-windows-powershell]
 tool:
 workflow: omi-flow-feature
-step: build
+step: accept
 ---
 ## Goal
 Rules in `.omi/rules/<id>.md` (frontmatter `id, summary, applies`) are added to an agent's prompt automatically when any `applies` glob matches the task `scope`, within a separate rule budget. Spec: `docs/specs/template-kinds.md` (Rules).
 
 ## Acceptance criteria
-- [ ] `python -m omi rules` validates every rule (id = file name, summary, at least one `applies` glob, at most `rule_limits.rule_tokens`) and writes `.omi/rules/CATALOG.md`, one line per rule with its globs and token count.
-- [ ] `rule_limits` in `.omi/config.json` overrides the defaults `{"tokens": 2000, "rule_tokens": 800}`; the skill budget is unchanged.
-- [ ] `omi run` adds the paths of the matching rules to the prompt under a "Rules (you must follow these)" heading; a task with scope `src/**/*.go` gets rule `go` and not `python`. Tested.
-- [ ] Over budget, `omi run` exits before starting the agent and names each rule and its token count. Tested.
-- [ ] The template ships rules `go`, `python`, `postgres`, `nextjs`, `docker` (each at most 800 tokens) and its catalog; `omi init` into an empty directory creates them. Tested.
-- [ ] Template and root `AGENTS.md` mention rules in one line each.
-- [ ] All tests pass.
+- [x] `python -m omi rules` validates every rule (id = file name, summary, at least one `applies` glob, at most `rule_limits.rule_tokens`) and writes `.omi/rules/CATALOG.md`, one line per rule with its globs and token count.
+- [x] `rule_limits` in `.omi/config.json` overrides the defaults `{"tokens": 2000, "rule_tokens": 800}`; the skill budget is unchanged.
+- [x] `omi run` adds the paths of the matching rules to the prompt under a "Rules (you must follow these)" heading; a task with scope `src/**/*.go` gets rule `go` and not `python`. Tested.
+- [x] Over budget, `omi run` exits before starting the agent and names each rule and its token count. Tested.
+- [x] The template ships rules `go`, `python`, `postgres`, `nextjs`, `docker` (each at most 800 tokens) and its catalog; `omi init` into an empty directory creates them. Tested.
+- [x] Template and root `AGENTS.md` mention rules in one line each.
+- [x] All tests pass.
 
 ## Checkpoint
 Round 3: test rmtree of .git now chmods read-only files on error (Windows). Tests ok.
@@ -36,6 +36,7 @@ Round 2: `task_rules` now also matches `applies` against tracked files inside th
 Next: review and commit.
 
 ## Steps
+PO approval accept: Nghiệm thu, merge (Recommended)
 - plan started 2026-10-26 13:45
 - plan done 2026-10-26 13:46
 - build started 2026-10-26 13:46
@@ -47,6 +48,10 @@ Next: review and commit.
 - review started 2026-10-26 13:50
 - review failed 2026-10-26 13:51
 - build started 2026-10-26 13:51
+- build done 2026-10-26 13:52
+- review started 2026-10-26 13:52
+- review done 2026-10-26 13:52
+- accept started 2026-10-26 13:52
 
 ## Reports
 2026-10-26 13:48 omi-agent-engineer (claude):
@@ -87,6 +92,17 @@ Next: review and commit.
 > - Tests: `python3 tests/test_omi.py` ends with `ok` in the Linux container. I couldn't run it on Windows, so that still needs checking on the host.
 > - Commit: `test(rules): make .git removal work on Windows read-only objects`
 > - Open issues: none.
+2026-10-26 13:52 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - tests/test_omi.py:404 `shutil.rmtree(..., onerror=...)` has been deprecated since Python 3.12. The template's python rule says 3.13, and the task suggested `onexc`. -> Use `onexc=lambda f, p, e: (omi.os.chmod(p, 0o700), f(p))`. This is low severity because it still works today.
+> - src/omi/__init__.py:173 `task_rules` ignores the validation errors that `load_rules` returns. A rule with a mismatched `id` or a missing `summary` still loads into the prompt if its `applies` matches. The engineer reported this, and the AC only requires that `python -m omi rules` validates. -> Optional: skip or fail on matched rules that have errors.
+> - Windows is unverified. The Round 3 fix was only run on Linux, and I could not test it on the host. The handler does `chmod 0o700` and retries, which clears the read-only flag, so it should work.
+> 
+> AC: `python -m omi rules` validates every rule and writes the catalog ✓ `load_rules` checks id against the file name, a missing `summary`, no `applies` glob, and the token cap. `rules_catalog` writes one line per rule with its globs and `[~N tokens]`. `test_rules` covers the bad-rule errors, and `tests/test_omi.py` ends with `ok`.
+> AC: `rule_limits` overrides the defaults, skill budget unchanged ✓ `RULE_LIMITS | over` is a separate config key. The test asserts the defaults and a partial override `{"tokens":100,"rule_tokens":800}`.
+> AC: `omi run` adds matching rule paths under "Rules (you must follow these)" ✓ `run_role` calls `task_rules` and `rule_prompt`. The test asserts `go.md` is in the docker prompt and `python.md` is not for scope `src/**/*.go`. Broad scopes also work: `src/**` with a tracked `src/x.go` gets `go`, and `lib/**/*.go` with no Go files still gets `go`.
+> [... truncated ...]
+> Scope: changes stay within `scope`, apart from the `.omi/tasks/TASK-068.md` bookkeeping.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -95,3 +111,4 @@ Next: review and commit.
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 2247 | 76330 | 37s | - | PASS f62106c |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 14 | 2266 | 172600 | 38s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 10 | 906 | 107746 | 34s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 4 | 2268 | 49847 | 39s | - | PASS 044b57c |
