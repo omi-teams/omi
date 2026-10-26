@@ -48,10 +48,10 @@ Defects in omi found by the sandbox (fresh `omi init` project): (1) `omi init` w
 Fixture note: the planted review diffs also carried a host `.pyc` (Coordinator's fixture mistake); all reviewers flagged it as minor.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
-Next:
+Done: docs/research/omi-eval.md written (Vietnamese; sections tóm tắt, cách đo, bảng kết quả, context mặc định 3402, lỗi omi, đề xuất, giới hạn). Numbers checked against ## Results.
+Not done: review-round counts (not in ## Results, stated as not measured); release family not measured (per Results). Acceptance criterion 3 decisions are proposals only; the PO decides.
+Tests: not run by writer (docs only; `python3 tests/test_omi.py` not checked here).
+Next: Coordinator reviews the diff and commits; PO decides on the proposals; open a task for the 3 omi defects.
 
 Write step (docs-writer): write docs/research/omi-eval.md in Vietnamese from ## Plan and ## Results only (they are the sources; cite "TASK-057 ## Results" rows). Sections: tóm tắt, cách đo, bảng kết quả, context mặc định (3402 tokens), lỗi omi tìm thấy, đề xuất, giới hạn (n=1, bài nhỏ, baseline architect không hợp lệ, release không đo). Proposals to list (the PO decides): (1) rework omi-skill-debug-root-cause shorter (+35% out, +29% cache, no gain here); (2) rework omi-agent-security-reviewer shorter (+44% out, +57% cache, plain found as much); (3) keep lean-implementation (+5%), incident (small gain), docs-writer (haiku), reviewer and engineer (equal; their scope/safety rules were not exercised by these tasks), architect (baseline invalid); (4) new task for the 3 omi defects.
 ## Steps
@@ -60,3 +60,16 @@ Write step (docs-writer): write docs/research/omi-eval.md in Vietnamese from ## 
 - research started 2026-10-26 10:23
 - research skipped 2026-10-26 10:30: evidence is the Coordinator-run sandbox runs recorded under ## Results; a researcher cannot run Docker
 - write started 2026-10-26 10:30
+
+## Reports
+2026-10-26 10:31 omi-agent-docs-writer (claude):
+> DONE
+> Files: docs/research/omi-eval.md (new, Vietnamese); .omi/tasks/TASK-057.md (Checkpoint updated)
+> Commit: docs: add omi evaluation report for skills, roles and workflows (TASK-057)
+> Not verified: tests/test_omi.py not run (docs only); review-round counts are not in the source results, so the report says they were not measured; release family not measured.
+> Open issues: the architect baseline is invalid and needs a re-run; the PO must decide the rework/keep proposals; the three omi defects need a new task.
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read | verdict |
+|---|---|---|---|---|---|---|---|---|
+| omi-agent-docs-writer | claude-haiku-5-5 | low | 14 | 5242 | 152335 | 33s | - | - |
