@@ -915,7 +915,7 @@ def test_template_docker():
     pins = json.loads((omi.TEMPLATE / "dot-omi" / "config.json").read_text())["cli_versions"]
     assert f"@openai/codex@{pins['codex']}" in text and f"claude-code@{pins['claude']}" in text
     assert pins["codex"] in (omi.TEMPLATE.parents[2] / "README.md").read_text(encoding="utf-8")
-    assert "api.openai.com" in json.loads((omi.TEMPLATE / "dot-omi" / "config.json").read_text())["network_allow"]
+    assert "api.openai.com" not in json.loads((omi.TEMPLATE / "dot-omi" / "config.json").read_text())["network_allow"]
     assert "ca-certificates" in text
     prove = (d / "prove.sh").read_text()
     assert "codex exec" in prove and "OPENAI_API_KEY=sk-prove-invalid" in prove
