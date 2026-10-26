@@ -1,7 +1,7 @@
 ---
 id: TASK-056
 title: Short readable container names; two TASK-055 review follow-ups
-status: in-progress
+status: done
 depends: TASK-055
 scope: src/omi/__init__.py, tests/**, README.md
 role: omi-agent-engineer
@@ -13,10 +13,10 @@ step: accept
 Agent containers are named `<repo>-<TASK-ID>-<role short>-<tool>-<model>-<effort>-<HHMMSS>`, e.g. `omi-squad2-TASK-055-reviewer-claude-sonnet-5.5-medium-143205`; plus two small fixes from the TASK-055 review.
 
 ## Acceptance criteria
-- [ ] `container_name` is `<repo>-<TASK>-...` (no `omi-` prefix), drops the `omi-agent-` role prefix, adds the tool, and keeps dots in the model version (`claude-sonnet-5-5` -> `claude-sonnet-5.5`, codex IDs as is, `codex-default` as is); Docker charset only. Proxy and network names follow it; `omi clean` still finds everything by label (repo stays in labels). `--prove` names its container the same way as a real run; the TASK-045 length test is updated to compare with a real-run name.
-- [ ] Quota switch: when `--model` is a full ID for one tool, the other tool falls back to the role's alias (codex: `codex-default`) instead of exiting 5.
-- [ ] `## Reports`: a report longer than the limit keeps its first and last lines (DONE/VERDICT and suggested commit), truncating the middle.
-- [ ] `python tests/test_omi.py` passes.
+- [x] `container_name` is `<repo>-<TASK>-...` (no `omi-` prefix), drops the `omi-agent-` role prefix, adds the tool, and keeps dots in the model version (`claude-sonnet-5-5` -> `claude-sonnet-5.5`, codex IDs as is, `codex-default` as is); Docker charset only. Proxy and network names follow it; `omi clean` still finds everything by label (repo stays in labels). `--prove` names its container the same way as a real run; the TASK-045 length test is updated to compare with a real-run name.
+- [x] Quota switch: when `--model` is a full ID for one tool, the other tool falls back to the role's alias (codex: `codex-default`) instead of exiting 5.
+- [x] `## Reports`: a report longer than the limit keeps its first and last lines (DONE/VERDICT and suggested commit), truncating the middle.
+- [x] `python tests/test_omi.py` passes.
 
 ## Checkpoint
 Done: all 3 criteria + README + tests; round 2 (PO at accept):
@@ -45,6 +45,8 @@ PO at accept (round 4):
 - review started 2026-10-26 10:01
 - review done 2026-10-26 10:02
 - accept started 2026-10-26 10:02
+PO approval accept: "Chấp nhận, merge"
+- accept done 2026-10-26 10:13
 
 ## Reports
 2026-10-26 10:00 omi-agent-engineer (claude):
