@@ -85,6 +85,8 @@ Security round 3 FAIL (PO decisions 2026-10-26):
 - read_manifest: corrupt JSON, a non-object, or a non-object `files` is treated as an empty manifest with one warning line; no traceback in init or upgrade_apply. Test.
 - omi_repo (PO decision): when `omi_repo` in .omi/config.json differs from the default repo, `upgrade --check` prints `repo: <url> (not the default)`, and an install (`upgrade` / `upgrade --to`) only runs with `--repo <url>` that equals the configured value; otherwise it exits with `omi_repo is not the default; confirm with --repo <url>` before any subprocess. The omi-upgrade skill (root and template) shows the repo in the PO pick-list and asks the PO to confirm a non-default repo. Tests on argv / no subprocess.
 
+Coordinator host check after security round 3 fix: Windows `python tests/test_omi.py` -> rc=0, ok.
+
 ## Steps
 - plan started 2026-10-26 22:07
 - plan done 2026-10-26 22:07
