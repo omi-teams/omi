@@ -7,7 +7,7 @@ scope: src/omi/__init__.py, tests/**, README.md
 role: omi-agent-engineer
 skills: [omi-skill-docker-worker-pitfalls]
 workflow: omi-flow-feature
-step: build
+step: review
 ---
 ## Goal
 Agent containers are named `<TASK-ID>-<role short>-<tool>-<model>-<effort>-<HHMMSS>`, e.g. `TASK-055-reviewer-claude-sonnet-5.5-medium-143205`; plus two small fixes from the TASK-055 review.
@@ -28,6 +28,8 @@ Next: review
 - plan started 2026-10-26 09:59
 - plan done 2026-10-26 09:59
 - build started 2026-10-26 09:59
+- build done 2026-10-26 10:01
+- review started 2026-10-26 10:01
 
 ## Reports
 2026-10-26 10:00 omi-agent-engineer (claude):
@@ -40,8 +42,20 @@ Next: review
 > - Open issue: the quota-switch fallback has a leftover line that sets `models[other] = CODEX_DEFAULT` even when `other` is claude. That case returns the "cannot continue" stop right after, so the value is never used.
 > 
 > Suggested commit: `feat(omi): short readable container names, quota fallback to role alias, keep report head and tail`
+2026-10-26 10:02 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/__init__.py:1569 `models[other] = CODEX_DEFAULT` also runs when `other` is claude. The value is never used, because `problem` is set and the function returns. The engineer flagged this themselves. -> Put the assignment under `if other == "codex": ... else: problem = ...`.
+> - src/omi/__init__.py:1042 Names no longer include the repo, as the task requires. Two repos (or two worktrees) running the same TASK, role, model and effort in the same second now get identical container names, and `docker run --name` fails on the second. -> Optional: add a short repo or worktree suffix, or retry on a name conflict. The task text does not allow this as written, so this is a note for the user.
+> - tests/test_omi.py:797 The AC says to compare against a real-run name. The test instead appends `"-" + "x"*20` to a real name, so the 63-character assertion no longer exercises real names. It is only partly the intended update. -> Build a worst-case real name (long codex model ID, `xhigh` effort) and assert on it.
+> - tests/test_omi.py:1444 The new quota-fallback test covers only claudeâ†’codex. The codexâ†’claude direction (a full codex `--model` falling back to the role alias, or the "no claude model" stop) is untested. -> Add a case.
+> 
+> AC: container_name format, dots kept, tool added, `codex-default` as is, Docker charset âœ“ `test_container_names` asserts `TASK-055-reviewer-claude-sonnet-5.5-medium-143205`, `...-codex-gpt-5.1-codex-...` and `...-codex-default-...`, and `re.sub` enforces the charset.
+> AC: proxy and network names follow it âœ“ `egress` builds `omi-net-{name}` and `{name}-proxy`. `omi clean` still works, since `omi-repo` and `omi-worker` labels are unchanged (`egress` at line 1008).
+> AC: `--prove` named like a real run âœ“ `worker` uses the engineer role's tool, model and effort. The length test was updated, though weakly (see the third finding).
+> AC: quota switch falls back to the role alias or `codex-default` instead of exiting 5 âœ“ `test_tool_choice_an
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 28 | 7254 | 490938 | 75s | 2/2 omi-skill-docker-worker-pitfalls omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 3680 | 110694 | 45s | - | PASS c17901d |
