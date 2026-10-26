@@ -24,6 +24,10 @@ Done: Dockerfile codex pin 0.46.0, config cli_versions + api.openai.com, README,
 Not done: real docker run of --prove (no docker here); codex version 0.46.0 unverified (no npm access)
 Tests: python3 tests/test_omi.py ok
 Next: TASK-040
+Coordinator real run FAIL (`omi worker <wt> --prove` on Docker Desktop, codex 0.46.0 exists on npm):
+1. `NETWORK BLOCKED: api.openai.com:443`: the repo's own `.omi/config.json` only allows api.anthropic.com, so the template change is not enough. Add each tool's API host to the allow list in code (architect option A: tool table with `api_host`, dedup with `network_allow`) for `--prove` and for `omi run --tool codex`; claude path allow list unchanged.
+2. codex network failure prints `error sending request for url (...)` / `stream error`; add it to the network-error patterns (it was only caught as "unexpected output").
+3. `--prove` exited 0 with a FAIL line: it must exit non-zero when any line starts with FAIL, and also when no `PASS claude CLI`/`PASS codex CLI` line appears (project-owned prove.sh). Add tests.
 
 ## Steps
 - plan started 2026-10-26 09:02
