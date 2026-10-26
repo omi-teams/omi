@@ -24,6 +24,9 @@ The Coordinator records its model choice in the task file (`model:` alias haiku|
 - [ ] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
+Review round 1 PASS; the PO asked to fix two small points first (PO: "Sửa 2 điểm nhỏ trước"). Windows host: tests ok (Coordinator).
+- Quota-switch fallback: after `models[other] = resolve_model(main, am.get("model"), other)` also warn when it resolved to `codex-default`, naming the alias actually used (`am.get("model")`). Test: task model is a full claude ID, claude hits its limit, role alias missing from `codex_models` -> one WARNING naming that alias.
+- Test the codex error path: a codex run exiting non-zero with an `error` event and a `turn.failed` event (not a usage limit) prints both messages and `exit code N`, and writes them to `## Reports`.
 Done: all criteria implemented + tested (Windows run not possible here).
 Not done: Windows host test run.
 Tests: python3 tests/test_omi.py ok (Linux).
@@ -33,6 +36,10 @@ Next: Coordinator review/commit.
 - plan started 2026-10-26 14:32
 - plan done 2026-10-26 14:32
 - build started 2026-10-26 14:32
+- build done 2026-10-26 14:34
+- review started 2026-10-26 14:34
+- review failed 2026-10-26 14:36
+- build started 2026-10-26 14:36
 
 ## Reports
 2026-10-26 14:34 omi-agent-engineer (claude):
@@ -96,8 +103,19 @@ Next: Coordinator review/commit.
 > create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-26 14:35 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/__init__.py:~1994 The quota-switch fallback (`resolve_model(main, am.get("model"), other)`) can return `codex-default` for the role's alias with no warning. This happens when the task or flag model is a full claude ID, and the role's alias is missing from `codex_models`. The "missing codex alias" warning is not printed on that path. -> Call `warn_default(other)` after the fallback assignment, using the alias that was resolved.
+> - src/omi/__init__.py:1858 `write = am["access"] == "write"` treats any non-write access value as a read role, so it ignores the task's tool, model and effort. This is correct for the current roles (write and read). -> No change needed unless a third access level is added.
+> 
+> AC: `model:`/`effort:` in the task override the role's, and the `--model/--effort` flags override both, for claude and codex ✓ New tests in `test_tool_choice_and_quota_switch` check opus/high from the task, then haiku/low from the flags. They also check the codex `exec -m gpt-o` args and `model_reasoning_effort=high`. The suite passes.
+> AC: An alias resolves through `models` for claude and `codex_models` for codex, also after a quota switch; the container name and the Usage row show the resolved model ✓ Tests check `opus-5.5` in the `--name` value, `gpt-o` in the codex `--name`, and `| gpt-o (codex) |` in the Usage row after a claude quota hit.
+> AC: An unmapped codex alias runs with `codex-default` and prints one warning naming the alias ✓ The test checks that `-m` is absent, `WARNING` appears exactly once, and `'haiku'` appears in the output. The only gap is the fallback path in the first finding.
+> [... truncated ...]
+> AC: All tests pass on the Linux worker and the Windows host ✗ `python3 tests/test_omi.py` passes on Linux. The Windows host run was not done, and the author says so.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 20 | 6884 | 324836 | 102s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 2378 | 74134 | 45s | - | PASS d73e3f2 |
