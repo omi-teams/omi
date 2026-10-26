@@ -7,7 +7,7 @@ scope: docs/research/omi-eval.md, .omi/tasks/**, .omi/config.json
 role: omi-agent-engineer
 skills: []
 workflow: omi-flow-spike
-step: research
+step: write
 ---
 ## Goal
 The biggest unproven part: `omi run --tool codex` with the PO's ChatGPT login (TASK-065; an API key also works but costs API money), and the agent quota switch.
@@ -18,10 +18,10 @@ The biggest unproven part: `omi run --tool codex` with the PO's ChatGPT login (T
 - [ ] Results in docs/research/omi-eval.md; what stays unproven is listed.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
-Next:
+Done: docs section "Codex thật và chuyển tool khi hết quota (TASK-062)" appended to docs/research/omi-eval.md (docs-writer).
+Not done: none in docs scope; unverified items listed in the section.
+Tests: not run by docs-writer (docs-only change); Coordinator results cite test passes from TASK-065 and the forced-trigger run.
+Next: Coordinator reviews the diff and commits.
 
 Coordinator results 2026-10-26 (fresh sandbox, development code after TASK-066, PO's ChatGPT login for codex, no API key):
 - Real codex end to end: proven in TASK-065 (`omi run --tool codex`: DONE, tests pass, Usage `codex-default (codex) | medium | 115922 | 1040 | 110720 | 37s`).
@@ -33,3 +33,18 @@ Write (docs-writer): append a Vietnamese section "Codex thật và chuyển tool
 - plan started 2026-10-26 11:38
 - plan done 2026-10-26 11:38
 - research started 2026-10-26 11:38
+- research skipped 2026-10-26 11:40: evidence is the Coordinator-run sandbox runs recorded in the Checkpoint
+- write started 2026-10-26 11:40
+
+## Reports
+2026-10-26 11:40 omi-agent-docs-writer (claude):
+> DONE
+> Files: docs/research/omi-eval.md (appended Vietnamese section "Codex thật và chuyển tool khi hết quota (TASK-062)"), .omi/tasks/TASK-062.md (checkpoint)
+> Commit: docs: record real codex run and quota switch evidence (TASK-062)
+> Not verified: real claude/codex limit messages (QUOTA_PATTERNS unchanged), exit 5 with both tools out in a real run, access token expiry mid-run
+> Open issues: `quota_hit` is called twice per attempt; a forced trigger that fires once tags the row but does not switch. Harmless with the real pure function, noted in the doc.
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read | verdict |
+|---|---|---|---|---|---|---|---|---|
+| omi-agent-docs-writer | claude-haiku-5-5 | low | 12 | 2576 | 124872 | 20s | - | - |

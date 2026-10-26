@@ -152,3 +152,35 @@ Chênh lệch của A so với B (đã làm tròn): output −26%, cache +48%, t
 - n=1. Chênh lệch dưới khoảng 10% không đáng tin. Cả hai biến thể đều chọn cùng phương án, nên kết quả đúng/sai không phân biệt được hai biến thể.
 - Bài nhỏ, một repo đồ chơi.
 - Biến thể A có cả role và skill, nên chưa tách được riêng yếu tố role.
+
+## Codex thật và chuyển tool khi hết quota (TASK-062)
+
+Bài kiểm chứng end-to-end cho `omi run --tool codex` bằng đăng nhập ChatGPT của PO (không dùng API key), và luồng chuyển tool khi claude hết quota. Môi trường: sandbox mới, code phát triển sau TASK-066.
+
+**Codex thật, end-to-end (TASK-065):**
+
+- Lệnh: `omi run --tool codex` với một task nhỏ trong sandbox.
+- Kết quả: DONE, test pass. Dòng Usage ghi `codex-default (codex) | medium | 115922 | 1040 | 110720 | 37s`, nên tag `(codex)` hiển thị đúng.
+- API key không xuất hiện trong argv hay log.
+
+**Chuyển tool khi hết quota (forced trigger):**
+
+- Cách ép: wrapper thay `omi.quota_hit` để mọi lần kiểm tra lượt claude đều báo giới hạn. Phần còn lại là đường chạy thật `omi run omi-agent-engineer TASK-001`. Đây là trigger giả, không phải giới hạn thật.
+- Output: `tool: claude (claude-sonnet-5-5)`, rồi `QUOTA: claude hit its usage limit; rerunning omi-agent-engineer with codex (codex-default)`.
+- Codex tiếp tục từ diff dở dang của claude (giữ `slugify` có sẵn, thêm test). Kết quả: DONE, test pass, `slugify("Hello, World!") == "hello-world"`.
+- Checkpoint ghi: `QUOTA: claude hit its usage limit; omi-agent-engineer continued with codex on the partial diff.`
+- Dòng Usage:
+  - `claude-sonnet-5-5 | medium | 8 | 635 | 67324 | 11s | - | QUOTA->codex`
+  - `codex-default (codex) | medium | 99712 | 740 | 90496 | 29s | - | -`
+
+**Phát hiện:**
+
+- `quota_hit` được gọi hai lần cho mỗi lượt: một lần để gắn tag Usage, một lần để quyết định chuyển tool. Lần ép đầu chỉ bật một lần nên dòng bị gắn `QUOTA->codex` nhưng không chuyển tool. Với hàm thật (thuần, không có side effect) điều này vô hại. Ghi nhận để biết khi viết test ép trigger.
+- `QUOTA_PATTERNS` chưa thay đổi, vì chưa có output giới hạn thật để so sánh.
+
+**Chưa kiểm chứng (vẫn chưa rõ):**
+
+- Thông báo giới hạn thật của claude 2.1.302 và codex 0.164.0. Các pattern hiện tại chưa được xác nhận với output thật.
+- Trường hợp cả hai tool cùng hết quota (exit 5) chưa chạy trong run thật; chỉ có unit test.
+- Access token hết hạn giữa lúc chạy chưa được kiểm tra.
+- Codex trả lời bằng tiếng Việt trong sandbox vì đọc `AGENTS.md` của sandbox. Không ảnh hưởng kết quả.
