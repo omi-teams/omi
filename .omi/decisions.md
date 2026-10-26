@@ -56,3 +56,5 @@
 - 2026-10-26 | codex_models: haiku/sonnet/opus all map to gpt-6.1-sol (host model); effort tells the levels apart | PO: "(a)+(b), map gpt-6.1-sol" | .omi/config.json
 - 2026-10-26 | Task `tool:` applies only to the write role; reviewer keeps its own tool (cross-review) | PO: "Nghiệm thu + thêm vào 072" | TASK-072
 - 2026-10-26 | Codex worker agents must not load the Coordinator AGENTS.md | PO: "Chặn Codex đọc AGENTS.md" | TASK-073
+- 2026-10-26 | omi uses SemVer 0.x (pyproject.toml is the only source; tag v0.2.0); release tags by date stay | PO: "SemVer 0.x" | TASK-074
+- 2026-10-26 | Order: TASK-074 (version, packaging) first, then install omi into omi-board and start its idea | PO | TASK-074
