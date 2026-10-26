@@ -66,3 +66,4 @@ Coordinator: Dockerfile line lost its space: `@openai/codex@0.164.0&& npm` -> `@
 | omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 6 | 1950 | 76268 | 28s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS f3153bd |
 | omi-agent-engineer | claude-haiku-5-5 | low | 18 | 3236 | 224246 | 41s | 2/2 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell | - |
 | omi-agent-engineer | claude-haiku-5-5 | low | 10 | 1475 | 110991 | 22s | 2/2 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1686 | 74823 | 26s | - | PASS d19a5d0 |
