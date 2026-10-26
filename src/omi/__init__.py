@@ -824,6 +824,8 @@ def status(cwd="."):
     dockerfile = root / "docker" / "Dockerfile"
     if dockerfile.exists() and dockerfile.read_bytes().replace(b"\r\n", b"\n") != (TEMPLATE / "docker" / "Dockerfile").read_bytes().replace(b"\r\n", b"\n"):
         print(f"docker/Dockerfile differs from the omi {version()} template; review it (omi init never overwrites it)")
+    for line in full_volumes(main_checkout(root) or root):
+        print(line)
     ts = tasks(root)
     for pid, m in load_plans(root, strict=False).items():
         if m["status"] == "active":
@@ -1403,7 +1405,21 @@ def repo_label(main):
     return re.sub(r"[^a-zA-Z0-9_.-]", "-", main.name.lower())
 
 
-def worker_argv(wt, image, cmd, name=None, repo=None, labels=None, ro=False, mounts=(), env_names=(TOKEN_ENV,), network=None, proxy=None, offline=False):
+CACHE_ENV = ("XDG_CACHE_HOME=/cache", "GOCACHE=/cache/go-build", "GOMODCACHE=/cache/go-mod", "GOTMPDIR=/cache",
+             "npm_config_cache=/cache/npm", "PIP_CACHE_DIR=/cache/pip")
+
+
+def worker_sizes(main):
+    """{"cache_mb", "tmp_mb"} kwargs for worker_argv from .omi/config.json "worker" ({"cache_mb": 2048, "tmp_mb": 512} by default)."""
+    cfg = Path(main) / ".omi" / "config.json"
+    w = (json.loads(cfg.read_text(encoding="utf-8")) if cfg.exists() else {}).get("worker", {})
+    sizes = (w.get("cache_mb", 2048), w.get("tmp_mb", 512)) if isinstance(w, dict) else None
+    if sizes is None or not all(isinstance(v, int) and not isinstance(v, bool) and v > 0 for v in sizes):
+        sys.exit('"worker.cache_mb" and "worker.tmp_mb" in .omi/config.json must be positive integers. Nothing changed.')
+    return dict(zip(("cache_mb", "tmp_mb"), sizes))
+
+
+def worker_argv(wt, image, cmd, name=None, repo=None, labels=None, ro=False, mounts=(), env_names=(TOKEN_ENV,), network=None, proxy=None, offline=False, cache_mb=2048, tmp_mb=512):
     """docker run argv: only the worktree is rw, its .git file ro, non-root, no caps, rootfs ro, no socket.
     The token goes in by name only (-e NAME); its value lives in the child env, never in argv.
     network/proxy: the internal network and the egress proxy container; HTTPS_PROXY is the only way out; offline: no network at all."""
@@ -1415,9 +1431,11 @@ def worker_argv(wt, image, cmd, name=None, repo=None, labels=None, ro=False, mou
             *(["--label", f"omi-repo={repo}"] if repo else []),
             *[x for k, v in (labels or {}).items() for x in ("--label", f"{k}={v}")],
             "--user", "node", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-            "--tmpfs", "/tmp:rw,noexec,nosuid,size=256m",
-            "--tmpfs", "/home/node:rw,noexec,nosuid,uid=1000,gid=1000,size=256m",
-            *[x for n in env_names for x in ("-e", n)], "-e", "HOME=/home/node", *net,
+            "--tmpfs", f"/tmp:rw,noexec,nosuid,size={tmp_mb}m",
+            "--tmpfs", f"/home/node:rw,noexec,nosuid,uid=1000,gid=1000,size={tmp_mb}m",
+            "--tmpfs", f"/cache:rw,exec,nosuid,uid=1000,gid=1000,size={cache_mb}m",  # exec: compiled test binaries run from here
+            *[x for n in env_names for x in ("-e", n)], "-e", "HOME=/home/node",
+            *[x for kv in CACHE_ENV for x in ("-e", kv)], *net,
             "-v", f"{wt}:/work{':ro' if ro else ''}", "-v", f"{wt / '.git'}:/work/.git:ro",
             *[x for m in mounts for x in ("-v", f"{m}:ro")], "-w", "/work", image, *cmd]
 
@@ -1443,7 +1461,8 @@ def run_hook(wt, main, event, tid, image):
     env.pop(TOKEN_ENV, None)
     name = container_name(repo_label(main), f"hook-{event}", tid)
     argv = worker_argv(wt, image, HOOK_RUNNERS[script.suffix], name, repo_label(main), worker_labels(f"hook-{event}", tid, None, None),
-                       ro=True, env_names=(), offline=True)
+                       ro=True, env_names=(), offline=True,
+                       **worker_sizes(main))
     cfg = Path(main) / ".omi" / "config.json"
     limit = (json.loads(cfg.read_text(encoding="utf-8")) if cfg.exists() else {}).get("hook_timeout", 600)
     try:
@@ -1486,6 +1505,26 @@ def running_workers(main):
     except OSError:
         return []
     return [l.split("\t") for l in r.stdout.splitlines() if l.count("\t") == 4] if r.returncode == 0 else []
+
+
+def full_volumes(main):
+    """Lines for this repo's running containers whose /cache or /home/node is over 90% full; best effort, silent without docker."""
+    out = []
+    try:
+        r = subprocess.run(["docker", "ps", "--filter", "label=omi-worker=1", "--filter", f"label=omi-repo={repo_label(main)}",
+                            "--format", "{{.Names}}"], capture_output=True, encoding="utf-8", errors="replace", timeout=10)
+        for name in r.stdout.split() if r.returncode == 0 else []:
+            d = subprocess.run(["docker", "exec", name, "df", "-P", "/cache", "/home/node"], capture_output=True, encoding="utf-8", errors="replace", timeout=10)
+            full = []
+            for l in d.stdout.splitlines()[1:] if d.returncode == 0 else []:
+                f = l.split()
+                if len(f) >= 6 and f[4].endswith("%") and f[4][:-1].isdigit() and int(f[4][:-1]) > 90 and f[5] in ("/cache", "/home/node"):
+                    full.append(f"{f[5]} {f[4]}")
+            if full:
+                out.append(f"{name}: {', '.join(full)} full; raise worker.cache_mb / worker.tmp_mb in .omi/config.json")
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return out
 
 
 def age(started):
@@ -1955,7 +1994,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
             with egress(main, name, image, allow_for(main, t, chatgpt=chatgpt)) as (net, proxy):
                 with subprocess.Popen(worker_argv(wt, image, cmd, name, repo_label(main),
                                                   {**worker_labels(role, task.stem, mdl, eff), **compose_labels(name, "agent")}, ro=read,
-                                                  mounts=mounts, env_names=(env_name,), network=net, proxy=proxy),
+                                                  mounts=mounts, env_names=(env_name,), network=net, proxy=proxy,
+                                                  **worker_sizes(main)),
                                       env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                       encoding="utf-8", errors="replace") as p:
                     err = []
@@ -2098,7 +2138,8 @@ def worker(wt, task_file=None, model=None, effort=None, prove=False):
             with egress(main, name, image, allow) as (net, proxy):
                 r = subprocess.run(worker_argv(wt, image, ["sh", "-s"], name, repo_label(main),
                                                {**worker_labels("prove", None, None, None), **compose_labels(name, "agent")},
-                                               network=net, proxy=proxy), env=env,
+                                               network=net, proxy=proxy,
+                                               **worker_sizes(main)), env=env,
                                    input=script.read_bytes().replace(b"\r\n", b"\n"), stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT)
             if r.returncode and name_taken(r.stdout.decode("utf-8", "replace"), name):

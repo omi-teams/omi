@@ -682,13 +682,18 @@ def test_hooks():
             hook = main / ".omi" / "hooks" / "pre-run.sh"
             hook.parent.mkdir(exist_ok=True)
             hook.write_bytes(b"echo hi\r\n")
+            config = main / ".omi" / "config.json"
+            cfg = json.loads(config.read_text(encoding="utf-8"))
+            cfg["worker"] = {"cache_mb": 3072}
+            config.write_text(json.dumps(cfg), encoding="utf-8")
             calls.clear()
             assert go() == 0
             (argv, kw), = hooks()
+            assert "/cache:rw,exec,nosuid,uid=1000,gid=1000,size=3072m" in argv
             assert calls.index((argv, kw)) < calls.index(agents()[0]) and kw["input"] == b"echo hi\n"
             assert argv[argv.index("--network") + 1] == "none" and "--rm" in argv and f"{wt}:/work:ro" in argv
             assert "-w" in argv and argv[argv.index("-w") + 1] == "/work" and "omi-worker=1" in argv
-            assert [a for i, a in enumerate(argv) if argv[i - 1] == "-e"] == ["HOME=/home/node"]  # no token name
+            assert [a for i, a in enumerate(argv) if argv[i - 1] == "-e"] == ["HOME=/home/node", *omi.CACHE_ENV]  # no token name
             assert omi.TOKEN_ENV not in kw["env"] and "tok" not in " ".join(argv)
             assert "hook pre-run passed" in task.read_text()
             # failing pre-run: agent never started, output in Reports
@@ -1041,6 +1046,55 @@ def test_container_names():
     assert "--name" not in omi.worker_argv(Path("/w"), "img", ["x"])
     a = omi.worker_argv(Path("/w"), "img", ["x"], "n1", "my-repo")
     assert a[a.index("omi-repo=my-repo") - 1] == "--label"
+
+
+def test_worker_cache_tmpfs_and_full_volumes():
+    a = omi.worker_argv(Path("/w"), "img", ["x"])
+    assert "/cache:rw,exec,nosuid,uid=1000,gid=1000,size=2048m" in a and "/tmp:rw,noexec,nosuid,size=512m" in a
+    assert "/home/node:rw,noexec,nosuid,uid=1000,gid=1000,size=512m" in a
+    for kv in ("XDG_CACHE_HOME=/cache", "GOCACHE=/cache/go-build", "GOMODCACHE=/cache/go-mod", "GOTMPDIR=/cache", "npm_config_cache=/cache/npm", "PIP_CACHE_DIR=/cache/pip"):
+        assert a[a.index(kv) - 1] == "-e", kv
+    assert "size=64m" in " ".join(omi.worker_argv(Path("/w"), "img", ["x"], cache_mb=64))
+    with tempfile.TemporaryDirectory() as d:
+        assert omi.worker_sizes(d) == {"cache_mb": 2048, "tmp_mb": 512}
+        (Path(d) / ".omi").mkdir()
+        (Path(d) / ".omi" / "config.json").write_text('{"worker": {"cache_mb": 4096}}', encoding="utf-8")
+        assert omi.worker_sizes(d) == {"cache_mb": 4096, "tmp_mb": 512}
+        for worker in (None, [], "invalid", 1, True, {"cache_mb": 0}, {"tmp_mb": False}):
+            (Path(d) / ".omi" / "config.json").write_text(json.dumps({"worker": worker}), encoding="utf-8")
+            try:
+                omi.worker_sizes(d)
+                raise AssertionError(f"invalid worker accepted: {worker!r}")
+            except SystemExit as e:
+                assert str(e) == '"worker.cache_mb" and "worker.tmp_mb" in .omi/config.json must be positive integers. Nothing changed.'
+        real = omi.subprocess.run
+
+        home_used = 10
+
+        def fake(argv, **kw):
+            assert kw["timeout"] == 10
+            out = {"ps": "c1\n", "exec": "Filesystem 1024-blocks Used Available Capacity Mounted on\n"
+                   f"tmpfs 100 95 5 95% /cache\ntmpfs 100 {home_used} {100 - home_used} {home_used}% /home/node\n"}[argv[1]]
+            return omi.subprocess.CompletedProcess(argv, 0, out, "")
+        omi.subprocess.run = fake
+        try:
+            for home_used in (10, 90, 92):
+                lines = omi.full_volumes(Path(d))
+                mounts = "/cache 95%, /home/node 92%" if home_used == 92 else "/cache 95%"
+                assert lines == [f"c1: {mounts} full; raise worker.cache_mb / worker.tmp_mb in .omi/config.json"], lines
+            for stage in ("ps", "exec"):
+                for error in (OSError, omi.subprocess.TimeoutExpired):
+                    def unavailable(argv, **kw):
+                        assert kw["timeout"] == 10
+                        if argv[1] == stage:
+                            if error is OSError:
+                                raise OSError("docker unavailable")
+                            raise omi.subprocess.TimeoutExpired(argv, 10)
+                        return fake(argv, **kw)
+                    omi.subprocess.run = unavailable
+                    assert omi.full_volumes(Path(d)) == []
+        finally:
+            omi.subprocess.run = real
 
 
 def test_network_allowlist():
@@ -2658,9 +2712,20 @@ def test_status_drift_hints():
         assert f"docker/Dockerfile differs from the omi {omi.version()} template; review it (omi init never overwrites it)" in status_text(root)
         df.unlink()
         assert "docker/Dockerfile differs" not in status_text(root)
+        real = omi.main_checkout, omi.full_volumes
+        main = root / "main"
+        queried = []
+        omi.main_checkout = lambda _: main
+        omi.full_volumes = lambda path: queried.append(path) or ["cache warning"]
+        try:
+            assert "cache warning" in status_text(root)
+            assert queried == [main], queried
+        finally:
+            omi.main_checkout, omi.full_volumes = real
 
 
 if __name__ == "__main__":
+    test_worker_cache_tmpfs_and_full_volumes()
     test_parallel()
     test_usage()
     test_tool_choice_and_quota_switch()
