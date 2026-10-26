@@ -28,10 +28,10 @@ A project that runs omi moves to a newer omi with one PO command: install the ne
 - [ ] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
-Done: manifest in init, upgrade --check/--to/--apply, template-shas CLI, empty template_shas.json, skill (root+template), AGENTS.md lines, README, tests.
-Not done: v0.2.0 hashes (Coordinator: `python -m omi template-shas <v0.2.0 export>/src/omi/template 0.2.0`); real sandbox check; Windows run.
-Tests: python3 tests/test_omi.py ok (Linux)
-Next: Coordinator review
+Done: existing upgrade implementation retained; review-round fixes reject remote date tags (major >= 1000) and reject missing/invalid --to values before any subprocess. Shared release-tag validation covers discovery and explicit targets. Regression tests include v2026.10.26, v1000.0.0, rc tags, missing --to, and --to --check. Task _template.md behavior unchanged as requested. Coordinator already supplied the v0.2.0 hashes and recorded the real sandbox check and earlier Windows pass below.
+Not done: Windows host rerun of these review-round fixes (Coordinator).
+Tests: new regression failed against the previous code; focused upgrade command tests pass; python3 tests/test_omi.py passed (Linux, exit 0, ok).
+Next: Coordinator review, rerun tests on Windows, then commit on the host. Suggested commit: fix: validate omi upgrade release tags and target arguments
 
 Coordinator note for build: git does not work in the worker, so the v0.2.0 hashes cannot be read there. Provide a function that maps a template directory to {posix rel: norm_sha} and a CLI entry the Coordinator can run on the host, e.g. `python -m omi template-shas <template-dir> <version>` writing/merging `src/omi/template_shas.json`. Commit an empty `{}` placeholder; the Coordinator runs it against an export of tag v0.2.0 and commits the data. Tests use a tmp template dir.
 
@@ -134,6 +134,60 @@ Review round 1 FAIL:
 > AC: README upgrade instructions ✓ Documents `python -m omi upgrade` and `/omi-upgrade`.
 > AC: Real v0.2.0 sandbox check ✓ Coordinator records 1 created, 8 updated, 1 modified file preserved with `.omi-new`; not independently repeated.
 > AC: Linux and Windows tests ✓ `python3 tests/test_omi.py` completed with exit 0 and `ok`; Coordinator records Windows exit 0.
+2026-10-26 22:21 omi-agent-engineer (codex):
+> DONE
+> Files changed: `src/omi/__init__.py`, `tests/test_omi.py`, `.omi/tasks/TASK-079.md`.
+> Fixed date-tag filtering and missing/invalid `--to` validation.
+> Suggested commit: `fix: validate omi upgrade release tags and target arguments`
+> Tests: regression tests and `python3 tests/test_omi.py` passed on Linux.
+> Checkpoint updated; no commit made.
+> Open issue: Coordinator must rerun tests on Windows.
+2026-10-26 22:21 hook post-run passed:
+> Conflict. The container name "/tmpm6eamj5d-TASK-001-engineer-codex-gpt-x-medium-152112" is already in useBind for 0.0.0.0:8080 failed: port is already in usewrote /tmp/tmpaoo3jwew/.omi/skills/CATALOG.md (2 skills)
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/config.json
+> create .omi/decisions.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -141,3 +195,4 @@ Review round 1 FAIL:
 | omi-agent-architect | claude-opus-5-5 | high | 12 | 4515 | 152074 | 53s | - | n/a |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 11516 | 297805 | 180s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 208445 | 1944 | 171904 | 117s | - | FAIL b8079e3 |
+| omi-agent-engineer | gpt-6.1-sol (codex) | medium | 327207 | 2666 | 291456 | 138s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |

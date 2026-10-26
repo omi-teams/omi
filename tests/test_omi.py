@@ -195,7 +195,7 @@ def test_upgrade():
 
 def test_upgrade_cmd():
     calls = []
-    ls = "a\trefs/tags/v0.2.0\nb\trefs/tags/v0.10.0\nc\trefs/tags/v0.10.0^{}\nd\trefs/tags/2026-10-01\ne\trefs/tags/v0.9.0\n"
+    ls = "a\trefs/tags/v0.2.0\nb\trefs/tags/v0.10.0\nc\trefs/tags/v0.10.0^{}\nd\trefs/tags/v2026.10.26\ne\trefs/tags/v0.9.0\nf\trefs/tags/v1000.0.0\ng\trefs/tags/rc-20261026-d55dcd3\n"
 
     def run(cmd, **kw):
         calls.append(cmd)
@@ -215,6 +215,15 @@ def test_upgrade_cmd():
             assert omi.upgrade_cmd(["--to", "v0.9.0"], d) == 0
             assert calls[1] == [omi.sys.executable, "-m", "pip", "install", "--user", "--upgrade", f"git+{omi.OMI_REPO}@v0.9.0"]
             assert calls[2] == [omi.sys.executable, "-m", "omi", "upgrade", "--apply"]
+            for args in (["--to"], ["--to", "--check"], ["--to", "v2026.10.26"], ["--to", "v1000.0.0"]):
+                calls.clear()
+                try:
+                    omi.upgrade_cmd(args, d)
+                except SystemExit as exc:
+                    assert str(exc) == "usage: omi upgrade [--check | --to vX.Y.Z]"
+                else:
+                    raise AssertionError(f"accepted invalid upgrade arguments: {args}")
+                assert calls == [], "invalid arguments must fail before any subprocess"
     finally:
         omi.subprocess.run = real
 

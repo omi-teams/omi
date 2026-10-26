@@ -868,16 +868,24 @@ def omi_repo(root="."):
     return (json.loads(cfg.read_text(encoding="utf-8")) if cfg.is_file() else {}).get("omi_repo", OMI_REPO)
 
 
+def release_tag(tag: str) -> bool:
+    """Release tags use vX.Y.Z with major < 1000; vYYYY.MM.DD tags are dates."""
+    return bool(re.fullmatch(r"v\d+\.\d+\.\d+", tag)) and semver(tag)[0] < 1000
+
+
 def latest_tag(repo):
     """Highest vX.Y.Z tag of the remote (SemVer order; date tags and rc tags are ignored)."""
     r = subprocess.run(["git", "ls-remote", "--tags", repo], capture_output=True, text=True, encoding="utf-8")
     if r.returncode:
         sys.exit(f"git ls-remote failed: {r.stderr.strip()}")
     tags = set(re.findall(r"refs/tags/(v\d+\.\d+\.\d+)$", r.stdout, re.M))
-    return max(tags, key=semver) if tags else None
+    return max((tag for tag in tags if release_tag(tag)), key=semver, default=None)
 
 
 def upgrade_cmd(rest, root="."):
+    requested = flag(rest, "--to")
+    if "--to" in rest and (not requested or not release_tag(requested)):
+        sys.exit("usage: omi upgrade [--check | --to vX.Y.Z]")
     if "--apply" in rest:
         return upgrade_apply(root)
     repo = omi_repo(root)
@@ -887,9 +895,7 @@ def upgrade_cmd(rest, root="."):
     if "--check" in rest:
         print(f"omi {version()} -> {latest[1:]}" if semver(latest) > semver(version()) else "up to date")
         return 0
-    tag = flag(rest, "--to") or latest
-    if not re.fullmatch(r"v\d+\.\d+\.\d+", tag):
-        sys.exit("usage: omi upgrade [--check | --to vX.Y.Z]")
+    tag = requested or latest
     rc = subprocess.run([sys.executable, "-m", "pip", "install", "--user", "--upgrade", f"git+{repo}@{tag}"]).returncode
     return rc or subprocess.run([sys.executable, "-m", "omi", "upgrade", "--apply"]).returncode
 
