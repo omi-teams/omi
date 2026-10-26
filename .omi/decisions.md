@@ -40,3 +40,4 @@
 - 2026-10-25 | incremental review real numbers (TASK-052 round 1 -> 2): reviewer cache 122083 -> 67971, output 1951 -> 1156 | second data point for TASK-039 (TASK-042 showed no saving) | TASK-052 Usage
 - 2026-10-26 | Template network_allow stays api.anthropic.com only; tool API hosts added per run by allow_for; Codex CLI pinned 0.164.0 | least privilege, current Codex | TASK-045
 - 2026-10-26 | Codex key in Credential Manager is a separate task (TASK-054) | keep TASK-045 small | TASK-045
+- 2026-10-26 | Tool per role and task (task overrides role, --tool overrides both); agent quota limit always switches to the other tool once; Coordinator quota: resume from files in a new Claude Code or Codex session | PO | TASK-055
