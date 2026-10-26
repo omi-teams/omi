@@ -14,7 +14,7 @@ Both cost more than a plain baseline with no correctness gain in TASK-057 (debug
 
 ## Acceptance criteria
 - [ ] Each file is at most half its current token size, in `.omi` and the template copy; `python -m omi skills --check` and `python tests/test_omi.py` pass.
-- [ ] Coordinator re-runs the TASK-057 bugfix and security pairs: the slimmed versions stay correct (planted issues caught, bug fixed) and use no more tokens than the plain baseline +10%; numbers appended to docs/research/omi-eval.md.
+- [ ] Coordinator re-runs the TASK-057 bugfix and security pairs: the slimmed versions stay correct (planted issues caught, bug fixed); numbers appended to docs/research/omi-eval.md. (Original target "<= plain baseline +10% tokens" was not met: the extra cost is verification turns, not prompt size; PO kept the slim versions with verification, 2026-10-26.)
 
 ## Checkpoint
 Round 2 done: debug-root-cause SKILL.md restored MIT comment (`<!-- Adapted from obra/superpowers systematic-debugging v6.3.0, MIT, Copyright (c) 2025 Jesse Vincent. -->`), now 294 tokens (<=295), .omi and template identical. Dropped the "Inputs" details and some wording to fit; `inputs` section kept (required by validator).
@@ -23,6 +23,8 @@ Earlier: security-reviewer 453->225 tokens (.omi + template), unchanged this rou
 Not done: Criterion 2 (sandbox re-run, docs/research/omi-eval.md) is the Coordinator's.
 Tests: `PYTHONPATH=src python3 -m omi skills --check` ok (19 checked); `python3 tests/test_omi.py` ok.
 
+Coordinator re-measure 2026-10-26 (fresh sandbox from this worktree's template, n=1, sonnet/medium; out / cache): bugfix + slim debug-root-cause 1192 / 106745, 18s, bug fixed; bugfix no skill 841 / 84563, 13s, bug fixed (+42% / +26%). Security slim role 722 / 50210, 12s, FAIL with injection + token leak + token to any host, verified by running, plus UNVERIFIED curl option injection via a `-` URL; plain read 697 / 32669, 11s, same three + scheme check (+4% / +54%). File size halved (591->294, 453->225 tokens) but per-run cost barely moved: the gap is the extra tool turns (running code to verify, grepping callers), each re-reading the context. PO decision: keep slim + verification.
+Write (docs-writer): append a Vietnamese section "Đo lại sau TASK-059" to docs/research/omi-eval.md with the numbers above and the conclusion; change nothing else.
 ## Steps
 - plan started 2026-10-26 10:41
 - plan done 2026-10-26 10:41
