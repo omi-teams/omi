@@ -1,5 +1,6 @@
 import io
 import re
+import shlex
 import json
 import subprocess
 import sys
@@ -23,6 +24,44 @@ omi.egress = no_egress
 def git(cwd, *args):
     subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],
                    cwd=cwd, check=True, capture_output=True)
+
+
+def test_init_fresh_project():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        (root / ".gitignore").write_text("*.log")
+        omi.init(root)
+        for kind in ("skills", "agents", "workflows"):
+            assert (root / ".omi" / kind / "CATALOG.md").exists(), kind
+        assert (root / ".gitignore").read_text().splitlines() == ["*.log", "__pycache__/"]
+        omi.init(root)
+        assert (root / ".gitignore").read_text().count("__pycache__/") == 1
+        assert '"test"' in (root / ".omi" / "config.json").read_text()
+    with tempfile.TemporaryDirectory() as d:
+        omi.init(d)
+        assert (Path(d) / ".gitignore").read_text() == "__pycache__/\n"
+        (Path(d) / "tests").mkdir()
+        (Path(d) / "tests" / "test_a.py").write_text("raise SystemExit(3)")
+        real = omi.importlib.util.find_spec
+        omi.importlib.util.find_spec = lambda n: None
+        try:
+            cmd = omi.test_command(d, d)
+        finally:
+            omi.importlib.util.find_spec = real
+        assert "pytest" not in cmd
+        assert subprocess.run(cmd, cwd=d).returncode == 1
+        (Path(d) / "tests" / "test_a.py").write_text("")
+        assert subprocess.run(cmd, cwd=d).returncode == 0
+        (Path(d) / "tests" / "test_b.py").write_text("import os,signal;os.kill(os.getpid(),signal.SIGKILL)")
+        assert subprocess.run(cmd, cwd=d).returncode == 1, "a child killed by a signal must fail the run"
+        (Path(d) / "tests" / "test_b.py").unlink()
+        line = omi.test_prompt_line(d, d)
+        assert shlex.split(line) == [("python3" if a == omi.sys.executable else a) for a in cmd], line
+    with tempfile.TemporaryDirectory() as d:
+        for existing in ("__pycache__", "/__pycache__/", "__pycache__/"):
+            (Path(d) / ".gitignore").write_text(existing + "\n")
+            omi.init(d)
+            assert (Path(d) / ".gitignore").read_text() == existing + "\n", existing
 
 
 def test_init_guard_status():
@@ -1814,6 +1853,7 @@ if __name__ == "__main__":
     test_clean_and_old_images()
     test_credential_manager()
     test_template_docker()
+    test_init_fresh_project()
     test_init_guard_status()
     test_github_rulesets()
     test_ci_checks_and_apply()

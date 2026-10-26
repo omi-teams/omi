@@ -33,6 +33,7 @@ claude                    # rồi gõ /omi-idea, /omi-task TASK-001, /omi-status
 - **File hướng dẫn cho agent viết tiếng Anh** (tiếng Việt tốn token gấp 2–3 lần). Agent vẫn trao đổi với PO bằng tiếng Việt.
 - **3 vai trò thay vì 17:** Coordinator, omi-agent-engineer, omi-agent-reviewer. Mặc định dùng `sonnet`, việc cơ học dùng `haiku`, chỉ dùng `opus` khi thật cần.
 - **Mỗi lần một task.** Không review với thay đổi chỉ ở docs/`.omi`. Tối đa 2 vòng sửa, sau đó hỏi PO.
+- **Lệnh test** (`"test"` trong `.omi/config.json`, nếu có); không có thì: `tests/test_omi.py` nếu tồn tại, rồi pytest nếu import được, cuối cùng chạy từng `tests/test_*.py` như script (lỗi nếu có file nào thất bại).
 - **Agent nhận đường dẫn task file,** không nhận context dán sẵn. Báo cáo không quá 10 dòng.
 
 ## Giới hạn đã biết
