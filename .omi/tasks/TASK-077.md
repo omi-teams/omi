@@ -36,10 +36,18 @@ Not done: Windows host test run.
 Tests: python3 tests/test_omi.py ok (Linux).
 Next: Coordinator review/commit; run tests on the Windows host.
 
+Review round 1 FAIL (reviewer not started; Coordinator findings from the Windows host run):
+- tests/test_omi.py test_cli_correctness line 640 fails on Windows: the config test command calls `python3`, which on Windows is often the Microsoft Store stub, so the shell run returns non-zero and the temp dir stays locked (WinError 32). The test should build the command from sys.executable (forward slashes, quoted) so it runs on both hosts.
+- test_command on Windows: shutil.which("bash") can return C:\Windows\System32ash.exe (the WSL launcher), which runs the command in a different Linux environment. On Windows the expected order is Git Bash, then cmd /c; a bash under System32 is skipped. Needs a test with a faked shutil.which.
+
 ## Steps
 - plan started 2026-10-26 21:35
 - plan done 2026-10-26 21:35
 - build started 2026-10-26 21:35
+- build done 2026-10-26 21:40
+- review started 2026-10-26 21:40
+- review failed 2026-10-26 21:41
+- build started 2026-10-26 21:41
 
 ## Reports
 2026-10-26 21:39 omi-agent-engineer (claude):
