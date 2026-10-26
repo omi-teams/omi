@@ -7,7 +7,7 @@ scope: .omi/agents/**, .omi/skills/**, src/omi/template/**, .claude/skills/**, t
 role: omi-agent-engineer
 skills: []
 workflow: omi-flow-feature
-step: build
+step: review
 ---
 ## Goal
 Close the review carry-overs left by earlier tasks. The baseline evaluation moved to TASK-057 (PO, 2026-10-26).
@@ -22,7 +22,7 @@ Close the review carry-overs left by earlier tasks. The baseline evaluation move
 ## Checkpoint
 Done: data-review contradiction fixed (+template); test assertion now exact (`| - | n/a |`); audit below.
 Audit findings: (1) qa-tester told to write evidence only to the prompt's temp path while omi-skill-web-qa says `qa/` in the worktree -> role now says use the temp path instead (fixed, both copies). (2) omi-task cites "AGENTS.md Quota rules" unquoted -> quoted heading (fixed, both copies). Other 5 roles and commits 8bece61/94f3458/e7a1bfb: no real findings; template copies identical.
-Not done: web-qa `npx playwright cli` unverified - network blocked (raw.githubusercontent.com not in network_allow); `npx playwright cli` looks doubtful vs upstream `playwright-cli`; check at pinned b1a5903 and fix.
+Not done: -
 Tests: python3 tests/test_omi.py ok; PYTHONPATH=src python3 -m omi skills --check ok
 Next: TASK-057
 Coordinator: web-qa fallback confirmed against upstream b1a5903 `skills/playwright-cli/SKILL.md` lines 402-408 ("If global `playwright-cli` command is not available, try a local version via `npx playwright cli`" after `npx --no-install playwright --version`); the skill matches, no change. Temporary commits patch removed. The 7 roles: omi-agent-architect, -designer-ui, -researcher, -security-reviewer, -qa-tester, -devops, -docs-writer.
@@ -31,6 +31,8 @@ Coordinator: web-qa fallback confirmed against upstream b1a5903 `skills/playwrig
 - plan started 2026-10-26 10:16
 - plan done 2026-10-26 10:16
 - build started 2026-10-26 10:16
+- build done 2026-10-26 10:17
+- review started 2026-10-26 10:17
 
 ## Reports
 2026-10-26 10:17 omi-agent-engineer (claude):
@@ -53,8 +55,18 @@ Coordinator: web-qa fallback confirmed against upstream b1a5903 `skills/playwrig
 > - `.omi/tasks/TASK-039.md` (Checkpoint)
 > 
 > Suggested commit message: `fix: carry-over skill, role and test fixes from review audit`
+2026-10-26 10:18 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - No blocking findings. Minor: the Checkpoint's "Not done" line still says the web-qa fallback is unverified. The Coordinator line below it resolves that, so it is only stale text. The web-qa criterion rests on that Coordinator note, because I can't check upstream here.
+> 
+> AC: data-review contradiction fixed in `.omi/skills` and the template copy âœ“ both files now read "report blocking findings first, then continue with the remaining groups". Their diffs are identical.
+> AC: web-qa `npx playwright cli` fallback confirmed against pinned upstream, or fixed âœ“ the Coordinator note cites b1a5903 `skills/playwright-cli/SKILL.md` lines 402-408 and says no change was needed. I could not re-check upstream, since I have no network access. The skill is unchanged in the diff.
+> AC: audit of the 7 roles and commits 8bece61, 94f3458 and e7a1bfb, with findings in the Checkpoint and fixes in scope âœ“ two findings are recorded in the Checkpoint. The qa-tester evidence path conflicted with the skill's `qa/` folder, and the role now says to use the temp path instead. The omi-task "Quota rules" citation is now quoted, and the `## Quota rules` heading exists at AGENTS.md:38. All 7 role files match their template copies, and so do omi-task and the other edited files. I did not independently re-audit the roles or the commits.
+> AC: test uses an exact `-` cell assertion âœ“ `tests/test_omi.py:632` now requires the Usage row to end with `| - | n/a |`. Before, the check passed whenever the row was missing.
+> AC: `python tests/test_omi.py` and `python -m omi skills --check` pass âœ“ `python3 tests/test_omi.py` prints "ok". `PYTHONPATH=src python3 -m omi skills --check` prints "skills ok (19 checked)". Without `PYTHONPATH=src` the module isn't importable here, which I did not test.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 22 | 4527 | 352245 | 56s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1370 | 67949 | 27s | - | PASS b86a298 |
