@@ -34,6 +34,10 @@ Coordinator check round 1 FAIL:
 4. No guessed Codex model IDs (`gpt-5`/`gpt-5-mini` are not in the 0.164.0 binary, which knows `gpt-5.6-*`, `gpt-6*`). Ship `codex_models` empty in both configs. For codex, a known Claude alias (`haiku|sonnet|opus`) with no `codex_models` entry means: omit `-m` so the Codex CLI uses its own default model, show `codex-default` in the run line and Usage. Full IDs matching the codex pattern pass through; an alias unknown to both maps still fails before any container starts. README: the PO fills `codex_models`.
 Round 2: fixed all 4 (quoted ## Reports, QUOTA->tool verdict excluded from review counts, codex_effort max->xhigh, empty codex_models + codex-default). Tests: python3 tests/test_omi.py ok. Next: review.
 
+Coordinator round 2 (from review PASS notes):
+1. `quota_hit`: match only the CLI's own final error events, not the tail of all stdout: claude stream-json `{"type":"result", "is_error":true, ...}` result text; codex `--json` events of type `error` / `turn.failed` message. Test that a non-quota failure whose tool output contains "quota exceeded" does not switch.
+2. Usage model cell names the tool for every codex row: `<model or codex-default> (codex)`; claude rows unchanged.
+Known limit: quota patterns are not tested against real recorded limit output (cannot be captured without hitting a real limit); say so in README.
 ## Steps
 - plan started 2026-10-26 09:43
 - plan done 2026-10-26 09:43
