@@ -7,7 +7,7 @@ scope: src/omi/__init__.py, tests/**
 role: omi-agent-engineer
 skills: []
 workflow: omi-flow-bugfix
-step: fix
+step: review
 ---
 ## Goal
 Bug: in TASK-064 the engineer wrote `step: done` into the task frontmatter, which broke `omi step` until the Coordinator restored it. `step:` and `status:` are Coordinator-owned (set by `omi step` and by the Coordinator).
@@ -38,6 +38,8 @@ Review round 1 FAIL:
 - review started 2026-10-26 11:34
 - review failed 2026-10-26 11:35
 - fix started 2026-10-26 11:35
+- fix done 2026-10-26 11:36
+- review started 2026-10-26 11:36
 
 ## Reports
 2026-10-26 11:34 omi-agent-engineer (claude):
@@ -67,6 +69,15 @@ Review round 1 FAIL:
 > - Tests: `python3 tests/test_omi.py` prints `ok`.
 > - Suggested commit: `fix(run): restore Coordinator-owned task frontmatter after agent runs`
 > - Open issues: none. I didn't add a run-level test for `step:`, because a `step:` in that test's fake worktree makes `run_role` load the workflow, which fails there on missing skills. The direct test covers `step` instead.
+2026-10-26 11:37 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - No blocking findings. Minor and not blocking: `src/omi/__init__.py:11` `front_of` finds the frontmatter by splitting on the first `---`, so a `---` inside a frontmatter value would cut it short. `parse` and `set_front` do the same, so this is consistent with the surrounding code.
+> 
+> AC: After an agent run, `omi run` reverts the six fields and prints `REVERTED: <field>`, keeping the rest of the file ✓ The `finally` block in `run_role` calls `revert_front`, which restores the original raw lines at their original position. `# comments` and field order are kept, and the Checkpoint edit is kept. Fields the agent added are removed, and fields it removed are put back. Read roles skip the revert. The test at tests/test_omi.py:1542 covers `status`.
+> AC: A test where an agent run edits `step:` and the Checkpoint keeps the Checkpoint edit and restores `step:` ✓ The direct `revert_front` test at tests/test_omi.py:77-88 edits `step: done` and the Checkpoint. It asserts `step` is restored with its `# keep` comment, the Checkpoint edit stays, and the added and removed fields are handled. It is a unit test rather than a run-level one, which is the same `step` coverage round 1 asked for. The engineer explains that a run-level `step:` test fails in the fake worktree because `run_role` then tries to load the workflow and its skills.
+> AC: `python tests/test_omi.py` passes ✓ I ran it and it printed `ok`.
+> AC: Round-1 findings addressed ✓ The raw lines are restored, and lost frontmatter or a deleted file is restored and reported as `REVERTED: frontmatter`; the test covers both cases.
+> AC: Changes stay within `scope` ✓ The diff touches only `src/omi/__init__.py` and `tests/test_omi.py`.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -74,3 +85,4 @@ Review round 1 FAIL:
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 28 | 4356 | 408440 | 57s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1837 | 84559 | 32s | - | FAIL d614202 |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 3619 | 219439 | 47s | 1/1 omi-skill-debug-root-cause | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1654 | 62362 | 28s | - | PASS ffd0ce6 |
