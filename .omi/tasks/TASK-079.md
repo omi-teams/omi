@@ -12,7 +12,7 @@ tool: claude
 model: sonnet
 effort: medium
 workflow: omi-flow-feature-sensitive
-step: security
+step: build
 ---
 ## Goal
 A project that runs omi moves to a newer omi with one PO command: install the new version, add new template files, update template files the project never changed, and list the ones it did change for the PO to decide. This also fixes Dockerfile drift.
@@ -80,6 +80,11 @@ Coordinator host check after review round 5 fix: Windows `python tests/test_omi.
 Security round 2 FAIL, risk accepted by the PO (2026-10-26):
 - Finding: a hard-linked `<path>.omi-new` lets --apply overwrite the linked file. Accepted because git does not store hard links, so a cloned repository cannot carry one; creating it needs local write access, which already allows editing the target directly. Follow-up for a later task: write via temp file + os.replace.
 
+Security round 3 FAIL (PO decisions 2026-10-26):
+- init: every template destination goes through upgrade_write_safe before the exists/copyfile step (a dangling symlink AGENTS.md -> outside path was written by the reviewer). Test with a dangling-symlink AGENTS.md (skip when os.symlink raises OSError).
+- read_manifest: corrupt JSON, a non-object, or a non-object `files` is treated as an empty manifest with one warning line; no traceback in init or upgrade_apply. Test.
+- omi_repo (PO decision): when `omi_repo` in .omi/config.json differs from the default repo, `upgrade --check` prints `repo: <url> (not the default)`, and an install (`upgrade` / `upgrade --to`) only runs with `--repo <url>` that equals the configured value; otherwise it exits with `omi_repo is not the default; confirm with --repo <url>` before any subprocess. The omi-upgrade skill (root and template) shows the repo in the PO pick-list and asks the PO to confirm a non-default repo. Tests on argv / no subprocess.
+
 ## Steps
 - plan started 2026-10-26 22:07
 - plan done 2026-10-26 22:07
@@ -112,6 +117,8 @@ Security round 2 FAIL, risk accepted by the PO (2026-10-26):
 - review started 2026-10-26 23:01
 - review done 2026-10-26 23:03
 - security started 2026-10-26 23:03
+- security failed 2026-10-26 23:11
+- build started 2026-10-26 23:11
 
 ## Reports
 2026-10-26 22:08 omi-agent-architect (claude):
@@ -528,6 +535,13 @@ Security round 2 FAIL, risk accepted by the PO (2026-10-26):
 > - src/omi/__init__.py:881 Hard-linked `.omi-new` overwrites protected files | why: symlink guard permits shared inodes | verified: temporary reproduction replaced `.omi/decisions.md` with the AGENTS template; apply returned 0 -> use atomic replacement or reject hard-linked write targets.
 > UNVERIFIED: None. `python3 tests/test_omi.py` passed.
 > Audit stopped per [security skill](/work/.omi/skills/quality/omi-skill-diff-security-review/SKILL.md): “A confirmed exploitable flaw … stop and report immediately.”
+2026-10-26 23:09 omi-agent-security-reviewer (claude):
+> VERDICT: FAIL
+> - src/omi/__init__.py:704-711 `init` still writes template files through a dangling symlink, or a symlinked parent directory, to a path outside the project. `upgrade_apply` guards this with `upgrade_write_safe`, but `init` does not. | why: `dst.exists()` is False for a dangling link, so `shutil.copyfile` follows it. This is the same class as the manifest finding fixed in security round 1. The create path in `init` was rewritten in this diff but never guarded. | verified: ran `omi.init` on a project where `AGENTS.md -> /tmp/out/pwn`. It created `/tmp/out/pwn` (6270 bytes). -> Call `upgrade_write_safe(target, rel)` before the `exists`/`copyfile` step in `init` and skip with the same message. Add a test with a dangling-symlink `AGENTS.md`.
+> - src/omi/__init__.py:643 `read_manifest` raises a traceback on a corrupt or non-object manifest, in both `init` and `upgrade_apply`. | why: `upgrade_apply` fails before any write, but `init` fails partway through its loop. | verified: read the code only. -> Treat a bad manifest as empty or exit with a clear message. Low severity.
+> NEEDS DECISION: `omi_repo` comes from the project's `.omi/config.json`, so a cloned project can point `omi upgrade` at an attacker repo. pip then installs and runs that code, and the skill's PO pick-list does not show the repo. Is that acceptable, or should the repo be shown or confirmed first?
+> UNVERIFIED: The hard-linked `.omi-new` overwrite is not reported. The PO accepted that risk in the task file (2026-10-26).
+> `python3 tests/test_omi.py` passes (rc=0, ok).
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -547,3 +561,4 @@ Security round 2 FAIL, risk accepted by the PO (2026-10-26):
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 434796 | 3286 | 407680 | 142s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 3102 | 226250 | 103s | - | PASS d2aa794 |
 | omi-agent-security-reviewer | gpt-6.1-sol (codex) | medium | 493819 | 2068 | 441728 | 133s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL d2aa794 |
+| omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 10 | 3892 | 317414 | 117s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL 7323d75 |
