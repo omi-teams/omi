@@ -29,6 +29,8 @@ omi has one version (SemVer 0.x, in `pyproject.toml`), shows it, stamps it into 
 - [ ] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
+Coordinator check round 1 FAIL (before review):
+- `omi init` copies `src/omi/template/docker/__pycache__/proxy.cpython-313.pyc` (untracked, made when tests import docker/proxy.py; seen in the post-run output: "create docker/__pycache__/proxy.cpython-313.pyc"). `init` must skip `__pycache__` dirs and `*.pyc`, and the package must not ship them: add `[tool.setuptools.exclude-package-data] omi = ["**/__pycache__/*", "*.pyc"]` (or equivalent) and extend the package-data test so a `.pyc` under template is not covered. Test that init into an empty dir creates no `__pycache__`.
 Done: version 0.2.0, omi --version/version, .omi/version stamp in init, status line + upgrade hint, package-data globs, post-run.sh config test, README, tests.
 Not done: real install on Windows host (Coordinator).
 Tests: python3 tests/test_omi.py ok (Linux).
