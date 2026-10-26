@@ -1,22 +1,22 @@
 ---
 id: TASK-058
 title: Fresh omi init project works out of the box (catalog, test command, gitignore)
-status: in-progress
+status: done
 depends: TASK-057
 scope: src/omi/__init__.py, src/omi/template/**, tests/**, README.md
 role: omi-agent-engineer
 skills: []
 workflow: omi-flow-bugfix
-step: review
+step: accept
 ---
 ## Goal
 The three defects found by the TASK-057 sandbox (docs/research/omi-eval.md): a fresh `omi init` project runs `omi run` with a workflow without manual fixes.
 
 ## Acceptance criteria
-- [ ] `omi init` writes `.omi/skills/CATALOG.md` (and the agents/workflows catalogs) so a task with a workflow runs without `omi skills` first.
-- [ ] The test command needs no pytest by default: `"test"` in config if set, else pytest only when it is importable, else each `tests/test_*.py` run as a script; the template config documents the `"test"` key.
-- [ ] `omi init` adds a `.gitignore` with `__pycache__/` (never overwrites an existing one; appends the line if missing), so the agent's own test run is not reported OUT OF SCOPE.
-- [ ] A test does a fresh `omi init` in a temp dir and checks all three; `python tests/test_omi.py` passes.
+- [x] `omi init` writes `.omi/skills/CATALOG.md` (and the agents/workflows catalogs) so a task with a workflow runs without `omi skills` first.
+- [x] The test command needs no pytest by default: `"test"` in config if set, else pytest only when it is importable, else each `tests/test_*.py` run as a script; the template config documents the `"test"` key.
+- [x] `omi init` adds a `.gitignore` with `__pycache__/` (never overwrites an existing one; appends the line if missing), so the agent's own test run is not reported OUT OF SCOPE.
+- [x] A test does a fresh `omi init` in a temp dir and checks all three; `python tests/test_omi.py` passes.
 
 ## Checkpoint
 Done: init writes 3 catalogs + .gitignore; test_command falls back to script runner; config "test" key; test_init_fresh_project.
@@ -36,6 +36,10 @@ Coordinator round 3 (review notes): (1) the script fallback must fail when any c
 - fix started 2026-10-26 10:35
 - fix skipped 2026-10-26 10:35: the reproduce run wrote the failing test and the root-cause fix together; fix verified in review
 - review started 2026-10-26 10:35
+- review done 2026-10-26 10:39
+- accept started 2026-10-26 10:39
+PO approval accept: "Chấp nhận, merge"
+- accept done 2026-10-26 10:40
 
 ## Reports
 2026-10-26 10:35 omi-agent-engineer (claude):
