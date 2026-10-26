@@ -63,3 +63,4 @@
 - 2026-10-26 | Models: TASK-080 (Claude) and TASK-081 (Codex) research usable models/efforts in-session; TASK-082 puts concrete choices in the agent catalog; every task-start pick-list offers Claude Code vs Codex with a recommendation, PO chooses | PO | TASK-080..082
 - 2026-10-26 | TASK-077 adds review-gate FAIL check and push-after-start | both bit TASK-076 (gate passed on FAIL; squash conflict) | PO in chat
 - 2026-10-26 | TASK-077 third fix round (missing test program message) on Claude sonnet/low | review FAIL after 2 rounds, small known fix | PO in chat
+- 2026-10-26 | TASK-079 option B: ship v0.2.0 template shas for manifest backfill; scope adds template_shas.json, pyproject.toml | existing 0.2.0 projects would otherwise get every file as .omi-new | PO in chat
