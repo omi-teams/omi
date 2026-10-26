@@ -43,6 +43,7 @@ USAGE = """usage: omi <command>
   workflows [--check]   write .omi/workflows/CATALOG.md (one line per workflow); --check validates every workflow
   step <TASK-ID> next|done|back|skip --why <reason>   record the task's workflow step (gates cannot be skipped)
   run <role> <TASK-ID> [--model M] [--effort E] [--tool claude|codex]   run a role in Docker (read roles: ro worktree, after the deterministic checks)
+  hook pre-run|post-run|pre-merge <TASK-ID>   run .omi/hooks/<event> (from the main checkout) in Docker against the task worktree; exits with its code
   parallel <TASK-ID> <TASK-ID> [...]   check that tasks can run in parallel (depends, status, scope overlap)
   worker <wt> <task-file> [--model M] [--effort E]   run the engineer in the Docker worker
   worker <wt> --prove   run docker/prove.sh in the worker (boundary check, no token)"""
@@ -662,6 +663,8 @@ def step(root, tid, action, why=None, now=None):
         text = add_step_log(text, f"- {prev['id']} started {stamp}")
         msg = f"{tid}: step {cur} failed; back to {prev['id']} ({prev['role']}), then `omi step {tid} done` and `next`"
     elif action == "done":
+        if (re.findall(r"^\d{4}-\d\d-\d\d \d\d:\d\d hook post-run (FAILED|passed)", text, re.M) or [""])[-1] == "FAILED":
+            sys.exit(f"{tid}: the last post-run hook failed; fix it and rerun `omi run` first. Nothing changed.")
         if steps[at]["gate"] == "po" and not po_approved(text, cur):
             sys.exit(f"{tid}: step {cur} is a po gate; record `PO approval {cur}: <PO's words>` in the task first. "
                      "Nothing changed.")
@@ -1367,14 +1370,14 @@ def repo_label(main):
     return re.sub(r"[^a-zA-Z0-9_.-]", "-", main.name.lower())
 
 
-def worker_argv(wt, image, cmd, name=None, repo=None, labels=None, ro=False, mounts=(), env_names=(TOKEN_ENV,), network=None, proxy=None):
+def worker_argv(wt, image, cmd, name=None, repo=None, labels=None, ro=False, mounts=(), env_names=(TOKEN_ENV,), network=None, proxy=None, offline=False):
     """docker run argv: only the worktree is rw, its .git file ro, non-root, no caps, rootfs ro, no socket.
     The token goes in by name only (-e NAME); its value lives in the child env, never in argv.
-    network/proxy: the internal network and the egress proxy container; HTTPS_PROXY is the only way out."""
+    network/proxy: the internal network and the egress proxy container; HTTPS_PROXY is the only way out; offline: no network at all."""
     wt = Path(wt)
     url = f"http://{proxy}:{PROXY_PORT}"
     net = ["--network", network, "-e", f"HTTPS_PROXY={url}", "-e", f"HTTP_PROXY={url}",
-           "-e", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1"] if network else []
+           "-e", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1"] if network else ["--network", "none"] if offline else []
     return ["docker", "run", "--rm", "-i", *(["--name", name] if name else []), "--label", "omi-worker=1",
             *(["--label", f"omi-repo={repo}"] if repo else []),
             *[x for k, v in (labels or {}).items() for x in ("--label", f"{k}={v}")],
@@ -1389,6 +1392,56 @@ def worker_argv(wt, image, cmd, name=None, repo=None, labels=None, ro=False, mou
 def worker_labels(role, task, model, effort):
     return {"omi-role": role, "omi-task": task or "none", "omi-model": model or "none", "omi-effort": effort or "none",
             "omi-started": datetime.datetime.now().isoformat(timespec="seconds")}
+
+
+HOOK_EVENTS = ("pre-run", "post-run", "pre-merge")
+HOOK_RUNNERS = {".sh": ["sh", "-s"], ".py": ["python3", "-"]}
+
+
+def run_hook(wt, main, event, tid, image):
+    """Run .omi/hooks/<event>.sh|.py of the MAIN checkout (never the worktree's copy) in its own one-shot container:
+    worktree ro as cwd, no network, no token. Returns (exit code, output), or None when there is no hook."""
+    script = next((p for e in HOOK_RUNNERS if (p := Path(main) / ".omi" / "hooks" / f"{event}{e}").is_file()), None)
+    if not script:
+        return None
+    need_docker()
+    image = image or ensure_image(main)
+    env = dict(os.environ)
+    env.pop(TOKEN_ENV, None)
+    name = container_name(repo_label(main), f"hook-{event}", tid)
+    argv = worker_argv(wt, image, HOOK_RUNNERS[script.suffix], name, repo_label(main), worker_labels(f"hook-{event}", tid, None, None),
+                       ro=True, env_names=(), offline=True)
+    cfg = Path(main) / ".omi" / "config.json"
+    limit = (json.loads(cfg.read_text(encoding="utf-8")) if cfg.exists() else {}).get("hook_timeout", 600)
+    try:
+        r = subprocess.run(argv, env=env, input=script.read_bytes().replace(b"\r\n", b"\n"), stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT, timeout=limit)
+    except subprocess.TimeoutExpired as e:
+        subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+        return 124, (e.stdout or b"").decode("utf-8", "replace") + f"hook {event} timed out after {limit} s\n"
+    return r.returncode, r.stdout.decode("utf-8", "replace")
+
+
+def hook_note(task, event, res):
+    """Print a hook's output and record the outcome under `## Reports` (step done reads the last post-run line)."""
+    rc, out = res
+    print(out, end="")
+    line = f"{datetime.datetime.now():%Y-%m-%d %H:%M} hook {event} " + ("passed" if rc == 0 else f"FAILED (exit {rc})") + ":"
+    append_note(task, "Reports", line + "\n" + "\n".join("> " + l for l in clip_report(out or "(no output)")))
+    return rc
+
+
+def hook_cmd(event, tid):
+    root = main_checkout(".") or Path(".").resolve()
+    wt = task_worktrees(root).get(tid)
+    if event not in HOOK_EVENTS or not wt:
+        sys.exit(f"usage: omi hook {'|'.join(HOOK_EVENTS)} <TASK-ID> (the task needs a worktree). Nothing changed.")
+    res = run_hook(wt, root, event, tid, None)
+    if res is None:
+        print(f"no {event} hook")
+        return 0
+    print(res[1], end="")
+    return res[0]
 
 
 def running_workers(main):
@@ -1834,6 +1887,10 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
             print(f"{role} not started; fix these first:\n" + "\n".join(problems))
             return 4
     image = ensure_image(main)
+    res = None if read else run_hook(wt, main, "pre-run", task.stem, image)  # hooks guard write roles only
+    if res and hook_note(task, "pre-run", res):
+        print("pre-run hook failed; the agent was not started")
+        return 6
     prompt_skills = skill_prompt(wt, declared) + rule_prompt(wt, rule_files) + reference_prompt(wt, ref_files)
     prompt_skills += "\nTests: " + test_prompt_line(wt, main)
     text = am["_text"]
@@ -1903,6 +1960,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
         print(line)
         return 5
 
+    hook_failed = False
     try:
         if read:
             base = git(wt, "merge-base", "development", "HEAD") or "development"
@@ -1952,6 +2010,9 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
         for sid in ids:
             if sid not in done:
                 print(f"SKILL NOT READ: {sid}")
+        res = run_hook(wt, main, "post-run", task.stem, image) if not rc and not read else None
+        if res and hook_note(task, "post-run", res):
+            hook_failed = True
     finally:
         if tmp:
             tmp.cleanup()
@@ -1959,11 +2020,11 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
             for key in revert_front(task, before):
                 print(f"REVERTED: {key}")
     if read:
-        return rc
+        return rc or (6 if hook_failed else 0)
     bad = out_of_scope(wt, task.stem)
     for p in bad:
         print(f"OUT OF SCOPE: {p}")
-    return rc or (3 if bad else 0)
+    return rc or (3 if bad else 0) or (6 if hook_failed else 0)
 
 
 def worker(wt, task_file=None, model=None, effort=None, prove=False):
@@ -2057,6 +2118,8 @@ def main(argv=None):
         sys.exit(step(main_checkout(".") or Path(".").resolve(), rest[0], rest[1], why))
     elif cmd == "run" and len(rest) >= 2 and not rest[1].startswith("--"):
         sys.exit(run_cmd(rest[0], rest[1], rest))
+    elif cmd == "hook" and len(rest) == 2:
+        sys.exit(hook_cmd(*rest))
     elif cmd == "guard":
         sys.exit(guard())
     elif cmd == "token" and rest[:1] == ["set"]:

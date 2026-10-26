@@ -1,6 +1,7 @@
 import io
 import re
 import shlex
+import shutil
 import json
 import subprocess
 import sys
@@ -539,6 +540,173 @@ def test_worker():
             omi.os.environ.pop(omi.TOKEN_ENV, None)
             if tok is not None:
                 omi.os.environ[omi.TOKEN_ENV] = tok
+
+
+def test_hooks():
+    real = omi.subprocess.run, omi.shutil.which, omi.main_checkout, omi.WINDOWS, omi.os.environ.get(omi.TOKEN_ENV)
+    calls, st = [], {}
+
+    class R:
+        def __init__(s, out=b"", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
+
+    def run(cmd, **kw):
+        calls.append((cmd, kw))
+        if cmd[:2] == ["docker", "info"]:
+            return R(rc=0)
+        if cmd[:2] == ["docker", "run"] and cmd[-2:] in (["sh", "-s"], ["python3", "-"]):
+            return R(b"HOOKOUT", st.get("hook_rc", 0))
+        if "show" in cmd:
+            return R("---\nscope: src/**\n---\n")
+        if "status" in cmd:
+            return R("")
+        return R()
+
+    def hooks():
+        return [c for c in calls if c[0][:2] == ["docker", "run"] and c[0][-2:] in (["sh", "-s"], ["python3", "-"])]
+
+    def agents():
+        return [c for c in calls if c[0][:2] == ["docker", "run"] and c not in hooks()]
+
+    with tempfile.TemporaryDirectory() as d1, tempfile.TemporaryDirectory() as d2:
+        main, wt = Path(d1).resolve(), Path(d2).resolve() / "wt"
+        sys.stdout, saved = io.StringIO(), sys.stdout
+        try:
+            omi.init(main)
+            assert (main / ".omi" / "hooks" / "post-run.sh").is_file()  # the template ships it
+            (main / ".omi" / "hooks" / "post-run.sh").unlink()
+            wt.mkdir()
+            shutil.copytree(main / ".omi", wt / ".omi")
+            (wt / ".git").write_text("gitdir: /x")
+            task = wt / ".omi" / "tasks" / "TASK-001.md"
+            task.parent.mkdir(parents=True, exist_ok=True)
+            task.write_text("---\nid: TASK-001\nstatus: in-progress\n---\n## Reports\n")
+            omi.subprocess.run, omi.shutil.which = run, lambda _: "docker"
+            omi.main_checkout, omi.WINDOWS = (lambda _: main), False
+            omi.os.environ[omi.TOKEN_ENV] = "tok"
+            go = lambda: omi.run_role("omi-agent-engineer", wt, task)  # noqa: E731
+            # no hook file: no extra docker call
+            calls.clear()
+            assert go() == 0 and not hooks() and len(agents()) == 1
+            # a hook only in the worktree is not run
+            (wt / ".omi" / "hooks").mkdir(exist_ok=True)
+            (wt / ".omi" / "hooks" / "pre-run.sh").write_text("exit 1")
+            calls.clear()
+            assert go() == 0 and not hooks()
+            # pre-run in main passes: it runs before the agent, in an isolated container
+            hook = main / ".omi" / "hooks" / "pre-run.sh"
+            hook.parent.mkdir(exist_ok=True)
+            hook.write_bytes(b"echo hi\r\n")
+            calls.clear()
+            assert go() == 0
+            (argv, kw), = hooks()
+            assert calls.index((argv, kw)) < calls.index(agents()[0]) and kw["input"] == b"echo hi\n"
+            assert argv[argv.index("--network") + 1] == "none" and "--rm" in argv and f"{wt}:/work:ro" in argv
+            assert "-w" in argv and argv[argv.index("-w") + 1] == "/work" and "omi-worker=1" in argv
+            assert [a for i, a in enumerate(argv) if argv[i - 1] == "-e"] == ["HOME=/home/node"]  # no token name
+            assert omi.TOKEN_ENV not in kw["env"] and "tok" not in " ".join(argv)
+            assert "hook pre-run passed" in task.read_text()
+            # failing pre-run: agent never started, output in Reports
+            st["hook_rc"] = 3
+            calls.clear()
+            assert go() == 6 and not agents()
+            assert "hook pre-run FAILED (exit 3)" in task.read_text() and "> HOOKOUT" in task.read_text()
+            # failing post-run: rc 6, and `step done` is refused until a rerun passes
+            hook.unlink()
+            (main / ".omi" / "hooks" / "post-run.py").write_text("import sys")
+            calls.clear()
+            assert go() == 6 and len(agents()) == 1 and hooks()[0][0][-2:] == ["python3", "-"]
+            assert "hook post-run FAILED (exit 3)" in task.read_text()
+            real_tw = omi.task_worktrees
+            omi.task_worktrees = lambda _: {"TASK-001": str(wt)}
+            task.write_text(task.read_text().replace("status: in-progress", "workflow: omi-flow-feature\nstep: plan")
+                            + "\n## Steps\n- plan started 2026-01-01 00:00\n")
+            try:
+                omi.step(main, "TASK-001", "done")
+                raise AssertionError("step done passed after a failed post-run")
+            except SystemExit as e:
+                assert "post-run hook failed" in str(e), e
+            st["hook_rc"] = 0
+            assert go() == 0 and omi.step(main, "TASK-001", "done") == 0
+            # the guard reads only the Reports header line: hook output cannot fake `passed`
+            st["hook_rc"] = 3
+            assert go() == 6
+            task.write_text(re.sub(r"- plan done.*\n", "", task.read_text()) + "> hook post-run passed\n")
+            try:
+                omi.step(main, "TASK-001", "done")
+                raise AssertionError("step done passed on faked output")
+            except SystemExit as e:
+                assert "post-run hook failed" in str(e), e
+            st["hook_rc"] = 0
+            assert go() == 0
+            # a hanging hook is killed by name and fails with a timeout message
+            (main / ".omi" / "hooks" / "post-run.py").write_text("import time")
+            (main / ".omi" / "config.json").write_text('{"hook_timeout": 7}')
+            real_run = omi.subprocess.run
+
+            def hang(cmd, **kw):
+                if cmd[:2] == ["docker", "run"] and cmd[-2:] == ["python3", "-"]:
+                    assert kw["timeout"] == 7 and "--name" in cmd
+                    calls.append((cmd, kw))
+                    raise omi.subprocess.TimeoutExpired(cmd, 7)
+                return real_run(cmd, **kw)
+            omi.subprocess.run = hang
+            calls.clear()
+            assert go() == 6 and "hook post-run timed out after 7 s" in task.read_text()
+            assert any(c[0][:3] == ["docker", "rm", "-f"] and c[0][3] == hooks()[0][0][hooks()[0][0].index("--name") + 1] for c in calls)
+            omi.subprocess.run = real_run
+            (main / ".omi" / "config.json").unlink()
+            # read roles run no hooks
+            calls.clear()
+            (main / ".omi" / "hooks" / "pre-run.sh").write_text("exit 1")
+            omi.deterministic_checks, real_dc = (lambda *a: []), omi.deterministic_checks
+            try:
+                omi.run_role("omi-agent-architect", wt, task)
+            finally:
+                omi.deterministic_checks = real_dc
+            assert agents() and not hooks()
+            (main / ".omi" / "hooks" / "pre-run.sh").unlink()
+            # pre-merge CLI: runs against the task worktree, exits with the hook's code; no hook is a no-op
+            try:
+                assert omi.hook_cmd("pre-merge", "TASK-001") == 0 and "no pre-merge hook" in sys.stdout.getvalue()
+                (main / ".omi" / "hooks" / "pre-merge.sh").write_text("exit 4")
+                st["hook_rc"] = 4
+                assert omi.hook_cmd("pre-merge", "TASK-001") == 4
+            finally:
+                omi.task_worktrees = real_tw
+        finally:
+            sys.stdout = saved
+            omi.subprocess.run, omi.shutil.which, omi.main_checkout, omi.WINDOWS, tok = real
+            omi.os.environ.pop(omi.TOKEN_ENV, None)
+            if tok is not None:
+                omi.os.environ[omi.TOKEN_ENV] = tok
+    # the shipped post-run.sh: exits 0 and says so when the project has no tests
+    with tempfile.TemporaryDirectory() as d:
+        sh = shutil.which("sh")
+        if sh:
+            r = subprocess.run([sh, str(omi.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh")], cwd=d, capture_output=True, text=True)
+            assert r.returncode == 0 and "no tests found" in r.stdout, r
+            # tests exist but the runner is missing: exit 1 naming the tool (empty PATH; the script uses only sh builtins)
+            bindir = Path(d) / "bin"
+            bindir.mkdir()
+            env = {"PATH": str(bindir)}
+            for name, files in (("go", {"go.mod": ""}), ("npm", {"package.json": '{"scripts":{"test":"x"}}'})):
+                w = Path(d) / name
+                w.mkdir()
+                for fn, c in files.items():
+                    (w / fn).write_text(c)
+                r = subprocess.run([sh, str(omi.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh")], cwd=w, capture_output=True, text=True, env=env)
+                assert r.returncode == 1 and f"{name} not in the worker image" in r.stdout, r
+            # python tests only under tests/ (none at the root) are detected
+            w = Path(d) / "py"
+            (w / "tests").mkdir(parents=True)
+            (w / "tests" / "test_x.py").write_text("")
+            r = subprocess.run([sh, str(omi.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh")], cwd=w, capture_output=True, text=True, env=env)
+            assert "no tests found" not in r.stdout and "pytest not in the worker image" in r.stdout, r
+    text = (omi.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh").read_text()
+    assert all(w in text for w in ("pytest", "go test", "npm test"))
+    for f in (Path("AGENTS.md"), omi.TEMPLATE / "AGENTS.md", Path(".claude/skills/omi-task/SKILL.md"),
+              omi.TEMPLATE / "dot-claude" / "skills" / "omi-task" / "SKILL.md"):
+        assert "hook" in (Path(__file__).parents[1] / f if not f.is_absolute() else f).read_text(encoding="utf-8"), f
 
 
 def test_roles():
@@ -1130,6 +1298,7 @@ def test_rules():
 
         omi.shutil.rmtree(root / ".git", onexc=lambda f, p, e: (omi.os.chmod(p, 0o700), f(p)))
         (root / ".git").write_text("gitdir: /x")
+        (root / ".omi" / "hooks" / "post-run.sh").unlink()  # this test mocks docker output as str
         task = root / ".omi" / "tasks" / "TASK-001.md"
         task.parent.mkdir(exist_ok=True)
         task.write_text("---\nid: TASK-001\nscope: src/**/*.go\n---\n")
@@ -2342,6 +2511,7 @@ if __name__ == "__main__":
     test_workflows()
     test_worker()
     test_roles()
+    test_hooks()
     test_run_read_role()
     test_incremental_review()
     test_review_round_flow()
