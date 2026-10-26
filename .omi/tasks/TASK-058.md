@@ -26,6 +26,7 @@ Tests: python3 tests/test_omi.py ok (fresh-init test included)
 Next: review
 
 Coordinator round 2: src/omi/__init__.py:1546 builds the prompt's `Tests:` line with `" ".join`, so the new `python -c "...(...)..."` fallback reaches the agent unquoted and breaks in a shell. Use `shlex.join` (keep `python3` for sys.executable). Test: the Tests line for a no-pytest project parses back with `shlex.split` to the same argv. Also accept `__pycache__`, `/__pycache__/`, `__pycache__/` as already present in .gitignore.
+Coordinator round 3 (review notes): (1) the script fallback must fail when any child exit code is non-zero, including negative (signal): `sys.exit(1 if any(codes) else 0)`; test with a script that kills itself. (2) README: one line on the `"test"` config key and the default order.
 ## Steps
 - plan started 2026-10-26 10:34
 - plan done 2026-10-26 10:34
