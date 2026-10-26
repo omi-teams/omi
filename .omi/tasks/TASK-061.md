@@ -1,7 +1,7 @@
 ---
 id: TASK-061
 title: Fair baseline for omi-agent-architect
-status: planned
+status: in-progress
 depends: TASK-057
 scope: docs/research/omi-eval.md, .omi/tasks/**
 role: omi-agent-docs-writer
