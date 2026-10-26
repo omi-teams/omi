@@ -1,7 +1,7 @@
 ---
 id: TASK-071
 title: Add omi hooks (pre-run, post-run, pre-merge) run in Docker
-status: planned
+status: in-progress
 depends: TASK-070
 scope: src/omi/__init__.py, tests/**, src/omi/template/**, .omi/hooks/**, .claude/skills/omi-task/SKILL.md, AGENTS.md
 role: omi-agent-engineer
