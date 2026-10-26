@@ -7,7 +7,7 @@ scope: src/omi/template/docker/**, src/omi/template/dot-omi/config.json, src/omi
 skills: [omi-skill-docker-worker-pitfalls, omi-skill-windows-powershell]
 role: omi-agent-engineer
 workflow: omi-flow-feature-sensitive
-step: build
+step: security
 ---
 ## Goal
 `omi run --tool codex` works in the container with a pinned Codex CLI version.
@@ -41,6 +41,10 @@ Round 3 done: Dockerfile apt-get installs ca-certificates (test asserts it); pro
 - architect started 2026-10-26 09:02
 - architect done 2026-10-26 09:04
 - build started 2026-10-26 09:04
+- build done 2026-10-26 09:15
+- review started 2026-10-26 09:15
+- review done 2026-10-26 09:16
+- security started 2026-10-26 09:16
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -49,3 +53,4 @@ Round 3 done: Dockerfile apt-get installs ca-certificates (test asserts it); pro
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 5637 | 301884 | 73s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 5076 | 240528 | 49s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-haiku-5-5 | low | 14 | 2908 | 176418 | 29s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 2534 | 101921 | 35s | - | PASS 3f1b556 |
