@@ -621,11 +621,30 @@ def test_run_read_role():
                 omi.os.environ[omi.TOKEN_ENV] = tok
 
 
+def test_prove_exit_and_hosts():
+    ok = "PASS claude CLI reaches\nPASS codex CLI reaches\nPASS write\n"
+    assert omi.prove_rc(ok, 0) == 0 and omi.prove_rc(ok, 5) == 5
+    assert omi.prove_rc(ok + "FAIL codex CLI: network error: x\n", 0) == 1
+    assert omi.prove_rc("PASS claude CLI x\n", 0) == 1 and omi.prove_rc("", 0) == 1
+    with tempfile.TemporaryDirectory() as d:
+        (Path(d) / ".omi").mkdir()
+        (Path(d) / ".omi" / "config.json").write_text('{"network_allow": ["api.anthropic.com"]}')
+        assert omi.allow_for(d, "codex") == ["api.anthropic.com", "api.openai.com"]
+        assert omi.allow_for(d, "claude") == ["api.anthropic.com"]
+        assert omi.allow_for(d, *omi.TOOL_API_HOST) == ["api.anthropic.com", "api.openai.com"]
+    sh = (omi.TEMPLATE / "docker" / "prove.sh").read_text()
+    assert "error sending request" in sh
+    # codex prints "stream error: ... last status: 401" on a bad key: that is an auth result, not a network one
+    net = next(l for l in sh.splitlines() if "ENOTFOUND" in l)
+    assert "stream error" not in net
+
+
 def test_container_names():
     import datetime
     t = datetime.datetime(2026, 1, 1, 14, 32, 5)
     assert omi.container_name("omi-squad2", "omi-agent-engineer", "TASK-018", "claude-sonnet-5-5", "high", t) == \
         "omi-omi-squad2-TASK-018-omi-agent-engineer-claude-sonnet-5-5-high-143205"
+    assert len(omi.container_name("omi-squad2", "omi-agent-engineer", "prove", "claude-sonnet-5-5", "medium", t)) >= 60
     assert omi.container_name("my repo", "prove", now=t) == "omi-my-repo-prove-none-none-143205"
     with tempfile.TemporaryDirectory() as d:
         assert omi.resolve_model(d, "opus") == "claude-opus-5-5" and omi.resolve_model(d, "claude-x-1") == "claude-x-1"
@@ -893,6 +912,13 @@ def test_template_docker():
     d = omi.TEMPLATE / "docker"
     text = (d / "Dockerfile").read_text()
     assert "python3" in text and "@anthropic-ai/claude-code@2." in text and (d / "prove.sh").exists()
+    pins = json.loads((omi.TEMPLATE / "dot-omi" / "config.json").read_text())["cli_versions"]
+    assert f"@openai/codex@{pins['codex']}" in text and f"claude-code@{pins['claude']}" in text
+    assert pins["codex"] in (omi.TEMPLATE.parents[2] / "README.md").read_text(encoding="utf-8")
+    assert "api.openai.com" not in json.loads((omi.TEMPLATE / "dot-omi" / "config.json").read_text())["network_allow"]
+    assert "ca-certificates" in text
+    prove = (d / "prove.sh").read_text()
+    assert "codex exec" in prove and "OPENAI_API_KEY=sk-prove-invalid" in prove
     with tempfile.TemporaryDirectory() as t:
         out = io.StringIO()
         sys.stdout, saved = out, sys.stdout
@@ -1552,6 +1578,7 @@ if __name__ == "__main__":
     test_review_round_flow()
     test_container_names()
     test_network_allowlist()
+    test_prove_exit_and_hosts()
     test_clean_and_old_images()
     test_credential_manager()
     test_template_docker()
