@@ -32,6 +32,7 @@ Coordinator probe 2026-10-26 (real runs in the worker image, codex 0.164.0, PO's
 - Allowlist: `chatgpt.com` is enough (PONG with only chatgpt.com + api.openai.com). Blocked and harmless: ab.chatgpt.com, *.oaiusercontent.com, github.com, api.github.com, files.openai.com.
 - Expired access token: not observed yet; with the placeholder the container cannot refresh, so expect an auth error -> message "run `codex` once on the host, then retry".
 Architect step skipped: the approach is proven by these runs.
+Coordinator real run 2026-10-26 (fresh sandbox, this worktree's code, PO's ChatGPT login, no API key stored): `omi run omi-agent-engineer TASK-001 --tool codex` -> `tool: codex (codex-default)`, DONE, slugify correct, sandbox tests pass, Usage row `| omi-agent-engineer | codex-default (codex) | medium | 115922 | 1040 | 110720 | 37s |`. Noted: the image has `python3` but no `python`, so codex could not run the config's literal `python tests/...` (it ran python3).
 ## Steps
 - plan started 2026-10-26 11:19
 - plan done 2026-10-26 11:19
