@@ -49,3 +49,4 @@
 - 2026-10-26 | Do the 3 carry-overs next: live stderr (TASK-060), fair architect baseline (TASK-061), real Codex e2e (TASK-062, needs PO key and API spend) | PO | - 
 - 2026-10-26 | Keep omi-agent-architect: same correctness as a plain opus prompt, -26% output, +48% cache, adds task split, scope gap and duplicate check | PO | TASK-061
 - 2026-10-26 | Codex uses the PO ChatGPT subscription via a short-lived access token (TASK-065), not an API key; refresh token never leaves the host | PO | TASK-065
+- 2026-10-26 | Claude worker agents follow the current Claude Code session login (access token read at run time; env override; stored token as fallback) | PO: "đi theo phiên, tương tự như codex" | TASK-067
