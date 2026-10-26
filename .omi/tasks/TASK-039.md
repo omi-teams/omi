@@ -7,7 +7,7 @@ scope: .omi/agents/**, .omi/skills/**, src/omi/template/**, .claude/skills/**, t
 role: omi-agent-engineer
 skills: []
 workflow: omi-flow-feature
-step:
+step: build
 ---
 ## Goal
 Close the review carry-overs left by earlier tasks. The baseline evaluation moved to TASK-057 (PO, 2026-10-26).
@@ -24,3 +24,9 @@ Done:
 Not done:
 Tests:
 Next: TASK-057
+Input: the 3 Coordinator commits are in `.omi/tasks/TASK-039.commits.patch` (git does not work in the container; the Coordinator deletes this file before merge). The 7 roles: omi-agent-architect, -designer-ui, -researcher, -security-reviewer, -qa-tester, -devops, -docs-writer.
+
+## Steps
+- plan started 2026-10-26 10:16
+- plan done 2026-10-26 10:16
+- build started 2026-10-26 10:16

@@ -1,0 +1,184 @@
+### commit 8bece61 chore: let the Coordinator start the PO-picked task (omi-task model-invocable)
+
+
+diff --git a/.claude/skills/omi-task/SKILL.md b/.claude/skills/omi-task/SKILL.md
+index 80bb5ae..575988a 100644
+--- a/.claude/skills/omi-task/SKILL.md
++++ b/.claude/skills/omi-task/SKILL.md
+@@ -2,7 +2,6 @@
+ name: omi-task
+ description: Run one OMI task end to end - worktree, engineer in the Docker worker, review, PR, CI, merge into development.
+ argument-hint: TASK-NNN
+-disable-model-invocation: true
+ ---
+ Task: $ARGUMENTS. If empty, propose the `next` task from `python -m omi status` and wait for the PO.
+ 
+diff --git a/.omi/decisions.md b/.omi/decisions.md
+index 7fc065a..f1f43ab 100644
+--- a/.omi/decisions.md
++++ b/.omi/decisions.md
+@@ -24,3 +24,4 @@
+ - 2026-10-25 | Reject skill `resume`: duplicates omi-task step 2 (read Checkpoint, verify with git status/log) and the engineer prompt step 4; keep brainstorm-ac (per-requirement criteria, not whole-product omi-idea), task-brief, change-request, lean-implementation | TASK-023 criterion: no duplicates of omi-idea/omi-task | TASK-023
+ - 2026-10-25 | Naming rule: typed omi- names - skills omi-skill-<n>, agents omi-agent-<n>, workflows omi-flow-<n>; PO commands omi-idea/task/release/status unchanged; enforced by validators (TASK-046) | PO wants kind and ownership obvious in any list, no collision with PO commands | TASK-046
+ - 2026-10-25 | Reject Vercel web-design-guidelines as a skill source; UI UX Pro Max stays reference-only | Vercel skill only fetches its rules from a URL at runtime and the repo has no LICENSE file; UI UX Pro Max license unknown, nothing copied | TASK-026
++- 2026-10-25 | omi-task is model-invocable | the PO's AskUserQuestion pick is the approval; the Coordinator starts the chosen task without the PO typing /omi-task. omi-release stays PO-typed | PO chat
+diff --git a/src/omi/template/dot-claude/skills/omi-task/SKILL.md b/src/omi/template/dot-claude/skills/omi-task/SKILL.md
+index 80bb5ae..575988a 100644
+--- a/src/omi/template/dot-claude/skills/omi-task/SKILL.md
++++ b/src/omi/template/dot-claude/skills/omi-task/SKILL.md
+@@ -2,7 +2,6 @@
+ name: omi-task
+ description: Run one OMI task end to end - worktree, engineer in the Docker worker, review, PR, CI, merge into development.
+ argument-hint: TASK-NNN
+-disable-model-invocation: true
+ ---
+ Task: $ARGUMENTS. If empty, propose the `next` task from `python -m omi status` and wait for the PO.
+ 
+### commit 94f3458 chore: omi-status offers the next task as a pick-list
+
+
+diff --git a/.claude/skills/omi-status/SKILL.md b/.claude/skills/omi-status/SKILL.md
+index eb668e8..01d8998 100644
+--- a/.claude/skills/omi-status/SKILL.md
++++ b/.claude/skills/omi-status/SKILL.md
+@@ -6,4 +6,4 @@ allowed-tools: Bash(python -m omi status)
+ ---
+ !`python -m omi status`
+ 
+-Show the status above to the PO verbatim in a code block. Add nothing unless asked.
++Show the status above to the PO verbatim in a code block. Then ask what next with the AskUserQuestion pick-list: start the `next` task (recommended), another planned task, or stop. On a pick, run `omi-task <ID>` yourself; the pick is the approval.
+diff --git a/.omi/decisions.md b/.omi/decisions.md
+index f1f43ab..3b84ec3 100644
+--- a/.omi/decisions.md
++++ b/.omi/decisions.md
+@@ -25,3 +25,4 @@
+ - 2026-10-25 | Naming rule: typed omi- names - skills omi-skill-<n>, agents omi-agent-<n>, workflows omi-flow-<n>; PO commands omi-idea/task/release/status unchanged; enforced by validators (TASK-046) | PO wants kind and ownership obvious in any list, no collision with PO commands | TASK-046
+ - 2026-10-25 | Reject Vercel web-design-guidelines as a skill source; UI UX Pro Max stays reference-only | Vercel skill only fetches its rules from a URL at runtime and the repo has no LICENSE file; UI UX Pro Max license unknown, nothing copied | TASK-026
+ - 2026-10-25 | omi-task is model-invocable | the PO's AskUserQuestion pick is the approval; the Coordinator starts the chosen task without the PO typing /omi-task. omi-release stays PO-typed | PO chat
++- 2026-10-25 | omi-status ends with a next-task pick-list | the PO picks instead of typing omi-task | PO chat
+diff --git a/src/omi/template/dot-claude/skills/omi-status/SKILL.md b/src/omi/template/dot-claude/skills/omi-status/SKILL.md
+index eb668e8..01d8998 100644
+--- a/src/omi/template/dot-claude/skills/omi-status/SKILL.md
++++ b/src/omi/template/dot-claude/skills/omi-status/SKILL.md
+@@ -6,4 +6,4 @@ allowed-tools: Bash(python -m omi status)
+ ---
+ !`python -m omi status`
+ 
+-Show the status above to the PO verbatim in a code block. Add nothing unless asked.
++Show the status above to the PO verbatim in a code block. Then ask what next with the AskUserQuestion pick-list: start the `next` task (recommended), another planned task, or stop. On a pick, run `omi-task <ID>` yourself; the pick is the approval.
+### commit e7a1bfb chore: reviewer skip becomes a fixed path rule
+
+
+diff --git a/.claude/skills/omi-task/SKILL.md b/.claude/skills/omi-task/SKILL.md
+index 575988a..8a334ba 100644
+--- a/.claude/skills/omi-task/SKILL.md
++++ b/.claude/skills/omi-task/SKILL.md
+@@ -14,7 +14,7 @@ The main checkout stays on `development`. `<wt>` is `../<repo-name>.wt/<ID>`.
+    If it stops because Docker is not running or no token is found, tell the PO (token: `python -m omi token set`) and stop. There is no host fallback.
+ 4. Check the diff before committing: `git -C <wt> status` and `git -C <wt> diff`. `omi run` prints `OUT OF SCOPE: <path>` (exit 3) for changes outside `scope`. Refuse those, and always refuse changes to `.gitattributes`, `.gitmodules` or any `.git*` path unless the scope names it: `git -C <wt> checkout -- <path>` or delete the new file. Then `git -C <wt> add -A` and commit on the host with the engineer's suggested conventional message.
+ 5. Handle the engineer's result:
+-   - `DONE`: run `python -m omi run omi-agent-reviewer <ID>` (fresh instance in a read-only container; it first runs tests, scope and skills checks and, if one fails, reports it instead of starting: treat that as a fix round; skip it for docs-only or `.omi/`-only changes).
++   - `DONE`: run `python -m omi run omi-agent-reviewer <ID>` (fresh instance in a read-only container; it first runs tests, scope and skills checks and, if one fails, reports it instead of starting: treat that as a fix round; skip it only by the path rule in AGENTS.md Quota rules).
+    - Review `FAIL`: write the findings under `## Checkpoint` in `<wt>`'s task file, commit, and run step 3 again. After 2 failed fix rounds, ask the PO.
+    - `NEEDS SCOPE`: if it fits the task goal, widen `scope` in the task file, commit it on `development` too (the scope is read from there), and rerun. Otherwise ask the PO.
+ 6. On PASS, set `status: done` in `<wt>`'s task file and commit. Then:
+diff --git a/.omi/agents/omi-agent-qa-tester.md b/.omi/agents/omi-agent-qa-tester.md
+index ab5b172..518223a 100644
+--- a/.omi/agents/omi-agent-qa-tester.md
++++ b/.omi/agents/omi-agent-qa-tester.md
+@@ -8,7 +8,7 @@ summary: Runs a task's acceptance criteria as checks and reports pass/fail with
+ ---
+ You test one task. Input: the task file path and the worktree path. You did not write this code.
+ 
+-Use when: a task has runnable acceptance criteria (tests, CLI behaviour, a web flow). Do not use for docs-only or `.omi/`-only changes (skip, as the reviewer is), for code review (reviewer) or security review (security-reviewer), or to fix failures.
++Use when: a task has runnable acceptance criteria (tests, CLI behaviour, a web flow). Do not use when the reviewer is skipped (path rule in AGENTS.md), for code review (reviewer) or security review (security-reviewer), or to fix failures.
+ 
+ 1. Read the task's acceptance criteria and only the skill files the prompt lists (omi-skill-web-qa for web changes).
+ 2. Turn each criterion into a check and run it: the test suite, the CLI command, or the browser flow. Record the command and its real output.
+diff --git a/.omi/agents/omi-agent-security-reviewer.md b/.omi/agents/omi-agent-security-reviewer.md
+index 432e9df..c27b955 100644
+--- a/.omi/agents/omi-agent-security-reviewer.md
++++ b/.omi/agents/omi-agent-security-reviewer.md
+@@ -8,7 +8,7 @@ summary: Independent read-only security review of one task diff and of CI/agent
+ ---
+ You review one change for security. Input: the task file path, the worktree path and the diff file (`Diff:`). You did not write this code.
+ 
+-Use when: the diff touches code, dependencies, or `.github/workflows` / agent config. Use model opus (the Coordinator sets it) when the diff touches auth, payment or secrets. Do not use for docs-only or `.omi/`-only changes (skip, as the reviewer is), for style or correctness review (reviewer), or to fix anything.
++Use when: the diff touches code, dependencies, or `.github/workflows` / agent config. Use model opus (the Coordinator sets it) when the diff touches auth, payment or secrets. Do not use when the reviewer is skipped (path rule in AGENTS.md), for style or correctness review (reviewer), or to fix anything.
+ 
+ 1. Read the diff, then only the surrounding code it needs and the skill files the prompt lists (default: omi-skill-diff-security-review for code, omi-skill-ci-workflow-audit for workflows).
+ 2. Verify each suspicion before reporting it: trace the input to the sink, run the test or command that shows it, or cite the exact config line. Unverified suspicions go under `UNVERIFIED`, not findings.
+diff --git a/.omi/decisions.md b/.omi/decisions.md
+index 3b84ec3..a6d3358 100644
+--- a/.omi/decisions.md
++++ b/.omi/decisions.md
+@@ -26,3 +26,4 @@
+ - 2026-10-25 | Reject Vercel web-design-guidelines as a skill source; UI UX Pro Max stays reference-only | Vercel skill only fetches its rules from a URL at runtime and the repo has no LICENSE file; UI UX Pro Max license unknown, nothing copied | TASK-026
+ - 2026-10-25 | omi-task is model-invocable | the PO's AskUserQuestion pick is the approval; the Coordinator starts the chosen task without the PO typing /omi-task. omi-release stays PO-typed | PO chat
+ - 2026-10-25 | omi-status ends with a next-task pick-list | the PO picks instead of typing omi-task | PO chat
++- 2026-10-25 | reviewer skip is a fixed path rule (docs/**, .omi/tasks/**, .omi/decisions.md only) | TASK-029..031 skipped review although they changed agent prompts and src/omi/template; the old 'docs or .omi/' wording left it to judgment. Those 3 are left to TASK-039 | PO chat
+diff --git a/AGENTS.md b/AGENTS.md
+index d1cb451..eff7e3e 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -41,7 +41,7 @@ On Codex use the same `python -m omi run` command (it runs `codex exec` itself w
+ - Codex: `codex exec -m <model> -c model_reasoning_effort=<level>`.
+ - Hand agents the task file path, not pasted context.
+ - `omi run` records real token usage in each task's `## Usage` table; `omi status` shows totals and review rounds.
+-- Skip the reviewer for changes touching only docs or `.omi/`; CI still runs.
++- Skip the reviewer only when every path in `git -C <wt> diff --name-only development` is under `docs/**`, `.omi/tasks/**` or is `.omi/decisions.md`; anything else (code, `.omi/agents`, `.omi/skills`, `.claude`, `src/omi/template`) gets the reviewer. CI still runs.
+ - Don't re-read files already in context. Don't rerun tests the engineer ran unless code changed since.
+ - Reports to the PO: at most 10 lines, results first.
+ - Before stopping, or when the PO says quota is low: update the task checkpoint first.
+diff --git a/src/omi/template/AGENTS.md b/src/omi/template/AGENTS.md
+index d1cb451..eff7e3e 100644
+--- a/src/omi/template/AGENTS.md
++++ b/src/omi/template/AGENTS.md
+@@ -41,7 +41,7 @@ On Codex use the same `python -m omi run` command (it runs `codex exec` itself w
+ - Codex: `codex exec -m <model> -c model_reasoning_effort=<level>`.
+ - Hand agents the task file path, not pasted context.
+ - `omi run` records real token usage in each task's `## Usage` table; `omi status` shows totals and review rounds.
+-- Skip the reviewer for changes touching only docs or `.omi/`; CI still runs.
++- Skip the reviewer only when every path in `git -C <wt> diff --name-only development` is under `docs/**`, `.omi/tasks/**` or is `.omi/decisions.md`; anything else (code, `.omi/agents`, `.omi/skills`, `.claude`, `src/omi/template`) gets the reviewer. CI still runs.
+ - Don't re-read files already in context. Don't rerun tests the engineer ran unless code changed since.
+ - Reports to the PO: at most 10 lines, results first.
+ - Before stopping, or when the PO says quota is low: update the task checkpoint first.
+diff --git a/src/omi/template/dot-claude/skills/omi-task/SKILL.md b/src/omi/template/dot-claude/skills/omi-task/SKILL.md
+index 575988a..8a334ba 100644
+--- a/src/omi/template/dot-claude/skills/omi-task/SKILL.md
++++ b/src/omi/template/dot-claude/skills/omi-task/SKILL.md
+@@ -14,7 +14,7 @@ The main checkout stays on `development`. `<wt>` is `../<repo-name>.wt/<ID>`.
+    If it stops because Docker is not running or no token is found, tell the PO (token: `python -m omi token set`) and stop. There is no host fallback.
+ 4. Check the diff before committing: `git -C <wt> status` and `git -C <wt> diff`. `omi run` prints `OUT OF SCOPE: <path>` (exit 3) for changes outside `scope`. Refuse those, and always refuse changes to `.gitattributes`, `.gitmodules` or any `.git*` path unless the scope names it: `git -C <wt> checkout -- <path>` or delete the new file. Then `git -C <wt> add -A` and commit on the host with the engineer's suggested conventional message.
+ 5. Handle the engineer's result:
+-   - `DONE`: run `python -m omi run omi-agent-reviewer <ID>` (fresh instance in a read-only container; it first runs tests, scope and skills checks and, if one fails, reports it instead of starting: treat that as a fix round; skip it for docs-only or `.omi/`-only changes).
++   - `DONE`: run `python -m omi run omi-agent-reviewer <ID>` (fresh instance in a read-only container; it first runs tests, scope and skills checks and, if one fails, reports it instead of starting: treat that as a fix round; skip it only by the path rule in AGENTS.md Quota rules).
+    - Review `FAIL`: write the findings under `## Checkpoint` in `<wt>`'s task file, commit, and run step 3 again. After 2 failed fix rounds, ask the PO.
+    - `NEEDS SCOPE`: if it fits the task goal, widen `scope` in the task file, commit it on `development` too (the scope is read from there), and rerun. Otherwise ask the PO.
+ 6. On PASS, set `status: done` in `<wt>`'s task file and commit. Then:
+diff --git a/src/omi/template/dot-omi/agents/omi-agent-qa-tester.md b/src/omi/template/dot-omi/agents/omi-agent-qa-tester.md
+index ab5b172..518223a 100644
+--- a/src/omi/template/dot-omi/agents/omi-agent-qa-tester.md
++++ b/src/omi/template/dot-omi/agents/omi-agent-qa-tester.md
+@@ -8,7 +8,7 @@ summary: Runs a task's acceptance criteria as checks and reports pass/fail with
+ ---
+ You test one task. Input: the task file path and the worktree path. You did not write this code.
+ 
+-Use when: a task has runnable acceptance criteria (tests, CLI behaviour, a web flow). Do not use for docs-only or `.omi/`-only changes (skip, as the reviewer is), for code review (reviewer) or security review (security-reviewer), or to fix failures.
++Use when: a task has runnable acceptance criteria (tests, CLI behaviour, a web flow). Do not use when the reviewer is skipped (path rule in AGENTS.md), for code review (reviewer) or security review (security-reviewer), or to fix failures.
+ 
+ 1. Read the task's acceptance criteria and only the skill files the prompt lists (omi-skill-web-qa for web changes).
+ 2. Turn each criterion into a check and run it: the test suite, the CLI command, or the browser flow. Record the command and its real output.
+diff --git a/src/omi/template/dot-omi/agents/omi-agent-security-reviewer.md b/src/omi/template/dot-omi/agents/omi-agent-security-reviewer.md
+index 432e9df..c27b955 100644
+--- a/src/omi/template/dot-omi/agents/omi-agent-security-reviewer.md
++++ b/src/omi/template/dot-omi/agents/omi-agent-security-reviewer.md
+@@ -8,7 +8,7 @@ summary: Independent read-only security review of one task diff and of CI/agent
+ ---
+ You review one change for security. Input: the task file path, the worktree path and the diff file (`Diff:`). You did not write this code.
+ 
+-Use when: the diff touches code, dependencies, or `.github/workflows` / agent config. Use model opus (the Coordinator sets it) when the diff touches auth, payment or secrets. Do not use for docs-only or `.omi/`-only changes (skip, as the reviewer is), for style or correctness review (reviewer), or to fix anything.
++Use when: the diff touches code, dependencies, or `.github/workflows` / agent config. Use model opus (the Coordinator sets it) when the diff touches auth, payment or secrets. Do not use when the reviewer is skipped (path rule in AGENTS.md), for style or correctness review (reviewer), or to fix anything.
+ 
+ 1. Read the diff, then only the surrounding code it needs and the skill files the prompt lists (default: omi-skill-diff-security-review for code, omi-skill-ci-workflow-audit for workflows).
+ 2. Verify each suspicion before reporting it: trace the input to the sink, run the test or command that shows it, or cite the exact config line. Unverified suspicions go under `UNVERIFIED`, not findings.
