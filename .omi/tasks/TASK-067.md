@@ -23,6 +23,7 @@ The PO uses several Claude accounts. Worker agents used the token stored by `omi
 Done: claude_secret() (env, session, stored), run prints `claude auth: <source>`, expiry note, no-token message, tests, README.
 Not done: real run proof (Coordinator).
 Tests: python3 tests/test_omi.py ok.
+Round 2 done: (1) run_role calls claude_auth() once for claude (no second read); (2) claude_auth() prints the expiry note and `claude auth: <source>`, also after a codex->claude quota switch; (3) test_review_round_flow runs a session-login run and asserts `claude auth: session` with no token or refresh value in output. python3 tests/test_omi.py exit 0.
 Next: Coordinator real run.
 Coordinator probe 2026-10-26: the session access token from ~/.claude/.credentials.json passed as CLAUDE_CODE_OAUTH_TOKEN into the worker image made `claude -p "Reply with exactly: PONG"` answer PONG (exit 0). The file has claudeAiOauth.{accessToken, expiresAt (ms), refreshToken, refreshTokenExpiresAt, scopes, subscriptionType, ...}. Architect step skipped: same pattern as TASK-065, proven by this probe.
 
@@ -58,9 +59,27 @@ Round 2 (review notes): (1) run_role: call claude_secret() once for claude (no s
 > AC: Expired session is skipped with the note and falls through to stored; the no-token message names the option ✓ The note text is exact. The test covers both expired → stored and expired with nothing stored, where the value is None and the note is kept. The no-token `sys.exit` message includes the Claude Code login and the note.
 > [... truncated ...]
 > AC: Real run proof and README note ◐ The README "Lấy và lưu key" now says agents follow the Claude Code login by default. The real-run proof (`claude auth: session`) is still open and is the Coordinator's job.
+2026-10-26 11:52 omi-agent-engineer (claude):
+> DONE
+> 
+> Files changed: `src/omi/__init__.py`, `tests/test_omi.py`, `.omi/tasks/TASK-067.md` (Checkpoint).
+> 
+> Round 2 review notes, all addressed:
+> 1. `run_role` now reads the Claude secret once via a new `claude_auth()` helper. The codex path still uses `tool_secret`.
+> 2. `claude_auth()` prints the expiry note and `claude auth: <source>`. It is also used after a codex→claude quota switch, so that path prints the line too.
+> 3. `test_review_round_flow` runs a session-login case with a temp `CLAUDE_CONFIG_DIR`. It asserts `claude auth: session` and that neither the access nor the refresh token appears in the output.
+> 
+> Test: `python3 tests/test_omi.py` exits 0.
+> 
+> Suggested commit: `feat(run): claude agents follow the current Claude Code session login`
+> 
+> Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>
+> 
+> Open: the Coordinator's real run (`claude auth: session`) is still needed. I did not touch the README in this round.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 20 | 5879 | 287406 | 77s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 2052 | 95998 | 30s | - | PASS be878b3 |
+| omi-agent-engineer | claude-haiku-5-5 | low | 18 | 4985 | 242737 | 59s | 1/1 omi-skill-windows-powershell | - |

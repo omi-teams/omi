@@ -978,6 +978,16 @@ def claude_secret():
     return stored, "stored", note
 
 
+def claude_auth():
+    """claude_secret() as (env name, value, problem), printing the source and any expiry note once."""
+    val, source, note = claude_secret()
+    if note:
+        print(note)
+    if val:
+        print(f"claude auth: {source}")
+    return TOKEN_ENV, val, note
+
+
 def tool_secret(tool):
     """(env name, value, problem) for a tool; codex: stored API key, env OPENAI_API_KEY, then the host ChatGPT login."""
     if tool == "claude":
@@ -1631,14 +1641,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
         sys.exit(f"unknown tool `{tool}`: claude or codex. Nothing changed.")
     other = "codex" if tool == "claude" else "claude"
     need_docker()  # read roles too: no host fallback
-    secret = tool_secret(tool)
-    if tool == "claude":
-        secret_value, source, note = claude_secret()
-        secret = (TOKEN_ENV, secret_value, note)
-        if note:
-            print(note)
-        if secret_value:
-            print(f"claude auth: {source}")
+    secret = claude_auth() if tool == "claude" else tool_secret(tool)
     if not secret[1]:
         if tool == "codex":
             sys.exit(f"no codex credentials: run `omi token set --tool codex` (Windows) or set {CODEX_ENV}, "
@@ -1752,7 +1755,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
         print(f"tool: {tool} ({models[tool]})")
         r, result, done = attempt(tool, secret)
         if quota_hit(tool, r.stdout, r.returncode):
-            other_secret, problem = tool_secret(other), None
+            other_secret, problem = (claude_auth() if other == "claude" else tool_secret(other)), None
             try:
                 models[other] = resolve_model(main, want_model, other)
             except SystemExit:  # a full ID of one tool: the other uses the role's alias, else its default

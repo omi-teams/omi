@@ -1457,6 +1457,15 @@ def test_review_round_flow():
             sys.stdout = io.StringIO()
             omi.run_role("omi-agent-engineer", wt, task)
             printed = sys.stdout.getvalue()
+            # no env token: the host session login is used, and only its access token goes in
+            cred = Path(omi.os.environ["CLAUDE_CONFIG_DIR"]) / ".credentials.json"
+            cred.write_text(json.dumps({"claudeAiOauth": {"accessToken": "sess-tok", "refreshToken": "REAL-REFRESH",
+                                                          "expiresAt": int((omi.time.time() + 3600) * 1000)}}))
+            omi.os.environ.pop(omi.TOKEN_ENV, None)
+            sys.stdout = io.StringIO()
+            omi.run_role("omi-agent-engineer", wt, task)
+            session_printed = sys.stdout.getvalue()
+            cred.unlink()
         finally:
             sys.stdout = saved
             omi.subprocess.run, omi.shutil.which, omi.main_checkout, tok = real
@@ -1464,6 +1473,8 @@ def test_review_round_flow():
             if tok is not None:
                 omi.os.environ[omi.TOKEN_ENV] = tok
         assert printed.strip() == "claude auth: env\ntool: claude (claude-sonnet-5-5)\n" + run_raw, printed
+        assert session_printed.strip() == "claude auth: session\ntool: claude (claude-sonnet-5-5)\n" + run_raw, session_printed
+        assert "sess-tok" not in session_printed and "REAL-REFRESH" not in session_printed
 
 
 def test_tool_choice_and_quota_switch():
