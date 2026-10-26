@@ -55,6 +55,8 @@ Review round 2 FAIL (escalated to opus/high by PO):
 - A test that protected() keeps PLAN-001 and updates PLAN-000.
 Note: the Windows run after review round 1 is recorded above (rc=0, ok).
 
+Coordinator host check after review round 2 fix: Windows `python tests/test_omi.py` -> rc=0; latest_tag on the real repo -> v0.2.0.
+
 ## Steps
 - plan started 2026-10-26 22:07
 - plan done 2026-10-26 22:07
