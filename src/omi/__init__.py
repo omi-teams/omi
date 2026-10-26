@@ -1405,7 +1405,7 @@ def repo_label(main):
     return re.sub(r"[^a-zA-Z0-9_.-]", "-", main.name.lower())
 
 
-CACHE_ENV = ("XDG_CACHE_HOME=/cache", "GOCACHE=/cache/go-build", "GOMODCACHE=/cache/go-mod",
+CACHE_ENV = ("XDG_CACHE_HOME=/cache", "GOCACHE=/cache/go-build", "GOMODCACHE=/cache/go-mod", "GOTMPDIR=/cache",
              "npm_config_cache=/cache/npm", "PIP_CACHE_DIR=/cache/pip")
 
 
@@ -1515,10 +1515,13 @@ def full_volumes(main):
                             "--format", "{{.Names}}"], capture_output=True, encoding="utf-8", errors="replace", timeout=10)
         for name in r.stdout.split() if r.returncode == 0 else []:
             d = subprocess.run(["docker", "exec", name, "df", "-P", "/cache", "/home/node"], capture_output=True, encoding="utf-8", errors="replace", timeout=10)
+            full = []
             for l in d.stdout.splitlines()[1:] if d.returncode == 0 else []:
                 f = l.split()
                 if len(f) >= 6 and f[4].endswith("%") and f[4][:-1].isdigit() and int(f[4][:-1]) > 90 and f[5] in ("/cache", "/home/node"):
-                    out.append(f"{name}: {f[5]} is {f[4]} full; raise worker.cache_mb / worker.tmp_mb in .omi/config.json")
+                    full.append(f"{f[5]} {f[4]}")
+            if full:
+                out.append(f"{name}: {', '.join(full)} full; raise worker.cache_mb / worker.tmp_mb in .omi/config.json")
     except (OSError, subprocess.TimeoutExpired):
         pass
     return out

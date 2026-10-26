@@ -26,10 +26,10 @@ Gaps #3 #5 #15 #17 #18 #22 (omi-board session 97bfceb1): Go tests and builds fai
 - [ ] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
-Done: original implementation and all review round 1 fixes: full_volumes uses timeout=10 for docker ps/exec and catches TimeoutExpired/OSError; worker_sizes rejects non-object worker values with the existing clean error; test_hooks verifies configured cache_mb reaches the hook docker argv.
+Done: original implementation, review round 1 fixes, and both review round 2 fixes. CACHE_ENV now includes GOTMPDIR=/cache so Go temporary test binaries use the exec-allowed mount. full_volumes combines all over-90% mounts into one line per container.
 Not done: Windows host test run and real Go binary execution from /cache (Coordinator checks).
-Tests: python3 tests/test_omi.py PASS on Linux (exit 0, ok). Regression tests cover invalid worker objects/sizes, both Docker timeout/error stages, timeout kwargs, and hook cache size propagation. The new invalid-worker regression failed with AttributeError before the fix.
-Next: Coordinator review, Windows suite and real Go sandbox check, then commit.
+Tests: python3 tests/test_omi.py PASS on Linux (exit 0, ok). Regression coverage asserts GOTMPDIR in docker argv and a single combined warning when /cache is 95% and /home/node is 92%; /home/node at 90% stays excluded. Tests failed before implementation. Existing mount, config, hook, and Docker error/timeout tests pass.
+Next: Coordinator review, Windows suite and real Go sandbox check, then host commit. No commit made in the worker.
 
 Review round 1 PASS with fixes (do these, nothing else):
 - full_volumes: add timeout=10 to the docker ps and docker exec calls; catch subprocess.TimeoutExpired with OSError.
@@ -197,6 +197,60 @@ Review round 2 FAIL (do these, nothing else):
 > AC: Toolchain example and TASK-001 guidance ✓ Both Dockerfiles and both skill copies contain the required additions.
 > AC: One status line per full container ✗ Fake subprocess reproduced two lines for one container when both mounts exceed 90%.
 > AC: Linux and Windows tests pass ✗ `python3 tests/test_omi.py` passed on Linux, exit 0; Windows run remains pending.
+2026-10-26 21:20 omi-agent-engineer (codex):
+> DONE — both review round 2 fixes implemented.
+> Files: `src/omi/__init__.py`, `tests/test_omi.py`, `.omi/tasks/TASK-076.md`.
+> Added `GOTMPDIR=/cache`; combined volume warnings into one line per container.
+> Suggested commit: `fix(worker): route Go temp binaries to cache and combine volume warnings`
+> Tests: `python3 tests/test_omi.py` PASS on Linux.
+> Open issues: Coordinator’s Windows tests and real Go sandbox check remain pending. No commit made.
+2026-10-26 21:20 hook post-run passed:
+> Conflict. The container name "/tmpc_1q0yen-TASK-001-engineer-codex-gpt-x-medium-142015" is already in useBind for 0.0.0.0:8080 failed: port is already in usewrote /tmp/tmpkbsljrr7/.omi/skills/CATALOG.md (2 skills)
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .omi/agents/CATALOG.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/config.json
+> create .omi/decisions.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/CATALOG.md
+> create .omi/plans/PLAN-000.md
+> create .omi/references/CATALOG.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/CATALOG.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -206,3 +260,4 @@ Review round 2 FAIL (do these, nothing else):
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 2556 | 82201 | 57s | - | PASS 1a20a8c |
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 229697 | 2011 | 211200 | 92s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 163805 | 1479 | 131200 | 62s | - | FAIL 35319e8 |
+| omi-agent-engineer | gpt-6.1-sol (codex) | medium | 295909 | 2112 | 256896 | 110s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |

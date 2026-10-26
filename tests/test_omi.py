@@ -1052,7 +1052,7 @@ def test_worker_cache_tmpfs_and_full_volumes():
     a = omi.worker_argv(Path("/w"), "img", ["x"])
     assert "/cache:rw,exec,nosuid,uid=1000,gid=1000,size=2048m" in a and "/tmp:rw,noexec,nosuid,size=512m" in a
     assert "/home/node:rw,noexec,nosuid,uid=1000,gid=1000,size=512m" in a
-    for kv in ("XDG_CACHE_HOME=/cache", "GOCACHE=/cache/go-build", "GOMODCACHE=/cache/go-mod", "npm_config_cache=/cache/npm", "PIP_CACHE_DIR=/cache/pip"):
+    for kv in ("XDG_CACHE_HOME=/cache", "GOCACHE=/cache/go-build", "GOMODCACHE=/cache/go-mod", "GOTMPDIR=/cache", "npm_config_cache=/cache/npm", "PIP_CACHE_DIR=/cache/pip"):
         assert a[a.index(kv) - 1] == "-e", kv
     assert "size=64m" in " ".join(omi.worker_argv(Path("/w"), "img", ["x"], cache_mb=64))
     with tempfile.TemporaryDirectory() as d:
@@ -1069,14 +1069,19 @@ def test_worker_cache_tmpfs_and_full_volumes():
                 assert str(e) == '"worker.cache_mb" and "worker.tmp_mb" in .omi/config.json must be positive integers. Nothing changed.'
         real = omi.subprocess.run
 
+        home_used = 10
+
         def fake(argv, **kw):
             assert kw["timeout"] == 10
             out = {"ps": "c1\n", "exec": "Filesystem 1024-blocks Used Available Capacity Mounted on\n"
-                   "tmpfs 100 95 5 95% /cache\ntmpfs 100 10 90 10% /home/node\n"}[argv[1]]
+                   f"tmpfs 100 95 5 95% /cache\ntmpfs 100 {home_used} {100 - home_used} {home_used}% /home/node\n"}[argv[1]]
             return omi.subprocess.CompletedProcess(argv, 0, out, "")
         omi.subprocess.run = fake
         try:
-            lines = omi.full_volumes(Path(d))
+            for home_used in (10, 90, 92):
+                lines = omi.full_volumes(Path(d))
+                mounts = "/cache 95%, /home/node 92%" if home_used == 92 else "/cache 95%"
+                assert lines == [f"c1: {mounts} full; raise worker.cache_mb / worker.tmp_mb in .omi/config.json"], lines
             for stage in ("ps", "exec"):
                 for error in (OSError, omi.subprocess.TimeoutExpired):
                     def unavailable(argv, **kw):
@@ -1090,7 +1095,6 @@ def test_worker_cache_tmpfs_and_full_volumes():
                     assert omi.full_volumes(Path(d)) == []
         finally:
             omi.subprocess.run = real
-        assert len(lines) == 1 and lines[0].startswith("c1: /cache is 95% full"), lines
 
 
 def test_network_allowlist():
