@@ -75,6 +75,8 @@ Review round 5 FAIL (PO chose to fix all four open notes):
 - `upgrade --to vX.Y.Z` (without --check) installs that tag without calling `git ls-remote`.
 - A repeat `--apply` that would overwrite an existing `<path>.omi-new` prints `replaced stale <path>.omi-new` so the PO notices.
 
+Coordinator host check after review round 5 fix: Windows `python tests/test_omi.py` -> rc=0, ok.
+
 ## Steps
 - plan started 2026-10-26 22:07
 - plan done 2026-10-26 22:07
