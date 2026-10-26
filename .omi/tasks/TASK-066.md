@@ -21,6 +21,7 @@ Bug: in TASK-064 the engineer wrote `step: done` into the task frontmatter, whic
 Done: revert_front + REVERTED output in run_role (src/omi/__init__.py); test in tests/test_omi.py
 Not done: -
 Tests: python3 tests/test_omi.py ok
+Round 2: revert_front now restores raw original lines (same position, comments kept), restores lost/deleted frontmatter as `REVERTED: frontmatter`; unit test covers step/added/removed/lost/deleted. Tests ok.
 Next: review/commit
 
 Review round 1 FAIL:
@@ -57,9 +58,19 @@ Review round 1 FAIL:
 > AC: After an agent run, `omi run` reverts changes to the six fields and prints `REVERTED: <field>`, keeping the rest of the file ✓ `revert_front` plus the `finally` block in `run_role`. Covers changed, added and removed fields, and skips read roles. The test confirms this for `status`.
 > AC: A test where an agent run edits `step:` and the Checkpoint ✗ The test edits `status:` instead. `step` is not exercised.
 > AC: `python tests/test_omi.py` passes ✓ I ran it and it printed `ok`.
+2026-10-26 11:36 omi-agent-engineer (claude):
+> DONE
+> - Files changed: `src/omi/__init__.py`, `tests/test_omi.py`, `.omi/tasks/TASK-066.md` (Checkpoint).
+> - The run now snapshots the whole task file before the agent runs. `revert_front` puts the original raw lines of the six owned fields back at their original position, so `# comments` and order are kept. It prints `REVERTED: <field>` for each.
+> - If the agent deletes the task file or removes the leading `---`, the original frontmatter or file is restored and `REVERTED: frontmatter` is printed.
+> - New direct `revert_front` test covers an edited `step`, an added field, a removed field, lost frontmatter and a deleted file. The earlier run-level test (`status` plus Checkpoint) is unchanged.
+> - Tests: `python3 tests/test_omi.py` prints `ok`.
+> - Suggested commit: `fix(run): restore Coordinator-owned task frontmatter after agent runs`
+> - Open issues: none. I didn't add a run-level test for `step:`, because a `step:` in that test's fake worktree makes `run_role` load the workflow, which fails there on missing skills. The direct test covers `step` instead.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 28 | 4356 | 408440 | 57s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1837 | 84559 | 32s | - | FAIL d614202 |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 3619 | 219439 | 47s | 1/1 omi-skill-debug-root-cause | - |

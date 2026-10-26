@@ -1542,6 +1542,18 @@ def test_tool_choice_and_quota_switch():
             assert "REVERTED: status" in sys.stdout.getvalue() and "REVERTED: scope" not in sys.stdout.getvalue()
             assert omi.parse(task.read_text())["status"] == "in-progress" and "Done: x" in task.read_text()
             task.write_text(task.read_text().replace("status: in-progress\n", ""), encoding="utf-8")
+            # revert_front: step edited, a field added, a field removed; comments and order kept; lost frontmatter restored
+            t2 = task.with_name("T2.md")
+            orig = "---\nid: T\nstep: fix  # keep\nscope: src/**\nrole: r\n---\n## Checkpoint\nold\n"
+            t2.write_text(orig, encoding="utf-8")
+            t2.write_text("---\nid: T\nstep: done\nstatus: done\n---\n## Checkpoint\nnew\n", encoding="utf-8")
+            assert omi.revert_front(t2, orig) == ["step", "status", "scope", "role"]
+            assert t2.read_text() == "---\nid: T\nstep: fix  # keep\nscope: src/**\nrole: r\n---\n## Checkpoint\nnew\n"
+            t2.write_text("no front\n", encoding="utf-8")
+            assert omi.revert_front(t2, orig) == ["frontmatter"] and t2.read_text() == orig.split("---\n", 2)[0] + "---\nid: T\nstep: fix  # keep\nscope: src/**\nrole: r\n---\nno front\n"
+            t2.unlink()
+            assert omi.revert_front(t2, orig) == ["frontmatter"] and t2.read_text() == orig
+            t2.unlink()
             # unknown codex alias fails before any container
             try:
                 go(model="nope", tool="codex")
