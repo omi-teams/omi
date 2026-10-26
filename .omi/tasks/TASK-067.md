@@ -7,7 +7,7 @@ scope: src/omi/__init__.py, tests/**, README.md
 role: omi-agent-engineer
 skills: [omi-skill-windows-powershell]
 workflow: omi-flow-feature-sensitive
-step: review
+step: security
 ---
 ## Goal
 The PO uses several Claude accounts. Worker agents used the token stored by `omi token set` (made with `claude setup-token` under whatever account was logged in then), not the account of the current Claude Code session. Make agents follow the session, as Codex follows the host ChatGPT login (TASK-065).
@@ -37,6 +37,8 @@ Round 2 (review notes): (1) run_role: call claude_secret() once for claude (no s
 - build started 2026-10-26 11:49
 - build done 2026-10-26 11:50
 - review started 2026-10-26 11:50
+- review done 2026-10-26 11:53
+- security started 2026-10-26 11:53
 
 ## Reports
 2026-10-26 11:50 omi-agent-engineer (claude):
@@ -86,6 +88,14 @@ Round 2 (review notes): (1) run_role: call claude_secret() once for claude (no s
 > AC: `omi run` prints `claude auth: env|session|stored`, never the value; `omi status` and Codex are unaffected ✓ `claude_auth()` prints the source line and the expiry note. `run_role` calls it once, and the codex→claude quota-switch path calls it too. `test_review_round_flow` asserts `claude auth: env` and `claude auth: session`, and that `sess-tok` and `REAL-REFRESH` are absent from the output. `tool_secret` for codex is unchanged.
 > [... truncated ...]
 > AC: The Coordinator's real run and the README note ✓ The README "Lấy và lưu key" now says agents follow the Claude Code login by default and lists the order. The task file records the real run printing `claude auth: session`. I didn't re-run it here.
+2026-10-26 11:54 omi-agent-security-reviewer (claude):
+> ```
+> VERDICT: PASS
+> - No blocking issues. I traced the token flow: `claude_secret()` (src/omi/__init__.py:960) reads only `accessToken` and `expiresAt` and never reads the refresh token. `attempt()` (1676-1679) puts the value in the child environment, and `worker_argv` passes only `-e NAME`, so the value never appears in argv. `claude_auth()` (981) and the no-token exit (1649) print only the source name and the expiry note. `python3 tests/test_omi.py` exited 0.
+> - src/omi/__init__.py:222 On Windows the env token now overrides the stored token; before, the stored token won. | why: this changes what Windows users get | verified: code read; old `token()` at 923 checked the stored token first -> matches the AC ("explicit override"), so no fix needed; just be aware of it.
+> UNVERIFIED: The session OAuth token probably has broader scopes than a `setup-token` token (which covers inference only), and it is now exposed to the worker agent's environment. To confirm, compare the `scopes` field in `.credentials.json` with a setup-token's scopes and check that the worker's egress allowlist only allows Anthropic API hosts.
+> UNVERIFIED: A session token that expires in a few minutes is still accepted, so a long run could fail partway through. To confirm, start a run with `expiresAt` set to now + 60s.
+> ```
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -94,3 +104,4 @@ Round 2 (review notes): (1) run_role: call claude_secret() once for claude (no s
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 2052 | 95998 | 30s | - | PASS be878b3 |
 | omi-agent-engineer | claude-haiku-5-5 | low | 18 | 4985 | 242737 | 59s | 1/1 omi-skill-windows-powershell | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 4 | 1599 | 45167 | 25s | - | PASS 27b1a83 |
+| omi-agent-security-reviewer | claude-opus-5-5 | high | 12 | 2537 | 175990 | 41s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS 7827340 |
