@@ -664,6 +664,14 @@ def test_cli_correctness():
         finally:
             omi.test_command, omi.out_of_scope, omi.check_all_skills = real
         assert len(problems) == 1 and problems[0].startswith("test command failed to start: "), problems
+        # a nonexistent program in the configured command: shell exit 127/9009
+        cfg.write_text(json.dumps({"test": "no-such-prog-omi-xyz --run"}), encoding="utf-8")
+        omi.out_of_scope, omi.check_all_skills = lambda *a, **k: [], lambda wt: None
+        try:
+            problems = omi.deterministic_checks(root, root, "TASK-001")
+        finally:
+            omi.out_of_scope, omi.check_all_skills = real[1], real[2]
+        assert len(problems) == 1 and problems[0].startswith("test command failed to start: "), problems
         # #14 status hint on an empty `test`
         (root / ".omi" / "config.json").write_text('{"test": ""}')
         buf = io.StringIO()

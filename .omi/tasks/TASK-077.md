@@ -50,6 +50,8 @@ Review round 3 FAIL (PO chose one more small fix round):
 - deterministic_checks: with the configured test command run through a shell, a missing program gives exit 127 (sh/bash) or 9009 (cmd), not OSError. Those exit codes report `test command failed to start: <last stderr line>` instead of `tests failed`. Test with a real nonexistent program in the configured `test` command.
 Coordinator host check: Windows `python tests/test_omi.py` -> rc=0, ok (commit "fix(cli): preserve Windows cmd quoting...").
 
+Round 3 fix done: deterministic_checks reports `test command failed to start: <last stderr line>` for exit 127/9009; test with a real nonexistent configured program. Linux tests ok; Windows host run pending.
+
 ## Steps
 - plan started 2026-10-26 21:35
 - plan done 2026-10-26 21:35
@@ -261,6 +263,60 @@ Coordinator host check: Windows `python tests/test_omi.py` -> rc=0, ok (commit "
 > AC: review FAIL guard ✓ Tests verify refusal after FAIL and acceptance after subsequent PASS.
 > AC: push development instructions ✓ Root and template instructions updated and asserted.
 > AC: Linux and Windows tests ✗ Linux command passed (exit 0, `ok`); Windows run remains unverified.
+2026-10-26 21:55 omi-agent-engineer (claude):
+> DONE
+> - Files changed: `src/omi/__init__.py`, `tests/test_omi.py`, `.omi/tasks/TASK-077.md` (Checkpoint updated).
+> - `deterministic_checks` now reports `test command failed to start: <last stderr line>` when the shell returns exit 127 (sh/bash) or 9009 (cmd). It no longer reports `tests failed`.
+> - New test: the configured `test` command is `no-such-prog-omi-xyz --run`, run through the real shell. It asserts the "failed to start" message.
+> - Commit message: `fix(cli): report shell command-not-found as test command failed to start`
+> - Tests: `python3 tests/test_omi.py` printed `ok` on Linux. I did not run it on the Windows host, so that criterion is still open. The exit 9009 branch is untested.
+2026-10-26 21:55 hook post-run passed:
+> Conflict. The container name "/tmpbl5actym-TASK-001-engineer-codex-gpt-x-medium-145526" is already in useBind for 0.0.0.0:8080 failed: port is already in usewrote /tmp/tmpm6bfips4/.omi/skills/CATALOG.md (2 skills)
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .omi/agents/CATALOG.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/config.json
+> create .omi/decisions.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/CATALOG.md
+> create .omi/plans/PLAN-000.md
+> create .omi/references/CATALOG.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/CATALOG.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -270,3 +326,4 @@ Coordinator host check: Windows `python tests/test_omi.py` -> rc=0, ok (commit "
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 3379 | 101277 | 57s | - | PASS 6c89ea0 |
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 723076 | 4500 | 666240 | 223s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 317040 | 1543 | 276864 | 103s | - | FAIL 5474e5b |
+| omi-agent-engineer | claude-sonnet-5-5 | low | 14 | 1735 | 190814 | 47s | 1/2 omi-skill-lean-implementation | - |

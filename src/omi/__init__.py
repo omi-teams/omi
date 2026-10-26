@@ -1948,7 +1948,10 @@ def deterministic_checks(wt, main, tid):
     except OSError as e:
         problems.append(f"test command failed to start: {e}")
     else:
-        if r.returncode:
+        if r.returncode in (127, 9009):  # shell: command not found (sh/bash, cmd)
+            last = (r.stderr.strip().splitlines() or [f"exit {r.returncode}"])[-1]
+            problems.append(f"test command failed to start: {last}")
+        elif r.returncode:
             problems.append("tests failed:\n" + "\n".join((r.stdout + r.stderr).strip().splitlines()[-20:]))
     return problems
 
