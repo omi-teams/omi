@@ -36,6 +36,11 @@ Review round 1 PASS with fixes (do these, nothing else):
 - worker_sizes: a non-object "worker" value (e.g. null) must hit the same sys.exit message, not AttributeError.
 - test_hooks (or a small test): with worker.cache_mb in config, assert the size reaches the docker argv of run_hook.
 
+Review round 2 FAIL (do these, nothing else):
+- Add GOTMPDIR=/cache to CACHE_ENV: go test builds and runs test binaries under GOTMPDIR/TMPDIR, and /tmp is noexec.
+- full_volumes: one line per container even when both /cache and /home/node are over 90% (e.g. "c1: /cache 95%, /home/node 92% full; raise ...").
+- Ignore the "task file out of scope" finding: your own task file is always allowed.
+
 ## Steps
 - plan started 2026-10-26 21:07
 - plan done 2026-10-26 21:07
@@ -46,6 +51,10 @@ Review round 1 PASS with fixes (do these, nothing else):
 - review started 2026-10-26 21:12
 - review failed 2026-10-26 21:14
 - build started 2026-10-26 21:14
+- build done 2026-10-26 21:16
+- review started 2026-10-26 21:16
+- review failed 2026-10-26 21:18
+- build started 2026-10-26 21:18
 
 ## Reports
 2026-10-26 21:09 omi-agent-architect (claude):
@@ -176,6 +185,18 @@ Review round 1 PASS with fixes (do these, nothing else):
 > create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-26 21:18 omi-agent-reviewer (codex):
+> VERDICT: FAIL
+> - src/omi/__init__.py:1408 Go temporary binaries still use noexec `/tmp`; `GOCACHE` does not redirect them -> Set `GOTMPDIR=/cache` and verify an uncached `go test` succeeds.
+> - src/omi/__init__.py:1521 Two full mounts produce two lines for one container, violating the acceptance criterion -> Combine mount warnings into one line per container.
+> - .omi/tasks/TASK-076.md:29 Task checkpoint and report edits fall outside declared scope -> Exclude these edits or explicitly expand scope.
+> 
+> AC: Container mounts, sizes, and cache environment ✓ Shared argv covers roles, hooks, and prove; configuration and mount assertions pass.
+> AC: Compiled binary runs from `/cache` ✗ Mount flags pass; required Windows Go sandbox execution remains unverified.
+> AC: Login-shell PATH preservation ✓ Both Dockerfiles write the captured image PATH to `/etc/profile.d/omi-path.sh`; container execution unverified.
+> AC: Toolchain example and TASK-001 guidance ✓ Both Dockerfiles and both skill copies contain the required additions.
+> AC: One status line per full container ✗ Fake subprocess reproduced two lines for one container when both mounts exceed 90%.
+> AC: Linux and Windows tests pass ✗ `python3 tests/test_omi.py` passed on Linux, exit 0; Windows run remains pending.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -184,3 +205,4 @@ Review round 1 PASS with fixes (do these, nothing else):
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 24 | 7218 | 357509 | 105s | 2/3 omi-skill-docker-worker-pitfalls omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 2556 | 82201 | 57s | - | PASS 1a20a8c |
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 229697 | 2011 | 211200 | 92s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
+| omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 163805 | 1479 | 131200 | 62s | - | FAIL 35319e8 |
