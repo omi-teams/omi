@@ -55,7 +55,7 @@ def test_init_fresh_project():
         root = Path(d).resolve()
         (root / ".gitignore").write_text("*.log")
         omi.init(root)
-        for kind in ("skills", "agents", "workflows"):
+        for kind in ("skills", "agents", "workflows", "references"):
             assert (root / ".omi" / kind / "CATALOG.md").exists(), kind
         assert (root / ".gitignore").read_text().splitlines() == ["*.log", "__pycache__/"]
         omi.init(root)
@@ -1128,7 +1128,7 @@ def test_rules():
             calls.append(cmd)
             return R("---\nscope: src/**/*.go\n---\n") if "show" in cmd else R(" M src/a.go\0") if "status" in cmd else R()
 
-        omi.shutil.rmtree(root / ".git", onerror=lambda f, p, e: (omi.os.chmod(p, 0o700), f(p)))
+        omi.shutil.rmtree(root / ".git", onexc=lambda f, p, e: (omi.os.chmod(p, 0o700), f(p)))
         (root / ".git").write_text("gitdir: /x")
         task = root / ".omi" / "tasks" / "TASK-001.md"
         task.parent.mkdir(exist_ok=True)
@@ -1145,6 +1145,42 @@ def test_rules():
             (root / ".omi" / "config.json").write_text('{"rule_limits": {"tokens": 10}}')
             fails(lambda: omi.run_role("omi-agent-engineer", root, task), "rule budget", "go ")
             assert not [c for c in calls if c[:2] == ["docker", "run"]]
+            (root / ".omi" / "config.json").write_text("{}")
+            # Validation still applies after catalog generation, before launching a worker.
+            rule = root / ".omi" / "rules" / "go.md"
+            original = rule.read_text()
+            for old, new, error in (("id: go", "id: wrong", "differs from file name"),
+                                    ("summary:", "unused:", "summary")):
+                rule.write_text(original.replace(old, new))
+                calls.clear()
+                fails(lambda: omi.run_role("omi-agent-engineer", root, task), "go:", error)
+                assert not [c for c in calls if c[:2] == ["docker", "run"]]
+            rule.write_text(original)
+            # References are paths in the actual worker prompt and do not use either budget.
+            ref = root / ".omi" / "references" / "postgres-conventions.md"
+            ref.write_text(ref.read_text() + "x" * 30000)
+            task.write_text("---\nid: TASK-001\nscope: docs/**\nrefs: [postgres-conventions]\n---\n")
+            calls.clear()
+            omi.run_role("omi-agent-engineer", root, task)
+            prompt = next(a for c in calls if c[:2] == ["docker", "run"] for a in c if "Task file:" in a)
+            assert "References (read when needed):\n/work/.omi/references/postgres-conventions.md" in prompt
+            assert "nextjs-app-router.md" not in prompt and "x" * 100 not in prompt
+            original = ref.read_text()
+            for old, new, error in (("id: postgres-conventions", "id: wrong", "differs from file name"),
+                                    ("summary:", "unused:", "summary")):
+                ref.write_text(original.replace(old, new))
+                calls.clear()
+                fails(lambda: omi.run_role("omi-agent-engineer", root, task), "postgres-conventions", error)
+                assert not [c for c in calls if c[:2] == ["docker", "run"]]
+            ref.write_text(original)
+            (ref.parent / "CATALOG.md").write_text("# empty\n")
+            calls.clear()
+            fails(lambda: omi.run_role("omi-agent-engineer", root, task), "postgres-conventions", "missing from the catalog")
+            assert not [c for c in calls if c[:2] == ["docker", "run"]]
+            task.write_text(task.read_text().replace("refs: [postgres-conventions]", "refs: [unknown]"))
+            calls.clear()
+            fails(lambda: omi.run_role("omi-agent-engineer", root, task), "unknown reference unknown")
+            assert not [c for c in calls if c[:2] == ["docker", "run"]]
         finally:
             sys.stdout = saved
             omi.subprocess.run, omi.shutil.which, omi.main_checkout, omi.WINDOWS = real[:4]
@@ -1152,6 +1188,47 @@ def test_rules():
                 omi.os.environ.pop(omi.TOKEN_ENV, None)
             else:
                 omi.os.environ[omi.TOKEN_ENV] = real[4]
+
+
+def test_references():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        omi.init(root)
+        refs = root / ".omi" / "references"
+        for rid in ("postgres-conventions", "nextjs-app-router"):
+            assert (refs / f"{rid}.md").is_file()
+            assert f"- {rid}:" in (refs / "CATALOG.md").read_text()
+        assert omi.task_references(root, {}) == []
+        assert omi.reference_prompt(root, []) == ""
+        assert omi.task_references(root, {"refs": "[postgres-conventions, nextjs-app-router]"}) == [
+            refs / "postgres-conventions.md", refs / "nextjs-app-router.md"]
+        # Exercise the public CLI and its validation, including a missing id.
+        cli = [sys.executable, "-m", "omi", "references"]
+        env = dict(omi.os.environ, PYTHONPATH=str(Path(omi.__file__).parent.parent))
+        result = subprocess.run(cli, cwd=root, env=env, capture_output=True, text=True)
+        assert result.returncode == 0 and "2 references" in result.stdout, result.stderr
+        cat = (refs / "CATALOG.md").read_text()
+        for header in ("id: other\nsummary:", "summary: example"):
+            (refs / "bad.md").write_text(f"---\n{header}\n---\nbody")
+            result = subprocess.run(cli, cwd=root, env=env, capture_output=True, text=True)
+            assert result.returncode != 0 and "bad:" in result.stderr and "differs from file name" in result.stderr
+            if "id: other" in header:
+                assert "summary" in result.stderr
+            assert (refs / "CATALOG.md").read_text() == cat
+        (refs / "bad.md").unlink()
+        for base in (Path(__file__).resolve().parents[1], omi.TEMPLATE):
+            task = base / ("dot-omi" if base == omi.TEMPLATE else ".omi") / "tasks" / "_template.md"
+            assert omi.meta(task)["refs"] == "[]"
+            assert "references/CATALOG.md" in (base / "AGENTS.md").read_text()
+        task = root / ".omi" / "tasks" / "TASK-001.md"
+        original = "---\nid: TASK-001\nrefs: [postgres-conventions]  # keep\n---\n## Checkpoint\nold\n"
+        task.write_text(original.replace("refs: [postgres-conventions]  # keep", "refs: [unknown]").replace("old", "new"))
+        assert omi.revert_front(task, original) == ["refs"]
+        assert task.read_text() == original.replace("old", "new")
+        # An agent cannot add refs to a task that had none either.
+        before = "---\nid: TASK-001\n---\nbody\n"
+        task.write_text(before.replace("id: TASK-001", "id: TASK-001\nrefs: [unknown]"))
+        assert omi.revert_front(task, before) == ["refs"] and task.read_text() == before
 
 
 def test_skills():
@@ -2163,6 +2240,7 @@ if __name__ == "__main__":
     test_subprocess_text_encoding()
     test_skills()
     test_rules()
+    test_references()
     test_skills_check()
     test_workflows()
     test_worker()
