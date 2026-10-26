@@ -7,7 +7,7 @@ scope: src/omi/__init__.py, src/omi/template/docker/**, tests/**, README.md
 role: omi-agent-engineer
 skills: [omi-skill-docker-worker-pitfalls, omi-skill-windows-powershell]
 workflow: omi-flow-feature-sensitive
-step: review
+step: security
 ---
 ## Goal
 The PO has a ChatGPT subscription and the host Codex CLI is "Logged in using ChatGPT" (~/.codex/auth.json, auth_mode chatgpt). Let `omi run --tool codex` use it without an OpenAI API key: pass only the short-lived access token, never the refresh token.
@@ -41,6 +41,8 @@ Coordinator real run 2026-10-26 (fresh sandbox, this worktree's code, PO's ChatG
 - build started 2026-10-26 11:22
 - build done 2026-10-26 11:25
 - review started 2026-10-26 11:25
+- review done 2026-10-26 11:27
+- security started 2026-10-26 11:27
 
 ## Reports
 2026-10-26 11:24 omi-agent-engineer (claude):
@@ -65,9 +67,20 @@ Coordinator real run 2026-10-26 (fresh sandbox, this worktree's code, PO's ChatG
 > AC: Missing or expired login gives a clear message, the API-key and Claude paths are unchanged, and tests cover the secret order, argv and the missing/expired cases ✓ The message says to run `codex` once on the host (or `codex login`) and retry. The expiry check reads the JWT `exp`. The quota-fallback path now uses `tool_secret(other)` and reports the login problem. The tests cover missing, expired, valid, env-first and argv.
 > [... truncated ...]
 > AC: README "Lấy và lưu key" gains the ChatGPT-subscription option ✓ A new bullet at `README.md:33` gives the order, the `OMI_CODEX_AUTH` name, the refresh-token guarantee and the allowlist note.
+2026-10-26 11:29 omi-agent-security-reviewer (claude):
+> ```
+> VERDICT: PASS
+> - No blocking findings. `python3 tests/test_omi.py` ends with `ok`.
+> - What I checked: no token value appears in argv. `worker_argv` (`src/omi/__init__.py:1153`) passes only `-e OMI_CODEX_AUTH`, and `test_codex_chatgpt_run` asserts that neither the access token nor `REAL-REFRESH` is in argv. The refresh token is replaced by the `omi-no-refresh` placeholder (`__init__.py:921-923`).
+> - The `sh -c BOOT sh codex…` wrapper is correct: `$0`=sh and `"$@"`=codex. The Dockerfile has no ENTRYPOINT, and `auth.json` lands on the `/home/node` tmpfs, which is noexec and owned by uid 1000. `proxy.py:2` matches hosts exactly on port 443, so adding `chatgpt.com` does not open its subdomains.
+> - When the quota limit is hit, `tool_secret(other)` returns a tuple, and both `attempt()` and the `[1]`/`[2]` checks unpack it correctly (`__init__.py:1690-1707`). The Claude path and the API-key path keep their order and env names.
+> - Remaining risk, not a regression: the codex agent runs with `--dangerously-bypass-approvals-and-sandbox` and can read `~/.codex/auth.json`. It could copy the ChatGPT access token into the rw `/work` diff or send it to an allowlisted host. Before this change the API key was just as readable through `printenv`.
+> UNVERIFIED: how codex 0.164.0 behaves on an expired token inside the container. The recorded probe never saw it, and confirming it needs a real run with an expired token, which needs docker and network.
+> ```
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 22 | 8897 | 405837 | 76s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1914 | 110667 | 38s | - | PASS 26c309e |
+| omi-agent-security-reviewer | claude-opus-5-5 | high | 16 | 3708 | 249980 | 64s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS e77182c |
