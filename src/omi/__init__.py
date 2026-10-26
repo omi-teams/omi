@@ -887,6 +887,7 @@ def resolve_model(root, model):
 
 
 DEFAULT_ALLOW = ["api.anthropic.com"]
+TOOL_API_HOST = {"claude": "api.anthropic.com", "codex": "api.openai.com"}
 PROXY_PORT = 3128
 PROXY_ALIAS = "omi-proxy"  # DNS name on the per-run network; container names can exceed the 63-char DNS label limit
 
@@ -904,6 +905,18 @@ def network_allow(root):
         if not isinstance(e, str) or not re.fullmatch(r"(\*\.)?[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{1,5})?", e):
             sys.exit(f'bad "network_allow" entry {e!r} in .omi/config.json: use host, *.suffix or host:port. Nothing changed.')
     return list(allow)
+
+
+def allow_for(root, *tools):
+    """network_allow plus each tool's own API host (deduplicated), so a repo config that lists only one still works."""
+    return list(dict.fromkeys([*network_allow(root), *(TOOL_API_HOST[t] for t in tools)]))
+
+
+def prove_rc(out, rc):
+    """--prove exit code: non-zero on any FAIL line or when a CLI check never reported PASS."""
+    lines = out.splitlines()
+    bad = any(l.startswith("FAIL") for l in lines) or not all(any(l.startswith(f"PASS {c} CLI") for l in lines) for c in TOOL_API_HOST)
+    return rc or (1 if bad else 0)
 
 
 @contextlib.contextmanager
@@ -1399,7 +1412,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool="claude"):
         if problems:
             print(f"{role} not started; fix these first:\n" + "\n".join(problems))
             return 4
-    allow = network_allow(main)
+    allow = allow_for(main, tool)
     image = ensure_image(main)
     env = dict(os.environ)
     env.pop(TOKEN_ENV, None)
@@ -1464,7 +1477,7 @@ def worker(wt, task_file=None, model=None, effort=None, prove=False):
     if not main or not (wt / ".git").is_file():
         sys.exit(f"{wt} is not a git worktree. Nothing changed.")
     need_docker()
-    allow = network_allow(main)
+    allow = allow_for(main, *TOOL_API_HOST)
     image = ensure_image(main)
     env = dict(os.environ)
     env.pop(TOKEN_ENV, None)
@@ -1474,9 +1487,13 @@ def worker(wt, task_file=None, model=None, effort=None, prove=False):
     name = container_name(main.name, "omi-agent-engineer", "prove",
                           resolve_model(main, am.get("model")), am.get("effort"))
     with egress(main, name, image, allow) as (net, proxy):
-        return subprocess.run(worker_argv(wt, image, ["sh", "-s"], name, repo_label(main),
-                                          worker_labels("prove", None, None, None), network=net, proxy=proxy), env=env,
-                              input=script.read_bytes().replace(b"\r\n", b"\n")).returncode
+        r = subprocess.run(worker_argv(wt, image, ["sh", "-s"], name, repo_label(main),
+                                       worker_labels("prove", None, None, None), network=net, proxy=proxy), env=env,
+                           input=script.read_bytes().replace(b"\r\n", b"\n"), stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT)
+    out = r.stdout.decode("utf-8", "replace")
+    print(out, end="")
+    return prove_rc(out, r.returncode)
 
 
 def run_cmd(role, tid, rest):

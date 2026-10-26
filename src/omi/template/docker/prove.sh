@@ -24,7 +24,7 @@ case "$r" in *" 403 "*example.com*network_allow*) echo "PASS blocked host exampl
 ok "direct TCP to 1.1.1.1:443 (no proxy)" "python3 -c 'import socket;socket.create_connection((\"1.1.1.1\",443),5)'"
 # CLIs in the image reach their API host through the proxy: a bogus key must give an auth error, not a network one
 cli(){ out=$(HOME=/home/node timeout 90 "$@" 2>&1 </dev/null | tail -c 600)
-  if echo "$out" | grep -qiE 'ENOTFOUND|EAI_AGAIN|ECONNREFUSED|timed out|dns|network|proxy|403 forbidden'; then echo "FAIL $n: network error: $out"
+  if echo "$out" | grep -qiE 'ENOTFOUND|EAI_AGAIN|ECONNREFUSED|timed out|dns|network|proxy|403 forbidden|error sending request|stream error'; then echo "FAIL $n: network error: $out"
   elif echo "$out" | grep -qiE '401|unauthorized|authentication|invalid|incorrect api key|api key'; then echo "PASS $n reaches its API through the proxy (auth error)"
   else echo "FAIL $n: unexpected output: $out"; fi; }
 n="claude CLI"; ANTHROPIC_API_KEY=sk-ant-prove-invalid cli claude -p hi

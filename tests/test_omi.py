@@ -621,6 +621,20 @@ def test_run_read_role():
                 omi.os.environ[omi.TOKEN_ENV] = tok
 
 
+def test_prove_exit_and_hosts():
+    ok = "PASS claude CLI reaches\nPASS codex CLI reaches\nPASS write\n"
+    assert omi.prove_rc(ok, 0) == 0 and omi.prove_rc(ok, 5) == 5
+    assert omi.prove_rc(ok + "FAIL codex CLI: network error: x\n", 0) == 1
+    assert omi.prove_rc("PASS claude CLI x\n", 0) == 1 and omi.prove_rc("", 0) == 1
+    with tempfile.TemporaryDirectory() as d:
+        (Path(d) / ".omi").mkdir()
+        (Path(d) / ".omi" / "config.json").write_text('{"network_allow": ["api.anthropic.com"]}')
+        assert omi.allow_for(d, "codex") == ["api.anthropic.com", "api.openai.com"]
+        assert omi.allow_for(d, "claude") == ["api.anthropic.com"]
+        assert omi.allow_for(d, *omi.TOOL_API_HOST) == ["api.anthropic.com", "api.openai.com"]
+    assert "error sending request" in (omi.TEMPLATE / "docker" / "prove.sh").read_text()
+
+
 def test_container_names():
     import datetime
     t = datetime.datetime(2026, 1, 1, 14, 32, 5)
@@ -1559,6 +1573,7 @@ if __name__ == "__main__":
     test_review_round_flow()
     test_container_names()
     test_network_allowlist()
+    test_prove_exit_and_hosts()
     test_clean_and_old_images()
     test_credential_manager()
     test_template_docker()

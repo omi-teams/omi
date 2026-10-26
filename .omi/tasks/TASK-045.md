@@ -29,6 +29,8 @@ Coordinator real run FAIL (`omi worker <wt> --prove` on Docker Desktop, codex 0.
 2. codex network failure prints `error sending request for url (...)` / `stream error`; add it to the network-error patterns (it was only caught as "unexpected output").
 3. `--prove` exited 0 with a FAIL line: it must exit non-zero when any line starts with FAIL, and also when no `PASS claude CLI`/`PASS codex CLI` line appears (project-owned prove.sh). Add tests.
 
+Round 2 done: allow_for adds each tool's api_host (TOOL_API_HOST) for run and --prove; prove.sh network patterns include `error sending request|stream error`; --prove exits non-zero on FAIL line or missing PASS claude/codex CLI (prove_rc); tests added. Tests: python3 tests/test_omi.py ok. Not done: real Docker rerun.
+
 ## Steps
 - plan started 2026-10-26 09:02
 - plan done 2026-10-26 09:02
@@ -41,3 +43,4 @@ Coordinator real run FAIL (`omi worker <wt> --prove` on Docker Desktop, codex 0.
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-architect | claude-opus-5-5 | high | 12 | 7743 | 171921 | 93s | - | n/a |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 5637 | 301884 | 73s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 5076 | 240528 | 49s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
