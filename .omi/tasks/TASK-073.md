@@ -1,7 +1,7 @@
 ---
 id: TASK-073
 title: Codex agents in the worker do not load the project AGENTS.md
-status: in-progress
+status: done
 depends:
 scope: src/omi/__init__.py, tests/**
 role: omi-agent-engineer
@@ -12,15 +12,15 @@ tool:
 model: haiku
 effort: low
 workflow: omi-flow-feature
-step: build
+step: accept
 ---
 ## Goal
 `AGENTS.md` at the repo root holds the Coordinator's instructions (talk to the PO in Vietnamese, never edit code). Codex reads it automatically from `/work`, so worker agents got Coordinator instructions on top of their role prompt (TASK-062/069: codex answered in Vietnamese). Make `codex_cmd` turn project docs off, e.g. `-c project_doc_max_bytes=0`, so a codex agent sees only its role prompt, like claude.
 
 ## Acceptance criteria
-- [ ] `codex_cmd` passes the option that stops codex loading project docs (AGENTS.md); claude's command is unchanged. Tested on the argv.
-- [ ] Real run (Coordinator, sandbox from `omi init` whose AGENTS.md says "Reply only in French"): `omi run --tool codex` engineer report is not in French and not in Vietnamese. Before the fix the same sandbox gives a French report.
-- [ ] All tests pass on the Linux worker and the Windows host.
+- [x] `codex_cmd` passes the option that stops codex loading project docs (AGENTS.md); claude's command is unchanged. Tested on the argv.
+- [x] Real run (Coordinator, sandbox from `omi init` whose AGENTS.md says "Reply only in French"): `omi run --tool codex` engineer report is not in French and not in Vietnamese. Before the fix the same sandbox gives a French report.
+- [x] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
 Coordinator probe 2026-10-26 (sandbox from `omi init`, AGENTS.md "Reply only in French", codex gpt-6.1-sol): current code gives a French engineer report; with `-c project_doc_max_bytes=0` inserted right after `exec` in `codex_cmd`, the same run gives an English report. Use exactly that option.
@@ -30,9 +30,15 @@ Tests: `python3 tests/test_omi.py` rc=0 on Linux worker.
 Next: Coordinator reviews the diff, runs the real codex probe and the Windows tests.
 
 ## Steps
+PO approval accept: Nghiệm thu, merge (Recommended)
 - plan started 2026-10-26 14:47
 - plan done 2026-10-26 14:47
 - build started 2026-10-26 14:47
+- build done 2026-10-26 14:52
+- review started 2026-10-26 14:52
+- review done 2026-10-26 14:53
+- accept started 2026-10-26 14:53
+- accept done 2026-10-26 14:54
 
 ## Reports
 2026-10-26 Coordinator real run: same French-AGENTS.md sandbox with this branch's code -> English codex report (before the fix: French). Windows host tests: ok.
@@ -90,8 +96,15 @@ Next: Coordinator reviews the diff, runs the real codex probe and the Windows te
 > create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-26 14:53 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - .omi/tasks/TASK-073.md: The diff edits the task file, which `scope` doesn't list (`src/omi/__init__.py, tests/**`). This is the workflow's own checkpoint and report bookkeeping, so I'm not counting it as a defect.
+> AC: `codex_cmd` passes the option that stops project docs loading, and claude's command is unchanged ✓ `src/omi/__init__.py` now builds `["codex","exec","-c","project_doc_max_bytes=0",...]`, as the Coordinator probe specified. `tests/test_omi.py` asserts the argv with a model and with `CODEX_DEFAULT`. It also asserts `engineer_cmd` has no such option. The two `exec -m` run-test assertions use the new prefix.
+> AC: A real `omi run --tool codex` against a sandbox whose AGENTS.md says "Reply only in French" gives a report that is not French and not Vietnamese ✓ The task's Reports section records the Coordinator's real run: an English report, where the code before the fix gave French. I couldn't re-run codex here, so this rests on that record.
+> AC: All tests pass on the Linux worker and the Windows host ✓ `python3 tests/test_omi.py` ended with `ok` here (Linux). The Windows result ("Windows host tests: ok") comes from the Coordinator's Reports entry, not from a run I could do.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-haiku-5-5 | low | 16 | 2687 | 185813 | 44s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 4 | 882 | 40675 | 32s | - | PASS 5aa0e59 |
