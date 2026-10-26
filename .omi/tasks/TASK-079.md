@@ -60,6 +60,8 @@ Coordinator host check after review round 2 fix: Windows `python tests/test_omi.
 Review round 3 FAIL (PO chose a small fix, then security review):
 - upgrade_apply writes (create, update, `.omi-new`, manifest, version, config) follow symlinks: a `<path>.omi-new` symlink to ../decisions.md or outside the repo gets overwritten. Every write target that is a symlink, or whose resolved path is outside the project root, is skipped with a `skip (symlink): <path>` line. Tests: a `.omi-new` symlink and an updated file that is a symlink both leave their targets unchanged. On Windows, creating symlinks may need privileges; the tests skip that part when os.symlink raises OSError.
 
+Coordinator host check after review round 3 fix: Windows `python tests/test_omi.py` -> rc=0, ok.
+
 ## Steps
 - plan started 2026-10-26 22:07
 - plan done 2026-10-26 22:07
