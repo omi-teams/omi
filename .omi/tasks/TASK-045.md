@@ -7,7 +7,7 @@ scope: src/omi/template/docker/**, src/omi/template/dot-omi/config.json, src/omi
 skills: [omi-skill-docker-worker-pitfalls, omi-skill-windows-powershell]
 role: omi-agent-engineer
 workflow: omi-flow-feature-sensitive
-step: security
+step: accept
 ---
 ## Goal
 `omi run --tool codex` works in the container with a pinned Codex CLI version.
@@ -35,6 +35,9 @@ Coordinator real run 2 FAIL: api.openai.com now allowed and exit code 1 works, b
 1. Dockerfile: add `ca-certificates` to the existing `apt-get install` line; add a test assertion.
 2. prove.sh: remove `stream error` from the network pattern: codex prints `stream error: exceeded retry limit, last status: 401 Unauthorized` on auth failure. Keep `error sending request`. Add a test with that 401 line classified as PASS if practical, else just assert the pattern.
 Round 3 done: Dockerfile apt-get installs ca-certificates (test asserts it); prove.sh network pattern drops `stream error` (keeps `error sending request`; test asserts the pattern line lacks it). Tests: python3 tests/test_omi.py ok. Not done: real Docker rerun.
+PO change at accept (2026-10-26): fix round 3 before acceptance.
+1. Remove `api.openai.com` from the template `network_allow` (`src/omi/template/dot-omi/config.json`); `allow_for` adds it per tool. Update the test that asserted it there (assert it is absent and `allow_for(..., "codex")` adds it). README line stays "mặc định chỉ api.anthropic.com".
+2. Bump the Codex pin to `0.164.0` in Dockerfile, `cli_versions` and README.
 ## Steps
 - plan started 2026-10-26 09:02
 - plan done 2026-10-26 09:02
@@ -45,6 +48,9 @@ Round 3 done: Dockerfile apt-get installs ca-certificates (test asserts it); pro
 - review started 2026-10-26 09:15
 - review done 2026-10-26 09:16
 - security started 2026-10-26 09:16
+- security done 2026-10-26 09:17
+- accept started 2026-10-26 09:17
+- PO at accept: "Bỏ khỏi template" + "Nâng lên Codex 0.164.0" -> fix round 3, then review and security again
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
