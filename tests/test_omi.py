@@ -1128,7 +1128,7 @@ def test_rules():
             calls.append(cmd)
             return R("---\nscope: src/**/*.go\n---\n") if "show" in cmd else R(" M src/a.go\0") if "status" in cmd else R()
 
-        omi.shutil.rmtree(root / ".git")
+        omi.shutil.rmtree(root / ".git", onerror=lambda f, p, e: (omi.os.chmod(p, 0o700), f(p)))
         (root / ".git").write_text("gitdir: /x")
         task = root / ".omi" / "tasks" / "TASK-001.md"
         task.parent.mkdir(exist_ok=True)

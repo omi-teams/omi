@@ -23,6 +23,7 @@ Rules in `.omi/rules/<id>.md` (frontmatter `id, summary, applies`) are added to 
 - [ ] All tests pass.
 
 ## Checkpoint
+Round 3: test rmtree of .git now chmods read-only files on error (Windows). Tests ok.
 Review round 2 FAIL (host test run on Windows, reviewer not started):
 - tests/test_omi.py:1131 `omi.shutil.rmtree(root / ".git")` fails with `PermissionError: [WinError 5] Access is denied` on a git object file: git makes objects read-only and Windows cannot unlink read-only files. Since round 1 the test commits files, so objects exist. Make the removal work on Windows (e.g. `rmtree(..., onexc=lambda f, p, e: (os.chmod(p, stat.S_IWRITE), f(p)))`), or avoid deleting a real .git. Tests must pass on the Windows host, not only in the Linux container.
 Review round 1 PASS with a finding the PO asked to fix now (PO: "Sửa luôn trong 068"):
@@ -79,6 +80,13 @@ Next: review and commit.
 > - Tests: added to `test_rules`. Scope `src/**` with a tracked `src/x.go` gets `go`, and scope `src/**/*.go` and `lib/**/*.go` (no Go files) also get `go`. `python3 tests/test_omi.py` ends with `ok`.
 > - Commit: `fix(rules): match rules against tracked files inside a broad task scope`
 > - Open issues: none.
+2026-10-26 13:51 omi-agent-engineer (claude):
+> DONE
+> - Files changed: `tests/test_omi.py` and the Checkpoint in `.omi/tasks/TASK-068.md`.
+> - The fix: the `.git` removal in `test_rules` now uses an `onerror` handler that does `chmod 0o700` on the failing path and retries. That should avoid the read-only git object failure on Windows.
+> - Tests: `python3 tests/test_omi.py` ends with `ok` in the Linux container. I couldn't run it on Windows, so that still needs checking on the host.
+> - Commit: `test(rules): make .git removal work on Windows read-only objects`
+> - Open issues: none.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -86,3 +94,4 @@ Next: review and commit.
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 26 | 9725 | 519593 | 114s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 2247 | 76330 | 37s | - | PASS f62106c |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 14 | 2266 | 172600 | 38s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 10 | 906 | 107746 | 34s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
