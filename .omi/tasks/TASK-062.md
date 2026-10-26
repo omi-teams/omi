@@ -1,7 +1,7 @@
 ---
 id: TASK-062
 title: Prove Codex end to end with a real key, including the quota switch
-status: planned
+status: in-progress
 depends: TASK-055, TASK-065
 scope: docs/research/omi-eval.md, .omi/tasks/**, .omi/config.json
 role: omi-agent-engineer
