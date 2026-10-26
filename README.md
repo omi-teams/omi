@@ -7,10 +7,10 @@
 Phiên bản (SemVer 0.x) chỉ ghi ở `pyproject.toml`; `omi init` ghi nó vào `.omi/version`, `omi status` báo khi dự án cũ hơn omi đang cài.
 
 ```sh
-pipx install git+https://github.com/omi-teams/omi-squad2@v0.2.0     # cài từ tag
-pipx install --force git+https://github.com/omi-teams/omi-squad2@<tag>   # nâng cấp, rồi chạy `omi init` trong từng dự án
+python -m pip install --user "git+https://github.com/omi-teams/omi-squad2@v0.2.0"     # cài từ tag
+python -m pip install --user --upgrade "git+https://github.com/omi-teams/omi-squad2@<tag mới>"   # nâng cấp, rồi chạy `omi init` trong từng dự án
 omi --version             # omi 0.2.0
-pip install -e .          # hoặc, khi phát triển omi: từ source
+# Mỗi Python trên máy có một omi (hook và AGENTS.md gọi `python -m omi`); người phát triển omi dùng `pip install -e .` thay cho lệnh trên.
 mkdir my-app && cd my-app
 omi init                  # cài khung squad, không ghi đè file sẵn có
 omi github [--po]         # (PO, quyền admin; --po: đăng nhập PO trên browser, xong tự logout + quay lại tài khoản squad) tạo staging + ruleset: squad chỉ merge vào development

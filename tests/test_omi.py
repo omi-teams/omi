@@ -2636,6 +2636,30 @@ def test_parallel():
         assert "| r | m |" in a.read_text() and b.read_text() == "# t\n"
 
 
+def test_status_drift_hints():
+    def status_text(root):
+        buf = io.StringIO()
+        with omi.contextlib.redirect_stdout(buf):
+            omi.status(root)
+        return buf.getvalue()
+
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        omi.init(root)
+        text = status_text(root)
+        assert "needs omi" not in text and "docker/Dockerfile differs" not in text, text
+        (root / ".omi" / "version").write_text("99.0.0\n", encoding="utf-8")
+        assert 'this project needs omi 99.0.0; install it: python -m pip install --user "git+https://github.com/omi-teams/omi-squad2@v99.0.0"' in status_text(root)
+        df = root / "docker" / "Dockerfile"
+        crlf = df.read_bytes().replace(b"\n", b"\r\n")
+        df.write_bytes(crlf)
+        assert "docker/Dockerfile differs" not in status_text(root), "CRLF is not a difference"
+        df.write_bytes(crlf + b"RUN true\r\n")
+        assert f"docker/Dockerfile differs from the omi {omi.version()} template; review it (omi init never overwrites it)" in status_text(root)
+        df.unlink()
+        assert "docker/Dockerfile differs" not in status_text(root)
+
+
 if __name__ == "__main__":
     test_parallel()
     test_usage()
@@ -2667,6 +2691,7 @@ if __name__ == "__main__":
     test_version_stamp_package_hook()
     test_init_fresh_project()
     test_init_guard_status()
+    test_status_drift_hints()
     test_github_rulesets()
     test_ci_checks_and_apply()
     test_same_and_no_gh()
