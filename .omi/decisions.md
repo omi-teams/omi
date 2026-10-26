@@ -53,3 +53,4 @@
 - 2026-10-26 | Accept session-token risk for Claude agents: scopes include file_upload, mcp_servers, plugins, profile, sessions:claude_code (setup-token: inference only); limited by egress to api.anthropic.com and a lifetime of hours | PO | TASK-067
 - 2026-10-26 | Park omi-board idea: separate repo, local Docker (Go API + embedded React UI), Supabase Postgres as source of truth, free only; build after current omi-squad work, using omi-squad | PO | docs/ideas/omi-board.md
 - 2026-10-26 | Approve docs/specs/template-kinds.md (rules, references, plans, hooks; separate rule budget 2000/run, 800/rule) | PO | a8df61b
+- 2026-10-26 | codex_models: haiku/sonnet/opus all map to gpt-6.1-sol (host model); effort tells the levels apart | PO: "(a)+(b), map gpt-6.1-sol" | .omi/config.json
