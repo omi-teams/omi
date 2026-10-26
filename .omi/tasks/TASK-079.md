@@ -12,7 +12,7 @@ tool: claude
 model: sonnet
 effort: medium
 workflow: omi-flow-feature-sensitive
-step: build
+step: security
 ---
 ## Goal
 A project that runs omi moves to a newer omi with one PO command: install the new version, add new template files, update template files the project never changed, and list the ones it did change for the PO to decide. This also fixes Dockerfile drift.
@@ -77,6 +77,9 @@ Review round 5 FAIL (PO chose to fix all four open notes):
 
 Coordinator host check after review round 5 fix: Windows `python tests/test_omi.py` -> rc=0, ok.
 
+Security round 2 FAIL, risk accepted by the PO (2026-10-26):
+- Finding: a hard-linked `<path>.omi-new` lets --apply overwrite the linked file. Accepted because git does not store hard links, so a cloned repository cannot carry one; creating it needs local write access, which already allows editing the target directly. Follow-up for a later task: write via temp file + os.replace.
+
 ## Steps
 - plan started 2026-10-26 22:07
 - plan done 2026-10-26 22:07
@@ -105,6 +108,10 @@ Coordinator host check after review round 5 fix: Windows `python tests/test_omi.
 - review started 2026-10-26 22:54
 - review failed 2026-10-26 22:57
 - build started 2026-10-26 22:57
+- build done 2026-10-26 23:01
+- review started 2026-10-26 23:01
+- review done 2026-10-26 23:03
+- security started 2026-10-26 23:03
 
 ## Reports
 2026-10-26 22:08 omi-agent-architect (claude):
@@ -506,6 +513,21 @@ Coordinator host check after review round 5 fix: Windows `python tests/test_omi.
 > create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-26 23:03 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/__init__.py:643 `read_manifest` assumes `.omi/manifest.json` is a valid JSON object with an object-valued `files` key. Corrupt JSON, `[]` or `"files": null` raises a traceback in `init` and `upgrade_apply`. `upgrade_apply` hits this after reading config but before any write, so nothing is left half-done. Low severity -> catch `JSONDecodeError`/`AttributeError` and treat the manifest as empty, or exit with a clear message.
+> - src/omi/__init__.py:685 `init` and `upgrade_apply` call `.exists()` and `.read_bytes()` on template destinations without the symlink guard in `init`. This predates the diff and is read-only, so it is informational only.
+> 
+> AC: `omi init` writes `.omi/manifest.json`, and a project without one is backfilled from current or released shas, ignoring CRLF ✓ `test_upgrade` covers a fresh init, a CRLF variant, an edited AGENTS.md that is not recorded, and a fake released template. `template_shas.json` has 61 entries for 0.2.0 and is listed in `pyproject.toml` package-data.
+> AC: `upgrade --check` lists remote tags, picks the highest SemVer tag, and prints `omi X -> Y` or `up to date` ✓ `latest_tag` runs `git ls-remote --tags -- repo`. It ignores date, rc and `^{}` tags, and `release_tag` requires major < 1000. Tests use a fake subprocess.
+> AC: `upgrade [--to vX.Y.Z]` runs pip `--user --upgrade git+<repo>@<tag>`, then `-m omi upgrade --apply` in a new process ✓ `upgrade_cmd` builds that argv. A scp-style repo becomes `ssh://`, and an explicit `--to` skips ls-remote unless `--check` is given. The argv is tested.
+> [... truncated ...]
+> Rules and scope ✓ All changed files are within `scope`. Public functions have type hints and file I/O uses UTF-8. The docker rule does not apply to this diff.
+2026-10-26 23:06 omi-agent-security-reviewer (codex):
+> VERDICT: FAIL
+> - src/omi/__init__.py:881 Hard-linked `.omi-new` overwrites protected files | why: symlink guard permits shared inodes | verified: temporary reproduction replaced `.omi/decisions.md` with the AGENTS template; apply returned 0 -> use atomic replacement or reject hard-linked write targets.
+> UNVERIFIED: None. `python3 tests/test_omi.py` passed.
+> Audit stopped per [security skill](/work/.omi/skills/quality/omi-skill-diff-security-review/SKILL.md): “A confirmed exploitable flaw … stop and report immediately.”
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -523,3 +545,5 @@ Coordinator host check after review round 5 fix: Windows `python tests/test_omi.
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 12 | 2112 | 197291 | 93s | 1/2 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 276781 | 1969 | 237824 | 100s | - | FAIL 4d2b95a |
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 434796 | 3286 | 407680 | 142s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 3102 | 226250 | 103s | - | PASS d2aa794 |
+| omi-agent-security-reviewer | gpt-6.1-sol (codex) | medium | 493819 | 2068 | 441728 | 133s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL d2aa794 |
