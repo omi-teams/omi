@@ -47,6 +47,14 @@ Review round 1 FAIL:
 
 Coordinator host check after review round 1 fix: latest_tag on the real repo -> v0.2.0 (was v2026.10.26); Windows `python tests/test_omi.py` -> rc=0, ok.
 
+Review round 2 FAIL (escalated to opus/high by PO):
+- omi_repo from .omi/config.json reaches `git ls-remote --tags <repo>` as a positional argument; a value like `--upload-pack=<cmd>` is read as an option. omi_repo is validated (https://, ssh://, git@host:path; no leading `-`, no whitespace) before any use, ls-remote gets `--` before the repo, and the pip `git+{repo}@{tag}` URL uses the same validated value. Tests for rejected values.
+- released_shas re-reads template_shas.json per file; it is loaded once per run.
+- upgrade_apply: .omi/config.json is parsed before any file changes; invalid JSON exits with a clear message and nothing changed.
+- Type hints on the new public functions (.omi/rules/python.md).
+- A test that protected() keeps PLAN-001 and updates PLAN-000.
+Note: the Windows run after review round 1 is recorded above (rc=0, ok).
+
 ## Steps
 - plan started 2026-10-26 22:07
 - plan done 2026-10-26 22:07
@@ -57,6 +65,10 @@ Coordinator host check after review round 1 fix: latest_tag on the real repo -> 
 - review started 2026-10-26 22:15
 - review failed 2026-10-26 22:18
 - build started 2026-10-26 22:18
+- build done 2026-10-26 22:22
+- review started 2026-10-26 22:22
+- review failed 2026-10-26 22:24
+- build started 2026-10-26 22:24
 
 ## Reports
 2026-10-26 22:08 omi-agent-architect (claude):
@@ -190,6 +202,17 @@ Coordinator host check after review round 1 fix: latest_tag on the real repo -> 
 > create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-26 22:24 omi-agent-reviewer (claude):
+> VERDICT: FAIL
+> - src/omi/__init__.py:444 `omi_repo` comes from the project's `.omi/config.json` and is passed to `git ls-remote --tags <repo>` as a positional argument. A cloned project can set it to `--upload-pack=<cmd>`, which git reads as an option. With a local or ssh `origin`, `omi upgrade --check` could then run that command. I did not run an exploit. -> Validate `omi_repo` (https/ssh/git URL, no leading `-`) and call `["git","ls-remote","--tags","--",repo]`. Apply the same check before building `git+{repo}@{tag}` for pip.
+> - src/omi/__init__.py:329 `released_shas` re-reads and parses `template_shas.json` for every file in `init` and `upgrade_apply`, about 60 times per run. -> Load it once, or pass it in.
+> - src/omi/__init__.py:417-423 `upgrade_apply` rewrites `.omi/config.json` after the files are already changed. An invalid-JSON config raises a traceback and leaves the project half-upgraded, with no manifest or version written. -> Parse the config first and exit with a clear message, or guard the failure.
+> - src/omi/__init__.py:290-466 The new public functions (`norm_sha`, `template_map`, `upgrade_apply`, `latest_tag` and others) have no type hints, but `.omi/rules/python.md` requires them (only `release_tag` has any). -> Add hints.
+> 
+> AC: `omi init` manifest and backfill ✓ `test_upgrade` passes. `init` writes the manifest. Without one, pristine files and CRLF variants are backfilled and an edited AGENTS.md is not. A fake released template counts as pristine. `template_shas.json` ships in package data with 61 v0.2.0 entries.
+> AC: `--check` ✓ `test_upgrade_cmd` uses a fake `subprocess.run`. It picks v0.10.0 over v0.9.0 and ignores `^{}`, `v2026.10.26`, `v1000.0.0` and rc tags. The output is `omi <ver> -> 0.10.0`, and the ls-remote argv is asserted.
+> [... truncated ...]
+> Scope ✓ All changed files are within `scope`.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -198,3 +221,4 @@ Coordinator host check after review round 1 fix: latest_tag on the real repo -> 
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 11516 | 297805 | 180s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 208445 | 1944 | 171904 | 117s | - | FAIL b8079e3 |
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 327207 | 2666 | 291456 | 138s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 4 | 3382 | 63463 | 84s | - | FAIL 2a0e3cb |
