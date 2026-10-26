@@ -58,7 +58,14 @@ def test_version_stamp_package_hook():
     real = omi.importlib.metadata.version
     omi.importlib.metadata.version = lambda n: "9.9.9"
     try:
-        assert omi.version() == "9.9.9"  # installed: package metadata
+        assert omi.version() == want  # source checkout: pyproject.toml beats stale metadata
+        real_file = omi.__file__
+        with tempfile.TemporaryDirectory() as d:
+            omi.__file__ = str(Path(d) / "a" / "b" / "omi" / "__init__.py")  # no pyproject next to the code
+            try:
+                assert omi.version() == "9.9.9"  # installed: package metadata
+            finally:
+                omi.__file__ = real_file
     finally:
         omi.importlib.metadata.version = real
 

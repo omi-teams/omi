@@ -29,6 +29,7 @@ omi has one version (SemVer 0.x, in `pyproject.toml`), shows it, stamps it into 
 - [ ] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
+Round 4 (after check round 3): version() now prefers pyproject.toml next to the code (name omi-squad), metadata only when absent; test covers both. Tests ok (Linux). Not done: Windows run (Coordinator).
 Coordinator check round 3 FAIL (PO: "Sửa vòng 3"): on the Windows host `test_version_stamp_package_hook` fails at `assert want == "0.2.0" and omi.version() == want`: the host has an editable install of omi-squad whose metadata says 0.1.0, so `version()` returns the stale metadata. `version()` must prefer `pyproject.toml` next to the running code (`Path(__file__).parents[2] / "pyproject.toml"` whose `[project] name` is `omi-squad`) and use `importlib.metadata` only when that file is absent (installed from a wheel/tag). Test: monkeypatch `importlib.metadata.version` to return "0.1.0" in a source checkout -> `version()` is still the pyproject version; with no pyproject next to the code -> the metadata version.
 Round 3: package-data/pyc test now builds a temp copy of the template (x.pyc inside it) and points omi.TEMPLATE at it; no writes in the repo. Tests ok (Linux). Not done: Windows install (Coordinator).
 Coordinator check round 2 FAIL: the post-run hook (read-only worktree) failed: `OSError: [Errno 30] Read-only file system: 'src/omi/template/docker/__pycache__/x.pyc'`. tests/test_omi.py (~line 108) writes `x.pyc` into the repo's own template dir. Tests must never write inside the repo: build the fake template (with a `__pycache__/x.pyc`) in a `tempfile.TemporaryDirectory()` and point the check / `omi.TEMPLATE` at it. The test must pass with the worktree mounted read-only.
@@ -45,6 +46,7 @@ Next: Coordinator reviews and runs Windows install check.
 - build started 2026-10-26 14:55
 
 ## Reports
+2026-10-26 Coordinator real install (Windows host): fresh venv, `pip install` of this branch -> `omi 0.2.0`; `omi init` into an empty dir created 66 files, `.omi/version` = 0.2.0, rules/references/plans/hooks present, no `__pycache__`; `omi status` -> `omi 0.2.0 (project 0.2.0)`. The wheel does not ship the source `cpython-313.pyc` (only pip's own install-time .pyc). Windows host tests: ok.
 2026-10-26 14:57 omi-agent-engineer (claude):
 > DONE
 > - Files changed: `pyproject.toml`, `src/omi/__init__.py`, `src/omi/template/dot-omi/hooks/post-run.sh`, `tests/test_omi.py`, `README.md`, `.omi/tasks/TASK-074.md` (checkpoint).
@@ -215,6 +217,62 @@ Next: Coordinator reviews and runs Windows install check.
 > create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-26 15:03 omi-agent-engineer (claude):
+> DONE
+> - Files changed: `src/omi/__init__.py`, `tests/test_omi.py`, `.omi/tasks/TASK-074.md` (checkpoint).
+> - `version()` now reads `pyproject.toml` next to the code first, but only if its `[project] name` is `omi-squad`. It falls back to `importlib.metadata` only when that file is absent, as with a wheel or tag install. This stops a stale editable-install version (0.1.0) from winning on the Windows host.
+> - `test_version_stamp_package_hook` now covers both cases. With metadata monkeypatched to 9.9.9 in a source checkout, `version()` still returns the pyproject version. With `omi.__file__` pointed at a temp path that has no `pyproject.toml`, it returns 9.9.9.
+> - Tests: `python3 tests/test_omi.py` prints `ok` on Linux. I didn't run the Windows host check or the real `pip install` into a fresh venv; those are yours.
+> - Suggested commit: `fix: prefer pyproject.toml over stale install metadata in omi version`
+> 
+> Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+2026-10-26 15:03 hook post-run passed:
+> Conflict. The container name "/tmprowa30hv-TASK-001-engineer-codex-gpt-x-medium-080321" is already in useBind for 0.0.0.0:8080 failed: port is already in usewrote /tmp/tmpl9eo1t6w/.omi/skills/CATALOG.md (2 skills)
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .omi/agents/CATALOG.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/config.json
+> create .omi/decisions.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/CATALOG.md
+> create .omi/plans/PLAN-000.md
+> create .omi/references/CATALOG.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/CATALOG.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -222,3 +280,4 @@ Next: Coordinator reviews and runs Windows install check.
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 5729 | 236552 | 87s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 10 | 2228 | 112752 | 53s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 14 | 2165 | 179297 | 65s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 12 | 1829 | 154322 | 64s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |

@@ -690,11 +690,13 @@ def step(root, tid, action, why=None, now=None):
 
 
 def version():
-    """The one version lives in pyproject.toml; installed omi reads it from package metadata."""
-    try:
-        return importlib.metadata.version("omi-squad")
-    except importlib.metadata.PackageNotFoundError:  # source checkout, not installed
-        return tomllib.loads((Path(__file__).parents[2] / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+    """The one version lives in pyproject.toml; a source checkout wins over (possibly stale) editable-install metadata."""
+    pp = Path(__file__).parents[2] / "pyproject.toml"
+    if pp.is_file():
+        proj = tomllib.loads(pp.read_text(encoding="utf-8")).get("project", {})
+        if proj.get("name") == "omi-squad":
+            return proj["version"]
+    return importlib.metadata.version("omi-squad")
 
 
 def semver(v):
