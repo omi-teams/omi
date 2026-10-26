@@ -54,3 +54,4 @@ Round 3 done: Dockerfile apt-get installs ca-certificates (test asserts it); pro
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 5076 | 240528 | 49s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-haiku-5-5 | low | 14 | 2908 | 176418 | 29s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 2534 | 101921 | 35s | - | PASS 3f1b556 |
+| omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 6 | 1950 | 76268 | 28s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS f3153bd |
