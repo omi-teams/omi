@@ -55,3 +55,4 @@
 - 2026-10-26 | Approve docs/specs/template-kinds.md (rules, references, plans, hooks; separate rule budget 2000/run, 800/rule) | PO | a8df61b
 - 2026-10-26 | codex_models: haiku/sonnet/opus all map to gpt-6.1-sol (host model); effort tells the levels apart | PO: "(a)+(b), map gpt-6.1-sol" | .omi/config.json
 - 2026-10-26 | Task `tool:` applies only to the write role; reviewer keeps its own tool (cross-review) | PO: "Nghiệm thu + thêm vào 072" | TASK-072
+- 2026-10-26 | Codex worker agents must not load the Coordinator AGENTS.md | PO: "Chặn Codex đọc AGENTS.md" | TASK-073
