@@ -31,6 +31,9 @@ Coordinator real run FAIL (`omi worker <wt> --prove` on Docker Desktop, codex 0.
 
 Round 2 done: allow_for adds each tool's api_host (TOOL_API_HOST) for run and --prove; prove.sh network patterns include `error sending request|stream error`; --prove exits non-zero on FAIL line or missing PASS claude/codex CLI (prove_rc); tests added. Tests: python3 tests/test_omi.py ok. Not done: real Docker rerun.
 
+Coordinator real run 2 FAIL: api.openai.com now allowed and exit code 1 works, but codex still `error sending request`. Root cause (verified in a temp image): the image has no `ca-certificates`, so Rust codex fails TLS (node/claude ships its own CAs). With `ca-certificates` codex returns `401 Unauthorized`.
+1. Dockerfile: add `ca-certificates` to the existing `apt-get install` line; add a test assertion.
+2. prove.sh: remove `stream error` from the network pattern: codex prints `stream error: exceeded retry limit, last status: 401 Unauthorized` on auth failure. Keep `error sending request`. Add a test with that 401 line classified as PASS if practical, else just assert the pattern.
 ## Steps
 - plan started 2026-10-26 09:02
 - plan done 2026-10-26 09:02
