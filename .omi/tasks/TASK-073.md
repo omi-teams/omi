@@ -1,7 +1,7 @@
 ---
 id: TASK-073
 title: Codex agents in the worker do not load the project AGENTS.md
-status: planned
+status: in-progress
 depends:
 scope: src/omi/__init__.py, tests/**
 role: omi-agent-engineer
@@ -23,6 +23,7 @@ step:
 - [ ] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
+Coordinator probe 2026-10-26 (sandbox from `omi init`, AGENTS.md "Reply only in French", codex gpt-6.1-sol): current code gives a French engineer report; with `-c project_doc_max_bytes=0` inserted right after `exec` in `codex_cmd`, the same run gives an English report. Use exactly that option.
 Done:
 Not done:
 Tests:
