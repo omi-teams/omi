@@ -19,6 +19,7 @@ The Coordinator records its model choice in the task file (`model:` alias haiku|
 - [ ] A codex alias missing from `codex_models` still runs with `codex-default` and `omi run` prints one warning line naming the alias. Tested.
 - [ ] `model` and `effort` are in `.omi/tasks/_template.md` (root and template) and are Coordinator-owned frontmatter (agents cannot change them).
 - [ ] Template and root `AGENTS.md` say in one line that the Coordinator sets `model`/`effort` per task from the quota rules.
+- [ ] A task's `tool:` (and `model`/`effort`) apply only to its write role (the implementer); read roles such as the reviewer keep their role's tool, so a codex-built task gets a claude review by default. `omi run --tool` still overrides. Tested.
 - [ ] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
