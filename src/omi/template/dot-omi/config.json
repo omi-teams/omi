@@ -4,5 +4,9 @@
     "sonnet": "claude-sonnet-5-5",
     "opus": "claude-opus-5-5"
   },
+  "cli_versions": {
+    "claude": "2.1.302",
+    "codex": "0.164.0"
+  },
   "network_allow": ["api.anthropic.com"]
 }
