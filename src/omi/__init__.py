@@ -843,6 +843,8 @@ def upgrade_apply(target: str | Path = ".") -> int:
     cfg_safe = upgrade_write_safe(target, ".omi/config.json")
     try:
         old_cfg = json.loads(cfg.read_text(encoding="utf-8")) if cfg_safe and cfg.is_file() else None
+        if cfg_safe and cfg.is_file() and not isinstance(old_cfg, dict):
+            sys.exit(f"invalid JSON in {cfg}: expected an object; fix it, nothing was changed")
     except json.JSONDecodeError as e:
         sys.exit(f"invalid JSON in {cfg}: {e}; fix it, nothing was changed")
     manifest_safe = upgrade_write_safe(target, ".omi/manifest.json")
@@ -874,7 +876,11 @@ def upgrade_apply(target: str | Path = ".") -> int:
             print(f"update {rel}")
         else:
             if upgrade_write_safe(target, rel + ".omi-new"):
-                dst.with_name(dst.name + ".omi-new").write_bytes(new)
+                candidate = dst.with_name(dst.name + ".omi-new")
+                stale = candidate.exists()
+                candidate.write_bytes(new)
+                if stale:
+                    print(f"replaced stale {rel}.omi-new")
             counts["kept"] += 1
             print(f"kept (modified): {rel}")
     tpl_cfg = json.loads(template_map()[".omi/config.json"].read_text(encoding="utf-8"))
@@ -930,13 +936,15 @@ def upgrade_cmd(rest: list[str], root: str | Path = ".") -> int:
     if "--apply" in rest:
         return upgrade_apply(root)
     repo = omi_repo(root)
-    latest = latest_tag(repo)
+    latest = latest_tag(repo) if not requested or "--check" in rest else requested
     if not latest:
         sys.exit(f"no vX.Y.Z tag in {repo}")
     if "--check" in rest:
         print(f"omi {version()} -> {latest[1:]}" if semver(latest) > semver(version()) else "up to date")
         return 0
     tag = requested or latest
+    if "://" not in repo:
+        repo = "ssh://" + repo.replace(":", "/", 1)
     rc = subprocess.run([sys.executable, "-m", "pip", "install", "--user", "--upgrade", f"git+{repo}@{tag}"]).returncode
     return rc or subprocess.run([sys.executable, "-m", "omi", "upgrade", "--apply"]).returncode
 

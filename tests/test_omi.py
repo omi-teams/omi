@@ -211,6 +211,41 @@ def test_upgrade():
         assert cfg.read_text(encoding="utf-8") == "{broken"
 
 
+def test_upgrade_non_object_config():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        cfg = root / ".omi" / "config.json"
+        cfg.parent.mkdir()
+        for value in ([], [1], None, "config", 42, True):
+            cfg.write_text(json.dumps(value), encoding="utf-8")
+            before = {p.relative_to(root): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+            try:
+                omi.upgrade_apply(root)
+            except SystemExit as exc:
+                assert "expected an object" in str(exc) and "nothing was changed" in str(exc)
+            else:
+                raise AssertionError(f"accepted non-object config: {value!r}")
+            assert before == {p.relative_to(root): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+            assert sorted(p.relative_to(root).as_posix() for p in root.rglob("*")) == [".omi", ".omi/config.json"]
+
+
+def test_upgrade_stale_candidate():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        dst = root / "AGENTS.md"
+        dst.write_text("local edits\n", encoding="utf-8")
+        candidate = root / "AGENTS.md.omi-new"
+        with omi.contextlib.redirect_stdout(io.StringIO()) as out:
+            omi.upgrade_apply(root)
+        assert "replaced stale AGENTS.md.omi-new" not in out.getvalue()
+        candidate.write_text("previous candidate\n", encoding="utf-8")
+        with omi.contextlib.redirect_stdout(io.StringIO()) as out:
+            omi.upgrade_apply(root)
+        assert "replaced stale AGENTS.md.omi-new" in out.getvalue()
+        assert candidate.read_bytes() == (omi.TEMPLATE / "AGENTS.md").read_bytes()
+        assert dst.read_text(encoding="utf-8") == "local edits\n"
+
+
 def test_upgrade_protected():
     assert omi.protected(".omi/plans/PLAN-001.md") and not omi.protected(".omi/plans/PLAN-000.md")
     assert omi.protected(".omi/tasks/TASK-001.md") and not omi.protected(".omi/tasks/_template.md")
@@ -412,8 +447,23 @@ def test_upgrade_cmd():
             assert out.getvalue().strip() == f"omi {omi.version()} -> 0.10.0"
             calls.clear()
             assert omi.upgrade_cmd(["--to", "v0.9.0"], d) == 0
-            assert calls[1] == [omi.sys.executable, "-m", "pip", "install", "--user", "--upgrade", f"git+{omi.OMI_REPO}@v0.9.0"]
-            assert calls[2] == [omi.sys.executable, "-m", "omi", "upgrade", "--apply"]
+            assert calls == [
+                [omi.sys.executable, "-m", "pip", "install", "--user", "--upgrade", f"git+{omi.OMI_REPO}@v0.9.0"],
+                [omi.sys.executable, "-m", "omi", "upgrade", "--apply"],
+            ]
+            cfg = Path(d) / ".omi" / "config.json"
+            cfg.parent.mkdir()
+            cfg.write_text(json.dumps({"omi_repo": "git@host:team/repo.git"}), encoding="utf-8")
+            calls.clear()
+            assert omi.upgrade_cmd(["--to", "v0.9.0"], d) == 0
+            assert calls == [
+                [omi.sys.executable, "-m", "pip", "install", "--user", "--upgrade", "git+ssh://git@host/team/repo.git@v0.9.0"],
+                [omi.sys.executable, "-m", "omi", "upgrade", "--apply"],
+            ]
+            calls.clear()
+            with omi.contextlib.redirect_stdout(io.StringIO()):
+                assert omi.upgrade_cmd(["--check", "--to", "v0.9.0"], d) == 0
+            assert calls == [["git", "ls-remote", "--tags", "--", "git@host:team/repo.git"]]
             for args in (["--to"], ["--to", "--check"], ["--to", "v2026.10.26"], ["--to", "v1000.0.0"]):
                 calls.clear()
                 try:
@@ -3233,6 +3283,8 @@ if __name__ == "__main__":
     test_version_stamp_package_hook()
     test_init_fresh_project()
     test_upgrade()
+    test_upgrade_non_object_config()
+    test_upgrade_stale_candidate()
     test_upgrade_protected()
     test_upgrade_symlink_files()
     test_upgrade_symlink_metadata()
