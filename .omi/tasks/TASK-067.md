@@ -1,23 +1,23 @@
 ---
 id: TASK-067
 title: Claude agents use the current session's login (follow the session, like Codex)
-status: in-progress
+status: done
 depends: TASK-065
 scope: src/omi/__init__.py, tests/**, README.md
 role: omi-agent-engineer
 skills: [omi-skill-windows-powershell]
 workflow: omi-flow-feature-sensitive
-step: security
+step: accept
 ---
 ## Goal
 The PO uses several Claude accounts. Worker agents used the token stored by `omi token set` (made with `claude setup-token` under whatever account was logged in then), not the account of the current Claude Code session. Make agents follow the session, as Codex follows the host ChatGPT login (TASK-065).
 
 ## Acceptance criteria
-- [ ] Claude secret order: env `CLAUDE_CODE_OAUTH_TOKEN` (explicit override), then the session login `claudeAiOauth.accessToken` read at run time from `~/.claude/.credentials.json` (or `$CLAUDE_CONFIG_DIR/.credentials.json`), then the stored token (`omi token set`). Only the access token is passed (by name, as today); the refresh token never leaves the host; omi never stores or logs the session token.
-- [ ] An expired session token (`expiresAt` in ms is past) is skipped with a note `session login expired: use Claude Code once to refresh` and falls through to the stored token; if nothing is usable, the existing no-token message also names this option.
-- [ ] `omi run` prints which source it used (`claude auth: env|session|stored`), never the value; `omi status` unaffected; Codex path unchanged.
-- [ ] Tests for the order, expiry, missing file, and no token value in argv; `python tests/test_omi.py` passes.
-- [ ] Coordinator proves it with one real run (session token, `claude auth: session`), and README "Lấy và lưu key" says agents follow the Claude Code login by default.
+- [x] Claude secret order: env `CLAUDE_CODE_OAUTH_TOKEN` (explicit override), then the session login `claudeAiOauth.accessToken` read at run time from `~/.claude/.credentials.json` (or `$CLAUDE_CONFIG_DIR/.credentials.json`), then the stored token (`omi token set`). Only the access token is passed (by name, as today); the refresh token never leaves the host; omi never stores or logs the session token.
+- [x] An expired session token (`expiresAt` in ms is past) is skipped with a note `session login expired: use Claude Code once to refresh` and falls through to the stored token; if nothing is usable, the existing no-token message also names this option.
+- [x] `omi run` prints which source it used (`claude auth: env|session|stored`), never the value; `omi status` unaffected; Codex path unchanged.
+- [x] Tests for the order, expiry, missing file, and no token value in argv; `python tests/test_omi.py` passes.
+- [x] Coordinator proves it with one real run (session token, `claude auth: session`), and README "Lấy và lưu key" says agents follow the Claude Code login by default.
 
 ## Checkpoint
 Done: claude_secret() (env, session, stored), run prints `claude auth: <source>`, expiry note, no-token message, tests, README.
@@ -39,6 +39,10 @@ Round 2 (review notes): (1) run_role: call claude_secret() once for claude (no s
 - review started 2026-10-26 11:50
 - review done 2026-10-26 11:53
 - security started 2026-10-26 11:53
+- security done 2026-10-26 13:01
+- accept started 2026-10-26 13:01
+PO approval accept: "Chấp nhận, merge" (session token scopes broader than setup-token accepted: egress api.anthropic.com only, token lives hours)
+- accept done 2026-10-26 13:01
 
 ## Reports
 2026-10-26 11:50 omi-agent-engineer (claude):
