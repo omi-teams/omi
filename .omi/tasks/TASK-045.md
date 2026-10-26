@@ -39,6 +39,7 @@ PO change at accept (2026-10-26): fix round 3 before acceptance.
 Round 4 done: api.openai.com removed from template network_allow (test asserts absent; allow_for still adds it for codex); Codex pin 0.164.0 in Dockerfile, cli_versions, README. Tests: python3 tests/test_omi.py ok. Not done: real Docker rerun.
 1. Remove `api.openai.com` from the template `network_allow` (`src/omi/template/dot-omi/config.json`); `allow_for` adds it per tool. Update the test that asserted it there (assert it is absent and `allow_for(..., "codex")` adds it). README line stays "mặc định chỉ api.anthropic.com".
 2. Bump the Codex pin to `0.164.0` in Dockerfile, `cli_versions` and README.
+Coordinator: Dockerfile line lost its space: `@openai/codex@0.164.0&& npm` -> `@openai/codex@0.164.0 && npm`. Only that fix. Real --prove with 0.164.0 PASS (codex also tries github.com, chatgpt.com, api.github.com; blocked, harmless).
 ## Steps
 - plan started 2026-10-26 09:02
 - plan done 2026-10-26 09:02
