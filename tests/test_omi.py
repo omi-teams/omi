@@ -2013,6 +2013,49 @@ def test_tool_choice_and_quota_switch():
             assert go(R(codex_quota, 1), R(json.dumps({"result": "ok", "usage": {}})), tool="codex", model="gpt-5.1-codex") == 0
             assert any("claude-sonnet-5-5" in a for a in calls[1]) and not any("gpt-5.1-codex" in a for a in calls[1])
             assert "| claude-sonnet-5-5 |" in task.read_text()
+            # task model/effort beat the role's, --model/--effort beat the task; alias resolves per tool, also after a quota switch
+            def front(**kv):
+                t = re.sub(r"^(model|effort|tool): .*\n", "", task.read_text(), flags=re.M)
+                task.write_text(t.replace("scope:", "".join(f"{k}: {v}\n" for k, v in kv.items()) + "scope:", 1), encoding="utf-8")
+
+            ok_claude = json.dumps({"result": "ok", "usage": {}})
+            front(model="opus", effort="high")
+            assert go(R(ok_claude)) == 0 and "claude-opus-5-5" in calls[0] and "high" in calls[0]
+            assert "opus-5.5" in calls[0][calls[0].index("--name") + 1]
+            assert go(R(ok_claude), model="haiku", effort="low") == 0 and "claude-haiku-5-5" in calls[0] and "low" in calls[0]
+            (wt / ".omi" / "config.json").write_text('{"codex_models": {"opus": "gpt-o", "sonnet": "gpt-x"}}')
+            assert go(R(ok_codex), tool="codex") == 0 and calls[0][calls[0].index("codex") + 1:][:3] == ["exec", "-m", "gpt-o"]
+            assert "model_reasoning_effort=high" in calls[0] and "gpt-o" in calls[0][calls[0].index("--name") + 1]
+            assert go(R(claude_quota, 1), R(ok_codex)) == 0 and "gpt-o" in calls[1] and "| gpt-o (codex) |" in task.read_text()
+            # unmapped codex alias: codex-default and one warning naming it
+            front(model="haiku")
+            assert go(R(ok_codex), tool="codex") == 0 and "-m" not in calls[0]
+            assert sys.stdout.getvalue().count("WARNING") == 1 and "'haiku'" in sys.stdout.getvalue()
+            # the task's tool/model apply to the write role only; a read role keeps its own
+            front(tool="codex", model="opus")
+            assert go(R(ok_codex)) == 0 and "codex" in calls[0]
+            det, omi.deterministic_checks = omi.deterministic_checks, lambda *a: []
+            try:
+                outs[:] = [R(ok_claude)]
+                calls.clear()
+                assert omi.run_role("omi-agent-reviewer", wt, task) == 0 and "claude" in calls[0] and "codex" not in calls[0]
+                outs[:] = [R(ok_codex)]
+                calls.clear()
+                assert omi.run_role("omi-agent-reviewer", wt, task, tool="codex") == 0 and "codex" in calls[0]
+            finally:
+                omi.deterministic_checks = det
+            # model/effort are Coordinator-owned frontmatter
+            hook[:] = [lambda: task.write_text(task.read_text().replace("model: opus", "model: haiku"), encoding="utf-8")]
+            assert go(R(ok_codex)) == 0
+            hook.clear()
+            assert "REVERTED: model" in sys.stdout.getvalue() and "model: opus" in task.read_text()
+            front()
+            # a non-quota failure prints and records the CLI's error events and the exit code
+            boom = json.dumps({"type": "result", "is_error": True, "result": "boom happened"})
+            assert go(R(boom, 3)) == 3 and "boom happened" in sys.stdout.getvalue() and "exit code 3" in sys.stdout.getvalue()
+            rep = task.read_text().partition("## Reports")[2]
+            assert "> ERROR: boom happened" in rep and "> exit code 3" in rep
+            (wt / ".omi" / "config.json").write_text('{"codex_models": {"sonnet": "gpt-x"}}')
             # a container name already in use: one retry with a 2-char suffix on the stamp
             assert go(R("", 125, 'Conflict. The container name "/NAME" is already in use'), R(ok_codex), tool="codex") == 0
             assert len(calls) == 2 and "--name" in calls[0]

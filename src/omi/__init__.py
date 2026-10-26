@@ -561,7 +561,7 @@ def set_front(text, key, value):
     return f"---{chr(10).join(lines)}---{body}"
 
 
-FRONT_OWNED = ("step", "status", "workflow", "scope", "role", "skills", "refs", "plan")  # Coordinator-owned task frontmatter
+FRONT_OWNED = ("step", "status", "workflow", "scope", "role", "skills", "refs", "plan", "model", "effort")  # Coordinator-owned task frontmatter
 
 
 def front_of(text):
@@ -1855,7 +1855,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
     before = task.read_text(encoding="utf-8") if task.exists() else ""
     am = get_role(main, role)
     get_role(main, tm.get("role") or "omi-agent-engineer")  # unknown task role fails too
-    tool = tool or tm.get("tool") or am.get("tool") or "claude"
+    write = am["access"] == "write"  # the task's tool/model/effort are for the implementer; read roles keep their own
+    tool = tool or (tm.get("tool") if write else None) or am.get("tool") or "claude"
     if tool not in ("claude", "codex"):
         sys.exit(f"unknown tool `{tool}`: claude or codex. Nothing changed.")
     other = "codex" if tool == "claude" else "claude"
@@ -1875,10 +1876,16 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
     declared = check_skills(wt, ids)  # role defaults count against the budget
     rule_files = task_rules(wt, split(tm.get("scope")))
     ref_files = task_references(wt, tm)
-    want = effort or am.get("effort")
+    want = effort or (tm.get("effort") if write else None) or am.get("effort")
     efforts = {"claude": want, "codex": codex_effort(want)}
-    want_model = model or am.get("model")
+    want_model = model or (tm.get("model") if write else None) or am.get("model")
     models = {tool: resolve_model(main, want_model, tool)}
+
+    def warn_default(t):
+        if t == "codex" and models[t] == CODEX_DEFAULT and want_model != CODEX_DEFAULT:
+            print(f"WARNING: no codex_models entry for '{want_model}'; codex runs with {CODEX_DEFAULT}")
+
+    warn_default(tool)
     read = am["access"] == "read"
     mounts = []
     if read:
@@ -1984,6 +1991,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
             other_secret, problem = (claude_auth() if other == "claude" else tool_secret(other)), None
             try:
                 models[other] = resolve_model(main, want_model, other)
+                warn_default(other)
             except SystemExit:  # a full ID of one tool: the other uses the role's alias, else its default
                 try:
                     models[other] = resolve_model(main, am.get("model"), other)
@@ -2006,7 +2014,11 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
                 return stop_quota("claude and codex both hit their usage limit")
         rc = r.returncode
         print(result if result is not None else (r.stdout or ""))
-        append_note(task, "Reports", f"{datetime.datetime.now():%Y-%m-%d %H:%M} {role} ({tool}):\n" + "\n".join("> " + l for l in clip_report(result or "(no report)")))
+        report = result or "(no report)"
+        if rc:  # not a usage limit (handled above): show why the CLI failed
+            report += "".join(f"\nERROR: {' '.join(t.split())}" for t in error_texts(tool, r.stdout) if t.strip()) + f"\nexit code {rc}"
+            print(report.partition(result or "(no report)")[2].strip())
+        append_note(task, "Reports", f"{datetime.datetime.now():%Y-%m-%d %H:%M} {role} ({tool}):\n" + "\n".join("> " + l for l in clip_report(report)))
         for sid in ids:
             if sid not in done:
                 print(f"SKILL NOT READ: {sid}")
