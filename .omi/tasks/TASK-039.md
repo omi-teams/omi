@@ -1,25 +1,26 @@
 ---
 id: TASK-039
-title: Final evaluation of skills, roles and workflows against baselines
-status: planned
+title: Carry-overs - skill fixes, test fix, review of unreviewed roles and commits
+status: in-progress
 depends: TASK-042, TASK-023, TASK-024, TASK-025, TASK-026, TASK-029, TASK-030, TASK-031
-scope: docs/research/omi-eval.md, .omi/agents/**, .omi/skills/**, .omi/workflows/**, .omi/decisions.md
+scope: .omi/agents/**, .omi/skills/**, src/omi/template/**, .claude/skills/**, tests/**
+role: omi-agent-engineer
+skills: []
+workflow: omi-flow-feature
+step:
 ---
 ## Goal
-One evaluation for everything, using the real usage numbers from TASK-040. Keep only what earns its place.
+Close the review carry-overs left by earlier tasks. The baseline evaluation moved to TASK-057 (PO, 2026-10-26).
 
 ## Acceptance criteria
-- [ ] Every skill and every role is covered by a scenario inside the workflow runs below, each also run once with a plain prompt (no skill/role) as baseline; one baseline per skill or role, not per workflow.
-- [ ] One scenario per workflow family (feature, bugfix, docs-only, change-request, incident, release), run in the Docker worker; record tokens, review rounds, steps skipped and problems.
-- [ ] A skill, role or step that does not beat its baseline on correctness, tokens or review rounds is removed or reworked; decisions logged with the numbers.
-- [ ] Report to the PO: total default context added by skills, roles and workflows.
-
-- [ ] Carry-over from the TASK-026 review: fix the contradiction in `omi-skill-data-review` ("stop at the first group with blocking findings, then continue" -> report blocking findings first, then continue), and confirm the `npx playwright cli` fallback in `omi-skill-web-qa` against the pinned upstream skill.
-- [ ] Unreviewed on merge (reviewer wrongly skipped, see decisions 2026-10-25): review the 7 roles from TASK-029/030/031 and the Coordinator commits 8bece61 (omi-task model-invocable), 94f3458 (omi-status pick-list), e7a1bfb (reviewer skip path rule).
-- [ ] Carry-over from the TASK-049 review: `tests/test_omi.py` read-role Usage check uses `not endswith("/1 |")`; assert the exact `-` cell so a missing row fails.
+- [ ] `omi-skill-data-review`: fix the contradiction ("stop at the first group with blocking findings, then continue" -> report blocking findings first, then continue), in `.omi/skills` and its template copy.
+- [ ] `omi-skill-web-qa`: confirm the `npx playwright cli` fallback against the pinned upstream skill; fix or note the source.
+- [ ] Audit (fresh instance, the reviewers were wrongly skipped, see decisions 2026-10-25) the 7 roles from TASK-029/030/031 and Coordinator commits 8bece61 (omi-task model-invocable), 94f3458 (omi-status pick-list), e7a1bfb (reviewer skip path rule): list findings in the Checkpoint and fix each real one in scope.
+- [ ] `tests/test_omi.py` read-role Usage check: replace `not endswith("/1 |")` with an exact `-` cell assertion so a missing row fails.
+- [ ] `python tests/test_omi.py` and `python -m omi skills --check` pass.
 
 ## Checkpoint
 Done:
 Not done:
 Tests:
-Next: PO review, then release
+Next: TASK-057
