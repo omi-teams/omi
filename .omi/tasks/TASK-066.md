@@ -1,7 +1,7 @@
 ---
 id: TASK-066
 title: Agents cannot change step or status in the task file
-status: planned
+status: in-progress
 depends: TASK-064
 scope: src/omi/__init__.py, tests/**
 role: omi-agent-engineer
