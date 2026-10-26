@@ -1,38 +1,39 @@
 ---
 id: TASK-072
 title: Coordinator picks model and effort per task in the task file
-status: in-progress
+status: done
 depends: TASK-071
 scope: src/omi/__init__.py, tests/**, src/omi/template/**, .omi/tasks/_template.md, AGENTS.md
 role: omi-agent-engineer
 skills: []
 tool:
 workflow: omi-flow-feature
-step: build
+step: accept
 ---
 ## Goal
 The Coordinator records its model choice in the task file (`model:` alias haiku|sonnet|opus or a full ID, `effort:`), so it survives resume and the quota switch; `omi run` resolves the alias for whichever tool runs. Order: `omi run --model/--effort` > task `model/effort` > role.
 
 ## Acceptance criteria
-- [ ] `model:` and `effort:` in the task frontmatter override the role's; `--model/--effort` override both. Tested for claude and codex.
-- [ ] An alias resolves through `models` for claude and `codex_models` for codex, also after a quota switch to the other tool; the container name and the Usage row show the resolved model, not the alias. Tested.
-- [ ] A codex alias missing from `codex_models` still runs with `codex-default` and `omi run` prints one warning line naming the alias. Tested.
-- [ ] `model` and `effort` are in `.omi/tasks/_template.md` (root and template) and are Coordinator-owned frontmatter (agents cannot change them).
-- [ ] Template and root `AGENTS.md` say in one line that the Coordinator sets `model`/`effort` per task from the quota rules.
-- [ ] A task's `tool:` (and `model`/`effort`) apply only to its write role (the implementer); read roles such as the reviewer keep their role's tool, so a codex-built task gets a claude review by default. `omi run --tool` still overrides. Tested.
-- [ ] When an agent CLI exits non-zero for a reason other than a usage limit, `omi run` prints its error events (claude `result` is_error, codex `error`/`turn.failed`) and the exit code, and writes them to `## Reports`. Tested.
-- [ ] All tests pass on the Linux worker and the Windows host.
+- [x] `model:` and `effort:` in the task frontmatter override the role's; `--model/--effort` override both. Tested for claude and codex.
+- [x] An alias resolves through `models` for claude and `codex_models` for codex, also after a quota switch to the other tool; the container name and the Usage row show the resolved model, not the alias. Tested.
+- [x] A codex alias missing from `codex_models` still runs with `codex-default` and `omi run` prints one warning line naming the alias. Tested.
+- [x] `model` and `effort` are in `.omi/tasks/_template.md` (root and template) and are Coordinator-owned frontmatter (agents cannot change them).
+- [x] Template and root `AGENTS.md` say in one line that the Coordinator sets `model`/`effort` per task from the quota rules.
+- [x] A task's `tool:` (and `model`/`effort`) apply only to its write role (the implementer); read roles such as the reviewer keep their role's tool, so a codex-built task gets a claude review by default. `omi run --tool` still overrides. Tested.
+- [x] When an agent CLI exits non-zero for a reason other than a usage limit, `omi run` prints its error events (claude `result` is_error, codex `error`/`turn.failed`) and the exit code, and writes them to `## Reports`. Tested.
+- [x] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
 Review round 1 PASS; the PO asked to fix two small points first (PO: "Sửa 2 điểm nhỏ trước"). Windows host: tests ok (Coordinator).
 - Quota-switch fallback: after `models[other] = resolve_model(main, am.get("model"), other)` also warn when it resolved to `codex-default`, naming the alias actually used (`am.get("model")`). Test: task model is a full claude ID, claude hits its limit, role alias missing from `codex_models` -> one WARNING naming that alias.
 - Test the codex error path: a codex run exiting non-zero with an `error` event and a `turn.failed` event (not a usage limit) prints both messages and `exit code N`, and writes them to `## Reports`.
 Done: all criteria implemented + tested; both review-round fixes (fallback warning, codex error-path test) done.
-Not done: Windows host test run.
-Tests: python3 tests/test_omi.py ok (Linux).
+Not done: -
+Tests: python3 tests/test_omi.py ok (Linux worker and Windows host).
 Next: Coordinator review/commit.
 
 ## Steps
+PO approval accept: Nghiệm thu, merge (Recommended)
 - plan started 2026-10-26 14:32
 - plan done 2026-10-26 14:32
 - build started 2026-10-26 14:32
@@ -40,6 +41,11 @@ Next: Coordinator review/commit.
 - review started 2026-10-26 14:34
 - review failed 2026-10-26 14:36
 - build started 2026-10-26 14:36
+- build done 2026-10-26 14:37
+- review started 2026-10-26 14:37
+- review done 2026-10-26 14:39
+- accept started 2026-10-26 14:39
+- accept done 2026-10-26 14:39
 
 ## Reports
 2026-10-26 14:34 omi-agent-engineer (claude):
@@ -168,6 +174,17 @@ Next: Coordinator review/commit.
 > create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-26 14:38 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - .omi/tasks/TASK-072.md:27 The Checkpoint says "Windows host: tests ok (Coordinator)" and also "Not done: Windows host test run". I can't run the Windows host from here. -> The Coordinator should confirm the Windows run, then delete the "Not done" line.
+> - src/omi/__init__.py:~1996 In the quota-switch fallback, if the role's own alias also fails to resolve for codex (inner `except SystemExit`), `models[other]` is set to `CODEX_DEFAULT` with no warning. This only happens when the role's `model` is an unknown alias, so it is a narrow edge case. -> Call `warn_default(other, am.get("model"))` in that branch if you want it covered.
+> 
+> AC: `model`/`effort` in the task override the role's, and `--model`/`--effort` override both, for claude and codex ✓ `python3 tests/test_omi.py` passes. The test checks opus/high from the task (claude), then haiku/low from the flags. For codex it checks `exec -m gpt-o` and `model_reasoning_effort=high`.
+> AC: An alias resolves via `models` for claude and `codex_models` for codex, also after a quota switch; the container name and Usage row show the resolved model ✓ Tests check `opus-5.5` and `gpt-o` in the `--name` value, and `| gpt-o (codex) |` in the Usage row after a claude quota hit.
+> AC: A missing codex alias runs with `codex-default` and prints one warning naming the alias ✓ `warn_default` is called at the start and on both quota-switch resolve paths. Tests check `-m` is absent, `WARNING` appears once, and `'haiku'` / `'sonnet'` appear in the output.
+> AC: `model`/`effort` are in both `_template.md` files and are Coordinator-owned ✓ Both templates have the new keys, both `FRONT_OWNED` entries are added, and the test sees `REVERTED: model` and `model: opus` kept.
+> [... truncated ...]
+> AC: All tests pass on the Linux worker and the Windows host ✗ Linux passes (I ran it). The Windows run has no evidence, and the Checkpoint contradicts itself on it.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -175,3 +192,4 @@ Next: Coordinator review/commit.
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 20 | 6884 | 324836 | 102s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 2378 | 74134 | 45s | - | PASS d73e3f2 |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 12 | 2418 | 161115 | 50s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 2203 | 87168 | 44s | - | PASS f929545 |
