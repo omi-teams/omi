@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 import omi  # noqa: E402
 
 omi.os.environ["CODEX_HOME"] = tempfile.mkdtemp()  # no host ChatGPT login unless a test writes one
+omi.os.environ["CLAUDE_CONFIG_DIR"] = tempfile.mkdtemp()  # no host Claude Code login unless a test writes one
 
 real_egress = omi.egress  # other tests run workers with docker mocked: no proxy
 
@@ -1462,7 +1463,7 @@ def test_review_round_flow():
             omi.os.environ.pop(omi.TOKEN_ENV, None)
             if tok is not None:
                 omi.os.environ[omi.TOKEN_ENV] = tok
-        assert printed.strip() == "tool: claude (claude-sonnet-5-5)\n" + run_raw, printed
+        assert printed.strip() == "claude auth: env\ntool: claude (claude-sonnet-5-5)\n" + run_raw, printed
 
 
 def test_tool_choice_and_quota_switch():
@@ -1646,6 +1647,38 @@ def test_git_non_ascii():
         (root / "README.md").write_text("ASCII\nTiếng Việt có dấu\n", encoding="utf-8")
         diff = omi.git(root, "diff")
         assert diff is not None and "Tiếng Việt có dấu" in diff, "git() must decode UTF-8 output"
+
+
+def test_claude_session_login():
+    cfg = Path(omi.os.environ["CLAUDE_CONFIG_DIR"])
+    cred = cfg / ".credentials.json"
+    real = omi.WINDOWS, omi.cred_read, omi.os.environ.pop(omi.TOKEN_ENV, None)
+    omi.WINDOWS, omi.cred_read = True, lambda target: "stored-tok"
+    write = lambda exp: cred.write_text(json.dumps({"claudeAiOauth": {"accessToken": "sess-tok", "refreshToken": "REAL-REFRESH",
+                                                                      "expiresAt": exp}}))
+    try:
+        cred.unlink(missing_ok=True)  # missing file: stored
+        assert omi.claude_secret() == ("stored-tok", "stored", None)
+        write(int((omi.time.time() + 3600) * 1000))  # session beats stored
+        assert omi.claude_secret() == ("sess-tok", "session", None)
+        assert omi.tool_secret("claude") == (omi.TOKEN_ENV, "sess-tok", None)
+        omi.os.environ[omi.TOKEN_ENV] = "env-tok"  # env beats session
+        assert omi.claude_secret() == ("env-tok", "env", None)
+        del omi.os.environ[omi.TOKEN_ENV]
+        write(1000)  # expired: note, falls through to stored
+        val, src, note = omi.claude_secret()
+        assert (val, src) == ("stored-tok", "stored") and "session login expired" in note
+        omi.cred_read = lambda target: None  # nothing usable: no value, note kept
+        val, src, note = omi.claude_secret()
+        assert val is None and "expired" in note
+        # the refresh token is never returned
+        write(int((omi.time.time() + 3600) * 1000))
+        assert "REAL-REFRESH" not in repr(omi.claude_secret())
+    finally:
+        omi.WINDOWS, omi.cred_read = real[0], real[1]
+        cred.unlink(missing_ok=True)
+        if real[2]:
+            omi.os.environ[omi.TOKEN_ENV] = real[2]
 
 
 def test_codex_chatgpt_login():
@@ -2035,6 +2068,7 @@ if __name__ == "__main__":
     test_parallel()
     test_usage()
     test_tool_choice_and_quota_switch()
+    test_claude_session_login()
     test_codex_chatgpt_login()
     test_codex_chatgpt_run()
     test_git_non_ascii()
