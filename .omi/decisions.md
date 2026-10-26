@@ -68,3 +68,4 @@
 - 2026-10-26 | TASK-079 fix round 2 on Claude opus/high | review FAIL twice, argument injection via omi_repo | PO in chat
 - 2026-10-26 | TASK-079 fix round 3 (symlink-safe writes) on Codex gpt-6.1-sol/high | third review FAIL, small known fix | PO in chat
 - 2026-10-26 | TASK-079 security fix round (init manifest symlink) on Claude sonnet/medium | security FAIL, same guard as --apply | PO in chat
+- 2026-10-26 | TASK-079 fix round: all four open low-severity notes on Codex gpt-6.1-sol/medium | review FAIL, gate blocks merge | PO in chat
