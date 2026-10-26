@@ -31,6 +31,7 @@ Coordinator check round 1 FAIL (before review). Real Docker evidence from a prob
 Done: run_hook/hook_note/hook_cmd, offline argv flag, run_role wiring (rc 6), step done guard, `omi hook` CLI, template+root post-run.sh, AGENTS/SKILL lines, test_hooks.
 Not done: real Docker run of hooks (not available here; argv asserted). Hooks mount the worktree ro, so go/python caches may not write.
 Tests: python3 tests/test_omi.py -> ok
+Round 1 fixes done: post-run.sh (template) exits 1 naming the missing tool (go, npm, pytest) when tests exist, tested per branch with sh; repo .omi/hooks/post-run.sh is `exec python3 tests/test_omi.py`; pre-run/post-run run for write roles only (test: architect run makes no hook call). Tests ok.
 Next: Coordinator review and commit.
 
 ## Steps
@@ -70,9 +71,19 @@ Next: Coordinator review and commit.
 > Suggested commit: `feat: add pre-run, post-run and pre-merge hooks run in Docker (TASK-071)`
 > 
 > Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+2026-10-26 14:21 omi-agent-engineer (claude):
+> DONE. The three round-1 findings are fixed, and `python3 tests/test_omi.py` prints `ok`.
+> - **Files changed:** `src/omi/__init__.py`, `tests/test_omi.py`, `src/omi/template/dot-omi/hooks/post-run.sh`, `.omi/hooks/post-run.sh`, `.omi/tasks/TASK-071.md`.
+> - **Missing runner:** the template `post-run.sh` now exits 1 with `post-run: <tool> not in the worker image; add it to docker/Dockerfile` when tests exist but go, npm or pytest is missing. It exits 0 only when no tests exist. I tested the go and npm branches with `sh` in temp dirs. The pytest branch is not tested, because it needs a Python without pytest.
+> - **This repo's hook:** `.omi/hooks/post-run.sh` is now `exec python3 tests/test_omi.py`. It has not run in a real container.
+> - **Read roles:** `run_role` now runs `pre-run` and `post-run` for write roles only. A new test shows an architect run makes no hook docker call.
+> - **Open issue:** no real Docker run happened here. The `:ro` worktree may still block go and Python cache writes.
+> 
+> Suggested commit: `fix: fail post-run hook when the test runner is missing; run hooks for write roles only (TASK-071)`
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-architect | claude-opus-5-5 | high | 12 | 6710 | 178653 | 82s | - | n/a |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 36 | 14563 | 1008259 | 199s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 14 | 3088 | 191347 | 61s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |

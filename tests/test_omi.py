@@ -627,6 +627,16 @@ def test_hooks():
                 assert "post-run hook failed" in str(e), e
             st["hook_rc"] = 0
             assert go() == 0 and omi.step(main, "TASK-001", "done") == 0
+            # read roles run no hooks
+            calls.clear()
+            (main / ".omi" / "hooks" / "pre-run.sh").write_text("exit 1")
+            omi.deterministic_checks, real_dc = (lambda *a: []), omi.deterministic_checks
+            try:
+                omi.run_role("omi-agent-architect", wt, task)
+            finally:
+                omi.deterministic_checks = real_dc
+            assert agents() and not hooks()
+            (main / ".omi" / "hooks" / "pre-run.sh").unlink()
             # pre-merge CLI: runs against the task worktree, exits with the hook's code; no hook is a no-op
             try:
                 assert omi.hook_cmd("pre-merge", "TASK-001") == 0 and "no pre-merge hook" in sys.stdout.getvalue()
@@ -647,6 +657,20 @@ def test_hooks():
         if sh:
             r = subprocess.run([sh, str(omi.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh")], cwd=d, capture_output=True, text=True)
             assert r.returncode == 0 and "no tests found" in r.stdout, r
+            # tests exist but the runner is missing: exit 1 naming the tool (PATH holds only sh and coreutils shims)
+            bindir = Path(d) / "bin"
+            bindir.mkdir()
+            for tool in ("grep", "ls", "dirname"):
+                if shutil.which(tool):
+                    (bindir / tool).symlink_to(shutil.which(tool))
+            env = {"PATH": str(bindir)}
+            for name, files in (("go", {"go.mod": ""}), ("npm", {"package.json": '{"scripts":{"test":"x"}}'})):
+                w = Path(d) / name
+                w.mkdir()
+                for fn, c in files.items():
+                    (w / fn).write_text(c)
+                r = subprocess.run([sh, str(omi.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh")], cwd=w, capture_output=True, text=True, env=env)
+                assert r.returncode == 1 and f"{name} not in the worker image" in r.stdout, r
     text = (omi.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh").read_text()
     assert all(w in text for w in ("pytest", "go test", "npm test"))
     for f in (Path("AGENTS.md"), omi.TEMPLATE / "AGENTS.md", Path(".claude/skills/omi-task/SKILL.md"),

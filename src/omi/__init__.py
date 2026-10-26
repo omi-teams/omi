@@ -1879,7 +1879,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
             print(f"{role} not started; fix these first:\n" + "\n".join(problems))
             return 4
     image = ensure_image(main)
-    res = run_hook(wt, main, "pre-run", task.stem, image)
+    res = None if read else run_hook(wt, main, "pre-run", task.stem, image)  # hooks guard write roles only
     if res and hook_note(task, "pre-run", res):
         print("pre-run hook failed; the agent was not started")
         return 6
@@ -2002,7 +2002,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
         for sid in ids:
             if sid not in done:
                 print(f"SKILL NOT READ: {sid}")
-        res = run_hook(wt, main, "post-run", task.stem, image) if not rc else None
+        res = run_hook(wt, main, "post-run", task.stem, image) if not rc and not read else None
         if res and hook_note(task, "post-run", res):
             hook_failed = True
     finally:
