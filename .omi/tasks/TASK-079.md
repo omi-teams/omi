@@ -1,14 +1,14 @@
 ---
 id: TASK-079
 title: omi upgrade and /omi-upgrade - install a newer omi and update unmodified template files
-status: planned
+status: in-progress
 depends: TASK-078
 scope: src/omi/__init__.py, tests/**, src/omi/template/**, .claude/skills/omi-upgrade/**, AGENTS.md, README.md
 role: omi-agent-engineer
 skills: [omi-skill-windows-powershell]
 refs:
 plan: PLAN-001
-tool:
+tool: claude
 model: sonnet
 effort: medium
 workflow: omi-flow-feature-sensitive
