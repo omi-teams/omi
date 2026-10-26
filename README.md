@@ -4,8 +4,13 @@
 
 ## Cài và dùng
 
+Phiên bản (SemVer 0.x) chỉ ghi ở `pyproject.toml`; `omi init` ghi nó vào `.omi/version`, `omi status` báo khi dự án cũ hơn omi đang cài.
+
 ```sh
-pip install -e .          # hoặc: pipx install .
+pipx install git+https://github.com/omi-teams/omi-squad2@v0.2.0     # cài từ tag
+pipx install --force git+https://github.com/omi-teams/omi-squad2@<tag>   # nâng cấp, rồi chạy `omi init` trong từng dự án
+omi --version             # omi 0.2.0
+pip install -e .          # hoặc, khi phát triển omi: từ source
 mkdir my-app && cd my-app
 omi init                  # cài khung squad, không ghi đè file sẵn có
 omi github [--po]         # (PO, quyền admin; --po: đăng nhập PO trên browser, xong tự logout + quay lại tài khoản squad) tạo staging + ruleset: squad chỉ merge vào development

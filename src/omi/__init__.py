@@ -6,6 +6,7 @@ import ctypes
 import datetime
 import getpass
 import hashlib
+import importlib.metadata
 import importlib.util
 import io
 import json
@@ -18,6 +19,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 import threading
 import time
 import types
@@ -29,6 +31,7 @@ TOOLS = ("git", "gh", "docker", "claude", "codex")
 STATUSES = ("in-progress", "review", "blocked", "planned")
 USAGE = """usage: omi <command>
   init [dir]   install the squad into a project (never overwrites)
+  version      print the omi version (also --version)
   status       show tasks, checkpoints and the next suggested task
   guard        Claude Code PreToolUse hook: block writes outside task scope
   github       set up branches and rulesets: squad merges to development, only the PO to staging/main
@@ -686,6 +689,18 @@ def step(root, tid, action, why=None, now=None):
     return 0
 
 
+def version():
+    """The one version lives in pyproject.toml; installed omi reads it from package metadata."""
+    try:
+        return importlib.metadata.version("omi-squad")
+    except importlib.metadata.PackageNotFoundError:  # source checkout, not installed
+        return tomllib.loads((Path(__file__).parents[2] / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+
+
+def semver(v):
+    return tuple(int(n) for n in re.findall(r"\d+", v.split("-")[0].split("+")[0])[:3])
+
+
 def init(target="."):
     target = Path(target).resolve()
     for src in sorted(TEMPLATE.rglob("*")):
@@ -701,6 +716,8 @@ def init(target="."):
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(src, dst)
         print(f"create {rel}")
+    (target / ".omi" / "version").write_text(version() + "\n", encoding="utf-8")
+    print(f"stamp  .omi/version ({version()})")
     ignore = target / ".gitignore"
     lines = ignore.read_text(encoding="utf-8").splitlines() if ignore.exists() else []
     if not {"__pycache__", "__pycache__/", "/__pycache__/"} & set(lines):
@@ -791,6 +808,15 @@ def drift(wt, tid):
 def status(cwd="."):
     root = Path(git(cwd, "rev-parse", "--show-toplevel") or cwd).resolve()
     print(f"branch: {git(root, 'rev-parse', '--abbrev-ref', 'HEAD')}")
+    stamp_file = root / ".omi" / "version"
+    stamp = stamp_file.read_text(encoding="utf-8").strip() if stamp_file.exists() else ""
+    print(f"omi {version()} (project {stamp or 'none'})")
+    try:
+        old = not stamp or semver(stamp) < semver(version())
+    except ValueError:
+        old = True
+    if old:
+        print(f"run `omi init` to add the files of omi {version()}")
     ts = tasks(root)
     for pid, m in load_plans(root, strict=False).items():
         if m["status"] == "active":
@@ -2097,7 +2123,9 @@ def main(argv=None):
     sys.stdout.reconfigure(encoding="utf-8")
     args = sys.argv[1:] if argv is None else argv
     cmd, rest = (args[0], args[1:]) if args else ("help", [])
-    if cmd == "init":
+    if cmd in ("version", "--version"):
+        print(f"omi {version()}")
+    elif cmd == "init":
         init(*rest[:1])
     elif cmd == "status":
         status(*rest[:1])

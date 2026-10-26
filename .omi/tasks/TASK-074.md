@@ -12,7 +12,7 @@ tool:
 model: sonnet
 effort: medium
 workflow: omi-flow-feature
-step:
+step: build
 ---
 ## Goal
 omi has one version (SemVer 0.x, in `pyproject.toml`), shows it, stamps it into each project on `omi init`, tells the PO when a project is older than the installed omi, and installs cleanly from a git tag. Bump to 0.2.0 (rules, references, plans, hooks, model per task).
@@ -29,7 +29,79 @@ omi has one version (SemVer 0.x, in `pyproject.toml`), shows it, stamps it into 
 - [ ] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
-Next:
+Done: version 0.2.0, omi --version/version, .omi/version stamp in init, status line + upgrade hint, package-data globs, post-run.sh config test, README, tests.
+Not done: real install on Windows host (Coordinator).
+Tests: python3 tests/test_omi.py ok (Linux).
+Next: Coordinator reviews and runs Windows install check.
+
+## Steps
+- plan started 2026-10-26 14:55
+- plan done 2026-10-26 14:55
+- build started 2026-10-26 14:55
+
+## Reports
+2026-10-26 14:57 omi-agent-engineer (claude):
+> DONE
+> - Files changed: `pyproject.toml`, `src/omi/__init__.py`, `src/omi/template/dot-omi/hooks/post-run.sh`, `tests/test_omi.py`, `README.md`, `.omi/tasks/TASK-074.md` (checkpoint).
+> - Version is 0.2.0, written only in `pyproject.toml`. `omi --version` and `omi version` print `omi 0.2.0`, read from the `omi-squad` package metadata, with a fallback to `pyproject.toml` in a source checkout.
+> - `omi init` writes `.omi/version` on every run. `omi status` prints `omi X (project Y)`, plus the `run \`omi init\`...` line when the stamp is missing or older (SemVer compare, no new dependency).
+> - `package-data` now has the globs `template/*`, `template/**/*` and `template/**/.*`; the last one is for `.gitkeep`. The test matches them against the template file list, including the `.sh` hooks and the skill `references/` dirs.
+> - `post-run.sh` runs the `test` command from `.omi/config.json` before the go/npm/pytest detection. The test runs it with `sh` in a temp dir that also has a `go.mod`, and checks the exit code is the configured one.
+> - README install section is added in Vietnamese, matching the rest of the file: install from the `v0.2.0` tag, upgrade, `omi --version`.
+> - Tests: `python3 tests/test_omi.py` passes on Linux. The new test is `test_version_stamp_package_hook`.
+> - Open: I did not run the real `pip install` into a fresh venv or the Windows host run (Coordinator).
+> 
+> Suggested commit: `feat: version omi 0.2.0 with --version, project version stamp and tag install`
+2026-10-26 14:57 hook post-run passed:
+> Conflict. The container name "/tmpvtef99pv-TASK-001-engineer-codex-gpt-x-medium-075709" is already in useBind for 0.0.0.0:8080 failed: port is already in usewrote /tmp/tmp5p8dss5h/.omi/skills/CATALOG.md (2 skills)
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/__pycache__/proxy.cpython-313.pyc
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .omi/agents/CATALOG.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/config.json
+> create .omi/decisions.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/CATALOG.md
+> create .omi/plans/PLAN-000.md
+> create .omi/references/CATALOG.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/CATALOG.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> [... truncated ...]
+> ok
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read | verdict |
+|---|---|---|---|---|---|---|---|---|
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 5729 | 236552 | 87s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
