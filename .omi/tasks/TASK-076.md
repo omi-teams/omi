@@ -1,9 +1,9 @@
 ---
 id: TASK-076
 title: Worker runtime for compiled languages - exec cache tmpfs, sizes in config, PATH for login shells
-status: planned
+status: in-progress
 depends:
-scope: src/omi/__init__.py, tests/**, src/omi/template/**, docker/**
+scope: src/omi/__init__.py, tests/**, src/omi/template/**, docker/**, .claude/skills/omi-idea/SKILL.md
 role: omi-agent-engineer
 skills: [omi-skill-docker-worker-pitfalls, omi-skill-windows-powershell]
 refs:
