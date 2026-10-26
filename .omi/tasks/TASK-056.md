@@ -10,10 +10,10 @@ workflow: omi-flow-feature
 step: accept
 ---
 ## Goal
-Agent containers are named `<repo>-<TASK-ID>-<role short>-<tool>-<model>-<effort>-<HHMMSS>`, e.g. `TASK-055-reviewer-claude-sonnet-5.5-medium-143205`; plus two small fixes from the TASK-055 review.
+Agent containers are named `<repo>-<TASK-ID>-<role short>-<tool>-<model>-<effort>-<HHMMSS>`, e.g. `omi-squad2-TASK-055-reviewer-claude-sonnet-5.5-medium-143205`; plus two small fixes from the TASK-055 review.
 
 ## Acceptance criteria
-- [ ] `container_name` drops the `omi-<repo>-` prefix and the `omi-agent-` role prefix, adds the tool, and keeps dots in the model version (`claude-sonnet-5-5` -> `claude-sonnet-5.5`, codex IDs as is, `codex-default` as is); Docker charset only. Proxy and network names follow it; `omi clean` still finds everything by label (repo stays in labels). `--prove` names its container the same way as a real run; the TASK-045 length test is updated to compare with a real-run name.
+- [ ] `container_name` is `<repo>-<TASK>-...` (no `omi-` prefix), drops the `omi-agent-` role prefix, adds the tool, and keeps dots in the model version (`claude-sonnet-5-5` -> `claude-sonnet-5.5`, codex IDs as is, `codex-default` as is); Docker charset only. Proxy and network names follow it; `omi clean` still finds everything by label (repo stays in labels). `--prove` names its container the same way as a real run; the TASK-045 length test is updated to compare with a real-run name.
 - [ ] Quota switch: when `--model` is a full ID for one tool, the other tool falls back to the role's alias (codex: `codex-default`) instead of exiting 5.
 - [ ] `## Reports`: a report longer than the limit keeps its first and last lines (DONE/VERDICT and suggested commit), truncating the middle.
 - [ ] `python tests/test_omi.py` passes.
@@ -50,7 +50,7 @@ PO at accept (round 4):
 2026-10-26 10:00 omi-agent-engineer (claude):
 > DONE
 > - Files changed: `src/omi/__init__.py`, `tests/test_omi.py`, `README.md`, `.omi/tasks/TASK-056.md` (checkpoint).
-> - Container names are now `<TASK>-<role short>-<tool>-<model>-<effort>-<HHMMSS>`, e.g. `TASK-055-reviewer-claude-sonnet-5.5-medium-143205`. The model version keeps its dot for Claude IDs, and the tool isn't repeated when the model already starts with it (`codex-default` gives `...-codex-default-...`). The `container_name` signature changed to `(role, tid, tool, model, effort, now)`. Proxy and network names are built from it. `--prove` uses the same naming, with the engineer role's tool and model.
+> - Container names are now `<TASK>-<role short>-<tool>-<model>-<effort>-<HHMMSS>`, e.g. `omi-squad2-TASK-055-reviewer-claude-sonnet-5.5-medium-143205`. The model version keeps its dot for Claude IDs, and the tool isn't repeated when the model already starts with it (`codex-default` gives `...-codex-default-...`). The `container_name` signature changed to `(role, tid, tool, model, effort, now)`. Proxy and network names are built from it. `--prove` uses the same naming, with the engineer role's tool and model.
 > - Quota switch: if `--model` is a full ID for one tool, the other tool now uses the role's alias, and codex falls back to `codex-default`. A new test covers both cases.
 > - `## Reports`: a new `clip_report` keeps the first and last lines of a report that exceeds 2000 characters and truncates the middle. A new test covers it.
 > - Tests: `python3 tests/test_omi.py` passes. I updated the name assertions, and the length test in `test_egress` now pads the name past 63 characters, because the new real-run names are shorter than that.
@@ -106,6 +106,16 @@ PO at accept (round 4):
 > Suggested commit: `feat(omi): repo in container names, group run containers under compose project`
 > Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>
 > Open issues: I could not check the Docker Desktop grouping here; the tests only assert the label values. The compose project name is the run name, so each run forms its own group, which is how I read "group each run". The `--prove` path reads the tool from the role file only, as before.
+2026-10-26 10:12 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/__init__.py:1543 `run_once` now captures the agent's stderr (`stderr=PIPE`) and writes it only after the container exits. The user sees no live stderr during a long run, and it is lost if the process is killed. A name conflict could instead be detected from the fast `docker run` failure (returncode 125). -> Accept, or keep stderr inherited.
+> - src/omi/__init__.py:1652 The `--prove` retry (merged output checked with `name_taken`, then a salted rerun) has no test of its own. -> Add a `worker(..., prove=True)` test whose first `docker run` returns the conflict message.
+> - src/omi/__init__.py:1658 `--prove` takes the tool only from the role file (`am.get("tool")`). A real run can also take `tool:` from the task or `--tool`, so its name can differ from the prove name. -> Share the tool resolution with `run_role`. This is not in the acceptance criteria.
+> - .omi/tasks/TASK-056.md:17 The acceptance criterion still says to drop the `omi-<repo>-` prefix. The Goal and the code now put the repo back (PO round 4). The Goal's own example (`TASK-055-reviewer-...`) also lacks the repo. -> Reword the criterion and the example to match the round-4 format.
+> 
+> AC: `container_name` drops the `omi-` prefix and the `omi-agent-` role prefix, adds the tool, keeps dots in the model version, and uses Docker charset only âœ“ `test_container_names` asserts `omi-squad2-TASK-055-reviewer-claude-sonnet-5.5-medium-143205`, `...-codex-gpt-5.1-codex-high-...` and `...-codex-default-...`. The `re.sub` charset filter is unchanged. The repo is back in the name per the round-4 PO instruction.
+> AC: Proxy and network names follow the agent name, and `omi clean` still finds everything by label âœ“ `egress` builds `omi-net-{name}` and `{name}-proxy`. The `omi-repo` and `omi-worker` labels are unchanged. The compose labels are added only, and the tests assert them on the agent and proxy `create` calls.
+> AC: `--prove` is named like a real run, and the TASK-045 length test is updated âœ“ `worke
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -116,3 +126,4 @@ PO at accept (round 4):
 | omi-agent-engineer | claude-haiku-5-5 | low | 24 | 6896 | 368364 | 53s | 1/1 omi-skill-docker-worker-pitfalls | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 3190 | 94836 | 39s | - | PASS a9d0b39 |
 | omi-agent-engineer | claude-haiku-5-5 | low | 40 | 10772 | 746263 | 93s | 1/1 omi-skill-docker-worker-pitfalls | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 2918 | 105246 | 38s | - | PASS cd609fc |
