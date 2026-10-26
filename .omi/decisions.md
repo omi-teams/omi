@@ -39,3 +39,4 @@
 - 2026-10-25 | postmortem TASK-053: 23:15 TASK-052 engineer failed ENOTFOUND; cause: TASK-044 named the proxy <container_name>-proxy (69 chars > 63-char DNS label), prove used a short name so it passed; fix: network alias omi-proxy (PR #48), checked with the real Claude CLI and a 63-char name | follow-up: prove must use a real-length run name and a real CLI call (added to TASK-045) | TASK-053
 - 2026-10-25 | incremental review real numbers (TASK-052 round 1 -> 2): reviewer cache 122083 -> 67971, output 1951 -> 1156 | second data point for TASK-039 (TASK-042 showed no saving) | TASK-052 Usage
 - 2026-10-26 | Template network_allow stays api.anthropic.com only; tool API hosts added per run by allow_for; Codex CLI pinned 0.164.0 | least privilege, current Codex | TASK-045
+- 2026-10-26 | Codex key in Credential Manager is a separate task (TASK-054) | keep TASK-045 small | TASK-045
