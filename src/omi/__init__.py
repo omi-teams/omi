@@ -10,6 +10,7 @@ import json
 import os
 import posixpath
 import re
+import secrets
 import shlex
 import shutil
 import subprocess
@@ -1000,26 +1001,42 @@ def prove_rc(out, rc):
     return rc or (1 if bad else 0)
 
 
+class NameTaken(Exception):
+    """docker refused a container or network name that another run already holds."""
+
+
+def name_taken(err):
+    return "already in use" in err or "already exists" in err
+
+
 @contextlib.contextmanager
 def egress(main, name, image, allow):
     """Internal docker network plus a CONNECT-only allowlist proxy (docker/proxy.py, no token, no worktree);
-    yields (network, proxy host name on that network). Both are removed on exit; hosts the proxy refused are reported."""
+    yields (network, proxy host name on that network). What this run created is removed on exit; hosts the proxy refused are reported.
+    A name already in use raises NameTaken and removes nothing, so another run's proxy or network is never touched."""
     net, proxy, repo = f"omi-net-{name}", f"{name}-proxy", repo_label(main)
     labels = ["--label", "omi-worker=1", "--label", f"omi-repo={repo}"]
     script = TEMPLATE / "docker" / "proxy.py"
     docker = lambda *a: subprocess.run(["docker", *a], capture_output=True, text=True, errors="replace")
-    logs = ""
+    logs, made = "", {"net": False, "proxy": False}
     try:
         r = docker("network", "create", "--internal", *labels, net)
         if r.returncode:
+            if name_taken(r.stderr):
+                raise NameTaken(net)
             sys.exit(f"cannot create the worker network: {r.stderr.strip()}. Nothing changed.")
+        made["net"] = True
         for cmd in (["create", "--name", proxy, *labels, "--user", "node", "--read-only", "--cap-drop", "ALL",
                      "--security-opt", "no-new-privileges", "-v", f"{script}:/proxy.py:ro", image,
                      "python3", "/proxy.py", *allow],
                     ["network", "connect", "--alias", PROXY_ALIAS, net, proxy], ["start", proxy]):
             r = docker(*cmd)
             if r.returncode:
+                if cmd[0] == "create" and name_taken(r.stderr):
+                    raise NameTaken(proxy)
                 sys.exit(f"cannot start the egress proxy (docker {cmd[0]}): {r.stderr.strip()}. Nothing changed.")
+            if cmd[0] == "create":
+                made["proxy"] = True
         for _ in range(50):
             logs = docker("logs", proxy).stdout
             if "omi-proxy ready" in logs:
@@ -1029,9 +1046,11 @@ def egress(main, name, image, allow):
             sys.exit("the egress proxy did not start. Nothing changed.")
         yield net, PROXY_ALIAS
     finally:
-        logs = docker("logs", proxy).stdout or logs
-        docker("rm", "-f", proxy)
-        docker("network", "rm", net)
+        if made["proxy"]:
+            logs = docker("logs", proxy).stdout or logs
+            docker("rm", "-f", proxy)
+        if made["net"]:
+            docker("network", "rm", net)
         hosts = list(dict.fromkeys(re.findall(r"^BLOCKED (\S+)$", logs, re.M)))
         for h in hosts[:5]:
             print(f'NETWORK BLOCKED: {h} - add to "network_allow" in .omi/config.json')
@@ -1039,9 +1058,10 @@ def egress(main, name, image, allow):
             print(f"... and {len(hosts) - 5} more blocked hosts")
 
 
-def container_name(role, tid=None, tool="claude", model=None, effort=None, now=None):
-    """<task-id>-<role short>-<tool>-<model>-<effort>-<HHMMSS>, limited to Docker's [a-zA-Z0-9_.-]; model/effort `none` for prove."""
-    stamp = (now or datetime.datetime.now()).strftime("%H%M%S")
+def container_name(role, tid=None, tool="claude", model=None, effort=None, now=None, salt=""):
+    """<task-id>-<role short>-<tool>-<model>-<effort>-<HHMMSS><salt>, limited to Docker's [a-zA-Z0-9_.-]; model/effort `none` for prove.
+    salt: a random suffix, only after a name conflict."""
+    stamp = (now or datetime.datetime.now()).strftime("%H%M%S") + salt
     model = re.sub(r"-(\d+)-(\d+)$", r"-\1.\2", model or "none") if tool == "claude" else model or "none"
     raw = "-".join(p for p in (tid, re.sub(r"^omi-agent-", "", role), None if model.startswith(tool) else tool, model, effort or "none", stamp) if p)
     return re.sub(r"[^a-zA-Z0-9_.-]", "-", raw)
@@ -1513,12 +1533,27 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
         mdl, eff = models[t], efforts[t]
         cmd = (engineer_cmd if t == "claude" else codex_cmd)(text, task_rel, mdl, eff, prompt_skills + note)
         t0 = time.monotonic()
-        name = container_name(role, task.stem, t, mdl, eff)
-        with egress(main, name, image, allow_for(main, t)) as (net, proxy):
-            r = subprocess.run(worker_argv(wt, image, cmd, name, repo_label(main),
-                                             worker_labels(role, task.stem, mdl, eff), ro=read,
-                                             mounts=mounts, env_names=(envs[t],), network=net, proxy=proxy),
-                                env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True, errors="replace")
+
+        def run_once(name):
+            with egress(main, name, image, allow_for(main, t)) as (net, proxy):
+                r = subprocess.run(worker_argv(wt, image, cmd, name, repo_label(main),
+                                                 worker_labels(role, task.stem, mdl, eff), ro=read,
+                                                 mounts=mounts, env_names=(envs[t],), network=net, proxy=proxy),
+                                    env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    text=True, errors="replace")
+            if r.returncode and name_taken(r.stderr or ""):
+                raise NameTaken(name)
+            sys.stderr.write(r.stderr or "")
+            return r
+
+        for salt in ("", secrets.token_hex(1)):  # a name in use: one retry with a random 2-char suffix
+            try:
+                r = run_once(container_name(role, task.stem, t, mdl, eff, salt=salt))
+                break
+            except NameTaken:
+                continue
+        else:
+            sys.exit(f"container name in use again for {role} ({t}). Nothing changed.")
         result, *nums = parse_usage(t, r.stdout)
         done = skills_read(wt, ids, opened_files(t, r.stdout))
         verdict = (verdict_of(result) or "n/a") if read else "-"
@@ -1564,9 +1599,10 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
                 try:
                     models[other] = resolve_model(main, am.get("model"), other)
                 except SystemExit:
-                    if other != "codex":
+                    if other == "codex":
+                        models[other] = CODEX_DEFAULT
+                    else:
                         problem = f"no {other} model for {want_model}"
-                    models[other] = CODEX_DEFAULT
             if not other_secret:
                 problem = f"no {other} token"
             if problem:
@@ -1612,13 +1648,20 @@ def worker(wt, task_file=None, model=None, effort=None, prove=False):
     script = script if script.exists() else TEMPLATE / "docker" / "prove.sh"
     am = get_role(main, "omi-agent-engineer")  # named like a real run: real role, tool, model, effort
     tm_tool = am.get("tool") or "claude"
-    name = container_name("omi-agent-engineer", "prove", tm_tool,
-                          resolve_model(main, am.get("model"), tm_tool), am.get("effort"))
-    with egress(main, name, image, allow) as (net, proxy):
-        r = subprocess.run(worker_argv(wt, image, ["sh", "-s"], name, repo_label(main),
-                                       worker_labels("prove", None, None, None), network=net, proxy=proxy), env=env,
-                           input=script.read_bytes().replace(b"\r\n", b"\n"), stdout=subprocess.PIPE,
-                           stderr=subprocess.STDOUT)
+    model, effort = resolve_model(main, am.get("model"), tm_tool), am.get("effort")
+    for salt in ("", secrets.token_hex(1)):  # a name in use: one retry with a random 2-char suffix
+        name = container_name("omi-agent-engineer", "prove", tm_tool, model, effort, salt=salt)
+        try:
+            with egress(main, name, image, allow) as (net, proxy):
+                r = subprocess.run(worker_argv(wt, image, ["sh", "-s"], name, repo_label(main),
+                                               worker_labels("prove", None, None, None), network=net, proxy=proxy), env=env,
+                                   input=script.read_bytes().replace(b"\r\n", b"\n"), stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT)
+            break
+        except NameTaken:
+            continue
+    else:
+        sys.exit("container name in use again for --prove. Nothing changed.")
     out = r.stdout.decode("utf-8", "replace")
     print(out, end="")
     return prove_rc(out, r.returncode)

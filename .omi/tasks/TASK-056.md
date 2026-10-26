@@ -19,7 +19,10 @@ Agent containers are named `<TASK-ID>-<role short>-<tool>-<model>-<effort>-<HHMM
 - [ ] `python tests/test_omi.py` passes.
 
 ## Checkpoint
-Done: all 3 criteria + README + tests
+Done: all 3 criteria + README + tests; round 2 (PO at accept):
+- fix 1: quota fallback sets `codex-default` only when the other tool is codex; claude gets `problem`.
+- fix 2: name taken (network, proxy or `docker run`) raises `NameTaken`; `egress` removes only what the run created; retry once with a 2-char salt (`container_name(..., salt=)`), also for `--prove`. Tested.
+- fix 3: 63-char test uses a worst-case real name (long codex model, xhigh); codex->claude fallback test added.
 Not done: -
 Tests: python3 tests/test_omi.py ok
 Next: review
@@ -59,9 +62,21 @@ PO at accept: fix the review notes first (round 2):
 > AC: proxy and network names follow it âœ“ `egress` builds `omi-net-{name}` and `{name}-proxy`. `omi clean` still works, since `omi-repo` and `omi-worker` labels are unchanged (`egress` at line 1008).
 > AC: `--prove` named like a real run âœ“ `worker` uses the engineer role's tool, model and effort. The length test was updated, though weakly (see the third finding).
 > AC: quota switch falls back to the role alias or `codex-default` instead of exiting 5 âœ“ `test_tool_choice_an
+2026-10-26 10:05 omi-agent-engineer (claude):
+> DONE
+> 
+> - Files changed: `src/omi/__init__.py`, `tests/test_omi.py`, `.omi/tasks/TASK-056.md` (checkpoint only). README unchanged.
+> - Fix 1, quota: `codex-default` is set only when the other tool is codex. For claude, the `problem` stop is set without the stray assignment.
+> - Fix 2, name conflict: a taken network or proxy name raises `NameTaken` and `egress` removes only what this run created. A taken name from `docker run` is detected from stderr. Each path retries once with a 2-char hex salt on the stamp, and `--prove` does too.
+> - Fix 3, tests: the 63-char test uses a worst-case real name (long codex model, `xhigh`). Added a codexâ†’claude fallback case and tests for the egress conflict, the salt format and the run-level retry.
+> - Suggested commit: `fix(omi): retry on container name conflict, codex-default only for codex quota fallback`
+> - Tests: `python3 tests/test_omi.py` passes (exit 0).
+> - Open issues: the `--prove` retry catches only the network/proxy conflict, since `docker run` stderr is merged into stdout there. The task file changed on disk during my run; my checkpoint edit kept its contents intact.
+> - Co-Authored-By trailer for the commit: `Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>`
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 28 | 7254 | 490938 | 75s | 2/2 omi-skill-docker-worker-pitfalls omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 3680 | 110694 | 45s | - | PASS c17901d |
+| omi-agent-engineer | claude-haiku-5-5 | low | 28 | 23730 | 615350 | 128s | 1/1 omi-skill-docker-worker-pitfalls | - |

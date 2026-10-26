@@ -673,6 +673,8 @@ def test_container_names():
     assert omi.container_name("omi-agent-engineer", "TASK-018", "codex", "codex-default", "high", t) == \
         "TASK-018-engineer-codex-default-high-143205"
     assert omi.container_name("my role", "prove", now=t) == "prove-my-role-claude-none-none-143205"
+    assert omi.container_name("omi-agent-engineer", "TASK-018", "codex", "codex-default", "high", t, salt="a3") == \
+        "TASK-018-engineer-codex-default-high-143205a3"
     with tempfile.TemporaryDirectory() as d:
         assert omi.resolve_model(d, "opus") == "claude-opus-5-5" and omi.resolve_model(d, "claude-x-1") == "claude-x-1"
         for bad in ("gpt", None):
@@ -783,7 +785,7 @@ def test_network_allowlist():
     calls = []
 
     class R:
-        def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
+        def __init__(s, out="", rc=0, err=""): s.stdout, s.returncode, s.stderr = out, rc, err
 
     def run(cmd, **kw):
         calls.append(cmd)
@@ -794,11 +796,12 @@ def test_network_allowlist():
     buf = io.StringIO()
     sys.stdout, saved = buf, sys.stdout
     try:
-        long = omi.container_name("omi-agent-engineer", "TASK-052", "claude", "claude-sonnet-5-5", "medium") + "-" + "x" * 20
+        # worst real name: a long codex model ID at xhigh effort
+        long = omi.container_name("omi-agent-engineer", "TASK-052", "codex", "gpt-5.1-codex-mini-high-preview-2026-10-26", "xhigh")
         with real_egress(Path("/My Repo"), long, "img", ["api.anthropic.com"]) as (net, proxy):
-            assert (net, proxy) == (f"omi-net-{long}", "omi-proxy")  # a DNS label is at most 63 chars
+            assert (net, proxy) == (f"omi-net-{long}", "omi-proxy") and len(f"{long}-proxy") > 63
             host = omi.worker_argv(Path("/w"), "img", ["x"], long, network=net, proxy=proxy)
-            assert "HTTPS_PROXY=http://omi-proxy:3128" in host and len(f"{long}-proxy") > 63
+            assert "HTTPS_PROXY=http://omi-proxy:3128" in host
             inside = list(calls)
     finally:
         sys.stdout = saved
@@ -837,6 +840,29 @@ def test_network_allowlist():
     # prove.sh checks both an allowed and a blocked host
     sh = (omi.TEMPLATE / "docker" / "prove.sh").read_text()
     assert "api.anthropic.com" in sh and "example.com" in sh and "1.1.1.1" in sh and "network_allow" in sh
+    # a name already in use: NameTaken, and only what this run created is removed (never another run's proxy)
+    for taken in ("network", "proxy"):
+        seen = []
+
+        def run3(cmd, **kw):
+            seen.append(cmd)
+            if (cmd[1:3] == ["network", "create"]) if taken == "network" else (cmd[1] == "create"):
+                return R(rc=1, err="Conflict. The container name is already in use")
+            return R("omi-proxy ready\n" if cmd[1] == "logs" else "")
+
+        omi.subprocess.run = run3
+        try:
+            try:
+                with real_egress(Path("/My Repo"), "n", "img", ["a.com"]):
+                    pass
+            except omi.NameTaken:
+                pass
+            else:
+                raise AssertionError("taken name accepted")
+        finally:
+            omi.subprocess.run = real
+        cmds = [c[1:3] for c in seen]
+        assert ["rm", "-f"] not in cmds and (["network", "rm"] in cmds) == (taken == "proxy"), (taken, cmds)
 
 
 def test_clean_and_old_images():
@@ -1384,8 +1410,8 @@ def test_tool_choice_and_quota_switch():
         outs, calls = [], []
 
         class R:
-            def __init__(self, out="", rc=0):
-                self.stdout, self.stderr, self.returncode = out, "", rc
+            def __init__(self, out="", rc=0, err=""):
+                self.stdout, self.stderr, self.returncode = out, err, rc
 
         def run(cmd, **kw):
             if cmd[:2] == ["docker", "run"]:
@@ -1446,6 +1472,15 @@ def test_tool_choice_and_quota_switch():
             (wt / ".omi" / "config.json").write_text("{}")
             assert go(R(claude_quota, 1), R(ok_codex), model="claude-sonnet-5-5") == 0 and "-m" not in calls[1]
             (wt / ".omi" / "config.json").write_text('{"codex_models": {"sonnet": "gpt-x"}}')
+            # codex hits its limit with a full codex --model: claude uses the role's alias, not the codex ID
+            assert go(R(codex_quota, 1), R(json.dumps({"result": "ok", "usage": {}})), tool="codex", model="gpt-5.1-codex") == 0
+            assert any("claude-sonnet-5-5" in a for a in calls[1]) and not any("gpt-5.1-codex" in a for a in calls[1])
+            assert "| claude-sonnet-5-5 |" in task.read_text()
+            # a container name already in use: one retry with a 2-char suffix on the stamp
+            assert go(R("", 125, 'Conflict. The container name "/x" is already in use'), R(ok_codex), tool="codex") == 0
+            assert len(calls) == 2 and "--name" in calls[0]
+            first, second = (c[c.index("--name") + 1] for c in calls)
+            assert re.fullmatch(r".*-\d{6}", first) and re.fullmatch(r".*-\d{6}[0-9a-f]{2}", second), (first, second)
             # the other tool also at its limit, or without a token: exit 5, QUOTA line, one run only when no token
             assert go(R(claude_quota, 1), R(codex_quota, 1)) == 5 and "QUOTA: claude and codex" in sys.stdout.getvalue()
             del omi.os.environ[omi.CODEX_ENV]
