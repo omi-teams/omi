@@ -26,6 +26,26 @@ def git(cwd, *args):
                    cwd=cwd, check=True, capture_output=True)
 
 
+class FakePopen:
+    """`docker run` as a Popen whose stderr is read line by line; it asks the (mocked) subprocess.run for the result.
+    Every other command goes to the real Popen."""
+    real = subprocess.Popen
+
+    def __new__(cls, cmd, **kw):
+        if cmd[:2] != ["docker", "run"]:
+            return cls.real(cmd, **kw)
+        self = object.__new__(cls)
+        r = subprocess.run(cmd, **kw)
+        self.stdout, self.stderr, self.returncode = io.StringIO(r.stdout), io.StringIO(r.stderr), r.returncode
+        return self
+
+    def __enter__(self): return self
+    def __exit__(self, *a): pass
+    def wait(self): return self.returncode
+
+
+omi.subprocess.Popen = FakePopen
+
 def test_init_fresh_project():
     with tempfile.TemporaryDirectory() as d:
         root = Path(d).resolve()
@@ -1549,6 +1569,14 @@ def test_tool_choice_and_quota_switch():
             except SystemExit:
                 pass
             assert len(calls) == 1, calls
+            # the agent's stderr is echoed line by line as it arrives
+            sys.stderr, saved_err = io.StringIO(), sys.stderr
+            try:
+                assert go(R(ok_codex, 0, "thinking\nstill thinking\n"), tool="codex") == 0
+                echoed = sys.stderr.getvalue()
+            finally:
+                sys.stderr = saved_err
+            assert echoed == "thinking\nstill thinking\n", echoed
             # the other tool also at its limit, or without a token: exit 5, QUOTA line, one run only when no token
             assert go(R(claude_quota, 1), R(codex_quota, 1)) == 5 and "QUOTA: claude and codex" in sys.stdout.getvalue()
             del omi.os.environ[omi.CODEX_ENV]
