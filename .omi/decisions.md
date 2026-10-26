@@ -63,3 +63,11 @@
 - 2026-10-26 | Models: TASK-080 (Claude) and TASK-081 (Codex) research usable models/efforts in-session; TASK-082 puts concrete choices in the agent catalog; every task-start pick-list offers Claude Code vs Codex with a recommendation, PO chooses | PO | TASK-080..082
 - 2026-10-26 | TASK-077 adds review-gate FAIL check and push-after-start | both bit TASK-076 (gate passed on FAIL; squash conflict) | PO in chat
 - 2026-10-26 | TASK-077 third fix round (missing test program message) on Claude sonnet/low | review FAIL after 2 rounds, small known fix | PO in chat
+- 2026-10-26 | TASK-079 option B: ship v0.2.0 template shas for manifest backfill; scope adds template_shas.json, pyproject.toml | existing 0.2.0 projects would otherwise get every file as .omi-new | PO in chat
+- 2026-10-26 | omi upgrade updates .omi/tasks/_template.md like other template files; only TASK-* files are protected | it is a template, TASK-077 changed it | PO in chat
+- 2026-10-26 | TASK-079 fix round 2 on Claude opus/high | review FAIL twice, argument injection via omi_repo | PO in chat
+- 2026-10-26 | TASK-079 fix round 3 (symlink-safe writes) on Codex gpt-6.1-sol/high | third review FAIL, small known fix | PO in chat
+- 2026-10-26 | TASK-079 security fix round (init manifest symlink) on Claude sonnet/medium | security FAIL, same guard as --apply | PO in chat
+- 2026-10-26 | TASK-079 fix round: all four open low-severity notes on Codex gpt-6.1-sol/medium | review FAIL, gate blocks merge | PO in chat
+- 2026-10-26 | Accept hard-link .omi-new risk in omi upgrade (TASK-079) | git cannot carry hard links; needs local write access that already allows direct edits; follow-up: atomic write | PO in chat
+- 2026-10-26 | omi upgrade: non-default omi_repo needs --repo confirmation and is shown to the PO (TASK-079) | a cloned project could point pip at an attacker repo | PO in chat
