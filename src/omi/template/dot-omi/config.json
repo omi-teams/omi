@@ -4,6 +4,11 @@
     "sonnet": "claude-sonnet-5-5",
     "opus": "claude-opus-5-5"
   },
+  "codex_models": {
+    "haiku": "gpt-5-mini",
+    "sonnet": "gpt-5",
+    "opus": "gpt-5"
+  },
   "cli_versions": {
     "claude": "2.1.302",
     "codex": "0.164.0"
