@@ -59,3 +59,4 @@
 - 2026-10-26 | omi uses SemVer 0.x (pyproject.toml is the only source; tag v0.2.0); release tags by date stay | PO: "SemVer 0.x" | TASK-074
 - 2026-10-26 | Order: TASK-074 (version, packaging) first, then install omi into omi-board and start its idea | PO | TASK-074
 - 2026-10-26 | Install omi with `python -m pip install --user ...@<tag>` (hooks use `python -m omi`; one omi per Python, no pipx); omi status warns on version and Dockerfile drift | PO: "Gọn: pip --user + 2 cảnh báo" | TASK-075
+- 2026-10-26 | PLAN-001: fix omi-board session gaps (TASK-076 worker runtime, 077 CLI, 078 prompts/init, 079 omi upgrade), then release 0.3.0; gaps #1 and #9 wait for the PO model plan | PO: Duyet 4 task theo thu tu | PLAN-001
