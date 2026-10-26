@@ -47,3 +47,4 @@
 - 2026-10-26 | Split TASK-039: carry-overs now, baseline evaluation as TASK-057 (~55 runs estimated) | quota first | TASK-039
 - 2026-10-26 | TASK-057 evaluation adopted: fix 3 omi init defects (TASK-058); slim debug-root-cause (+35% out, +29% cache) and security-reviewer (+44% out, +57% cache) then re-measure (TASK-059); keep the rest | PO | docs/research/omi-eval.md
 - 2026-10-26 | Do the 3 carry-overs next: live stderr (TASK-060), fair architect baseline (TASK-061), real Codex e2e (TASK-062, needs PO key and API spend) | PO | - 
+- 2026-10-26 | Keep omi-agent-architect: same correctness as a plain opus prompt, -26% output, +48% cache, adds task split, scope gap and duplicate check | PO | TASK-061

@@ -1,20 +1,20 @@
 ---
 id: TASK-061
 title: Fair baseline for omi-agent-architect
-status: in-progress
+status: done
 depends: TASK-057
 scope: docs/research/omi-eval.md, .omi/tasks/**
 role: omi-agent-docs-writer
 skills: []
 workflow: omi-flow-spike
-step: write
+step: decide
 ---
 ## Goal
 TASK-057's architect baseline was invalid (a review prompt was used). Re-run the change-request scenario with the architect role and with a plain "give 2-3 options and one recommendation" prompt, same model (opus/high), and record the numbers.
 
 ## Acceptance criteria
-- [ ] Both runs in a fresh sandbox, same task, same model and effort; correctness (2-3 options, exactly one recommended, reason) plus out/cache tokens and seconds recorded.
-- [ ] docs/research/omi-eval.md gets the result and a keep/rework proposal for the architect role; the PO decides.
+- [x] Both runs in a fresh sandbox, same task, same model and effort; correctness (2-3 options, exactly one recommended, reason) plus out/cache tokens and seconds recorded.
+- [x] docs/research/omi-eval.md gets the result and a keep/rework proposal for the architect role; the PO decides.
 
 ## Checkpoint
 Done: appended "Baseline architect (TASK-061)" section to docs/research/omi-eval.md (Vietnamese, nothing replaced; supersedes invalid TASK-057 architect baseline) with both runs' numbers and keep proposal for PO.
@@ -30,6 +30,10 @@ Write (docs-writer): append a Vietnamese section "Baseline architect (TASK-061)"
 - research started 2026-10-26 11:02
 - research skipped 2026-10-26 11:04: evidence is the two Coordinator-run sandbox runs recorded in the Checkpoint
 - write started 2026-10-26 11:04
+- write done 2026-10-26 11:04
+- decide started 2026-10-26 11:04
+PO approval decide: "Giữ architect"
+- decide done 2026-10-26 11:05
 
 ## Reports
 2026-10-26 11:04 omi-agent-docs-writer (claude):
