@@ -28,10 +28,10 @@ A project that runs omi moves to a newer omi with one PO command: install the ne
 - [ ] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
-Done: existing upgrade implementation retained; review-round fixes reject remote date tags (major >= 1000) and reject missing/invalid --to values before any subprocess. Shared release-tag validation covers discovery and explicit targets. Regression tests include v2026.10.26, v1000.0.0, rc tags, missing --to, and --to --check. Task _template.md behavior unchanged as requested. Coordinator already supplied the v0.2.0 hashes and recorded the real sandbox check and earlier Windows pass below.
-Not done: Windows host rerun of these review-round fixes (Coordinator).
-Tests: new regression failed against the previous code; focused upgrade command tests pass; python3 tests/test_omi.py passed (Linux, exit 0, ok).
-Next: Coordinator review, rerun tests on Windows, then commit on the host. Suggested commit: fix: validate omi upgrade release tags and target arguments
+Done: review round 2 fixes. `valid_repo` accepts only https://, ssh:// (no `-` after the scheme) or git@host:path, no whitespace; `omi_repo()` exits with `invalid omi_repo ...` before git or pip runs (also exits clearly on invalid config JSON). ls-remote is called as `git ls-remote --tags -- <repo>`; pip uses the same validated repo. `released_shas()` now returns {path: shas}, loaded once per init/upgrade_apply and passed to `backfill`. `upgrade_apply` parses .omi/config.json before any file change; invalid JSON exits with "invalid JSON ... nothing was changed". Type hints on the new public functions. New tests: test_upgrade_protected (PLAN-001 kept, PLAN-000 updated), test_omi_repo_validation (rejected values, no subprocess), broken-config and read-once checks in test_upgrade. Earlier rounds: date/rc tags rejected, --to validated.
+Not done: Windows host rerun (Coordinator).
+Tests: python3 tests/test_omi.py passed (Linux, exit 0, ok).
+Next: Coordinator review, rerun tests on Windows, then commit. Suggested commit: fix: validate omi_repo, load released hashes once, check config before omi upgrade --apply
 
 Coordinator note for build: git does not work in the worker, so the v0.2.0 hashes cannot be read there. Provide a function that maps a template directory to {posix rel: norm_sha} and a CLI entry the Coordinator can run on the host, e.g. `python -m omi template-shas <template-dir> <version>` writing/merging `src/omi/template_shas.json`. Commit an empty `{}` placeholder; the Coordinator runs it against an export of tag v0.2.0 and commits the data. Tests use a tmp template dir.
 
@@ -213,6 +213,65 @@ Note: the Windows run after review round 1 is recorded above (rc=0, ok).
 > AC: `--check` ✓ `test_upgrade_cmd` uses a fake `subprocess.run`. It picks v0.10.0 over v0.9.0 and ignores `^{}`, `v2026.10.26`, `v1000.0.0` and rc tags. The output is `omi <ver> -> 0.10.0`, and the ls-remote argv is asserted.
 > [... truncated ...]
 > Scope ✓ All changed files are within `scope`.
+2026-10-26 22:28 omi-agent-engineer (claude):
+> DONE
+> 
+> - **Files changed:** `src/omi/__init__.py`, `tests/test_omi.py`, `.omi/tasks/TASK-079.md` (checkpoint).
+> - **`omi_repo` fix:** the new `valid_repo` accepts only `https://`, `ssh://` and `git@host:path`, and rejects whitespace and a leading `-`, including straight after the scheme. An invalid value stops `--check`, the install and `--to` with `invalid omi_repo ...` before git or pip runs. `git ls-remote` now gets `--` before the repo.
+> - **Other review fixes:**
+>   - `released_shas()` reads `template_shas.json` once per `init` and `upgrade_apply` run.
+>   - `upgrade_apply` reads `.omi/config.json` before changing any file. Invalid JSON stops it with a clear message and nothing changed.
+>   - All the new public functions now have type hints.
+> - **New tests:** PLAN-001 is kept and PLAN-000 is updated; rejected repo values start no subprocess; a broken config changes no files; the hash file is read once. The new tests are added to the test file's explicit run list.
+> - **Tests:** `python3 tests/test_omi.py` passes on Linux (exit 0, `ok`).
+> - **Open:** the tests still need a rerun on the Windows host (Coordinator).
+> - **Commit:** `fix: validate omi_repo, load released hashes once, check config before omi upgrade --apply`
+2026-10-26 22:29 hook post-run passed:
+> Conflict. The container name "/tmpvqx9vygc-TASK-001-engineer-codex-gpt-x-medium-152857" is already in useBind for 0.0.0.0:8080 failed: port is already in usewrote /tmp/tmptz4egl0a/.omi/skills/CATALOG.md (2 skills)
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/config.json
+> create .omi/decisions.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -222,3 +281,4 @@ Note: the Windows run after review round 1 is recorded above (rc=0, ok).
 | omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 208445 | 1944 | 171904 | 117s | - | FAIL b8079e3 |
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 327207 | 2666 | 291456 | 138s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 4 | 3382 | 63463 | 84s | - | FAIL 2a0e3cb |
+| omi-agent-engineer | claude-opus-5-5 | high | 34 | 11265 | 649712 | 239s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |

@@ -158,7 +158,7 @@ def test_upgrade():
         omi.SHAS = root / "shas.json"
         try:
             omi.template_shas_cmd(old, "0.0.1")
-            assert omi.released_shas("docker/Dockerfile") and "docker/Dockerfile" in json.loads(omi.SHAS.read_text(encoding="utf-8"))["0.0.1"]
+            assert omi.released_shas()["docker/Dockerfile"] and "docker/Dockerfile" in json.loads(omi.SHAS.read_text(encoding="utf-8"))["0.0.1"]
             (root / "docker" / "Dockerfile").write_text("FROM old\n", encoding="utf-8")
             (root / ".omi" / "manifest.json").unlink()
             (root / ".omi" / "agents" / "omi-agent-engineer.md").unlink()
@@ -176,8 +176,14 @@ def test_upgrade():
             (root / "docker" / "Dockerfile").write_text("FROM old\n", encoding="utf-8")
             (root / ".omi" / "manifest.json").unlink()
             out = io.StringIO()
-            with omi.contextlib.redirect_stdout(out):
-                omi.upgrade_apply(root)
+            loads, load = [], omi.released_shas
+            omi.released_shas = lambda: loads.append(1) or load()
+            try:
+                with omi.contextlib.redirect_stdout(out):
+                    omi.upgrade_apply(root)
+            finally:
+                omi.released_shas = load
+            assert loads == [1], "template_shas.json is read once per run"
         finally:
             omi.SHAS = real
         text = out.getvalue()
@@ -191,6 +197,68 @@ def test_upgrade():
         c = json.loads((root / ".omi" / "config.json").read_text(encoding="utf-8"))
         assert c["test"] == "pytest" and c["network_allow"] == ["api.anthropic.com"]
         assert (root / ".omi" / "version").read_text(encoding="utf-8").strip() == omi.version()
+        # a broken config.json stops the upgrade before any file changes
+        (root / "docker" / "Dockerfile").unlink()
+        (root / ".omi" / "manifest.json").unlink()
+        cfg.write_text("{broken", encoding="utf-8")
+        try:
+            omi.upgrade_apply(root)
+        except SystemExit as exc:
+            assert "invalid JSON" in str(exc) and "nothing was changed" in str(exc)
+        else:
+            raise AssertionError("upgrade_apply accepted invalid config.json")
+        assert not (root / "docker" / "Dockerfile").exists() and not (root / ".omi" / "manifest.json").exists()
+        assert cfg.read_text(encoding="utf-8") == "{broken"
+
+
+def test_upgrade_protected():
+    assert omi.protected(".omi/plans/PLAN-001.md") and not omi.protected(".omi/plans/PLAN-000.md")
+    assert omi.protected(".omi/tasks/TASK-001.md") and not omi.protected(".omi/tasks/_template.md")
+    assert omi.protected(".omi/decisions.md") and omi.protected(".omi/config.json") and not omi.protected("AGENTS.md")
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        with omi.contextlib.redirect_stdout(io.StringIO()):
+            omi.init(root)
+        plans = root / ".omi" / "plans"
+        old = "---\nid: PLAN-000\ntitle: Old\nstatus: done\n---\n"
+        mine = "---\nid: PLAN-001\ntitle: Mine\nstatus: active\n---\n"
+        (plans / "PLAN-000.md").write_text(old, encoding="utf-8")
+        (plans / "PLAN-001.md").write_text(mine, encoding="utf-8")
+        files = omi.read_manifest(root)
+        files[".omi/plans/PLAN-000.md"] = omi.norm_sha(old.encode())
+        omi.write_manifest(root, files)
+        with omi.contextlib.redirect_stdout(io.StringIO()):
+            omi.upgrade_apply(root)
+        assert (plans / "PLAN-000.md").read_bytes() == (omi.TEMPLATE / "dot-omi" / "plans" / "PLAN-000.md").read_bytes()
+        assert (plans / "PLAN-001.md").read_text(encoding="utf-8") == mine
+
+
+def test_omi_repo_validation():
+    for ok in (omi.OMI_REPO, "ssh://git@host/x/y.git", "git@github.com:omi-teams/omi-squad2.git"):
+        assert omi.valid_repo(ok), ok
+    bad = ("--upload-pack=touch /tmp/x", "-oProxyCommand=x", "ssh://-oProxyCommand=x/y", "https://x/ y",
+           "file:///tmp/repo", "/tmp/repo", "git@-oProxy:x", "ext::sh -c x", "", 7, None)
+    for value in bad:
+        assert not omi.valid_repo(value), value
+    calls = []
+    real = omi.subprocess.run
+    omi.subprocess.run = lambda cmd, **kw: calls.append(cmd)
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            cfg = Path(d) / ".omi" / "config.json"
+            cfg.parent.mkdir()
+            for value in ("--upload-pack=touch /tmp/x", "https://x/ y"):
+                cfg.write_text(json.dumps({"omi_repo": value}), encoding="utf-8")
+                for args in (["--check"], [], ["--to", "v0.2.0"]):
+                    try:
+                        omi.upgrade_cmd(args, d)
+                    except SystemExit as exc:
+                        assert "invalid omi_repo" in str(exc)
+                    else:
+                        raise AssertionError(f"accepted omi_repo {value!r}")
+            assert calls == [], "an invalid omi_repo must fail before git or pip runs"
+    finally:
+        omi.subprocess.run = real
 
 
 def test_upgrade_cmd():
@@ -205,7 +273,7 @@ def test_upgrade_cmd():
     omi.subprocess.run = run
     try:
         assert omi.latest_tag("https://x/y") == "v0.10.0"
-        assert calls[0] == ["git", "ls-remote", "--tags", "https://x/y"]
+        assert calls[0] == ["git", "ls-remote", "--tags", "--", "https://x/y"]
         with tempfile.TemporaryDirectory() as d:
             out = io.StringIO()
             with omi.contextlib.redirect_stdout(out):
@@ -3034,6 +3102,8 @@ if __name__ == "__main__":
     test_version_stamp_package_hook()
     test_init_fresh_project()
     test_upgrade()
+    test_upgrade_protected()
+    test_omi_repo_validation()
     test_upgrade_cmd()
     test_init_guard_status()
     test_status_drift_hints()

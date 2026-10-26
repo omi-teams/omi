@@ -715,12 +715,12 @@ OMI_REPO = "https://github.com/omi-teams/omi-squad2"
 UPGRADE_SKIP = (".omi/decisions.md", ".omi/config.json")
 
 
-def norm_sha(data):
+def norm_sha(data: bytes) -> str:
     """sha256 of the bytes with CRLF folded to LF, so a Windows checkout hashes like Linux."""
     return hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest()
 
 
-def template_map(tpl=TEMPLATE):
+def template_map(tpl: Path = TEMPLATE) -> dict[str, Path]:
     """{project posix path: template file}; dot-xxx dirs become .xxx, generated CATALOG.md files are left out."""
     found = {}
     for src in sorted(Path(tpl).rglob("*")):
@@ -731,11 +731,11 @@ def template_map(tpl=TEMPLATE):
     return found
 
 
-def template_shas(tpl=TEMPLATE):
+def template_shas(tpl: Path = TEMPLATE) -> dict[str, str]:
     return {rel: norm_sha(src.read_bytes()) for rel, src in template_map(tpl).items()}
 
 
-def template_shas_cmd(tpl, ver):
+def template_shas_cmd(tpl: str | Path, ver: str) -> None:
     """Maintainer step: record the hashes of a released template (an export of its tag) in template_shas.json."""
     known = json.loads(SHAS.read_text(encoding="utf-8")) if SHAS.is_file() else {}
     known[ver] = template_shas(tpl)
@@ -743,36 +743,41 @@ def template_shas_cmd(tpl, ver):
     print(f"template-shas {ver}: {len(known[ver])} files")
 
 
-def read_manifest(target):
+def read_manifest(target: str | Path) -> dict[str, str]:
     f = Path(target) / ".omi" / "manifest.json"
     return json.loads(f.read_text(encoding="utf-8")).get("files", {}) if f.is_file() else {}
 
 
-def write_manifest(target, files):
+def write_manifest(target: str | Path, files: dict[str, str]) -> None:
     f = Path(target) / ".omi" / "manifest.json"
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text(json.dumps({"version": version(), "files": dict(sorted(files.items()))}, indent=2) + "\n", encoding="utf-8")
 
 
-def released_shas(rel):
+def released_shas() -> dict[str, set[str]]:
+    """{project path: shas of every released template version}; read once per run."""
     known = json.loads(SHAS.read_text(encoding="utf-8")) if SHAS.is_file() else {}
-    return {v[rel] for v in known.values() if rel in v}
+    found = {}
+    for files in known.values():
+        for rel, sha in files.items():
+            found.setdefault(rel, set()).add(sha)
+    return found
 
 
-def backfill(rel, sha, current):
+def backfill(rel: str, sha: str, current: str, released: dict[str, set[str]]) -> str | None:
     """The manifest sha for a file that has none: its own sha when it is a pristine current or released template."""
-    return sha if sha == current or sha in released_shas(rel) else None
+    return sha if sha == current or sha in released.get(rel, ()) else None
 
 
 def init(target="."):
     target = Path(target).resolve()
     files = read_manifest(target)
-    current = template_shas()
+    current, released = template_shas(), released_shas()
     for rel, src in template_map().items():
         dst = target.joinpath(*rel.split("/"))
         if dst.exists():
             print(f"skip   {rel} (exists)")
-            if rel not in files and (b := backfill(rel, norm_sha(dst.read_bytes()), current[rel])):
+            if rel not in files and (b := backfill(rel, norm_sha(dst.read_bytes()), current[rel], released)):
                 files[rel] = b
             continue
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -800,7 +805,7 @@ def init(target="."):
     print("next: open Claude Code or Codex here and type omi-idea")
 
 
-def merge_keys(old, new):
+def merge_keys(old: dict, new: dict) -> dict:
     """`old` plus every key `new` has and `old` lacks (recursively); existing values stay."""
     for k, v in new.items():
         if k not in old:
@@ -810,7 +815,7 @@ def merge_keys(old, new):
     return old
 
 
-def protected(rel):
+def protected(rel: str) -> bool:
     if rel in UPGRADE_SKIP:
         return True
     if rel.startswith(".omi/tasks/"):
@@ -818,10 +823,16 @@ def protected(rel):
     return rel.startswith(".omi/plans/PLAN-") and rel != ".omi/plans/PLAN-000.md"
 
 
-def upgrade_apply(target="."):
+def upgrade_apply(target: str | Path = ".") -> int:
     target = Path(target).resolve()
+    # parse the project config before any file changes, so a broken one leaves the project untouched
+    cfg = target / ".omi" / "config.json"
+    try:
+        old_cfg = json.loads(cfg.read_text(encoding="utf-8")) if cfg.is_file() else None
+    except json.JSONDecodeError as e:
+        sys.exit(f"invalid JSON in {cfg}: {e}; fix it, nothing was changed")
     files = read_manifest(target)
-    current = template_shas()
+    current, released = template_shas(), released_shas()
     counts = {"created": 0, "updated": 0, "kept": 0}
     for rel, src in template_map().items():
         if protected(rel):
@@ -836,7 +847,7 @@ def upgrade_apply(target="."):
             print(f"create {rel}")
             continue
         sha = norm_sha(dst.read_bytes())
-        base = files.get(rel) or backfill(rel, sha, current[rel])
+        base = files.get(rel) or backfill(rel, sha, current[rel], released)
         if sha == current[rel]:
             files[rel] = sha
         elif base == sha:
@@ -848,10 +859,9 @@ def upgrade_apply(target="."):
             dst.with_name(dst.name + ".omi-new").write_bytes(new)
             counts["kept"] += 1
             print(f"kept (modified): {rel}")
-    cfg = target / ".omi" / "config.json"
     tpl_cfg = json.loads(template_map()[".omi/config.json"].read_text(encoding="utf-8"))
-    if cfg.is_file():
-        cfg.write_text(json.dumps(merge_keys(json.loads(cfg.read_text(encoding="utf-8")), tpl_cfg), indent=2) + "\n", encoding="utf-8")
+    if old_cfg is not None:
+        cfg.write_text(json.dumps(merge_keys(old_cfg, tpl_cfg), indent=2) + "\n", encoding="utf-8")
     else:
         cfg.parent.mkdir(parents=True, exist_ok=True)
         cfg.write_text(json.dumps(tpl_cfg, indent=2) + "\n", encoding="utf-8")
@@ -863,9 +873,20 @@ def upgrade_apply(target="."):
     return 0
 
 
-def omi_repo(root="."):
+def valid_repo(repo: object) -> bool:
+    """https://, ssh:// or git@host:path; no whitespace and no leading `-`, so git and pip never read it as an option."""
+    return isinstance(repo, str) and bool(re.fullmatch(r"(?:https|ssh)://[^\s-]\S*|\w[\w.-]*@\w[\w.-]*:\S+", repo))
+
+
+def omi_repo(root: str | Path = ".") -> str:
     cfg = Path(root) / ".omi" / "config.json"
-    return (json.loads(cfg.read_text(encoding="utf-8")) if cfg.is_file() else {}).get("omi_repo", OMI_REPO)
+    try:
+        repo = (json.loads(cfg.read_text(encoding="utf-8")) if cfg.is_file() else {}).get("omi_repo", OMI_REPO)
+    except json.JSONDecodeError as e:
+        sys.exit(f"invalid JSON in {cfg}: {e}")
+    if not valid_repo(repo):
+        sys.exit(f"invalid omi_repo in {cfg}: {repo!r} (use https://, ssh:// or git@host:path)")
+    return repo
 
 
 def release_tag(tag: str) -> bool:
@@ -873,16 +894,16 @@ def release_tag(tag: str) -> bool:
     return bool(re.fullmatch(r"v\d+\.\d+\.\d+", tag)) and semver(tag)[0] < 1000
 
 
-def latest_tag(repo):
+def latest_tag(repo: str) -> str | None:
     """Highest vX.Y.Z tag of the remote (SemVer order; date tags and rc tags are ignored)."""
-    r = subprocess.run(["git", "ls-remote", "--tags", repo], capture_output=True, text=True, encoding="utf-8")
+    r = subprocess.run(["git", "ls-remote", "--tags", "--", repo], capture_output=True, text=True, encoding="utf-8")
     if r.returncode:
         sys.exit(f"git ls-remote failed: {r.stderr.strip()}")
     tags = set(re.findall(r"refs/tags/(v\d+\.\d+\.\d+)$", r.stdout, re.M))
     return max((tag for tag in tags if release_tag(tag)), key=semver, default=None)
 
 
-def upgrade_cmd(rest, root="."):
+def upgrade_cmd(rest: list[str], root: str | Path = ".") -> int:
     requested = flag(rest, "--to")
     if "--to" in rest and (not requested or not release_tag(requested)):
         sys.exit("usage: omi upgrade [--check | --to vX.Y.Z]")
