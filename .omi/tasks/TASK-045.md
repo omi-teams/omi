@@ -36,6 +36,7 @@ Coordinator real run 2 FAIL: api.openai.com now allowed and exit code 1 works, b
 2. prove.sh: remove `stream error` from the network pattern: codex prints `stream error: exceeded retry limit, last status: 401 Unauthorized` on auth failure. Keep `error sending request`. Add a test with that 401 line classified as PASS if practical, else just assert the pattern.
 Round 3 done: Dockerfile apt-get installs ca-certificates (test asserts it); prove.sh network pattern drops `stream error` (keeps `error sending request`; test asserts the pattern line lacks it). Tests: python3 tests/test_omi.py ok. Not done: real Docker rerun.
 PO change at accept (2026-10-26): fix round 3 before acceptance.
+Round 5 done: Dockerfile line `@openai/codex@0.164.0 && npm` space restored (only change). Tests: python3 tests/test_omi.py ok. Not done: real Docker rerun.
 Round 4 done: api.openai.com removed from template network_allow (test asserts absent; allow_for still adds it for codex); Codex pin 0.164.0 in Dockerfile, cli_versions, README. Tests: python3 tests/test_omi.py ok. Not done: real Docker rerun.
 1. Remove `api.openai.com` from the template `network_allow` (`src/omi/template/dot-omi/config.json`); `allow_for` adds it per tool. Update the test that asserted it there (assert it is absent and `allow_for(..., "codex")` adds it). README line stays "mặc định chỉ api.anthropic.com".
 2. Bump the Codex pin to `0.164.0` in Dockerfile, `cli_versions` and README.
@@ -64,3 +65,4 @@ Coordinator: Dockerfile line lost its space: `@openai/codex@0.164.0&& npm` -> `@
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 2534 | 101921 | 35s | - | PASS 3f1b556 |
 | omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 6 | 1950 | 76268 | 28s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS f3153bd |
 | omi-agent-engineer | claude-haiku-5-5 | low | 18 | 3236 | 224246 | 41s | 2/2 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell | - |
+| omi-agent-engineer | claude-haiku-5-5 | low | 10 | 1475 | 110991 | 22s | 2/2 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell | - |
