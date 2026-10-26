@@ -24,7 +24,7 @@ source_use: adapt
 - The migration or query, table definitions, expected row counts, and `EXPLAIN (ANALYZE, BUFFERS)` output if a database is available (never on production).
 
 ## Steps
-Check in this order; stop at the first group with blocking findings, then continue.
+Check in this order; report blocking findings first, then continue with the remaining groups.
 1. Queries (critical): no `SELECT *` on wide tables; every `WHERE`, `JOIN` and `ORDER BY` column on big tables is indexed; no N+1 (batch with `= ANY($1)` or a join); keyset pagination instead of large `OFFSET`; no function on an indexed column (`lower(col)` needs an expression index); read the plan: Seq Scan on a big table, bad row estimates, sorts spilling to disk.
 2. Indexes: composite order is equality columns first, then range; partial index for hot subsets (`WHERE deleted_at IS NULL`); index every foreign-key column used in joins or deletes; drop duplicates and unused ones; `CREATE INDEX CONCURRENTLY` on live tables.
 3. Connections (critical): a pool with a bounded size, short transactions, no network call inside a transaction, statement and idle timeouts set.

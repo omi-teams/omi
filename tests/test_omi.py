@@ -629,7 +629,7 @@ def test_run_read_role():
             omi.run_role("omi-agent-engineer", wt, task)
             assert "omi-skill-zz" in prompt()
             assert go() == 0, out.getvalue()
-            assert "omi-skill-zz" not in prompt() and not task.read_text().splitlines()[-1].endswith("/1 |"), task.read_text()
+            assert "omi-skill-zz" not in prompt() and task.read_text().splitlines()[-1].endswith("| - | n/a |"), task.read_text()
         finally:
             sys.stdout = saved
             omi.subprocess.run, omi.shutil.which, omi.main_checkout, omi.WINDOWS, tok = real
