@@ -5,5 +5,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 git ca-
 # CLI baked into the image (not on a noexec tmpfs, avoids exit 126)
 RUN npm i -g @anthropic-ai/claude-code@2.1.302 && npm cache clean --force
 RUN npm i -g @openai/codex@0.164.0 && npm cache clean --force
+# Toolchain example (uncomment and adapt; TASK-001 of a new project adds the chosen stack here and its registries to "network_allow" in .omi/config.json):
+# RUN curl -fsSL https://go.dev/dl/go1.23.4.linux-amd64.tar.gz | tar -C /usr/local -xz
+# ENV PATH=/usr/local/go/bin:$PATH
+# keep ENV PATH lines above this one; login shells (bash -lc) reset PATH from /etc/profile; keep the image PATH (incl. later ENV PATH entries)
+RUN printf 'export PATH="%s"\n' "$PATH" > /etc/profile.d/omi-path.sh
 USER node
 WORKDIR /work
