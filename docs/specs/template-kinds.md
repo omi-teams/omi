@@ -1,6 +1,6 @@
 # Rules, references, plans, hooks cho template
 
-Trạng thái: chờ PO duyệt (2026-10-26).
+Trạng thái: PO đã duyệt (2026-10-26, a8df61b).
 
 ## Người dùng
 - PO: viết hoặc chọn nội dung cho từng project, xem tiến độ theo plan.
