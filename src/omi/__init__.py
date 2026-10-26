@@ -17,7 +17,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+import types
 from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
 
@@ -1563,14 +1565,27 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
 
         def run_once(name):
             with egress(main, name, image, allow_for(main, t)) as (net, proxy):
-                r = subprocess.run(worker_argv(wt, image, cmd, name, repo_label(main),
-                                                 {**worker_labels(role, task.stem, mdl, eff), **compose_labels(name, "agent")}, ro=read,
-                                                 mounts=mounts, env_names=(envs[t],), network=net, proxy=proxy),
-                                    env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                    text=True, errors="replace")
-            if r.returncode and name_taken(r.stderr or "", name):
+                with subprocess.Popen(worker_argv(wt, image, cmd, name, repo_label(main),
+                                                  {**worker_labels(role, task.stem, mdl, eff), **compose_labels(name, "agent")}, ro=read,
+                                                  mounts=mounts, env_names=(envs[t],), network=net, proxy=proxy),
+                                      env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                      text=True, errors="replace") as p:
+                    err = []
+
+                    def pump():  # echo the agent's stderr live, keep a copy for the name-conflict check
+                        for line in p.stderr:
+                            err.append(line)
+                            sys.stderr.write(line)
+                            sys.stderr.flush()
+
+                    th = threading.Thread(target=pump, daemon=True)
+                    th.start()
+                    out = p.stdout.read()
+                    p.wait()
+                    th.join()
+                r = types.SimpleNamespace(stdout=out, stderr="".join(err), returncode=p.returncode)
+            if r.returncode and name_taken(r.stderr, name):
                 raise NameTaken(name)
-            sys.stderr.write(r.stderr or "")
             return r
 
         for salt in ("", secrets.token_hex(1)):  # a name in use: one retry with a random 2-char suffix
