@@ -7,6 +7,7 @@ import socketserver
 import sys
 
 PORT = 3128
+QUIET = ("ab.chatgpt.com", "*.oaiusercontent.com", "statsig.anthropic.com", "sentry.io")  # tool telemetry: blocked, not logged
 ALLOW = []
 
 
@@ -58,7 +59,8 @@ class Handler(socketserver.BaseRequestHandler):
             return reply(c, 400, "omi proxy: bad CONNECT target")
         port = int(port)
         if not allowed(host, port, ALLOW):
-            print(f"BLOCKED {host}:{port}", flush=True)
+            if not allowed(host, port, QUIET):
+                print(f"BLOCKED {host}:{port}", flush=True)
             return reply(c, 403, f'omi blocked {host}: add it to "network_allow" in .omi/config.json')
         try:
             up = socket.create_connection((host, port), 15)

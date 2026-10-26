@@ -147,6 +147,10 @@ def test_init_fresh_project():
         assert (root / ".gitignore").read_text().splitlines() == ["*.log", "__pycache__/"]
         omi.init(root)
         assert (root / ".gitignore").read_text().count("__pycache__/") == 1
+        assert (root / ".gitattributes").read_text() == "* text=auto eol=lf\n"
+        (root / ".gitattributes").write_text("custom\n")
+        omi.init(root)
+        assert (root / ".gitattributes").read_text() == "custom\n"
         assert '"test"' in (root / ".omi" / "config.json").read_text()
     with tempfile.TemporaryDirectory() as d:
         omi.init(d)
@@ -1019,6 +1023,7 @@ def test_roles():
     assert a[:8] == ["codex", "exec", "-c", "project_doc_max_bytes=0", "-m", "claude-sonnet-5-5", "-c", "model_reasoning_effort=low"] and "/work/t.md" in a[-1]
     # codex-default: no -m, still no project docs
     assert omi.codex_cmd("---\n---\nbody", "t.md", omi.CODEX_DEFAULT, "low")[:4] == ["codex", "exec", "-c", "project_doc_max_bytes=0"]
+    assert "git rm" in a[-1] and "rm` may be refused" in a[-1]
     # claude's command never gets the codex option
     assert "project_doc_max_bytes=0" not in omi.engineer_cmd("---\n---\nbody", "t.md", "claude-sonnet-5-5", "low", "")
 
@@ -1309,6 +1314,7 @@ def test_network_allowlist():
     try:
         assert ask(b"GET http://example.com/ HTTP/1.1\r\nAuthorization: SECRET\r\n\r\n").startswith("HTTP/1.1 405")
         blocked = ask(b"CONNECT example.com:443 HTTP/1.1\r\nAuthorization: SECRET\r\n\r\n")
+        quiet = [ask(f"CONNECT {h}:443 HTTP/1.1\r\n\r\n".encode()) for h in ("ab.chatgpt.com", "x.oaiusercontent.com", "statsig.anthropic.com", "sentry.io")]
         badhost = ask(b"CONNECT ex_ample$.com:443 HTTP/1.1\r\n\r\n")
         ok = ask(f"CONNECT {px.ALLOW[0]} HTTP/1.1\r\n\r\n".encode(), b"hello")
     finally:
@@ -1316,6 +1322,7 @@ def test_network_allowlist():
         srv.shutdown()
     assert blocked.startswith("HTTP/1.1 403") and 'omi blocked example.com: add it to "network_allow" in .omi/config.json' in blocked
     assert ok.startswith("HTTP/1.1 200") and ok.endswith("hello"), ok
+    assert all(q.startswith("HTTP/1.1 403") for q in quiet) and "BLOCKED sentry.io" not in buf.getvalue() and "BLOCKED ab.chatgpt" not in buf.getvalue()
     assert badhost.startswith("HTTP/1.1 400") and "ex_ample" not in buf.getvalue()
     assert "BLOCKED example.com:443" in buf.getvalue() and "SECRET" not in buf.getvalue()
     # config
