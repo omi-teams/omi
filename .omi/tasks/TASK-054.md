@@ -1,7 +1,7 @@
 ---
 id: TASK-054
 title: Store the Codex API key in the OS secret store
-status: planned
+status: in-progress
 depends: TASK-045
 scope: src/omi/__init__.py, tests/**, README.md
 role: omi-agent-engineer
