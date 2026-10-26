@@ -22,6 +22,7 @@ Not done: Criterion 2 (sandbox re-run, docs/research/omi-eval.md) is the Coordin
 Tests: `python -m omi skills --check` ok (19 checked); `python tests/test_omi.py` ok.
 Next (done, was): targets (omi.tokens): debug-root-cause SKILL.md <= 295 (now 591), omi-agent-security-reviewer.md <= 226 (now 453). Keep: root cause before fix, grep all callers, regression test; security: location + why + how verified per finding, no edits. Criterion 2 (sandbox re-run) is the Coordinator's.
 
+Coordinator round 2: (1) restore the MIT attribution in debug-root-cause as a short HTML comment with the copyright line (`Adapted from obra/superpowers systematic-debugging v6.3.0, MIT, Copyright (c) 2025 Jesse Vincent.`); the MIT license requires it. Stay <= 295 tokens by trimming elsewhere. (2) The dropped "opus when the diff touches auth, payment or secrets" rule is a Coordinator rule: add it as one bullet under `## Quota rules` in AGENTS.md and src/omi/template/AGENTS.md.
 ## Steps
 - plan started 2026-10-26 10:41
 - plan done 2026-10-26 10:41
