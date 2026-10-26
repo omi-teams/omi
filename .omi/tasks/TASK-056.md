@@ -7,7 +7,7 @@ scope: src/omi/__init__.py, tests/**, README.md
 role: omi-agent-engineer
 skills: [omi-skill-docker-worker-pitfalls]
 workflow: omi-flow-feature
-step: review
+step: accept
 ---
 ## Goal
 Agent containers are named `<TASK-ID>-<role short>-<tool>-<model>-<effort>-<HHMMSS>`, e.g. `TASK-055-reviewer-claude-sonnet-5.5-medium-143205`; plus two small fixes from the TASK-055 review.
@@ -24,12 +24,18 @@ Not done: -
 Tests: python3 tests/test_omi.py ok
 Next: review
 
+PO at accept: fix the review notes first (round 2):
+1. src/omi/__init__.py quota fallback: set `models[other] = CODEX_DEFAULT` only when other is codex; else set `problem`.
+2. Name conflict: if `docker run`/proxy `create` fails because the name is already in use, retry once with a 2-char random suffix appended to the stamp. Test it.
+3. tests: the 63-char test builds a worst-case real name (long codex model ID, `xhigh`) instead of padding; add the codex->claude quota fallback case (full codex `--model` falls back to the role alias).
 ## Steps
 - plan started 2026-10-26 09:59
 - plan done 2026-10-26 09:59
 - build started 2026-10-26 09:59
 - build done 2026-10-26 10:01
 - review started 2026-10-26 10:01
+- review done 2026-10-26 10:02
+- accept started 2026-10-26 10:02
 
 ## Reports
 2026-10-26 10:00 omi-agent-engineer (claude):
