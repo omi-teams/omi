@@ -61,3 +61,4 @@
 - 2026-10-26 | Install omi with `python -m pip install --user ...@<tag>` (hooks use `python -m omi`; one omi per Python, no pipx); omi status warns on version and Dockerfile drift | PO: "Gọn: pip --user + 2 cảnh báo" | TASK-075
 - 2026-10-26 | PLAN-001: fix omi-board session gaps (TASK-076 worker runtime, 077 CLI, 078 prompts/init, 079 omi upgrade), then release 0.3.0; gaps #1 and #9 wait for the PO model plan | PO: Duyet 4 task theo thu tu | PLAN-001
 - 2026-10-26 | Models: TASK-080 (Claude) and TASK-081 (Codex) research usable models/efforts in-session; TASK-082 puts concrete choices in the agent catalog; every task-start pick-list offers Claude Code vs Codex with a recommendation, PO chooses | PO | TASK-080..082
+- 2026-10-26 | TASK-077 adds review-gate FAIL check and push-after-start | both bit TASK-076 (gate passed on FAIL; squash conflict) | PO in chat
