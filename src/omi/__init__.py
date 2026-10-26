@@ -880,14 +880,14 @@ def token(tool="claude"):
 
 
 DEFAULT_MODELS = {"haiku": "claude-haiku-5-5", "sonnet": "claude-sonnet-5-5", "opus": "claude-opus-5-5"}
-DEFAULT_CODEX_MODELS = {"haiku": "gpt-5-mini", "sonnet": "gpt-5", "opus": "gpt-5"}
+CODEX_DEFAULT = "codex-default"  # no -m: the Codex CLI picks its own model
 CODEX_ID = r"(gpt|o\d|codex)[a-zA-Z0-9_.-]*"
 
 
 def resolve_model(root, model, tool="claude"):
     """Full model ID for an alias from .omi/config.json "models" (codex: "codex_models"; PO-editable); full IDs pass through."""
     cfg = Path(root) / ".omi" / "config.json"
-    key, base, full = ("codex_models", DEFAULT_CODEX_MODELS, CODEX_ID) if tool == "codex" else ("models", DEFAULT_MODELS, r"claude-[a-zA-Z0-9_.-]+")
+    key, base, full = ("codex_models", {}, CODEX_ID) if tool == "codex" else ("models", DEFAULT_MODELS, r"claude-[a-zA-Z0-9_.-]+")
     models = base | (json.loads(cfg.read_text(encoding="utf-8")).get(key, {}) if cfg.exists() else {})
     if not model:
         sys.exit("no model: pass --model or set `model` in the omi-agent-engineer agent. Nothing changed.")
@@ -895,12 +895,14 @@ def resolve_model(root, model, tool="claude"):
         return models[model]
     if model in models.values() or re.fullmatch(full, model):
         return model
+    if tool == "codex" and model in DEFAULT_MODELS:
+        return CODEX_DEFAULT
     sys.exit(f"unknown {tool} model alias '{model}': add it to \"{key}\" in .omi/config.json. Nothing changed.")
 
 
 def codex_effort(effort):
-    """Codex has no xhigh/max level."""
-    return {"max": "high", "xhigh": "high"}.get(effort, effort)
+    """Codex has xhigh but no max level."""
+    return {"max": "xhigh"}.get(effort, effort)
 
 
 # usage/quota stop messages of each CLI (stream-json / --json output), matched in the output tail when the CLI exits non-zero
@@ -1079,7 +1081,7 @@ def engineer_cmd(agent_text, task_rel, model=None, effort=None, skills=""):
 def codex_cmd(agent_text, task_rel, model, effort, skills=""):
     body = agent_text.split("---", 2)[2].strip() if agent_text.startswith("---") else agent_text
     # the container is the boundary; codex's own sandbox cannot nest in it
-    return ["codex", "exec", "-m", model, "-c", f"model_reasoning_effort={effort}",
+    return ["codex", "exec", *(["-m", model] if model != CODEX_DEFAULT else []), "-c", f"model_reasoning_effort={effort}",
             "--dangerously-bypass-approvals-and-sandbox", "--json", f"{body}\n\nTask file: /work/{task_rel}\nWorktree: /work{skills}"]
 
 
@@ -1279,7 +1281,7 @@ def usage_totals(text):
     rows = [r for r in rows if len(r) in (7, 8, 9)]
     tot = [sum(int(r[i]) for r in rows if r[i].isdigit()) if any(r[i].isdigit() for r in rows) else "n/a" for i in (3, 4, 5)]
     return (f"usage: {len(rows)} runs, in {tot[0]} out {tot[1]} cache {tot[2]}, "
-            f"review rounds: {sum(r[0] == 'omi-agent-reviewer' for r in rows)}")
+            f"review rounds: {sum(r[0] == 'omi-agent-reviewer' and not r[-1].startswith('QUOTA->') for r in rows)}")
 
 
 def tree_diff(wt, since, exclude=None):
@@ -1298,7 +1300,7 @@ def tree_diff(wt, since, exclude=None):
 def prior_review(text):
     """(earlier reviewer rounds, sha7 of the last one if it failed, repo paths named after the last `Review round`)."""
     rows = [[c.strip() for c in l.strip().strip("|").split("|")] for l in text.partition("\n## Usage")[2].splitlines()
-            if l.startswith("| omi-agent-reviewer |")]
+            if l.startswith("| omi-agent-reviewer |") and "| QUOTA->" not in l]
     last = re.fullmatch(r"FAIL ([0-9a-f]{7})", rows[-1][-1]) if rows else None
     after = re.split(r"^.*Review round.*$", text.partition("\n## Usage")[0], flags=re.M)[-1] if "Review round" in text else ""
     after = after.split("\n## ", 1)[0]
@@ -1488,7 +1490,9 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
         head = git(wt, "rev-parse", "--short=7", "HEAD") if read and verdict != "n/a" else None
         if head:
             verdict += " " + head
-        record_usage(task, role, models[t] + (" (codex)" if t == "codex" else ""), efforts[t], nums,
+        if quota_hit(t, r.stdout, r.returncode):
+            verdict = f"QUOTA->{'codex' if t == 'claude' else 'claude'}"
+        record_usage(task, role, models[t] + (" (codex)" if t == "codex" and mdl != CODEX_DEFAULT else ""), efforts[t], nums,
                      time.monotonic() - t0, skills_cell(ids, done), verdict)
         return r, result, done
 
@@ -1537,7 +1541,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
                 return stop_quota("claude and codex both hit their usage limit")
         rc = r.returncode
         print(result if result is not None else (r.stdout or ""))
-        append_note(task, "Reports", f"{datetime.datetime.now():%Y-%m-%d %H:%M} {role} ({tool}):\n" + (result or "(no report)").strip()[:2000])
+        append_note(task, "Reports", f"{datetime.datetime.now():%Y-%m-%d %H:%M} {role} ({tool}):\n" + "\n".join("> " + l for l in (result or "(no report)").strip()[:2000].splitlines()))
         for sid in ids:
             if sid not in done:
                 print(f"SKILL NOT READ: {sid}")

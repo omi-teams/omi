@@ -4,9 +4,5 @@
     "sonnet": "claude-sonnet-5-5",
     "opus": "claude-opus-5-5"
   },
-  "codex_models": {
-    "haiku": "gpt-5-mini",
-    "sonnet": "gpt-5",
-    "opus": "gpt-5"
-  }
+  "codex_models": {}
 }
