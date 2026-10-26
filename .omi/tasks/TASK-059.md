@@ -1,7 +1,7 @@
 ---
 id: TASK-059
 title: Slim omi-skill-debug-root-cause and omi-agent-security-reviewer, then re-measure
-status: planned
+status: in-progress
 depends: TASK-058
 scope: .omi/skills/**, .omi/agents/**, src/omi/template/**, docs/research/omi-eval.md, tests/**
 role: omi-agent-engineer
