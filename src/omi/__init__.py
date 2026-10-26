@@ -726,6 +726,10 @@ def init(target="."):
         print(f"create {rel}")
     (target / ".omi" / "version").write_text(version() + "\n", encoding="utf-8")
     print(f"stamp  .omi/version ({version()})")
+    attrs = target / ".gitattributes"
+    if not attrs.exists():
+        attrs.write_text("* text=auto eol=lf\n", encoding="utf-8")
+        print("create .gitattributes (* text=auto eol=lf)")
     ignore = target / ".gitignore"
     lines = ignore.read_text(encoding="utf-8").splitlines() if ignore.exists() else []
     if not {"__pycache__", "__pycache__/", "/__pycache__/"} & set(lines):
@@ -1584,13 +1588,17 @@ def engineer_cmd(agent_text, task_rel, model=None, effort=None, skills=""):
             "--permission-mode", "bypassPermissions", "--setting-sources", "user", "--output-format", "stream-json", "--verbose"]
 
 
+CODEX_LIMITS = ("Known codex worker limit: deleting files with `rm` may be refused; use `git rm` "
+                "or `python3 -c \"import os; os.remove(...)\"`.")
+
+
 def codex_cmd(agent_text, task_rel, model, effort, skills=""):
     body = agent_text.split("---", 2)[2].strip() if agent_text.startswith("---") else agent_text
     # the container is the boundary; codex's own sandbox cannot nest in it
     # project_doc_max_bytes=0: codex must not load the Coordinator's AGENTS.md; the role prompt is all it sees
     return ["codex", "exec", "-c", "project_doc_max_bytes=0", *(["-m", model] if model != CODEX_DEFAULT else []),
             "-c", f"model_reasoning_effort={effort}",
-            "--dangerously-bypass-approvals-and-sandbox", "--json", f"{body}\n\nTask file: /work/{task_rel}\nWorktree: /work{skills}"]
+            "--dangerously-bypass-approvals-and-sandbox", "--json", f"{body}\n\nTask file: /work/{task_rel}\nWorktree: /work{skills}\n{CODEX_LIMITS}"]
 
 
 USAGE_HEAD = "| role | model | effort | input | output | cache | duration | skills read | verdict |"
