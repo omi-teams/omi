@@ -1,7 +1,7 @@
 ---
 id: TASK-045
 title: Codex CLI in the worker image
-status: in-progress
+status: done
 depends: TASK-028
 scope: src/omi/template/docker/**, src/omi/template/dot-omi/config.json, src/omi/__init__.py, tests/**, README.md
 skills: [omi-skill-docker-worker-pitfalls, omi-skill-windows-powershell]
@@ -13,11 +13,11 @@ step: accept
 `omi run --tool codex` works in the container with a pinned Codex CLI version.
 
 ## Acceptance criteria
-- [ ] The Dockerfile installs a pinned Codex CLI version; the pin is recorded in config and README.
-- [ ] `omi run <role> <TASK> --tool codex` runs `codex exec -m <model> -c model_reasoning_effort=<level>` in the container with the key passed by name only.
-- [ ] The Claude image path is unchanged; `python tests/test_omi.py` passes.
+- [x] The Dockerfile installs a pinned Codex CLI version; the pin is recorded in config and README.
+- [x] `omi run <role> <TASK> --tool codex` runs `codex exec -m <model> -c model_reasoning_effort=<level>` in the container with the key passed by name only.
+- [x] The Claude image path is unchanged; `python tests/test_omi.py` passes.
 
-- [ ] Follow-up from incident TASK-053: `omi worker --prove` names its run like a real one (`container_name` with a real role, model and effort, so 60+ chars) and checks that the CLI in the image reaches its API host through the proxy (no token needed: expect an auth error, not a DNS or network error).
+- [x] Follow-up from incident TASK-053: `omi worker --prove` names its run like a real one (`container_name` with a real role, model and effort, so 60+ chars) and checks that the CLI in the image reaches its API host through the proxy (no token needed: expect an auth error, not a DNS or network error).
 
 ## Checkpoint
 Done: Dockerfile codex pin 0.46.0, config cli_versions + api.openai.com, README, prove.sh CLI auth checks, worker --prove name, tests
@@ -54,6 +54,8 @@ Coordinator: Dockerfile line lost its space: `@openai/codex@0.164.0&& npm` -> `@
 - security done 2026-10-26 09:17
 - accept started 2026-10-26 09:17
 - PO at accept: "Bỏ khỏi template" + "Nâng lên Codex 0.164.0" -> fix round 3, then review and security again
+PO approval accept: "Chạy lại security rồi merge" (security PASS after PO change)
+- accept done 2026-10-26 09:25
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -67,3 +69,4 @@ Coordinator: Dockerfile line lost its space: `@openai/codex@0.164.0&& npm` -> `@
 | omi-agent-engineer | claude-haiku-5-5 | low | 18 | 3236 | 224246 | 41s | 2/2 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell | - |
 | omi-agent-engineer | claude-haiku-5-5 | low | 10 | 1475 | 110991 | 22s | 2/2 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1686 | 74823 | 26s | - | PASS d19a5d0 |
+| omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 6 | 1046 | 76322 | 16s | - | PASS b217144 |
