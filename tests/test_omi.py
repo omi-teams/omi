@@ -1,5 +1,6 @@
 import io
 import re
+import shlex
 import json
 import subprocess
 import sys
@@ -51,6 +52,13 @@ def test_init_fresh_project():
         assert subprocess.run(cmd, cwd=d).returncode == 3
         (Path(d) / "tests" / "test_a.py").write_text("")
         assert subprocess.run(cmd, cwd=d).returncode == 0
+        line = omi.test_prompt_line(d, d)
+        assert shlex.split(line) == [("python3" if a == omi.sys.executable else a) for a in cmd], line
+    with tempfile.TemporaryDirectory() as d:
+        for existing in ("__pycache__", "/__pycache__/", "__pycache__/"):
+            (Path(d) / ".gitignore").write_text(existing + "\n")
+            omi.init(d)
+            assert (Path(d) / ".gitignore").read_text() == existing + "\n", existing
 
 
 def test_init_guard_status():
@@ -1842,6 +1850,7 @@ if __name__ == "__main__":
     test_clean_and_old_images()
     test_credential_manager()
     test_template_docker()
+    test_init_fresh_project()
     test_init_guard_status()
     test_github_rulesets()
     test_ci_checks_and_apply()

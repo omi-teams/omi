@@ -503,7 +503,7 @@ def init(target="."):
         print(f"create {rel}")
     ignore = target / ".gitignore"
     lines = ignore.read_text(encoding="utf-8").splitlines() if ignore.exists() else []
-    if "__pycache__/" not in lines:
+    if not {"__pycache__", "__pycache__/", "/__pycache__/"} & set(lines):
         ignore.write_text("".join(l + "\n" for l in lines) + "__pycache__/\n", encoding="utf-8")
         print("update .gitignore (__pycache__/)")
     for catalog in (skills_catalog, agents_catalog, workflows_catalog):
@@ -1473,6 +1473,11 @@ def test_command(wt, main):
     return [sys.executable if argv[0] == "python" else argv[0], *argv[1:]]
 
 
+def test_prompt_line(wt, main):
+    """The `Tests:` line of the agent prompt: shell-quoted so it parses back to the same argv."""
+    return shlex.join("python3" if a == sys.executable else a for a in test_command(wt, main))
+
+
 def deterministic_checks(wt, main, tid):
     """Problems a script can find in the diff before a read role is started (empty = start the role)."""
     problems = []
@@ -1543,7 +1548,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
             return 4
     image = ensure_image(main)
     prompt_skills = skill_prompt(wt, declared)
-    prompt_skills += "\nTests: " + " ".join("python3" if a == sys.executable else a for a in test_command(wt, main))
+    prompt_skills += "\nTests: " + test_prompt_line(wt, main)
     text = am["_text"]
     tmp = tempfile.TemporaryDirectory() if read else None
 

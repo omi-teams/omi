@@ -20,8 +20,9 @@ The three defects found by the TASK-057 sandbox (docs/research/omi-eval.md): a f
 
 ## Checkpoint
 Done: init writes 3 catalogs + .gitignore; test_command falls back to script runner; config "test" key; test_init_fresh_project.
+Round 2 done: Tests line built by test_prompt_line with shlex.join (round-trip test); .gitignore accepts `__pycache__`, `/__pycache__/`, `__pycache__/`; test_init_fresh_project was not called by the runner, now registered.
 Not done: README untouched (nothing needed).
-Tests: python3 tests/test_omi.py ok
+Tests: python3 tests/test_omi.py ok (fresh-init test included)
 Next: review
 
 Coordinator round 2: src/omi/__init__.py:1546 builds the prompt's `Tests:` line with `" ".join`, so the new `python -c "...(...)..."` fallback reaches the agent unquoted and breaks in a shell. Use `shlex.join` (keep `python3` for sys.executable). Test: the Tests line for a no-pytest project parses back with `shlex.split` to the same argv. Also accept `__pycache__`, `/__pycache__/`, `__pycache__/` as already present in .gitignore.
@@ -54,9 +55,20 @@ Coordinator round 2: src/omi/__init__.py:1546 builds the prompt's `Tests:` line 
 > AC: a fresh-init test exists and `python tests/test_omi.py` passes âœ“ `test_init_fresh_project` is in the diff and the suite passes.
 > 
 > All changed files are within `scope` (`src/omi/__init__.py`, `src/omi/template/**`, `tests/**`). The only other change is the task file itself.
+2026-10-26 10:37 omi-agent-engineer (claude):
+> DONE
+> Files: `src/omi/__init__.py`, `tests/test_omi.py`, `.omi/tasks/TASK-058.md` (checkpoint).
+> - Tests line now built by new `test_prompt_line()` using `shlex.join`, keeping `python3` for `sys.executable`.
+> - `.gitignore` check accepts `__pycache__`, `/__pycache__/`, `__pycache__/` as already present.
+> - `test_init_fresh_project` was defined but never called by the runner; registered it. Added a round-trip `shlex.split` check on the Tests line and a test for the three `.gitignore` variants.
+> Test: `python3 tests/test_omi.py` â†’ ok (with the fresh-init test now actually running).
+> Commit: `fix(init): quote test command in prompt, accept pycache ignore variants`
+> Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>
+> Open: none.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 3379 | 181777 | 42s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 4 | 1161 | 37835 | 23s | - | PASS dff8123 |
+| omi-agent-engineer | claude-haiku-5-5 | low | 24 | 3871 | 288811 | 63s | - | - |
