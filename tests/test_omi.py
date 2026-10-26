@@ -632,7 +632,11 @@ def test_prove_exit_and_hosts():
         assert omi.allow_for(d, "codex") == ["api.anthropic.com", "api.openai.com"]
         assert omi.allow_for(d, "claude") == ["api.anthropic.com"]
         assert omi.allow_for(d, *omi.TOOL_API_HOST) == ["api.anthropic.com", "api.openai.com"]
-    assert "error sending request" in (omi.TEMPLATE / "docker" / "prove.sh").read_text()
+    sh = (omi.TEMPLATE / "docker" / "prove.sh").read_text()
+    assert "error sending request" in sh
+    # codex prints "stream error: ... last status: 401" on a bad key: that is an auth result, not a network one
+    net = next(l for l in sh.splitlines() if "ENOTFOUND" in l)
+    assert "stream error" not in net
 
 
 def test_container_names():
@@ -912,6 +916,7 @@ def test_template_docker():
     assert f"@openai/codex@{pins['codex']}" in text and f"claude-code@{pins['claude']}" in text
     assert pins["codex"] in (omi.TEMPLATE.parents[2] / "README.md").read_text(encoding="utf-8")
     assert "api.openai.com" in json.loads((omi.TEMPLATE / "dot-omi" / "config.json").read_text())["network_allow"]
+    assert "ca-certificates" in text
     prove = (d / "prove.sh").read_text()
     assert "codex exec" in prove and "OPENAI_API_KEY=sk-prove-invalid" in prove
     with tempfile.TemporaryDirectory() as t:

@@ -34,6 +34,7 @@ Round 2 done: allow_for adds each tool's api_host (TOOL_API_HOST) for run and --
 Coordinator real run 2 FAIL: api.openai.com now allowed and exit code 1 works, but codex still `error sending request`. Root cause (verified in a temp image): the image has no `ca-certificates`, so Rust codex fails TLS (node/claude ships its own CAs). With `ca-certificates` codex returns `401 Unauthorized`.
 1. Dockerfile: add `ca-certificates` to the existing `apt-get install` line; add a test assertion.
 2. prove.sh: remove `stream error` from the network pattern: codex prints `stream error: exceeded retry limit, last status: 401 Unauthorized` on auth failure. Keep `error sending request`. Add a test with that 401 line classified as PASS if practical, else just assert the pattern.
+Round 3 done: Dockerfile apt-get installs ca-certificates (test asserts it); prove.sh network pattern drops `stream error` (keeps `error sending request`; test asserts the pattern line lacks it). Tests: python3 tests/test_omi.py ok. Not done: real Docker rerun.
 ## Steps
 - plan started 2026-10-26 09:02
 - plan done 2026-10-26 09:02
@@ -47,3 +48,4 @@ Coordinator real run 2 FAIL: api.openai.com now allowed and exit code 1 works, b
 | omi-agent-architect | claude-opus-5-5 | high | 12 | 7743 | 171921 | 93s | - | n/a |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 5637 | 301884 | 73s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 5076 | 240528 | 49s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
+| omi-agent-engineer | claude-haiku-5-5 | low | 14 | 2908 | 176418 | 29s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
