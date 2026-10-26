@@ -1,7 +1,7 @@
 ---
 id: TASK-078
 title: Role prompts and init defaults - scope is write-only, batched NEEDS SCOPE, LF, quiet telemetry, allowlist by stack
-status: in-progress
+status: done
 depends: TASK-077
 scope: .omi/agents/**, .omi/skills/**, src/omi/template/**, src/omi/__init__.py, tests/**, docker/**, .claude/skills/omi-idea/SKILL.md
 role: omi-agent-engineer
@@ -12,18 +12,18 @@ tool: claude
 model: sonnet
 effort: medium
 workflow: omi-flow-feature
-step: build
+step: accept
 ---
 ## Goal
 Gaps #2 #12 #13 #16 #19 #20 (omi-board session 97bfceb1).
 
 ## Acceptance criteria
-- [ ] #16 #20 `omi-agent-engineer.md` (root and template) says: read any file you need; `scope` limits only what you write; when you need more scope, list every extra path at once in one `NEEDS SCOPE` report, and check which existing tests your change affects. `omi-skill-task-brief` (root and template) reminds the Coordinator to put affected tests in scope.
-- [ ] #12 When the tool is codex, `omi run` appends one line to the prompt about known codex worker limits (deleting files with `rm` may be refused: use `git rm` or `python3 -c "import os; os.remove(...)"`). Tested on the codex argv.
-- [ ] #19 `omi init` creates `.gitattributes` with `* text=auto eol=lf` when missing (never overwrites). Tested.
-- [ ] #13 The proxy (template `docker/proxy.py` and this repo's `docker/proxy.py`) still blocks known codex/claude telemetry hosts (`ab.chatgpt.com`, `*.oaiusercontent.com`, `statsig.anthropic.com`, `sentry.io`) but does not print BLOCKED lines for them. Tested.
-- [ ] #2 `.claude/skills/omi-idea/SKILL.md` (root and template) has a stack -> `network_allow` table (npm: registry.npmjs.org; Go: proxy.golang.org, sum.golang.org, storage.googleapis.com; Python: pypi.org, files.pythonhosted.org) and says to propose it to the PO when the stack is chosen.
-- [ ] Skill and agent catalogs regenerated; `python -m omi skills --check` passes; all tests pass on the Linux worker and the Windows host.
+- [x] #16 #20 `omi-agent-engineer.md` (root and template) says: read any file you need; `scope` limits only what you write; when you need more scope, list every extra path at once in one `NEEDS SCOPE` report, and check which existing tests your change affects. `omi-skill-task-brief` (root and template) reminds the Coordinator to put affected tests in scope.
+- [x] #12 When the tool is codex, `omi run` appends one line to the prompt about known codex worker limits (deleting files with `rm` may be refused: use `git rm` or `python3 -c "import os; os.remove(...)"`). Tested on the codex argv.
+- [x] #19 `omi init` creates `.gitattributes` with `* text=auto eol=lf` when missing (never overwrites). Tested.
+- [x] #13 The proxy (template `docker/proxy.py` and this repo's `docker/proxy.py`) still blocks known codex/claude telemetry hosts (`ab.chatgpt.com`, `*.oaiusercontent.com`, `statsig.anthropic.com`, `sentry.io`) but does not print BLOCKED lines for them. Tested.
+- [x] #2 `.claude/skills/omi-idea/SKILL.md` (root and template) has a stack -> `network_allow` table (npm: registry.npmjs.org; Go: proxy.golang.org, sum.golang.org, storage.googleapis.com; Python: pypi.org, files.pythonhosted.org) and says to propose it to the PO when the stack is chosen.
+- [x] Skill and agent catalogs regenerated; `python -m omi skills --check` passes; all tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
 Done: all criteria (agent/brief prompts, codex limits line, .gitattributes, quiet proxy hosts, omi-idea table), catalogs regenerated.
@@ -33,10 +33,18 @@ Next: Coordinator review.
 
 Coordinator host check: Windows `python tests/test_omi.py` -> rc=0, ok; `python -m omi skills --check` -> skills ok (19 checked).
 
+Open (PO accepted as is): CODEX_LIMITS suggests `git rm`, but git does not work in the worker container; only the os.remove hint applies. Fix in a later task.
+
 ## Steps
+PO approval accept: Chấp nhận, merge (Recommended)
 - plan started 2026-10-26 22:00
 - plan done 2026-10-26 22:00
 - build started 2026-10-26 22:00
+- build done 2026-10-26 22:03
+- review started 2026-10-26 22:03
+- review done 2026-10-26 22:05
+- accept started 2026-10-26 22:05
+- accept done 2026-10-26 22:05
 
 ## Reports
 2026-10-26 22:02 omi-agent-engineer (claude):
@@ -103,8 +111,17 @@ Coordinator host check: Windows `python tests/test_omi.py` -> rc=0, ok; `python 
 > create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-26 22:05 omi-agent-reviewer (codex):
+> VERDICT: PASS
+> AC: #16 #20 ✓ Root and template engineer prompts permit required reads, restrict writes, batch NEEDS SCOPE, and require checking affected tests; task briefs include tests in scope.
+> AC: #12 ✓ Codex prompt appends worker-limit advice; argv assertion passes in test_roles.
+> AC: #19 ✓ init creates .gitattributes when missing and preserves existing content; test_init_fresh_project passes.
+> AC: #13 ✓ Both proxies suppress telemetry BLOCKED logs while retaining blocking; test_network_allowlist passes.
+> AC: #2 ✓ Root and template omi-idea include all required registry mappings and PO proposal instruction.
+> AC: Catalogs and tests ✓ Catalog regeneration appears in diff; skills --check passes (19 checked); Linux suite exits 0, prints ok; Windows success recorded in task checkpoint.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 22 | 5132 | 322092 | 117s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 175923 | 786 | 130304 | 59s | - | PASS b4eb102 |
