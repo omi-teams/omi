@@ -26,6 +26,14 @@ claude                    # rồi gõ /omi-idea, /omi-task TASK-001, /omi-status
 | `.omi/tasks/TASK-NNN.md` | Mỗi task một file: brief, scope, acceptance criteria, checkpoint |
 | `.omi/decisions.md` | Nhật ký quyết định của PO |
 
+## Lấy và lưu key
+
+- **Claude:** chạy `claude setup-token` và copy token. Lưu bằng `python -m omi token set`; trên Windows token nằm trong Credential Manager với target `omi/CLAUDE_CODE_OAUTH_TOKEN`. OS khác: đặt biến môi trường `CLAUDE_CODE_OAUTH_TOKEN`.
+- **OpenAI (Codex):** vào platform.openai.com và tạo tài khoản. API tính tiền riêng với gói ChatGPT: nạp credit, đặt giới hạn chi tiêu hàng tháng. Vào API keys → Create new secret key; key chỉ hiện một lần. Lưu bằng `python -m omi token set --tool codex` (target `omi/OPENAI_API_KEY`; OS khác: biến môi trường `OPENAI_API_KEY`). `api.openai.com` được cho phép tự động khi chạy codex.
+- **Kiểm tra / xóa (Windows):** `cmdkey /list:omi/CLAUDE_CODE_OAUTH_TOKEN`, `cmdkey /delete:omi/CLAUDE_CODE_OAUTH_TOKEN` (tương tự với `omi/OPENAI_API_KEY`).
+- Khi nhập key, màn hình không hiện gì, đó là bình thường. Không dán key vào chat, issue hay file nào.
+- Tên menu trên platform.openai.com có thể thay đổi theo thời gian.
+
 ## Cách tiết kiệm quota
 
 - **Việc gì script làm được thì không dùng LLM:** `omi status` (đọc file + git), `omi guard` (kiểm tra scope), CI.
