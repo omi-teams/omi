@@ -1027,7 +1027,8 @@ def egress(main, name, image, allow):
                 raise NameTaken(net)
             sys.exit(f"cannot create the worker network: {r.stderr.strip()}. Nothing changed.")
         made["net"] = True
-        for cmd in (["create", "--name", proxy, *labels, "--user", "node", "--read-only", "--cap-drop", "ALL",
+        proxy_labels = [x for k, v in compose_labels(name, "proxy").items() for x in ("--label", f"{k}={v}")]
+        for cmd in (["create", "--name", proxy, *labels, *proxy_labels, "--user", "node", "--read-only", "--cap-drop", "ALL",
                      "--security-opt", "no-new-privileges", "-v", f"{script}:/proxy.py:ro", image,
                      "python3", "/proxy.py", *allow],
                     ["network", "connect", "--alias", PROXY_ALIAS, net, proxy], ["start", proxy]):
@@ -1059,13 +1060,18 @@ def egress(main, name, image, allow):
             print(f"... and {len(hosts) - 5} more blocked hosts")
 
 
-def container_name(role, tid=None, tool="claude", model=None, effort=None, now=None, salt=""):
-    """<task-id>-<role short>-<tool>-<model>-<effort>-<HHMMSS><salt>, limited to Docker's [a-zA-Z0-9_.-]; model/effort `none` for prove.
+def container_name(repo, role, tid=None, tool="claude", model=None, effort=None, now=None, salt=""):
+    """<repo>-<task-id>-<role short>-<tool>-<model>-<effort>-<HHMMSS><salt>, limited to Docker's [a-zA-Z0-9_.-]; model/effort `none` for prove.
     salt: a random suffix, only after a name conflict."""
     stamp = (now or datetime.datetime.now()).strftime("%H%M%S") + salt
     model = re.sub(r"-(\d+)-(\d+)$", r"-\1.\2", model or "none") if tool == "claude" else model or "none"
-    raw = "-".join(p for p in (tid, re.sub(r"^omi-agent-", "", role), None if model.startswith(tool) else tool, model, effort or "none", stamp) if p)
+    raw = "-".join(p for p in (repo, tid, re.sub(r"^omi-agent-", "", role), None if model.startswith(tool) else tool, model, effort or "none", stamp) if p)
     return re.sub(r"[^a-zA-Z0-9_.-]", "-", raw)
+
+
+def compose_labels(name, service):
+    """Docker Desktop groups containers by the compose project label; one project per run, named after its agent container."""
+    return {"com.docker.compose.project": re.sub(r"[^a-z0-9_-]", "-", name.lower()), "com.docker.compose.service": service}
 
 
 def repo_label(main):
@@ -1538,7 +1544,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
         def run_once(name):
             with egress(main, name, image, allow_for(main, t)) as (net, proxy):
                 r = subprocess.run(worker_argv(wt, image, cmd, name, repo_label(main),
-                                                 worker_labels(role, task.stem, mdl, eff), ro=read,
+                                                 {**worker_labels(role, task.stem, mdl, eff), **compose_labels(name, "agent")}, ro=read,
                                                  mounts=mounts, env_names=(envs[t],), network=net, proxy=proxy),
                                     env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                     text=True, errors="replace")
@@ -1549,7 +1555,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
 
         for salt in ("", secrets.token_hex(1)):  # a name in use: one retry with a random 2-char suffix
             try:
-                r = run_once(container_name(role, task.stem, t, mdl, eff, salt=salt))
+                r = run_once(container_name(repo_label(main), role, task.stem, t, mdl, eff, salt=salt))
                 break
             except NameTaken:
                 continue
@@ -1651,11 +1657,12 @@ def worker(wt, task_file=None, model=None, effort=None, prove=False):
     tm_tool = am.get("tool") or "claude"
     model, effort = resolve_model(main, am.get("model"), tm_tool), am.get("effort")
     for salt in ("", secrets.token_hex(1)):  # a name in use: one retry with a random 2-char suffix
-        name = container_name("omi-agent-engineer", "prove", tm_tool, model, effort, salt=salt)
+        name = container_name(repo_label(main), "omi-agent-engineer", "prove", tm_tool, model, effort, salt=salt)
         try:
             with egress(main, name, image, allow) as (net, proxy):
                 r = subprocess.run(worker_argv(wt, image, ["sh", "-s"], name, repo_label(main),
-                                               worker_labels("prove", None, None, None), network=net, proxy=proxy), env=env,
+                                               {**worker_labels("prove", None, None, None), **compose_labels(name, "agent")},
+                                               network=net, proxy=proxy), env=env,
                                    input=script.read_bytes().replace(b"\r\n", b"\n"), stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT)
             if r.returncode and name_taken(r.stdout.decode("utf-8", "replace"), name):

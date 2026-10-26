@@ -10,7 +10,7 @@ mkdir my-app && cd my-app
 omi init                  # cài khung squad, không ghi đè file sẵn có
 omi github [--po]         # (PO, quyền admin; --po: đăng nhập PO trên browser, xong tự logout + quay lại tài khoản squad) tạo staging + ruleset: squad chỉ merge vào development
 # Coordinator mặc định chạy model sonnet ("model" trong .claude/settings.json); đổi: sửa key đó hoặc /model trong phiên
-# Worker: alias haiku/sonnet/opus đổi thành model ID đầy đủ qua "models" trong .omi/config.json (PO sửa được); tên container <task>-<role>-<tool>-<model>-<effort>-<HHMMSS> (vd. TASK-055-reviewer-claude-sonnet-5.5-medium-143205; repo nằm trong label), label omi-role/task/model/effort/started; omi status liệt kê worker đang chạy
+# Worker: alias haiku/sonnet/opus đổi thành model ID đầy đủ qua "models" trong .omi/config.json (PO sửa được); tên container <repo>-<task>-<role>-<tool>-<model>-<effort>-<HHMMSS> (vd. omi-squad2-TASK-055-reviewer-claude-sonnet-5.5-medium-143205), agent và proxy cùng một nhóm compose (com.docker.compose.project) để Docker Desktop gom lại, label omi-role/task/model/effort/started; omi status liệt kê worker đang chạy
 claude                    # rồi gõ /omi-idea, /omi-task TASK-001, /omi-status
 ```
 

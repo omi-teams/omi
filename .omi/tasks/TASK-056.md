@@ -24,6 +24,7 @@ Done: all 3 criteria + README + tests; round 2 (PO at accept):
 - fix 2: name taken (network, proxy or `docker run`) raises `NameTaken`; `egress` removes only what the run created; retry once with a 2-char salt (`container_name(..., salt=)`), also for `--prove`. Tested.
 - fix 3: 63-char test uses a worst-case real name (long codex model, xhigh); codex->claude fallback test added.
 - round 3 (coordinator): `name_taken(err, name)` matches only Docker's exact conflict message for that name (`The container name "/<name>" is already in use`, `network with name <net> already exists`); `--prove` checks its merged output the same way. "port already in use" does not rerun the agent (tested).
+- round 4 (PO): name is `<repo>-<TASK>-<role>-<tool>-<model>-<effort>-<HHMMSS>` (`container_name(repo, role, ...)`, repo = `repo_label`); agent and proxy get `com.docker.compose.project` (run name, lowercased, `[^a-z0-9_-]`->`-`) and `com.docker.compose.service=agent|proxy` (`compose_labels`). Tested; README updated.
 Not done: -
 Tests: python3 tests/test_omi.py ok (exit 0)
 Next: review
@@ -94,7 +95,17 @@ PO at accept (round 4):
 > AC: `container_name` format, dots kept, tool added, `codex-default` as is, Docker charset âœ“ `test_container_names` asserts `TASK-055-reviewer-claude-sonnet-5.5-medium-143205`, `TASK-018-engineer-codex-gpt-5.1-codex-high-143205` and `...-codex-default-...`. The charset `re.sub` is unchanged.
 > AC: proxy and network names follow it, and `omi clean` still finds everything âœ“ `egress` builds `omi-net-{name}` and `{name}-proxy`. `clean`, `ps` and `network ls` all filter on the `omi-repo` and `omi-worker` labels (src lines 1103, 1384, 1407, 1413), not on name prefixes.
 > AC: `--prove` is named like a real run, and the TASK-045 length test is updated âœ“ `worker` calls `container_name` with the engineer role's tool, model and effort. The length test uses a worst-case real name (long codex model ID, `xhigh`).
-> AC: quota switch falls back to the role alias or `codex-default` instead of exiting 5 âœ“ Tests cover claude full ID â†’ codex alias, claude full ID with empty 
+> AC: quota switch falls back to the role alias or `codex-default` instead of exiting 5 âœ“ Tests cover claude full ID â†’ codex alias, claude full ID with empty
+2026-10-26 10:11 omi-agent-engineer (claude):
+> DONE
+> Files changed: `src/omi/__init__.py`, `tests/test_omi.py`, `README.md`, `.omi/tasks/TASK-056.md` (checkpoint).
+> - Names are now `<repo>-<TASK>-<role>-<tool>-<model>-<effort>-<HHMMSS>` via `container_name(repo, role, ...)`. The repo comes from `repo_label`, and the salt retry is kept.
+> - New `compose_labels(name, service)`: the agent and proxy containers of one run share `com.docker.compose.project` (run name, lowercased, chars outside `[a-z0-9_-]` become `-`) and get `service=agent|proxy`. The existing omi labels are unchanged.
+> - Tests: name format, compose labels on the agent and proxy create calls, and the worst-case 63-char name. README line updated.
+> Test result: `python3 tests/test_omi.py` exits 0.
+> Suggested commit: `feat(omi): repo in container names, group run containers under compose project`
+> Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>
+> Open issues: I could not check the Docker Desktop grouping here; the tests only assert the label values. The compose project name is the run name, so each run forms its own group, which is how I read "group each run". The `--prove` path reads the tool from the role file only, as before.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -104,3 +115,4 @@ PO at accept (round 4):
 | omi-agent-engineer | claude-haiku-5-5 | low | 28 | 23730 | 615350 | 128s | 1/1 omi-skill-docker-worker-pitfalls | - |
 | omi-agent-engineer | claude-haiku-5-5 | low | 24 | 6896 | 368364 | 53s | 1/1 omi-skill-docker-worker-pitfalls | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 3190 | 94836 | 39s | - | PASS a9d0b39 |
+| omi-agent-engineer | claude-haiku-5-5 | low | 40 | 10772 | 746263 | 93s | 1/1 omi-skill-docker-worker-pitfalls | - |

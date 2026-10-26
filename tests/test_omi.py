@@ -405,8 +405,10 @@ def test_worker():
             assert c[c.index("--permission-mode") + 1] == "bypassPermissions"
             assert "/work/.omi/tasks/TASK-001.md" in c[2] and "Checkpoint" in c[c.index("--append-system-prompt") + 1]
             name = argv[argv.index("--name") + 1]
-            assert re.fullmatch(r"TASK-001-engineer-claude-sonnet-5\.5-medium-\d{6}", name), name
+            assert re.fullmatch(r"[a-z0-9_.-]+-TASK-001-engineer-claude-sonnet-5\.5-medium-\d{6}", name), name
             lab = [argv[i + 1] for i, a in enumerate(argv) if a == "--label"]
+            proj = omi.compose_labels(name, "agent")["com.docker.compose.project"]
+            assert f"com.docker.compose.project={proj}" in lab and "com.docker.compose.service=agent" in lab
             for k, v in (("omi-role", "omi-agent-engineer"), ("omi-task", "TASK-001"), ("omi-model", "claude-sonnet-5-5"), ("omi-effort", "medium")):
                 assert f"{k}={v}" in lab, lab
             assert any(l.startswith("omi-started=") for l in lab) and "omi-worker=1" in lab
@@ -666,15 +668,19 @@ def test_clip_report():
 def test_container_names():
     import datetime
     t = datetime.datetime(2026, 1, 1, 14, 32, 5)
-    assert omi.container_name("omi-agent-reviewer", "TASK-055", "claude", "claude-sonnet-5-5", "medium", t) == \
-        "TASK-055-reviewer-claude-sonnet-5.5-medium-143205"
-    assert omi.container_name("omi-agent-engineer", "TASK-018", "codex", "gpt-5.1-codex", "high", t) == \
-        "TASK-018-engineer-codex-gpt-5.1-codex-high-143205"
-    assert omi.container_name("omi-agent-engineer", "TASK-018", "codex", "codex-default", "high", t) == \
-        "TASK-018-engineer-codex-default-high-143205"
-    assert omi.container_name("my role", "prove", now=t) == "prove-my-role-claude-none-none-143205"
-    assert omi.container_name("omi-agent-engineer", "TASK-018", "codex", "codex-default", "high", t, salt="a3") == \
-        "TASK-018-engineer-codex-default-high-143205a3"
+    assert omi.container_name("omi-squad2", "omi-agent-reviewer", "TASK-055", "claude", "claude-sonnet-5-5", "medium", t) == \
+        "omi-squad2-TASK-055-reviewer-claude-sonnet-5.5-medium-143205"
+    assert omi.container_name("omi-squad2", "omi-agent-engineer", "TASK-018", "codex", "gpt-5.1-codex", "high", t) == \
+        "omi-squad2-TASK-018-engineer-codex-gpt-5.1-codex-high-143205"
+    assert omi.container_name("omi-squad2", "omi-agent-engineer", "TASK-018", "codex", "codex-default", "high", t) == \
+        "omi-squad2-TASK-018-engineer-codex-default-high-143205"
+    assert omi.container_name("omi-squad2", "my role", "prove", now=t) == "omi-squad2-prove-my-role-claude-none-none-143205"
+    assert omi.container_name("omi-squad2", "omi-agent-engineer", "TASK-018", "codex", "codex-default", "high", t, salt="a3") == \
+        "omi-squad2-TASK-018-engineer-codex-default-high-143205a3"
+    # compose project: lowercased run name, chars outside [a-z0-9_-] become '-'
+    assert omi.compose_labels("omi-squad2-TASK-055-reviewer-claude-sonnet-5.5-medium-143205", "agent") == {
+        "com.docker.compose.project": "omi-squad2-task-055-reviewer-claude-sonnet-5-5-medium-143205",
+        "com.docker.compose.service": "agent"}
     with tempfile.TemporaryDirectory() as d:
         assert omi.resolve_model(d, "opus") == "claude-opus-5-5" and omi.resolve_model(d, "claude-x-1") == "claude-x-1"
         for bad in ("gpt", None):
@@ -687,6 +693,9 @@ def test_container_names():
     labels = omi.worker_labels("omi-agent-engineer", "TASK-1", "m", "low")
     a = omi.worker_argv(Path("/w"), "img", ["x"], "n", "r", labels)
     assert "omi-model=m" in a and "omi-effort=low" in a and "omi-task=TASK-1" in a and "omi-role=omi-agent-engineer" in a
+    # agent container joins the run's compose group (same project as its proxy)
+    a = omi.worker_argv(Path("/w"), "img", ["x"], "n", "r", {**labels, **omi.compose_labels("n", "agent")})
+    assert "com.docker.compose.project=n" in a and "com.docker.compose.service=agent" in a
     # status lists running workers (docker mocked); nothing when none
     import datetime as dt
     started = (dt.datetime.now() - dt.timedelta(minutes=75)).isoformat(timespec="seconds")
@@ -797,7 +806,7 @@ def test_network_allowlist():
     sys.stdout, saved = buf, sys.stdout
     try:
         # worst real name: a long codex model ID at xhigh effort
-        long = omi.container_name("omi-agent-engineer", "TASK-052", "codex", "gpt-5.1-codex-mini-high-preview-2026-10-26", "xhigh")
+        long = omi.container_name("my-repo", "omi-agent-engineer", "TASK-052", "codex", "gpt-5.1-codex-mini-high-preview-2026-10-26", "xhigh")
         with real_egress(Path("/My Repo"), long, "img", ["api.anthropic.com"]) as (net, proxy):
             assert (net, proxy) == (f"omi-net-{long}", "omi-proxy") and len(f"{long}-proxy") > 63
             host = omi.worker_argv(Path("/w"), "img", ["x"], long, network=net, proxy=proxy)
@@ -810,6 +819,8 @@ def test_network_allowlist():
     create = next(c for c in inside if c[1] == "create")
     assert create[-3:] == ["python3", "/proxy.py", "api.anthropic.com"] and "--read-only" in create and "--cap-drop" in create
     assert not any("TOKEN" in a or ":/work" in a for a in create) and "omi-repo=my-repo" in create
+    assert f"com.docker.compose.project={omi.compose_labels(long, 'proxy')['com.docker.compose.project']}" in create
+    assert "com.docker.compose.service=proxy" in create
     assert [c[1] for c in inside if c[1] in ("create", "start")] == ["create", "start"]
     assert next(c for c in inside if c[1:3] == ["network", "connect"])[3:5] == ["--alias", "omi-proxy"]
     assert any(c[1:3] == ["network", "connect"] for c in inside)
