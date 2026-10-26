@@ -31,6 +31,7 @@ PO at accept: fix the review notes first (round 2):
 1. src/omi/__init__.py quota fallback: set `models[other] = CODEX_DEFAULT` only when other is codex; else set `problem`.
 2. Name conflict: if `docker run`/proxy `create` fails because the name is already in use, retry once with a 2-char random suffix appended to the stamp. Test it.
 3. tests: the 63-char test builds a worst-case real name (long codex model ID, `xhigh`) instead of padding; add the codex->claude quota fallback case (full codex `--model` falls back to the role alias).
+Coordinator round 3: `name_taken` must match only Docker's own conflict message for that exact name, e.g. `The container name "/<name>" is already in use` and `network with name <net> already exists`; pass the name in. An agent failing with stderr like "port already in use" must not rerun the agent. Test that case.
 ## Steps
 - plan started 2026-10-26 09:59
 - plan done 2026-10-26 09:59
