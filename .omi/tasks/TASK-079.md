@@ -12,7 +12,7 @@ tool: claude
 model: sonnet
 effort: medium
 workflow: omi-flow-feature-sensitive
-step: architect
+step: build
 ---
 ## Goal
 A project that runs omi moves to a newer omi with one PO command: install the new version, add new template files, update template files the project never changed, and list the ones it did change for the PO to decide. This also fixes Dockerfile drift.
@@ -33,10 +33,14 @@ Not done:
 Tests:
 Next:
 
+Coordinator note for build: git does not work in the worker, so the v0.2.0 hashes cannot be read there. Provide a function that maps a template directory to {posix rel: norm_sha} and a CLI entry the Coordinator can run on the host, e.g. `python -m omi template-shas <template-dir> <version>` writing/merging `src/omi/template_shas.json`. Commit an empty `{}` placeholder; the Coordinator runs it against an export of tag v0.2.0 and commits the data. Tests use a tmp template dir.
+
 ## Steps
 - plan started 2026-10-26 22:07
 - plan done 2026-10-26 22:07
 - architect started 2026-10-26 22:07
+- architect done 2026-10-26 22:10
+- build started 2026-10-26 22:10
 
 ## Reports
 2026-10-26 22:08 omi-agent-architect (claude):
