@@ -45,6 +45,8 @@ Review round 1 FAIL:
 - `upgrade --to` without a value installs the latest version silently (reviewer reproduced it). A missing value exits with the usage line before any install.
 - `.omi/tasks/_template.md` being updated is intended (PO decision; criterion text clarified). No change needed.
 
+Coordinator host check after review round 1 fix: latest_tag on the real repo -> v0.2.0 (was v2026.10.26); Windows `python tests/test_omi.py` -> rc=0, ok.
+
 ## Steps
 - plan started 2026-10-26 22:07
 - plan done 2026-10-26 22:07
