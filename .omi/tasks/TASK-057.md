@@ -7,7 +7,7 @@ scope: docs/research/omi-eval.md, .omi/agents/**, .omi/skills/**, .omi/workflows
 role: omi-agent-engineer
 skills: []
 workflow: omi-flow-spike
-step: research
+step: write
 ---
 ## Goal
 One evaluation for everything, using real usage numbers. Keep only what earns its place. Estimated ~55 runs (2026-10-26); the PO picks full or lean scope before it starts.
@@ -53,7 +53,10 @@ Not done:
 Tests:
 Next:
 
+Write step (docs-writer): write docs/research/omi-eval.md in Vietnamese from ## Plan and ## Results only (they are the sources; cite "TASK-057 ## Results" rows). Sections: tóm tắt, cách đo, bảng kết quả, context mặc định (3402 tokens), lỗi omi tìm thấy, đề xuất, giới hạn (n=1, bài nhỏ, baseline architect không hợp lệ, release không đo). Proposals to list (the PO decides): (1) rework omi-skill-debug-root-cause shorter (+35% out, +29% cache, no gain here); (2) rework omi-agent-security-reviewer shorter (+44% out, +57% cache, plain found as much); (3) keep lean-implementation (+5%), incident (small gain), docs-writer (haiku), reviewer and engineer (equal; their scope/safety rules were not exercised by these tasks), architect (baseline invalid); (4) new task for the 3 omi defects.
 ## Steps
 - plan started 2026-10-26 10:22
 - plan done 2026-10-26 10:23
 - research started 2026-10-26 10:23
+- research skipped 2026-10-26 10:30: evidence is the Coordinator-run sandbox runs recorded under ## Results; a researcher cannot run Docker
+- write started 2026-10-26 10:30
