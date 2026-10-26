@@ -7,7 +7,7 @@ scope: src/omi/__init__.py, tests/**
 role: omi-agent-engineer
 skills: []
 workflow: omi-flow-bugfix
-step: review
+step: fix
 ---
 ## Goal
 Bug: in TASK-064 the engineer wrote `step: done` into the task frontmatter, which broke `omi step` until the Coordinator restored it. `step:` and `status:` are Coordinator-owned (set by `omi step` and by the Coordinator).
@@ -23,6 +23,10 @@ Not done: -
 Tests: python3 tests/test_omi.py ok
 Next: review/commit
 
+Review round 1 FAIL:
+1. tests/test_omi.py: no test edits `step:` (the reported bug). Add a direct `revert_front` unit test covering `step`, a field the agent added and one it removed.
+2. src/omi/__init__.py revert_front: re-serialising via parse()/set_front drops `# comments` and reorders lines. Snapshot the raw original frontmatter lines of the owned keys and put those exact lines back (same position).
+3. If the agent deletes the task file or removes the leading `---`, restore the original frontmatter (or the whole file from the snapshot) and print `REVERTED: frontmatter`.
 ## Steps
 - plan started 2026-10-26 11:33
 - plan done 2026-10-26 11:33
@@ -31,6 +35,8 @@ Next: review/commit
 - fix started 2026-10-26 11:34
 - fix skipped 2026-10-26 11:34: the reproduce run wrote the test and the fix together
 - review started 2026-10-26 11:34
+- review failed 2026-10-26 11:35
+- fix started 2026-10-26 11:35
 
 ## Reports
 2026-10-26 11:34 omi-agent-engineer (claude):
