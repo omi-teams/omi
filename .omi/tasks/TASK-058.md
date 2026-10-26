@@ -21,7 +21,8 @@ The three defects found by the TASK-057 sandbox (docs/research/omi-eval.md): a f
 ## Checkpoint
 Done: init writes 3 catalogs + .gitignore; test_command falls back to script runner; config "test" key; test_init_fresh_project.
 Round 2 done: Tests line built by test_prompt_line with shlex.join (round-trip test); .gitignore accepts `__pycache__`, `/__pycache__/`, `__pycache__/`; test_init_fresh_project was not called by the runner, now registered.
-Not done: README untouched (nothing needed).
+Round 3 done: script fallback exits `1 if any(codes) else 0` (signal-killed child fails); test_a now expects 1, test_b SIGKILL case added; README line on the "test" key and default order.
+Not done: none.
 Tests: python3 tests/test_omi.py ok (fresh-init test included)
 Next: review
 
@@ -80,6 +81,12 @@ Coordinator round 3 (review notes): (1) the script fallback must fail when any c
 > - Existing `__pycache__`, `/__pycache__/` or `__pycache__/` entries are left unchanged.
 > [... truncated ...]
 > Scope âœ“ Changes are limited to `src/omi/__init__.py`, `src/omi/template/dot-omi/config.json`, `tests/test_omi.py` and the task file.
+2026-10-26 10:38 omi-agent-engineer (claude):
+> DONE
+> Files changed: `src/omi/__init__.py` (script fallback now exits `1 if any(codes) else 0`, so a child killed by a signal fails the run), `tests/test_omi.py` (failing script expects exit 1; new SIGKILL case expects 1), `README.md` (one line on the `"test"` key and default order), `.omi/tasks/TASK-058.md` (checkpoint).
+> Test: `python3 tests/test_omi.py` â†’ `ok`.
+> Suggested commit: `fix(init): fail script test run on signal exit, document test order`
+> Open issues: none.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -88,3 +95,4 @@ Coordinator round 3 (review notes): (1) the script fallback must fail when any c
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 4 | 1161 | 37835 | 23s | - | PASS dff8123 |
 | omi-agent-engineer | claude-haiku-5-5 | low | 24 | 3871 | 288811 | 63s | - | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 4 | 1603 | 41569 | 29s | - | PASS 3e77256 |
+| omi-agent-engineer | claude-haiku-5-5 | low | 16 | 2752 | 215375 | 33s | - | - |

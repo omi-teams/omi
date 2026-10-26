@@ -1468,8 +1468,8 @@ def test_command(wt, main):
     elif importlib.util.find_spec("pytest"):
         argv = ["python", "-m", "pytest", "-q"]
     else:
-        argv = ["python", "-c", "import glob,subprocess,sys;sys.exit(max([subprocess.call([sys.executable,f]) "
-                                "for f in sorted(glob.glob('tests/test_*.py'))] or [0]))"]
+        argv = ["python", "-c", "import glob,subprocess,sys;codes=[subprocess.call([sys.executable,f]) "
+                                "for f in sorted(glob.glob('tests/test_*.py'))];sys.exit(1 if any(codes) else 0)"]
     return [sys.executable if argv[0] == "python" else argv[0], *argv[1:]]
 
 

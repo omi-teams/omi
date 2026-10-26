@@ -49,9 +49,12 @@ def test_init_fresh_project():
         finally:
             omi.importlib.util.find_spec = real
         assert "pytest" not in cmd
-        assert subprocess.run(cmd, cwd=d).returncode == 3
+        assert subprocess.run(cmd, cwd=d).returncode == 1
         (Path(d) / "tests" / "test_a.py").write_text("")
         assert subprocess.run(cmd, cwd=d).returncode == 0
+        (Path(d) / "tests" / "test_b.py").write_text("import os,signal;os.kill(os.getpid(),signal.SIGKILL)")
+        assert subprocess.run(cmd, cwd=d).returncode == 1, "a child killed by a signal must fail the run"
+        (Path(d) / "tests" / "test_b.py").unlink()
         line = omi.test_prompt_line(d, d)
         assert shlex.split(line) == [("python3" if a == omi.sys.executable else a) for a in cmd], line
     with tempfile.TemporaryDirectory() as d:
