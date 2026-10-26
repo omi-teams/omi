@@ -1470,7 +1470,9 @@ def worker(wt, task_file=None, model=None, effort=None, prove=False):
     env.pop(TOKEN_ENV, None)
     script = main / "docker" / "prove.sh"
     script = script if script.exists() else TEMPLATE / "docker" / "prove.sh"
-    name = container_name(main.name, "prove")
+    am = get_role(main, "omi-agent-engineer")  # named like a real run: real role, model, effort
+    name = container_name(main.name, "omi-agent-engineer", "prove",
+                          resolve_model(main, am.get("model")), am.get("effort"))
     with egress(main, name, image, allow) as (net, proxy):
         return subprocess.run(worker_argv(wt, image, ["sh", "-s"], name, repo_label(main),
                                           worker_labels("prove", None, None, None), network=net, proxy=proxy), env=env,

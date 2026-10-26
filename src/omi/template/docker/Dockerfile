@@ -4,5 +4,6 @@ FROM node:24.11.0-trixie-slim
 RUN apt-get update && apt-get install -y --no-install-recommends python3 git && rm -rf /var/lib/apt/lists/*
 # CLI baked into the image (not on a noexec tmpfs, avoids exit 126)
 RUN npm i -g @anthropic-ai/claude-code@2.1.302 && npm cache clean --force
+RUN npm i -g @openai/codex@0.46.0 && npm cache clean --force
 USER node
 WORKDIR /work

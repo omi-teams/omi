@@ -22,5 +22,12 @@ case "$r" in *" 200 "*) echo "PASS allowed host api.anthropic.com connects ($r)"
 r=$(connect example.com)
 case "$r" in *" 403 "*example.com*network_allow*) echo "PASS blocked host example.com fails ($r)";; *) echo "FAIL blocked host example.com: $r";; esac
 ok "direct TCP to 1.1.1.1:443 (no proxy)" "python3 -c 'import socket;socket.create_connection((\"1.1.1.1\",443),5)'"
+# CLIs in the image reach their API host through the proxy: a bogus key must give an auth error, not a network one
+cli(){ out=$(HOME=/home/node timeout 90 "$@" 2>&1 </dev/null | tail -c 600)
+  if echo "$out" | grep -qiE 'ENOTFOUND|EAI_AGAIN|ECONNREFUSED|timed out|dns|network|proxy|403 forbidden'; then echo "FAIL $n: network error: $out"
+  elif echo "$out" | grep -qiE '401|unauthorized|authentication|invalid|incorrect api key|api key'; then echo "PASS $n reaches its API through the proxy (auth error)"
+  else echo "FAIL $n: unexpected output: $out"; fi; }
+n="claude CLI"; ANTHROPIC_API_KEY=sk-ant-prove-invalid cli claude -p hi
+n="codex CLI"; OPENAI_API_KEY=sk-prove-invalid cli codex exec --skip-git-repo-check hi
 echo "uid=$(id -u) caps=$(grep CapEff /proc/self/status) $(grep NoNewPrivs /proc/self/status)"
 echo "mounts:"; grep -E ' /work | / ' /proc/self/mountinfo | cut -d' ' -f5,6

@@ -626,6 +626,7 @@ def test_container_names():
     t = datetime.datetime(2026, 1, 1, 14, 32, 5)
     assert omi.container_name("omi-squad2", "omi-agent-engineer", "TASK-018", "claude-sonnet-5-5", "high", t) == \
         "omi-omi-squad2-TASK-018-omi-agent-engineer-claude-sonnet-5-5-high-143205"
+    assert len(omi.container_name("omi-squad2", "omi-agent-engineer", "prove", "claude-sonnet-5-5", "medium", t)) >= 60
     assert omi.container_name("my repo", "prove", now=t) == "omi-my-repo-prove-none-none-143205"
     with tempfile.TemporaryDirectory() as d:
         assert omi.resolve_model(d, "opus") == "claude-opus-5-5" and omi.resolve_model(d, "claude-x-1") == "claude-x-1"
@@ -893,6 +894,12 @@ def test_template_docker():
     d = omi.TEMPLATE / "docker"
     text = (d / "Dockerfile").read_text()
     assert "python3" in text and "@anthropic-ai/claude-code@2." in text and (d / "prove.sh").exists()
+    pins = json.loads((omi.TEMPLATE / "dot-omi" / "config.json").read_text())["cli_versions"]
+    assert f"@openai/codex@{pins['codex']}" in text and f"claude-code@{pins['claude']}" in text
+    assert pins["codex"] in (omi.TEMPLATE.parents[2] / "README.md").read_text(encoding="utf-8")
+    assert "api.openai.com" in json.loads((omi.TEMPLATE / "dot-omi" / "config.json").read_text())["network_allow"]
+    prove = (d / "prove.sh").read_text()
+    assert "codex exec" in prove and "OPENAI_API_KEY=sk-prove-invalid" in prove
     with tempfile.TemporaryDirectory() as t:
         out = io.StringIO()
         sys.stdout, saved = out, sys.stdout
