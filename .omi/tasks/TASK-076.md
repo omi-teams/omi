@@ -12,7 +12,7 @@ tool:
 model: sonnet
 effort: medium
 workflow: omi-flow-feature-sensitive
-step:
+step: architect
 ---
 ## Goal
 Gaps #3 #5 #15 #17 #18 #22 (omi-board session 97bfceb1): Go tests and builds fail in worker, reviewer and hook containers (noexec tmpfs, 256 MB, PATH lost in `bash -lc`, no dependency cache). Give every omi container a sized, exec-allowed cache and keep the toolchain on PATH.
@@ -30,3 +30,21 @@ Done:
 Not done:
 Tests:
 Next:
+
+## Steps
+- plan started 2026-10-26 21:07
+- plan done 2026-10-26 21:07
+- architect started 2026-10-26 21:07
+
+## Reports
+2026-10-26 21:09 omi-agent-architect (claude):
+> ```
+> RECOMMEND: B - worker_argv takes explicit cache_mb/tmp_mb (default 2048/512), and one helper worker_sizes(main) reads .omi/config.json "worker" for all 3 callers (run_role, run_hook, worker --prove); the argv stays a pure function, so tests need no config fixture.
+> OPTIONS: A (worker_argv reads config itself via main_checkout(wt)): fewer call-site edits / hidden file IO in a pure argv builder, existing argv tests start depending on disk; B (explicit params + helper): 3 one-line call-site edits / none; C (module constants overridden at config load): smallest diff / global state the python rule forbids, and run_hook/run_role read config separately anyway
+> [... truncated ...]
+> ```
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read | verdict |
+|---|---|---|---|---|---|---|---|---|
+| omi-agent-architect | claude-opus-5-5 | high | 14 | 4374 | 199813 | 70s | - | n/a |
