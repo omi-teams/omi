@@ -24,6 +24,10 @@ Scripts `.omi/hooks/<event>.sh|.py` for events `pre-run`, `post-run`, `pre-merge
 - [ ] All tests pass.
 
 ## Checkpoint
+Coordinator check round 2 FAIL (real Docker on the Windows host):
+- Template `post-run.sh` still prints "no tests found" in this repo (which has tests/test_omi.py): `ls tests/test_*.py test_*.py` exits non-zero when either glob matches nothing. Detect each location separately (e.g. `for f in tests/test_*.py test_*.py; do [ -f "$f" ] && found=1; done`). Add a test case with tests only under tests/ and none at the root.
+- tests/test_omi.py fails on the Windows host: `OSError: [WinError 1314] A required privilege is not held by the client` from `os.symlink` (grep into a temp bin dir). Do not use symlinks; e.g. write small wrapper scripts or set PATH to a dir with copied files, or skip that sub-case when `os.name == "nt"`. Tests must pass on the Windows host.
+- This repo's `.omi/hooks/post-run.sh` (`exec python3 tests/test_omi.py`) passed in a real container: ok.
 Coordinator check round 1 FAIL (before review). Real Docker evidence from a probe hook on the Windows host: cwd /work, uid 1000, worktree read-only, no token env, no network (DNS fails), `python3 tests/test_omi.py` prints ok, exit 3 propagated, no container left. Findings:
 - `post-run.sh` (template and `.omi/hooks`) silently passes when tests exist but the runner is missing: the image has no pytest (`ModuleNotFoundError`), so this repo's own hook runs nothing. Found tests + missing tool (go, npm, pytest) must exit 1 with `post-run: <tool> not in the worker image; add it to docker/Dockerfile`; exit 0 only when no tests exist. Test each branch with `sh` in temp dirs.
 - This repo's `.omi/hooks/post-run.sh` must run `exec python3 tests/test_omi.py` (not the generic detection).
