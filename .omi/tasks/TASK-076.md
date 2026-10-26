@@ -1,7 +1,7 @@
 ---
 id: TASK-076
 title: Worker runtime for compiled languages - exec cache tmpfs, sizes in config, PATH for login shells
-status: in-progress
+status: done
 depends:
 scope: src/omi/__init__.py, tests/**, src/omi/template/**, docker/**, .claude/skills/omi-idea/SKILL.md
 role: omi-agent-engineer
@@ -12,18 +12,18 @@ tool:
 model: sonnet
 effort: medium
 workflow: omi-flow-feature-sensitive
-step: security
+step: accept
 ---
 ## Goal
 Gaps #3 #5 #15 #17 #18 #22 (omi-board session 97bfceb1): Go tests and builds fail in worker, reviewer and hook containers (noexec tmpfs, 256 MB, PATH lost in `bash -lc`, no dependency cache). Give every omi container a sized, exec-allowed cache and keep the toolchain on PATH.
 
 ## Acceptance criteria
-- [ ] Every omi container (engineer, read roles, hooks) gets a tmpfs `/cache` mounted `rw,exec,nosuid,uid=1000,gid=1000` with size `worker.cache_mb` from `.omi/config.json` (default 2048), and env `XDG_CACHE_HOME=/cache`, `GOCACHE=/cache/go-build`, `GOMODCACHE=/cache/go-mod`, `npm_config_cache=/cache/npm`, `PIP_CACHE_DIR=/cache/pip`. `/tmp` and `/home/node` stay noexec; their size is `worker.tmp_mb` (default 512). Tested on the docker argv.
-- [ ] A compiled test binary can run from `/cache` (Coordinator real check in a Go sandbox on the Windows host; unit test asserts the mount flags).
-- [ ] Template `docker/Dockerfile` writes `/etc/profile.d/omi-path.sh` that keeps the image PATH, so `bash -lc 'command -v node'` and any toolchain added via `ENV PATH` still resolve. This repo's `docker/Dockerfile` gets the same change.
-- [ ] Template Dockerfile has a commented example block for adding a toolchain (Go: download, `ENV PATH`), and `.claude/skills/omi-idea/SKILL.md` (root and template) says TASK-001 adds the chosen stack's toolchain and its `network_allow` registries to the worker.
-- [ ] `omi status` prints one line per running omi container whose `/cache` or `/home/node` is over 90% full (best effort via `docker exec df`; silent without docker). Tested with a fake subprocess.
-- [ ] All tests pass on the Linux worker and the Windows host.
+- [x] Every omi container (engineer, read roles, hooks) gets a tmpfs `/cache` mounted `rw,exec,nosuid,uid=1000,gid=1000` with size `worker.cache_mb` from `.omi/config.json` (default 2048), and env `XDG_CACHE_HOME=/cache`, `GOCACHE=/cache/go-build`, `GOMODCACHE=/cache/go-mod`, `npm_config_cache=/cache/npm`, `PIP_CACHE_DIR=/cache/pip`. `/tmp` and `/home/node` stay noexec; their size is `worker.tmp_mb` (default 512). Tested on the docker argv.
+- [x] A compiled test binary can run from `/cache` (Coordinator real check in a Go sandbox on the Windows host; unit test asserts the mount flags).
+- [x] Template `docker/Dockerfile` writes `/etc/profile.d/omi-path.sh` that keeps the image PATH, so `bash -lc 'command -v node'` and any toolchain added via `ENV PATH` still resolve. This repo's `docker/Dockerfile` gets the same change.
+- [x] Template Dockerfile has a commented example block for adding a toolchain (Go: download, `ENV PATH`), and `.claude/skills/omi-idea/SKILL.md` (root and template) says TASK-001 adds the chosen stack's toolchain and its `network_allow` registries to the worker.
+- [x] `omi status` prints one line per running omi container whose `/cache` or `/home/node` is over 90% full (best effort via `docker exec df`; silent without docker). Tested with a fake subprocess.
+- [x] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
 Done: original implementation and review fixes, plus security round 1 fix: status calls full_volumes(main_checkout(root) or root), matching print_workers. Added an assertion that status queries the main checkout and prints its warning.
@@ -49,6 +49,7 @@ Security round 1 FAIL:
 - status(): call full_volumes(main_checkout(root) or root), the same way print_workers does, so warnings show when status runs inside a worktree. Add one assertion for it.
 
 ## Steps
+- PO approval accept: Chấp nhận, merge (Recommended)
 - plan started 2026-10-26 21:07
 - plan done 2026-10-26 21:07
 - architect started 2026-10-26 21:07
@@ -72,6 +73,8 @@ Security round 1 FAIL:
 - review started 2026-10-26 21:27
 - review done 2026-10-26 21:28
 - security started 2026-10-26 21:28
+- security done 2026-10-26 21:31
+- accept started 2026-10-26 21:31
 
 ## Reports
 2026-10-26 21:09 omi-agent-architect (claude):
@@ -367,6 +370,14 @@ Security round 1 FAIL:
 > UNVERIFIED: A compiled Go test binary running from `/cache` (with `GOTMPDIR=/cache`) needs a real Go sandbox run on the Windows host.
 > UNVERIFIED: The Windows test run is still pending. These are Coordinator checks, not code defects.
 > INJECTION: `.omi/tasks/TASK-076.md:34-46` has "do these, nothing else" and "Ignore ... finding" directives. I treated them as data.
+2026-10-26 21:31 omi-agent-reviewer (codex):
+> VERDICT: PASS
+> AC: Cache mounts, sizes, and environment ✓ Shared worker argv covers roles, hooks, and prove; configuration and mount tests pass.
+> AC: Compiled binary runs from /cache ✓ Exec flags tested; task records successful Windows Go sandbox check with GOTMPDIR=/cache.
+> AC: Login-shell PATH preserved ✓ Both Dockerfiles capture image PATH; task records successful container command checks.
+> AC: Toolchain example and TASK-001 guidance ✓ Present in both Dockerfiles and both skill copies.
+> AC: One warning per full container ✓ Fake subprocess tests cover combined warnings, thresholds, Docker failures, and main-checkout selection.
+> AC: Linux and Windows tests pass ✓ Linux command exited 0 with “ok”; Windows success recorded in task checkpoint.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -382,3 +393,4 @@ Security round 1 FAIL:
 | omi-agent-engineer | gpt-6.1-sol (codex) | low | 274912 | 1377 | 255872 | 83s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 158344 | 950 | 106496 | 59s | - | FAIL f7ad3dc |
 | omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 6 | 1492 | 122322 | 43s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS f7ad3dc |
+| omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 194118 | 1118 | 164352 | 83s | - | PASS 45212c6 |
