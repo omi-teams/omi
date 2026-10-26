@@ -49,7 +49,7 @@ Security round 1 FAIL:
 - status(): call full_volumes(main_checkout(root) or root), the same way print_workers does, so warnings show when status runs inside a worktree. Add one assertion for it.
 
 ## Steps
-- PO approval accept: Chấp nhận, merge (Recommended)
+PO approval accept: Chấp nhận, merge (Recommended)
 - plan started 2026-10-26 21:07
 - plan done 2026-10-26 21:07
 - architect started 2026-10-26 21:07
@@ -75,6 +75,7 @@ Security round 1 FAIL:
 - security started 2026-10-26 21:28
 - security done 2026-10-26 21:31
 - accept started 2026-10-26 21:31
+- accept done 2026-10-26 21:32
 
 ## Reports
 2026-10-26 21:09 omi-agent-architect (claude):
