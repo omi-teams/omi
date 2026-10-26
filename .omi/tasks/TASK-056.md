@@ -82,6 +82,16 @@ Coordinator round 3: `name_taken` must match only Docker's own conflict message 
 > Commit: `fix(omi): match only Docker's exact name-conflict message before retrying`
 > Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>
 > Open issues: the `--prove` path has no test of its own for the retry; it is covered only by the shared `name_taken` logic.
+2026-10-26 10:07 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/__init__.py:1541 `run_once` now captures the agent container's stderr (`stderr=PIPE`) and only writes it after the container exits. Before, stderr streamed live. The user sees no live stderr during a long run, and it is lost if the process is killed mid-run. -> Optional: keep stderr inherited and detect a name conflict another way (for example, a fast `docker run` failure with returncode 125). Otherwise accept the trade-off.
+> - src/omi/__init__.py:1650 The `--prove` retry path (merged output checked with `name_taken`, then a salted rerun) has no test of its own. The engineer reported this. -> Optional: add a `worker(..., prove=True)` test whose first `docker run` returns the conflict message.
+> - src/omi/__init__.py:1650 `--prove` reads the tool only from the role file (`am.get("tool")`). A real run can also take `tool:` from the task or `--tool`, so the names can differ in those cases. This is minor and not in the acceptance criteria. -> Optional: share the tool resolution with `run_role`.
+> 
+> AC: `container_name` format, dots kept, tool added, `codex-default` as is, Docker charset âœ“ `test_container_names` asserts `TASK-055-reviewer-claude-sonnet-5.5-medium-143205`, `TASK-018-engineer-codex-gpt-5.1-codex-high-143205` and `...-codex-default-...`. The charset `re.sub` is unchanged.
+> AC: proxy and network names follow it, and `omi clean` still finds everything âœ“ `egress` builds `omi-net-{name}` and `{name}-proxy`. `clean`, `ps` and `network ls` all filter on the `omi-repo` and `omi-worker` labels (src lines 1103, 1384, 1407, 1413), not on name prefixes.
+> AC: `--prove` is named like a real run, and the TASK-045 length test is updated âœ“ `worker` calls `container_name` with the engineer role's tool, model and effort. The length test uses a worst-case real name (long codex model ID, `xhigh`).
+> AC: quota switch falls back to the role alias or `codex-default` instead of exiting 5 âœ“ Tests cover claude full ID â†’ codex alias, claude full ID with empty 
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -90,3 +100,4 @@ Coordinator round 3: `name_taken` must match only Docker's own conflict message 
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 3680 | 110694 | 45s | - | PASS c17901d |
 | omi-agent-engineer | claude-haiku-5-5 | low | 28 | 23730 | 615350 | 128s | 1/1 omi-skill-docker-worker-pitfalls | - |
 | omi-agent-engineer | claude-haiku-5-5 | low | 24 | 6896 | 368364 | 53s | 1/1 omi-skill-docker-worker-pitfalls | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 3190 | 94836 | 39s | - | PASS a9d0b39 |
