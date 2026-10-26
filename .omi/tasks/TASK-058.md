@@ -1,7 +1,7 @@
 ---
 id: TASK-058
 title: Fresh omi init project works out of the box (catalog, test command, gitignore)
-status: planned
+status: in-progress
 depends: TASK-057
 scope: src/omi/__init__.py, src/omi/template/**, tests/**, README.md
 role: omi-agent-engineer
