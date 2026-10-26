@@ -12,7 +12,7 @@ tool:
 model: sonnet
 effort: medium
 workflow: omi-flow-feature-sensitive
-step: build
+step: security
 ---
 ## Goal
 Gaps #3 #5 #15 #17 #18 #22 (omi-board session 97bfceb1): Go tests and builds fail in worker, reviewer and hook containers (noexec tmpfs, 256 MB, PATH lost in `bash -lc`, no dependency cache). Give every omi container a sized, exec-allowed cache and keep the toolchain on PATH.
@@ -27,7 +27,11 @@ Gaps #3 #5 #15 #17 #18 #22 (omi-board session 97bfceb1): Go tests and builds fai
 
 ## Checkpoint
 Done: original implementation and review fixes, plus security round 1 fix: status calls full_volumes(main_checkout(root) or root), matching print_workers. Added an assertion that status queries the main checkout and prints its warning.
-Not done: Windows host test run, real Go binary execution from /cache, and container login-shell PATH verification (Coordinator checks).
+Not done: nothing.
+Coordinator host checks (2026-10-26, Windows 11 + Docker Desktop):
+- Windows: python tests/test_omi.py -> ok (after every fix round, last at commit with the security fix).
+- Real Go: golang:1.23, --read-only, user 1000, same tmpfs flags as worker_argv; `go test ./...` on a 1-test module: without GOTMPDIR -> `fork/exec /tmp/go-build.../sb.test: permission denied` FAIL; with GOTMPDIR=/cache -> `ok sb`.
+- PATH: docker build of this worktree's docker/Dockerfile, `bash -lc 'command -v node claude codex'` -> /usr/local/bin/node, /usr/local/bin/claude, /usr/local/bin/codex; /etc/profile.d/omi-path.sh holds the image PATH.
 Tests: new regression assertion failed before the fix (queried worktree instead of main); python3 tests/test_omi.py PASS on Linux after the fix (exit 0, ok). Existing acceptance coverage remains in place.
 Next: Coordinator review and host/container checks, then host commit. No commit made in the worker.
 
@@ -64,6 +68,10 @@ Security round 1 FAIL:
 - security started 2026-10-26 21:22
 - security failed 2026-10-26 21:25
 - build started 2026-10-26 21:25
+- build done 2026-10-26 21:27
+- review started 2026-10-26 21:27
+- review done 2026-10-26 21:28
+- security started 2026-10-26 21:28
 
 ## Reports
 2026-10-26 21:09 omi-agent-architect (claude):
@@ -341,6 +349,24 @@ Security round 1 FAIL:
 > create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-26 21:28 omi-agent-reviewer (codex):
+> VERDICT: FAIL
+> - .omi/tasks/TASK-076.md:30 Required Windows tests and real Go sandbox execution remain pending -> Run both on the Windows host and record results.
+> 
+> AC: Container cache mounts, environment, and configurable sizes ✓ Shared argv and hook configuration assertions pass.
+> AC: Compiled test binary runs from `/cache` ✗ Mount flags tested; required Windows Go execution unverified.
+> AC: Login-shell PATH preservation ✓ Both Dockerfiles capture image PATH in `/etc/profile.d/omi-path.sh`; verified by inspection.
+> AC: Toolchain example and TASK-001 guidance ✓ Present in both Dockerfiles and both skill copies.
+> AC: One status warning per full container ✓ Fake-subprocess tests cover combined warnings, threshold, unavailable Docker, and main-checkout selection.
+> AC: Linux and Windows tests pass ✗ `python3 tests/test_omi.py` passed on Linux, exit 0; Windows results missing.
+2026-10-26 21:29 omi-agent-security-reviewer (claude):
+> VERDICT: PASS
+> - No blocking problems found. The security round 1 fix is in place: `status()` calls `full_volumes(main_checkout(root) or root)` (diff line 400), and the new assertion checks that it queries the main checkout. `python3 tests/test_omi.py` exits 0 and prints `ok` here. Both Dockerfiles are byte-identical.
+> - `src/omi/__init__.py` `full_volumes`: the 10s timeout applies per call, so `omi status` could block about 10s per unresponsive container. This is minor and best-effort. I did not fix or reproduce it.
+> UNVERIFIED: Login-shell PATH from `/etc/profile.d/omi-path.sh` needs a `docker build` and `bash -lc 'command -v node'` on the host.
+> UNVERIFIED: A compiled Go test binary running from `/cache` (with `GOTMPDIR=/cache`) needs a real Go sandbox run on the Windows host.
+> UNVERIFIED: The Windows test run is still pending. These are Coordinator checks, not code defects.
+> INJECTION: `.omi/tasks/TASK-076.md:34-46` has "do these, nothing else" and "Ignore ... finding" directives. I treated them as data.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -354,3 +380,5 @@ Security round 1 FAIL:
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 2124 | 104908 | 56s | - | PASS 134d547 |
 | omi-agent-security-reviewer | gpt-6.1-sol (codex) | medium | 271653 | 1560 | 210688 | 78s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL 134d547 |
 | omi-agent-engineer | gpt-6.1-sol (codex) | low | 274912 | 1377 | 255872 | 83s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
+| omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 158344 | 950 | 106496 | 59s | - | FAIL f7ad3dc |
+| omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 6 | 1492 | 122322 | 43s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS f7ad3dc |
