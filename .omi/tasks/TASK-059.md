@@ -1,20 +1,20 @@
 ---
 id: TASK-059
 title: Slim omi-skill-debug-root-cause and omi-agent-security-reviewer, then re-measure
-status: in-progress
+status: done
 depends: TASK-058
 scope: AGENTS.md, .omi/workflows/**, .omi/skills/**, .omi/agents/**, src/omi/template/**, docs/research/omi-eval.md, tests/**
 role: omi-agent-engineer
 skills: []
 workflow: omi-flow-feature
-step: review
+step: accept
 ---
 ## Goal
 Both cost more than a plain baseline with no correctness gain in TASK-057 (debug-root-cause +35% out/+29% cache; security-reviewer +44% out/+57% cache). Keep what they uniquely add, cut the rest, then re-run the same sandbox pairs.
 
 ## Acceptance criteria
-- [ ] Each file is at most half its current token size, in `.omi` and the template copy; `python -m omi skills --check` and `python tests/test_omi.py` pass.
-- [ ] Coordinator re-runs the TASK-057 bugfix and security pairs: the slimmed versions stay correct (planted issues caught, bug fixed); numbers appended to docs/research/omi-eval.md. (Original target "<= plain baseline +10% tokens" was not met: the extra cost is verification turns, not prompt size; PO kept the slim versions with verification, 2026-10-26.)
+- [x] Each file is at most half its current token size, in `.omi` and the template copy; `python -m omi skills --check` and `python tests/test_omi.py` pass.
+- [x] Coordinator re-runs the TASK-057 bugfix and security pairs: the slimmed versions stay correct (planted issues caught, bug fixed); numbers appended to docs/research/omi-eval.md. (Original target "<= plain baseline +10% tokens" was not met: the extra cost is verification turns, not prompt size; PO kept the slim versions with verification, 2026-10-26.)
 
 ## Checkpoint
 Round 2 done: debug-root-cause SKILL.md restored MIT comment (`<!-- Adapted from obra/superpowers systematic-debugging v6.3.0, MIT, Copyright (c) 2025 Jesse Vincent. -->`), now 294 tokens (<=295), .omi and template identical. Dropped the "Inputs" details and some wording to fit; `inputs` section kept (required by validator).
@@ -37,6 +37,10 @@ Not done: none in scope. Criterion 2 sandbox numbers are already recorded by the
 - build started 2026-10-26 10:41
 - build done 2026-10-26 10:49
 - review started 2026-10-26 10:49
+- review done 2026-10-26 10:52
+- accept started 2026-10-26 10:52
+PO approval accept: "Giữ bản gọn + xác minh" (merge the slim versions; verification cost accepted)
+- accept done 2026-10-26 10:52
 
 ## Reports
 2026-10-26 10:43 omi-agent-engineer (claude):
@@ -94,6 +98,20 @@ Not done: none in scope. Criterion 2 sandbox numbers are already recorded by the
 > Open issues:
 > - The `python3 tests/test_omi.py` exit code was not captured (the pipe hid it), though the output ended with "ok".
 > - Criterion 2 sandbox numbers were already recorded by the Coordinator; I did not re-run them.
+2026-10-26 10:52 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - No blocking problems found. `python3 tests/test_omi.py` exits 0, and `PYTHONPATH=src python3 -m omi skills --check` reports ok (19 checked). Every `.omi` file in the diff is byte-identical to its template copy.
+> - The files changed are `AGENTS.md`, `.omi/workflows/**`, `.omi/skills/**`, `.omi/agents/**`, `src/omi/template/**`, `docs/research/omi-eval.md` and the task file. All of these are in scope.
+> - The diff has no secrets, injection risks or unvalidated input.
+> - The round-3 review notes were applied:
+>   - Security-reviewer step 1 now reads "any skill files the prompt lists".
+>   - The reviewer also gained the line "Read-only Bash; no network unless granted."
+>   - The sensitive workflow now says opus/high when the diff touches auth, payment or secrets.
+>   - The docs now say the slim run missed the scheme check.
+> 
+> AC: Each file is at most half its current token size, in `.omi` and the template copy; `skills --check` and `tests/test_omi.py` pass. âœ“ The debug skill went from 588 tokens to 294 (front-matter `tokens:` field). The security reviewer's reported size went from 453 to 224, which I did not re-measure. Both tests pass and the copies are identical.
+> 
+> AC: The Coordinator's TASK-057 bugfix and security re-runs keep the slim versions correct (bug fixed, planted issues caught), and the numbers are appended to `omi-eval.md`. âœ“ I did not re-run the sandbox pairs myself. The results come from the Coordinator's checkpoint. They show the bug fixed in both bugfix runs, and the slim security run found the same three bugs as the plain read but missed the scheme check. The docs section matches those numbers. The original "+10% tokens" target was not met (+42%/+26% and +4%/+54%). The task text records the PO's 2026-10-26 decision to keep the slim versions.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -103,3 +121,4 @@ Not done: none in scope. Criterion 2 sandbox numbers are already recorded by the
 | omi-agent-docs-writer | claude-haiku-5-5 | low | 10 | 2597 | 111892 | 20s | - | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1869 | 78356 | 31s | - | PASS bd3d7ba |
 | omi-agent-engineer | claude-haiku-5-5 | low | 32 | 12049 | 488157 | 78s | - | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1326 | 122721 | 40s | - | PASS 0b2dfd4 |
