@@ -657,12 +657,9 @@ def test_hooks():
         if sh:
             r = subprocess.run([sh, str(omi.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh")], cwd=d, capture_output=True, text=True)
             assert r.returncode == 0 and "no tests found" in r.stdout, r
-            # tests exist but the runner is missing: exit 1 naming the tool (PATH holds only sh and coreutils shims)
+            # tests exist but the runner is missing: exit 1 naming the tool (empty PATH; the script uses only sh builtins)
             bindir = Path(d) / "bin"
             bindir.mkdir()
-            for tool in ("grep", "ls", "dirname"):
-                if shutil.which(tool):
-                    (bindir / tool).symlink_to(shutil.which(tool))
             env = {"PATH": str(bindir)}
             for name, files in (("go", {"go.mod": ""}), ("npm", {"package.json": '{"scripts":{"test":"x"}}'})):
                 w = Path(d) / name
@@ -671,6 +668,12 @@ def test_hooks():
                     (w / fn).write_text(c)
                 r = subprocess.run([sh, str(omi.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh")], cwd=w, capture_output=True, text=True, env=env)
                 assert r.returncode == 1 and f"{name} not in the worker image" in r.stdout, r
+            # python tests only under tests/ (none at the root) are detected
+            w = Path(d) / "py"
+            (w / "tests").mkdir(parents=True)
+            (w / "tests" / "test_x.py").write_text("")
+            r = subprocess.run([sh, str(omi.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh")], cwd=w, capture_output=True, text=True, env=env)
+            assert "no tests found" not in r.stdout, r
     text = (omi.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh").read_text()
     assert all(w in text for w in ("pytest", "go test", "npm test"))
     for f in (Path("AGENTS.md"), omi.TEMPLATE / "AGENTS.md", Path(".claude/skills/omi-task/SKILL.md"),

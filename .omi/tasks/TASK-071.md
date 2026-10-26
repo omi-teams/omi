@@ -24,6 +24,7 @@ Scripts `.omi/hooks/<event>.sh|.py` for events `pre-run`, `post-run`, `pre-merge
 - [ ] All tests pass.
 
 ## Checkpoint
+Round 2 fixes done: post-run.sh detects tests/ and root separately (loop, test with tests only under tests/); symlinks removed from test (empty PATH, script uses only sh builtins). Tests ok. Next: Coordinator review and commit.
 Coordinator check round 2 FAIL (real Docker on the Windows host):
 - Template `post-run.sh` still prints "no tests found" in this repo (which has tests/test_omi.py): `ls tests/test_*.py test_*.py` exits non-zero when either glob matches nothing. Detect each location separately (e.g. `for f in tests/test_*.py test_*.py; do [ -f "$f" ] && found=1; done`). Add a test case with tests only under tests/ and none at the root.
 - tests/test_omi.py fails on the Windows host: `OSError: [WinError 1314] A required privilege is not held by the client` from `os.symlink` (grep into a temp bin dir). Do not use symlinks; e.g. write small wrapper scripts or set PATH to a dir with copied files, or skip that sub-case when `os.name == "nt"`. Tests must pass on the Windows host.
@@ -84,6 +85,18 @@ Next: Coordinator review and commit.
 > - **Open issue:** no real Docker run happened here. The `:ro` worktree may still block go and Python cache writes.
 > 
 > Suggested commit: `fix: fail post-run hook when the test runner is missing; run hooks for write roles only (TASK-071)`
+2026-10-26 14:23 omi-agent-engineer (claude):
+> DONE. Both round-2 findings are fixed and `python3 tests/test_omi.py` prints `ok` on Linux. I couldn't run it on the Windows host or in real Docker.
+> 
+> - **Files changed:** `src/omi/template/dot-omi/hooks/post-run.sh`, `tests/test_omi.py`, `.omi/tasks/TASK-071.md` (checkpoint).
+> - **Test detection:** `post-run.sh` now checks `tests/test_*.py` and `test_*.py` one file at a time in a loop, so tests only under `tests/` are found. A new test case covers a project with tests only under `tests/`.
+> - **package.json check:** I replaced `grep` with a shell `while read` loop, so the script needs no external tools for that check.
+> - **Symlinks:** the test no longer uses `os.symlink`. The missing-runner cases now run with an empty `PATH`, so they should pass on Windows too.
+> - **Open issue:** the `:ro` worktree may still block go and Python cache writes in real containers.
+> 
+> Suggested commit: `fix: detect tests under tests/ in post-run hook; drop symlinks from hook tests (TASK-071)`
+> 
+> Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -91,3 +104,4 @@ Next: Coordinator review and commit.
 | omi-agent-architect | claude-opus-5-5 | high | 12 | 6710 | 178653 | 82s | - | n/a |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 36 | 14563 | 1008259 | 199s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 14 | 3088 | 191347 | 61s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 14 | 2635 | 177514 | 53s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
