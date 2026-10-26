@@ -7,7 +7,7 @@ scope: .omi/skills/**, .omi/agents/**, src/omi/template/**, docs/research/omi-ev
 role: omi-agent-engineer
 skills: []
 workflow: omi-flow-feature
-step:
+step: build
 ---
 ## Goal
 Both cost more than a plain baseline with no correctness gain in TASK-057 (debug-root-cause +35% out/+29% cache; security-reviewer +44% out/+57% cache). Keep what they uniquely add, cut the rest, then re-run the same sandbox pairs.
@@ -20,4 +20,9 @@ Both cost more than a plain baseline with no correctness gain in TASK-057 (debug
 Done:
 Not done:
 Tests:
-Next:
+Next: targets (omi.tokens): debug-root-cause SKILL.md <= 295 (now 591), omi-agent-security-reviewer.md <= 226 (now 453). Keep: root cause before fix, grep all callers, regression test; security: location + why + how verified per finding, no edits. Criterion 2 (sandbox re-run) is the Coordinator's.
+
+## Steps
+- plan started 2026-10-26 10:41
+- plan done 2026-10-26 10:41
+- build started 2026-10-26 10:41
