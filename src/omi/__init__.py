@@ -400,6 +400,40 @@ def set_front(text, key, value):
     return f"---{chr(10).join(lines)}---{body}"
 
 
+FRONT_OWNED = ("step", "status", "workflow", "scope", "role", "skills")  # Coordinator-owned task frontmatter
+
+
+def front_of(text):
+    """The raw frontmatter block (between the `---` lines) of a task file, or None."""
+    return text.split("---", 2)[1] if text.startswith("---") and text.count("---") >= 2 else None
+
+
+def revert_front(task, before):
+    """Put the original lines of the Coordinator-owned frontmatter fields back (same position); returns the fields restored.
+    `before` is the original text of the task file. A deleted file or lost frontmatter is restored as `frontmatter`."""
+    old = front_of(before)
+    if old is None:
+        return []
+    text = task.read_text(encoding="utf-8") if task.exists() else None
+    cur = front_of(text) if text is not None else None
+    if cur is None:
+        task.write_text(before if text is None else f"---{old}---\n{text}", encoding="utf-8")
+        return ["frontmatter"]
+    olines, lines, changed = old.split("\n"), cur.split("\n"), []
+    for key in FRONT_OWNED:
+        mine = lambda ln: ln.partition(":")[0].strip() == key
+        want = [(i, ln) for i, ln in enumerate(olines) if mine(ln)]
+        if [ln for ln in lines if mine(ln)] == [ln for _, ln in want]:
+            continue
+        changed.append(key)
+        lines = [ln for ln in lines if not mine(ln)]
+        for i, ln in want:
+            lines.insert(min(i, len(lines) - 1), ln)
+    if changed:
+        task.write_text(f"---{chr(10).join(lines)}---{text.split('---', 2)[2]}", encoding="utf-8")
+    return changed
+
+
 def add_step_log(text, line):
     head, sep, rest = text.partition("\n## Steps\n")
     if not sep:
@@ -1567,6 +1601,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
     except ValueError:
         sys.exit(f"{task} is not inside {wt}. Nothing changed.")
     tm = meta(task) if task.exists() else {}
+    before = task.read_text(encoding="utf-8") if task.exists() else ""
     am = get_role(main, role)
     get_role(main, tm.get("role") or "omi-agent-engineer")  # unknown task role fails too
     tool = tool or tm.get("tool") or am.get("tool") or "claude"
@@ -1719,6 +1754,9 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
     finally:
         if tmp:
             tmp.cleanup()
+        if not read:
+            for key in revert_front(task, before):
+                print(f"REVERTED: {key}")
     if read:
         return rc
     bad = out_of_scope(wt, task.stem)
