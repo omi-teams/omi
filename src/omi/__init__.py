@@ -1413,8 +1413,8 @@ def worker_sizes(main):
     """{"cache_mb", "tmp_mb"} kwargs for worker_argv from .omi/config.json "worker" ({"cache_mb": 2048, "tmp_mb": 512} by default)."""
     cfg = Path(main) / ".omi" / "config.json"
     w = (json.loads(cfg.read_text(encoding="utf-8")) if cfg.exists() else {}).get("worker", {})
-    sizes = (w.get("cache_mb", 2048), w.get("tmp_mb", 512))
-    if not all(isinstance(v, int) and not isinstance(v, bool) and v > 0 for v in sizes):
+    sizes = (w.get("cache_mb", 2048), w.get("tmp_mb", 512)) if isinstance(w, dict) else None
+    if sizes is None or not all(isinstance(v, int) and not isinstance(v, bool) and v > 0 for v in sizes):
         sys.exit('"worker.cache_mb" and "worker.tmp_mb" in .omi/config.json must be positive integers. Nothing changed.')
     return dict(zip(("cache_mb", "tmp_mb"), sizes))
 
@@ -1512,14 +1512,14 @@ def full_volumes(main):
     out = []
     try:
         r = subprocess.run(["docker", "ps", "--filter", "label=omi-worker=1", "--filter", f"label=omi-repo={repo_label(main)}",
-                            "--format", "{{.Names}}"], capture_output=True, encoding="utf-8", errors="replace")
+                            "--format", "{{.Names}}"], capture_output=True, encoding="utf-8", errors="replace", timeout=10)
         for name in r.stdout.split() if r.returncode == 0 else []:
-            d = subprocess.run(["docker", "exec", name, "df", "-P", "/cache", "/home/node"], capture_output=True, encoding="utf-8", errors="replace")
+            d = subprocess.run(["docker", "exec", name, "df", "-P", "/cache", "/home/node"], capture_output=True, encoding="utf-8", errors="replace", timeout=10)
             for l in d.stdout.splitlines()[1:] if d.returncode == 0 else []:
                 f = l.split()
                 if len(f) >= 6 and f[4].endswith("%") and f[4][:-1].isdigit() and int(f[4][:-1]) > 90 and f[5] in ("/cache", "/home/node"):
                     out.append(f"{name}: {f[5]} is {f[4]} full; raise worker.cache_mb / worker.tmp_mb in .omi/config.json")
-    except OSError:
+    except (OSError, subprocess.TimeoutExpired):
         pass
     return out
 

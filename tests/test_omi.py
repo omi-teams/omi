@@ -682,9 +682,14 @@ def test_hooks():
             hook = main / ".omi" / "hooks" / "pre-run.sh"
             hook.parent.mkdir(exist_ok=True)
             hook.write_bytes(b"echo hi\r\n")
+            config = main / ".omi" / "config.json"
+            cfg = json.loads(config.read_text(encoding="utf-8"))
+            cfg["worker"] = {"cache_mb": 3072}
+            config.write_text(json.dumps(cfg), encoding="utf-8")
             calls.clear()
             assert go() == 0
             (argv, kw), = hooks()
+            assert "/cache:rw,exec,nosuid,uid=1000,gid=1000,size=3072m" in argv
             assert calls.index((argv, kw)) < calls.index(agents()[0]) and kw["input"] == b"echo hi\n"
             assert argv[argv.index("--network") + 1] == "none" and "--rm" in argv and f"{wt}:/work:ro" in argv
             assert "-w" in argv and argv[argv.index("-w") + 1] == "/work" and "omi-worker=1" in argv
@@ -1055,15 +1060,34 @@ def test_worker_cache_tmpfs_and_full_volumes():
         (Path(d) / ".omi").mkdir()
         (Path(d) / ".omi" / "config.json").write_text('{"worker": {"cache_mb": 4096}}', encoding="utf-8")
         assert omi.worker_sizes(d) == {"cache_mb": 4096, "tmp_mb": 512}
+        for worker in (None, [], "invalid", 1, True, {"cache_mb": 0}, {"tmp_mb": False}):
+            (Path(d) / ".omi" / "config.json").write_text(json.dumps({"worker": worker}), encoding="utf-8")
+            try:
+                omi.worker_sizes(d)
+                raise AssertionError(f"invalid worker accepted: {worker!r}")
+            except SystemExit as e:
+                assert str(e) == '"worker.cache_mb" and "worker.tmp_mb" in .omi/config.json must be positive integers. Nothing changed.'
         real = omi.subprocess.run
 
         def fake(argv, **kw):
+            assert kw["timeout"] == 10
             out = {"ps": "c1\n", "exec": "Filesystem 1024-blocks Used Available Capacity Mounted on\n"
                    "tmpfs 100 95 5 95% /cache\ntmpfs 100 10 90 10% /home/node\n"}[argv[1]]
             return omi.subprocess.CompletedProcess(argv, 0, out, "")
         omi.subprocess.run = fake
         try:
             lines = omi.full_volumes(Path(d))
+            for stage in ("ps", "exec"):
+                for error in (OSError, omi.subprocess.TimeoutExpired):
+                    def unavailable(argv, **kw):
+                        assert kw["timeout"] == 10
+                        if argv[1] == stage:
+                            if error is OSError:
+                                raise OSError("docker unavailable")
+                            raise omi.subprocess.TimeoutExpired(argv, 10)
+                        return fake(argv, **kw)
+                    omi.subprocess.run = unavailable
+                    assert omi.full_volumes(Path(d)) == []
         finally:
             omi.subprocess.run = real
         assert len(lines) == 1 and lines[0].startswith("c1: /cache is 95% full"), lines
