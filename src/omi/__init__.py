@@ -824,7 +824,7 @@ def status(cwd="."):
     dockerfile = root / "docker" / "Dockerfile"
     if dockerfile.exists() and dockerfile.read_bytes().replace(b"\r\n", b"\n") != (TEMPLATE / "docker" / "Dockerfile").read_bytes().replace(b"\r\n", b"\n"):
         print(f"docker/Dockerfile differs from the omi {version()} template; review it (omi init never overwrites it)")
-    for line in full_volumes(root):
+    for line in full_volumes(main_checkout(root) or root):
         print(line)
     ts = tasks(root)
     for pid, m in load_plans(root, strict=False).items():

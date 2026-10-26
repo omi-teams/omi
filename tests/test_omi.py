@@ -2712,6 +2712,16 @@ def test_status_drift_hints():
         assert f"docker/Dockerfile differs from the omi {omi.version()} template; review it (omi init never overwrites it)" in status_text(root)
         df.unlink()
         assert "docker/Dockerfile differs" not in status_text(root)
+        real = omi.main_checkout, omi.full_volumes
+        main = root / "main"
+        queried = []
+        omi.main_checkout = lambda _: main
+        omi.full_volumes = lambda path: queried.append(path) or ["cache warning"]
+        try:
+            assert "cache warning" in status_text(root)
+            assert queried == [main], queried
+        finally:
+            omi.main_checkout, omi.full_volumes = real
 
 
 if __name__ == "__main__":
