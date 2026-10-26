@@ -1,0 +1,14 @@
+{
+  "models": {
+    "haiku": "claude-haiku-5-5",
+    "sonnet": "claude-sonnet-5-5",
+    "opus": "claude-opus-5-5"
+  },
+  "codex_models": {},
+  "cli_versions": {
+    "claude": "2.1.302",
+    "codex": "0.164.0"
+  },
+  "test": "",
+  "network_allow": ["api.anthropic.com"]
+}

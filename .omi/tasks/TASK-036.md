@@ -1,0 +1,50 @@
+---
+id: TASK-036
+title: Workflows - change-request, incident
+status: done
+depends: TASK-032, TASK-029
+scope: .omi/workflows/**, src/omi/template/dot-omi/workflows/**, .omi/decisions.md, tests/**
+role: omi-agent-engineer
+skills: []  # writes markdown workflows; step build adds omi-skill-lean-implementation
+workflow: omi-flow-feature
+step: accept
+---
+## Goal
+Two workflows exist for work that goes off-plan: a change request after a task was approved, and an incident after a release or gate broke.
+
+### Brief
+- Create `.omi/workflows/omi-flow-change-request.md` and `.omi/workflows/omi-flow-incident.md`; copy both, byte-identical, to `src/omi/template/dot-omi/workflows/`.
+- Copy the layout of `.omi/workflows/omi-flow-feature.md`: frontmatter `id`, `summary`, `steps:` lines `- id | role | skills | input | output | gate | stop`; body sections When to use / Use instead / Models / Stop conditions / Review-fail rule / PO gates. At most 2000 tokens each.
+- Step skills from `.omi/skills/CATALOG.md`: change-request uses `omi-skill-change-request`; incident uses `omi-skill-incident`, `omi-skill-rollback` and `omi-skill-debug-root-cause` on the matching steps.
+- Regenerate with `python -m omi workflows`; check with `python -m omi workflows --check`; tests: `python3 tests/test_omi.py` (the workflow count there is derived, no edit expected).
+
+## Acceptance criteria
+- [x] `omi-flow-change-request`: impact on tasks and cost, options + one recommendation, PO decision recorded in decisions.md, then replan; no work starts before the decision.
+- [x] `omi-flow-incident`: contain, diagnose, hotfix or rollback, postmortem note; the production merge stays a PO gate.
+- [x] Each passes `python -m omi workflows --check`; `CATALOG.md` regenerated in both copies; `diff -r .omi/workflows src/omi/template/dot-omi/workflows` is empty.
+- [x] change-request: its decide step has gate `po`; incident: the production merge step has gate `po` and the hotfix step gate `review`.
+
+## Checkpoint
+Coordinator check before review, fix (edit only `## Checkpoint` here): `omi-flow-incident` says "Rollback chosen: skip `hotfix`", but `hotfix` has gate `review` and `omi step` refuses to skip a gate step. Make the step a "hotfix or revert" step: output is either the minimal fix with a regression test or the revert diff; both go through the review gate; no skip. Update line 7 and line 25 in both copies; keep `--check` green.
+Done: both workflows + CATALOG.md in .omi/workflows and template copy (identical); contain/merge-prod run as coordinator because devops already has 3 role skills (budget 3)
+Not done: -
+Tests: workflows --check ok (9), tests/test_omi.py ok
+Next: TASK-037
+
+## Steps
+- plan started 2026-10-25 22:07
+- plan done 2026-10-25 22:07
+- build started 2026-10-25 22:07
+- build done 2026-10-25 22:09
+- review started 2026-10-25 22:09
+- review done 2026-10-25 22:10
+- accept started 2026-10-25 22:10
+PO approval accept: Chấp nhận, merge (Recommended)
+- accept done 2026-10-25 22:11
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read |
+|---|---|---|---|---|---|---|---|
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 4986 | 228066 | 69s | 1/1 omi-skill-lean-implementation |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 12 | 1397 | 125729 | 33s | 1/1 omi-skill-lean-implementation |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1767 | 104708 | 28s | - |

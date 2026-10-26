@@ -1,0 +1,28 @@
+---
+id: TASK-033
+title: Workflows - feature, feature-ui, feature-sensitive
+status: done
+depends: TASK-032, TASK-029, TASK-030
+scope: .omi/workflows/**, src/omi/template/dot-omi/workflows/**, .omi/decisions.md, src/omi/__init__.py, tests/**
+---
+## Goal
+The default build path and its two heavier variants.
+
+## Acceptance criteria
+- [x] `omi-flow-feature`: plan, engineer, reviewer, PO acceptance. `omi-flow-feature-ui`: adds designer-ui before and qa-tester after. `omi-flow-feature-sensitive`: adds architect before and security-reviewer after.
+- [x] Each states when to use (and why not the lighter one), model/effort per step, the review-fail rule (2 fails -> escalate to opus/architect, then stop and ask the PO), and the PO gates.
+- [x] Each passes `omi workflows --check`; catalog regenerated; template copy identical.
+
+- [x] Carry-over from the TASK-032 review: validate `<TASK-ID>` in `omi step` against `^[A-Za-z0-9_-]+$` (no path traversal); only count a `PO approval <step>:` line inside `## Steps`; the default workflow is `omi-flow-feature` (the TASK-032 AC said `feature`), so `omi step` works only once this task adds it.
+
+## Checkpoint
+Done: 3 workflows (+ template copy, catalog); omi step id validation and ## Steps-only PO approval; tests updated
+Not done:
+Tests: python3 tests/test_omi.py ok; workflows --check ok
+Next: TASK-034
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read |
+|---|---|---|---|---|---|---|---|
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 26 | 7452 | 429951 | 83s | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 2002 | 135738 | 31s | - |

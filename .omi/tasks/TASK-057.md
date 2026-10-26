@@ -1,0 +1,79 @@
+---
+id: TASK-057
+title: Final evaluation of skills, roles and workflows against baselines
+status: done
+depends: TASK-039
+scope: docs/research/omi-eval.md, .omi/agents/**, .omi/skills/**, .omi/workflows/**, .omi/decisions.md
+role: omi-agent-engineer
+skills: []
+workflow: omi-flow-spike
+step: decide
+---
+## Goal
+One evaluation for everything, using real usage numbers. Keep only what earns its place. Estimated ~55 runs (2026-10-26); the PO picks full or lean scope before it starts.
+
+## Acceptance criteria
+(Lean scope picked by the PO 2026-10-26.)
+- [x] The most-loaded skills and roles have one baseline each (engineer, lean-implementation, debug-root-cause, reviewer, security-reviewer, docs-writer, architect, incident); results under ## Results.
+- [x] One scenario per agent-run workflow family (feature, bugfix, docs-only, change-request, incident) in the Docker worker, with tokens and problems recorded; release has no agent run and is listed as not measured.
+- [x] Items that do not beat their baseline are proposed for rework; PO decision logged in decisions.md with the numbers.
+- [x] Report to the PO with the total default context (3402 tokens): docs/research/omi-eval.md.
+## Plan (Coordinator, lean scope picked by the PO 2026-10-26)
+Default context measured (tokens, `omi.tokens`): AGENTS.md 1297, skills CATALOG 889, workflows CATALOG 830, agents CATALOG 386 = 3402. Roles 239-632; skills 528-1107.
+Sandbox: a toy Python repo made with `omi init` in the Coordinator scratchpad; every scenario is one sandbox task, same start commit. n=1 per variant (noisy; say so).
+Scenarios (agent runs): feature (engineer+lean, reviewer), bugfix (engineer+debug-root-cause, reviewer), docs-only (docs-writer), change-request (architect+change-request), incident (devops+incident contain, engineer hotfix, reviewer), security (security-reviewer on a planted flaw). Release: Coordinator-only steps, tokens only.
+Baselines (8): engineer plain role; engineer without lean-implementation; engineer without debug-root-cause; reviewer plain (planted bug); security-reviewer plain (planted flaw); docs-writer plain; architect plain; devops without incident skill.
+Metrics: correctness (tests pass / planted issue found / criteria met), output and cache tokens, duration, review rounds.
+
+## Results (Coordinator, sandbox runs 2026-10-26, n=1 each, claude-sonnet-5-5/medium unless noted; out = output tokens, cache = cache-read tokens, from each sandbox task's ## Usage)
+| pair | variant | correct | out | cache | sec |
+|---|---|---|---|---|---|
+| feature: engineer + lean-implementation | full | yes (3/3 criteria) | 813 | 70714 | 13 |
+| feature: engineer, no step skill | no skill | yes | 769 | 67358 | 13 |
+| feature: plain role | plain | yes | 780 | 66638 | 13 |
+| bugfix: engineer + debug-root-cause | full | yes (both pages right) | 1157 | 108690 | 16 |
+| bugfix: engineer, no step skill | no skill | yes | 858 | 84531 | 14 |
+| docs: docs-writer (haiku/low) | full | yes | 1422 | 90592 | 16 |
+| docs: plain role (sonnet) | plain | yes | 953 | 65907 | 14 |
+| change-request: architect (opus/high) + change-request | full | yes, 2 options + 1 recommended, found code already 0-based | 1645 | 52991 | 31 |
+| change-request: plain read role | plain | invalid baseline (plain-read prompt is a review prompt; it reviewed instead) | 639 | 32581 | 9 |
+| incident contain: devops + incident | full | yes, adds reproduction and "why the gate missed it" | 1859 | 92031 | 22 |
+| incident contain: devops, no skill | no skill | yes | 1605 | 87463 | 19 |
+| review planted off-by-one: reviewer | full | caught bug + missing test | 669 | 33518 | 11 |
+| review planted off-by-one: plain read | plain | caught bug + missing test | 658 | 33078 | 9 |
+| security planted shell=True + token leak: security-reviewer | full | caught injection + 2 leaks, verified by running | 830 | 51467 | 13 |
+| security planted: plain read | plain | caught injection + leak + token sent to any host | 578 | 32812 | 10 |
+Release workflow: Coordinator-only steps, no agent run; not measured.
+Defects in omi found by the sandbox (fresh `omi init` project): (1) `omi init` writes no `.omi/skills/CATALOG.md`, so every task with a workflow fails until `omi skills` runs; (2) the default test command is `python -m pytest -q`, so read roles refuse to start in a project with plain test scripts and no pytest (needs `"test"` in config, undocumented in the template); (3) no `.gitignore` in the template, so `__pycache__` from the agent's own test run is reported OUT OF SCOPE (exit 3).
+Fixture note: the planted review diffs also carried a host `.pyc` (Coordinator's fixture mistake); all reviewers flagged it as minor.
+
+## Checkpoint
+Done: docs/research/omi-eval.md written (Vietnamese; sections tóm tắt, cách đo, bảng kết quả, context mặc định 3402, lỗi omi, đề xuất, giới hạn). Numbers checked against ## Results.
+Not done: review-round counts (not in ## Results, stated as not measured); release family not measured (per Results). Acceptance criterion 3 decisions are proposals only; the PO decides.
+Tests: not run by writer (docs only; `python3 tests/test_omi.py` not checked here).
+Next: Coordinator reviews the diff and commits; PO decides on the proposals; open a task for the 3 omi defects.
+
+Write step (docs-writer): write docs/research/omi-eval.md in Vietnamese from ## Plan and ## Results only (they are the sources; cite "TASK-057 ## Results" rows). Sections: tóm tắt, cách đo, bảng kết quả, context mặc định (3402 tokens), lỗi omi tìm thấy, đề xuất, giới hạn (n=1, bài nhỏ, baseline architect không hợp lệ, release không đo). Proposals to list (the PO decides): (1) rework omi-skill-debug-root-cause shorter (+35% out, +29% cache, no gain here); (2) rework omi-agent-security-reviewer shorter (+44% out, +57% cache, plain found as much); (3) keep lean-implementation (+5%), incident (small gain), docs-writer (haiku), reviewer and engineer (equal; their scope/safety rules were not exercised by these tasks), architect (baseline invalid); (4) new task for the 3 omi defects.
+## Steps
+- plan started 2026-10-26 10:22
+- plan done 2026-10-26 10:23
+- research started 2026-10-26 10:23
+- research skipped 2026-10-26 10:30: evidence is the Coordinator-run sandbox runs recorded under ## Results; a researcher cannot run Docker
+- write started 2026-10-26 10:30
+- write done 2026-10-26 10:31
+- decide started 2026-10-26 10:31
+PO approval decide: "Theo đề xuất" (TASK-058 omi defects, TASK-059 slim debug-root-cause and security-reviewer, keep the rest)
+- decide done 2026-10-26 10:32
+
+## Reports
+2026-10-26 10:31 omi-agent-docs-writer (claude):
+> DONE
+> Files: docs/research/omi-eval.md (new, Vietnamese); .omi/tasks/TASK-057.md (Checkpoint updated)
+> Commit: docs: add omi evaluation report for skills, roles and workflows (TASK-057)
+> Not verified: tests/test_omi.py not run (docs only); review-round counts are not in the source results, so the report says they were not measured; release family not measured.
+> Open issues: the architect baseline is invalid and needs a re-run; the PO must decide the rework/keep proposals; the three omi defects need a new task.
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read | verdict |
+|---|---|---|---|---|---|---|---|---|
+| omi-agent-docs-writer | claude-haiku-5-5 | low | 14 | 5242 | 152335 | 33s | - | - |
