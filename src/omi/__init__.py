@@ -815,10 +815,15 @@ def status(cwd="."):
     print(f"omi {version()} (project {stamp or 'none'})")
     try:
         old = not stamp or semver(stamp) < semver(version())
+        if stamp and semver(stamp) > semver(version()):
+            print(f'this project needs omi {stamp}; install it: python -m pip install --user "git+https://github.com/omi-teams/omi-squad2@v{stamp}"')
     except ValueError:
         old = True
     if old:
         print(f"run `omi init` to add the files of omi {version()}")
+    dockerfile = root / "docker" / "Dockerfile"
+    if dockerfile.exists() and dockerfile.read_bytes().replace(b"\r\n", b"\n") != (TEMPLATE / "docker" / "Dockerfile").read_bytes().replace(b"\r\n", b"\n"):
+        print(f"docker/Dockerfile differs from the omi {version()} template; review it (omi init never overwrites it)")
     ts = tasks(root)
     for pid, m in load_plans(root, strict=False).items():
         if m["status"] == "active":
