@@ -17,12 +17,12 @@ Both cost more than a plain baseline with no correctness gain in TASK-057 (debug
 - [ ] Coordinator re-runs the TASK-057 bugfix and security pairs: the slimmed versions stay correct (planted issues caught, bug fixed) and use no more tokens than the plain baseline +10%; numbers appended to docs/research/omi-eval.md.
 
 ## Checkpoint
-Done: debug-root-cause SKILL.md 591->289 tokens (.omi + template); omi-agent-security-reviewer.md 453->225 tokens (.omi + template). Both kept required sections, root cause before fix, grep callers, regression test; security location/why/verified, no edits.
-Not done: Criterion 2 (sandbox re-run, docs/research/omi-eval.md) is the Coordinator's. Dropped the Use-when/Do-not-use routing lines from the security reviewer (model choice for auth/payment diffs now lives in AGENTS.md only; confirm that is enough).
-Tests: `python -m omi skills --check` ok (19 checked); `python tests/test_omi.py` ok.
-Next (done, was): targets (omi.tokens): debug-root-cause SKILL.md <= 295 (now 591), omi-agent-security-reviewer.md <= 226 (now 453). Keep: root cause before fix, grep all callers, regression test; security: location + why + how verified per finding, no edits. Criterion 2 (sandbox re-run) is the Coordinator's.
+Round 2 done: debug-root-cause SKILL.md restored MIT comment (`<!-- Adapted from obra/superpowers systematic-debugging v6.3.0, MIT, Copyright (c) 2025 Jesse Vincent. -->`), now 294 tokens (<=295), .omi and template identical. Dropped the "Inputs" details and some wording to fit; `inputs` section kept (required by validator).
+Round 2 done: added `- Diff touches auth, payment or secrets: \`opus\`, effort \`high\`.` under Quota rules in AGENTS.md and src/omi/template/AGENTS.md (identical).
+Earlier: security-reviewer 453->225 tokens (.omi + template), unchanged this round.
+Not done: Criterion 2 (sandbox re-run, docs/research/omi-eval.md) is the Coordinator's.
+Tests: `PYTHONPATH=src python3 -m omi skills --check` ok (19 checked); `python3 tests/test_omi.py` ok.
 
-Coordinator round 2: (1) restore the MIT attribution in debug-root-cause as a short HTML comment with the copyright line (`Adapted from obra/superpowers systematic-debugging v6.3.0, MIT, Copyright (c) 2025 Jesse Vincent.`); the MIT license requires it. Stay <= 295 tokens by trimming elsewhere. (2) The dropped "opus when the diff touches auth, payment or secrets" rule is a Coordinator rule: add it as one bullet under `## Quota rules` in AGENTS.md and src/omi/template/AGENTS.md.
 ## Steps
 - plan started 2026-10-26 10:41
 - plan done 2026-10-26 10:41
@@ -45,8 +45,17 @@ Coordinator round 2: (1) restore the MIT attribution in debug-root-cause as a sh
 > - Criterion 2 (sandbox re-run and numbers in `docs/research/omi-eval.md`) is the Coordinator's; I did not touch that file.
 > - I dropped the "Use when / Do not use" routing lines from the security reviewer. The opus-for-auth/payment rule now lives only in AGENTS.md. Please confirm that is enough.
 > - The debug skill's HTML attribution comment was removed; the `source_*` frontmatter fields still record the provenance.
+2026-10-26 10:45 omi-agent-engineer (claude):
+> DONE
+> Files changed: `.omi/skills/quality/omi-skill-debug-root-cause/SKILL.md` and its template copy (identical); `AGENTS.md` and `src/omi/template/AGENTS.md` (identical, one bullet added under Quota rules); `.omi/tasks/TASK-059.md` (checkpoint).
+> Commit: `fix(omi): restore debug skill attribution and add auth/payment quota rule`
+> Tests: `PYTHONPATH=src python3 -m omi skills --check` ok (19 checked); `python3 tests/test_omi.py` ok.
+> Debug skill is 294 tokens (limit 295) with the MIT comment restored. To fit, I dropped the Inputs detail to one line and tightened some wording; the `inputs` section stays because the validator requires it.
+> Open: criterion 2 (sandbox re-run and numbers in `docs/research/omi-eval.md`) is still the Coordinator's.
+> Note: `TASK-059.md` changed on disk while I was working; I left the external change as is.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-haiku-5-5 | low | 44 | 10895 | 611382 | 107s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-engineer | claude-haiku-5-5 | low | 30 | 9309 | 408870 | 103s | 1/1 omi-skill-lean-implementation | - |

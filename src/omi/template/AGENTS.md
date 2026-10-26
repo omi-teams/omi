@@ -41,6 +41,7 @@ On Codex use the same `python -m omi run` command (it runs `codex exec` itself w
 - Mechanical (rename, config, docs): `haiku`, effort `low`.
 - Default: `sonnet`, effort `medium`.
 - Architecture, or a task that failed review twice: `opus`, effort `high`.
+- Diff touches auth, payment or secrets: `opus`, effort `high`.
 - Pinning a full ID (e.g. `claude-opus-5-5`) is allowed when stable results matter.
 - Codex: `codex exec -m <model> -c model_reasoning_effort=<level>`.
 - Hand agents the task file path, not pasted context.
