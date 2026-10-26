@@ -222,6 +222,8 @@ def load_roles(root):
             errs.append(f"role `{f.stem}` must start with `omi-agent-`")
         if m.get("access") not in (None, "write", "read"):
             errs.append("access is not write|read")
+        if m.get("tool") not in (None, "", "claude", "codex"):
+            errs.append("tool is not claude|codex")
         if errs:
             sys.exit(f"agent {f.name}: {'; '.join(errs)}")
         roles[f.stem] = m
@@ -591,6 +593,8 @@ def status(cwd="."):
         for k, m in ts.items():
             if m.get("status", "planned") == st:
                 print(f"[{st}] {k} {m.get('title', '')}" + (f" (step: {m['step']})" if st == "in-progress" and m.get("step") else ""))
+                if st == "in-progress":
+                    print(f"  resume: omi-task {k}")
                 if st != "planned":
                     if "worktree" in m:
                         print(f"  worktree: {m['worktree']}")
@@ -876,19 +880,75 @@ def token(tool="claude"):
 
 
 DEFAULT_MODELS = {"haiku": "claude-haiku-5-5", "sonnet": "claude-sonnet-5-5", "opus": "claude-opus-5-5"}
+CODEX_DEFAULT = "codex-default"  # no -m: the Codex CLI picks its own model
+CODEX_ID = r"(gpt|o\d|codex)[a-zA-Z0-9_.-]*"
 
 
-def resolve_model(root, model):
-    """Full model ID for an alias from .omi/config.json "models" (PO-editable); full IDs pass through."""
+def resolve_model(root, model, tool="claude"):
+    """Full model ID for an alias from .omi/config.json "models" (codex: "codex_models"; PO-editable); full IDs pass through."""
     cfg = Path(root) / ".omi" / "config.json"
-    models = DEFAULT_MODELS | (json.loads(cfg.read_text(encoding="utf-8")).get("models", {}) if cfg.exists() else {})
+    key, base, full = ("codex_models", {}, CODEX_ID) if tool == "codex" else ("models", DEFAULT_MODELS, r"claude-[a-zA-Z0-9_.-]+")
+    models = base | (json.loads(cfg.read_text(encoding="utf-8")).get(key, {}) if cfg.exists() else {})
     if not model:
         sys.exit("no model: pass --model or set `model` in the omi-agent-engineer agent. Nothing changed.")
     if model in models:
         return models[model]
-    if model in models.values() or re.fullmatch(r"claude-[a-zA-Z0-9_.-]+", model):
+    if model in models.values() or re.fullmatch(full, model):
         return model
-    sys.exit(f"unknown model alias '{model}': add it to \"models\" in .omi/config.json. Nothing changed.")
+    if tool == "codex" and model in DEFAULT_MODELS:
+        return CODEX_DEFAULT
+    sys.exit(f"unknown {tool} model alias '{model}': add it to \"{key}\" in .omi/config.json. Nothing changed.")
+
+
+def codex_effort(effort):
+    """Codex has xhigh but no max level."""
+    return {"max": "xhigh"}.get(effort, effort)
+
+
+# usage/quota stop messages of each CLI, matched only in its own final error events (not in tool output)
+QUOTA_PATTERNS = {
+    "claude": r"usage limit reached|hit your (usage )?limit|\d+-hour limit reached|weekly limit reached|credit balance is too low",
+    "codex": r"hit your usage limit|usage_limit_reached|insufficient_quota|exceeded your current quota|quota exceeded",
+}
+
+
+def error_texts(tool, out):
+    """Error messages from the CLI's own events: claude `result` with is_error, codex `error` / `turn.failed`."""
+    texts = []
+    for line in (out or "").splitlines():
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(ev, dict):
+            continue
+        if tool == "claude" and ev.get("type") == "result" and ev.get("is_error"):
+            texts.append(str(ev.get("result") or ""))
+        elif tool == "codex" and ev.get("type") in ("error", "turn.failed"):
+            err = ev.get("error")
+            texts.append(str(ev.get("message") or "") + " " + str(err.get("message") if isinstance(err, dict) else err or ""))
+    return texts
+
+
+def quota_hit(tool, out, rc):
+    return bool(rc) and any(re.search(QUOTA_PATTERNS[tool], t, re.I) for t in error_texts(tool, out))
+
+
+def append_note(task, heading, line):
+    """Append text to the task file's `## <heading>` section (created before `## Usage`, else at the end)."""
+    if not task.exists():
+        return
+    text, h = task.read_text(encoding="utf-8"), f"\n## {heading}"
+    if h in text:
+        head, _, rest = text.partition(h)
+        body, sep, tail = rest.partition("\n## ")
+        text = f"{head}{h}{body.rstrip()}\n{line}\n" + (f"\n## {tail}" if sep else "")
+    elif "\n## Usage" in text:
+        head, _, rest = text.partition("\n## Usage")
+        text = f"{head.rstrip()}\n\n## {heading}\n{line}\n\n## Usage{rest}"
+    else:
+        text = f"{text.rstrip()}\n\n## {heading}\n{line}\n"
+    task.write_text(text, encoding="utf-8")
 
 
 DEFAULT_ALLOW = ["api.anthropic.com"]
@@ -1039,7 +1099,7 @@ def engineer_cmd(agent_text, task_rel, model=None, effort=None, skills=""):
 def codex_cmd(agent_text, task_rel, model, effort, skills=""):
     body = agent_text.split("---", 2)[2].strip() if agent_text.startswith("---") else agent_text
     # the container is the boundary; codex's own sandbox cannot nest in it
-    return ["codex", "exec", "-m", model, "-c", f"model_reasoning_effort={effort}",
+    return ["codex", "exec", *(["-m", model] if model != CODEX_DEFAULT else []), "-c", f"model_reasoning_effort={effort}",
             "--dangerously-bypass-approvals-and-sandbox", "--json", f"{body}\n\nTask file: /work/{task_rel}\nWorktree: /work{skills}"]
 
 
@@ -1239,7 +1299,7 @@ def usage_totals(text):
     rows = [r for r in rows if len(r) in (7, 8, 9)]
     tot = [sum(int(r[i]) for r in rows if r[i].isdigit()) if any(r[i].isdigit() for r in rows) else "n/a" for i in (3, 4, 5)]
     return (f"usage: {len(rows)} runs, in {tot[0]} out {tot[1]} cache {tot[2]}, "
-            f"review rounds: {sum(r[0] == 'omi-agent-reviewer' for r in rows)}")
+            f"review rounds: {sum(r[0] == 'omi-agent-reviewer' and not r[-1].startswith('QUOTA->') for r in rows)}")
 
 
 def tree_diff(wt, since, exclude=None):
@@ -1258,7 +1318,7 @@ def tree_diff(wt, since, exclude=None):
 def prior_review(text):
     """(earlier reviewer rounds, sha7 of the last one if it failed, repo paths named after the last `Review round`)."""
     rows = [[c.strip() for c in l.strip().strip("|").split("|")] for l in text.partition("\n## Usage")[2].splitlines()
-            if l.startswith("| omi-agent-reviewer |")]
+            if l.startswith("| omi-agent-reviewer |") and "| QUOTA->" not in l]
     last = re.fullmatch(r"FAIL ([0-9a-f]{7})", rows[-1][-1]) if rows else None
     after = re.split(r"^.*Review round.*$", text.partition("\n## Usage")[0], flags=re.M)[-1] if "Review round" in text else ""
     after = after.split("\n## ", 1)[0]
@@ -1382,7 +1442,7 @@ def need_docker():
         sys.exit("Docker is not running; start Docker Desktop and retry. Nothing changed.")
 
 
-def run_role(role, wt, task_file, model=None, effort=None, tool="claude"):
+def run_role(role, wt, task_file, model=None, effort=None, tool=None):
     wt = Path(wt).resolve()
     main = main_checkout(wt)
     if not main or not (wt / ".git").is_file():
@@ -1392,25 +1452,29 @@ def run_role(role, wt, task_file, model=None, effort=None, tool="claude"):
         task_rel = task.relative_to(wt).as_posix()
     except ValueError:
         sys.exit(f"{task} is not inside {wt}. Nothing changed.")
-    if tool not in ("claude", "codex"):
-        sys.exit(f"unknown tool `{tool}`: claude or codex. Nothing changed.")
-    need_docker()  # read roles too: no host fallback
-    secret = token(tool)
-    key = TOKEN_ENV if tool == "claude" else CODEX_ENV
-    if not secret:
-        cmd = "omi token set" + (" --tool codex" if tool == "codex" else "")
-        sys.exit(f"no token: run `{cmd}` (Windows) or set {key}. Nothing changed.")
     tm = meta(task) if task.exists() else {}
     am = get_role(main, role)
     get_role(main, tm.get("role") or "omi-agent-engineer")  # unknown task role fails too
+    tool = tool or tm.get("tool") or am.get("tool") or "claude"
+    if tool not in ("claude", "codex"):
+        sys.exit(f"unknown tool `{tool}`: claude or codex. Nothing changed.")
+    other = "codex" if tool == "claude" else "claude"
+    envs = {"claude": TOKEN_ENV, "codex": CODEX_ENV}
+    need_docker()  # read roles too: no host fallback
+    secret = token(tool)
+    if not secret:
+        cmd = "omi token set" + (" --tool codex" if tool == "codex" else "")
+        sys.exit(f"no token: run `{cmd}` (Windows) or set {envs[tool]}. Nothing changed.")
     cur = next((s for s in get_workflow(wt, tm.get("workflow") or DEFAULT_WORKFLOW) if s["id"] == tm.get("step")), None) \
         if tm.get("step") else None
     step_ids = task_skills(cur) if cur and cur["role"] == role else []  # the current step's own skills
     own_ids = task_skills(tm) if am["access"] == "write" else []  # task skills are for the implementer
     ids = list(dict.fromkeys([*task_skills(am), *own_ids, *step_ids]))
     declared = check_skills(wt, ids)  # role defaults count against the budget
-    effort = effort or am.get("effort")
-    model = resolve_model(main, model or am.get("model"))
+    want = effort or am.get("effort")
+    efforts = {"claude": want, "codex": codex_effort(want)}
+    want_model = model or am.get("model")
+    models = {tool: resolve_model(main, want_model, tool)}
     read = am["access"] == "read"
     mounts = []
     if read:
@@ -1418,15 +1482,44 @@ def run_role(role, wt, task_file, model=None, effort=None, tool="claude"):
         if problems:
             print(f"{role} not started; fix these first:\n" + "\n".join(problems))
             return 4
-    allow = allow_for(main, tool)
     image = ensure_image(main)
-    env = dict(os.environ)
-    env.pop(TOKEN_ENV, None)
-    env[key] = secret
     prompt_skills = skill_prompt(wt, declared)
     prompt_skills += "\nTests: " + " ".join("python3" if a == sys.executable else a for a in test_command(wt, main))
     text = am["_text"]
     tmp = tempfile.TemporaryDirectory() if read else None
+
+    def attempt(t, secret, note=""):
+        """One container run with tool t; returns (process, report text, usage numbers, usage-row skills, seconds)."""
+        env = dict(os.environ)
+        env.pop(TOKEN_ENV, None)
+        env[envs[t]] = secret
+        mdl, eff = models[t], efforts[t]
+        cmd = (engineer_cmd if t == "claude" else codex_cmd)(text, task_rel, mdl, eff, prompt_skills + note)
+        t0 = time.monotonic()
+        name = container_name(main.name, role, task.stem, mdl, eff)
+        with egress(main, name, image, allow_for(main, t)) as (net, proxy):
+            r = subprocess.run(worker_argv(wt, image, cmd, name, repo_label(main),
+                                             worker_labels(role, task.stem, mdl, eff), ro=read,
+                                             mounts=mounts, env_names=(envs[t],), network=net, proxy=proxy),
+                                env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True, errors="replace")
+        result, *nums = parse_usage(t, r.stdout)
+        done = skills_read(wt, ids, opened_files(t, r.stdout))
+        verdict = (verdict_of(result) or "n/a") if read else "-"
+        head = git(wt, "rev-parse", "--short=7", "HEAD") if read and verdict != "n/a" else None
+        if head:
+            verdict += " " + head
+        if quota_hit(t, r.stdout, r.returncode):
+            verdict = f"QUOTA->{'codex' if t == 'claude' else 'claude'}"
+        record_usage(task, role, models[t] + (" (codex)" if t == "codex" else ""), efforts[t], nums,
+                     time.monotonic() - t0, skills_cell(ids, done), verdict)
+        return r, result, done
+
+    def stop_quota(why):
+        line = f"QUOTA: {why}; nothing discarded, the partial diff stays in {wt}. Resume: omi-task {task.stem}"
+        append_note(task, "Checkpoint", line)
+        print(line)
+        return 5
+
     try:
         if read:
             base = git(wt, "merge-base", "development", "HEAD") or "development"
@@ -1444,23 +1537,29 @@ def run_role(role, wt, task_file, model=None, effort=None, tool="claude"):
             (Path(tmp.name) / "diff.patch").write_text(patch, encoding="utf-8")
             mounts.append(f"{tmp.name}:/review")
             prompt_skills += note
-        cmd = (engineer_cmd if tool == "claude" else codex_cmd)(text, task_rel, model, effort, prompt_skills)
-        t0 = time.monotonic()
-        name = container_name(main.name, role, task.stem, model, effort)
-        with egress(main, name, image, allow) as (net, proxy):
-            r = subprocess.run(worker_argv(wt, image, cmd, name, repo_label(main),
-                                             worker_labels(role, task.stem, model, effort), ro=read,
-                                             mounts=mounts, env_names=(key,), network=net, proxy=proxy),
-                                env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True, errors="replace")
+        print(f"tool: {tool} ({models[tool]})")
+        r, result, done = attempt(tool, secret)
+        if quota_hit(tool, r.stdout, r.returncode):
+            other_secret, problem = token(other), None
+            try:
+                models[other] = resolve_model(main, want_model, other)
+            except SystemExit as e:
+                problem = str(e).replace(" Nothing changed.", "")
+            if not other_secret:
+                problem = f"no {other} token"
+            if problem:
+                return stop_quota(f"{tool} hit its usage limit and {other} cannot continue ({problem})")
+            append_note(task, "Checkpoint", f"QUOTA: {tool} hit its usage limit; {role} continued with {other} on the partial diff.")
+            print(f"QUOTA: {tool} hit its usage limit; rerunning {role} with {other} ({models[other]})")
+            r, result, done = attempt(other, other_secret,
+                                      f"\nNote: a previous run with {tool} stopped on its usage limit; "
+                                      "a partial diff already exists in /work. Inspect it and continue, do not start over.")
+            tool = other
+            if quota_hit(other, r.stdout, r.returncode):
+                return stop_quota("claude and codex both hit their usage limit")
         rc = r.returncode
-        result, *nums = parse_usage(tool, r.stdout)
         print(result if result is not None else (r.stdout or ""))
-        done = skills_read(wt, ids, opened_files(tool, r.stdout))
-        verdict = (verdict_of(result) or "n/a") if read else "-"
-        head = git(wt, "rev-parse", "--short=7", "HEAD") if read and verdict != "n/a" else None
-        if head:
-            verdict += " " + head
-        record_usage(task, role, model, effort, nums, time.monotonic() - t0, skills_cell(ids, done), verdict)
+        append_note(task, "Reports", f"{datetime.datetime.now():%Y-%m-%d %H:%M} {role} ({tool}):\n" + "\n".join("> " + l for l in (result or "(no report)").strip()[:2000].splitlines()))
         for sid in ids:
             if sid not in done:
                 print(f"SKILL NOT READ: {sid}")
@@ -1508,7 +1607,7 @@ def run_cmd(role, tid, rest):
     if not wt:
         sys.exit(f"no worktree for {tid}: create it first (git worktree add). Nothing changed.")
     return run_role(role, wt, Path(wt) / ".omi" / "tasks" / f"{tid}.md", flag(rest, "--model"), flag(rest, "--effort"),
-                    flag(rest, "--tool") or "claude")
+                    flag(rest, "--tool"))
 
 
 def flag(rest, name):
