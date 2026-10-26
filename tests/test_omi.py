@@ -10,6 +10,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 import omi  # noqa: E402
 
+omi.os.environ["CODEX_HOME"] = tempfile.mkdtemp()  # no host ChatGPT login unless a test writes one
+
 real_egress = omi.egress  # other tests run workers with docker mocked: no proxy
 
 
@@ -1581,7 +1583,7 @@ def test_tool_choice_and_quota_switch():
             # the other tool also at its limit, or without a token: exit 5, QUOTA line, one run only when no token
             assert go(R(claude_quota, 1), R(codex_quota, 1)) == 5 and "QUOTA: claude and codex" in sys.stdout.getvalue()
             del omi.os.environ[omi.CODEX_ENV]
-            assert go(R(claude_quota, 1)) == 5 and len(calls) == 1 and "no codex token" in sys.stdout.getvalue()
+            assert go(R(claude_quota, 1)) == 5 and len(calls) == 1 and "no ChatGPT login" in sys.stdout.getvalue()
         finally:
             sys.stdout = saved
             omi.egress, omi.ensure_image = egress, ensure
@@ -1622,6 +1624,104 @@ def test_git_non_ascii():
         (root / "README.md").write_text("ASCII\nTiếng Việt có dấu\n", encoding="utf-8")
         diff = omi.git(root, "diff")
         assert diff is not None and "Tiếng Việt có dấu" in diff, "git() must decode UTF-8 output"
+
+
+def test_codex_chatgpt_login():
+    import base64
+    jwt = lambda exp: "h." + base64.urlsafe_b64encode(json.dumps({"exp": exp}).encode()).decode().rstrip("=") + ".s"
+    home = Path(omi.os.environ["CODEX_HOME"])
+    auth = home / "auth.json"
+    omi.os.environ.pop(omi.CODEX_ENV, None)
+    real = omi.WINDOWS
+    omi.WINDOWS = False
+    try:
+        # missing login
+        auth.unlink(missing_ok=True)
+        env, val, problem = omi.tool_secret("codex")
+        assert val is None and "codex login" in problem
+        # valid login: slim auth, refresh token never copied
+        good = jwt(omi.time.time() + 3600)
+        auth.write_text(json.dumps({"auth_mode": "chatgpt", "OPENAI_API_KEY": None, "last_refresh": "t0", "tokens": {
+            "access_token": good, "id_token": "idt", "account_id": "acc", "refresh_token": "REAL-REFRESH"}}))
+        env, val, problem = omi.tool_secret("codex")
+        slim = json.loads(val)
+        assert env == omi.CODEX_AUTH_ENV == "OMI_CODEX_AUTH" and problem is None and "REAL-REFRESH" not in val
+        assert slim["tokens"] == {"access_token": good, "id_token": "idt", "account_id": "acc", "refresh_token": "omi-no-refresh"}
+        assert slim["auth_mode"] == "chatgpt" and slim["last_refresh"] == "t0"
+        # an API key (env) goes first
+        omi.os.environ[omi.CODEX_ENV] = "sk-env"
+        assert omi.tool_secret("codex") == (omi.CODEX_ENV, "sk-env", None)
+        del omi.os.environ[omi.CODEX_ENV]
+        # expired
+        data = json.loads(auth.read_text())
+        data["tokens"]["access_token"] = jwt(1)
+        auth.write_text(json.dumps(data))
+        env, val, problem = omi.tool_secret("codex")
+        assert val is None and "expired" in problem and "codex login" in problem
+        # allowlist: chatgpt.com only in ChatGPT mode
+        with tempfile.TemporaryDirectory() as d:
+            assert "chatgpt.com" not in omi.allow_for(Path(d), "codex")
+            assert omi.allow_for(Path(d), "codex", chatgpt=True)[-2:] == ["api.openai.com", "chatgpt.com"]
+            assert "chatgpt.com" not in omi.allow_for(Path(d), "claude", chatgpt=True)
+    finally:
+        omi.WINDOWS = real
+        auth.unlink(missing_ok=True)
+
+
+def test_codex_chatgpt_run():
+    """run_role with a ChatGPT login: the token travels by env name only, the boot wrapper writes auth.json in the container."""
+    calls = []
+
+    class R:
+        def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
+
+    def run(cmd, **kw):
+        calls.append((cmd, kw))
+        if "show" in cmd:
+            return R("---\nscope: src/**\n---\n")
+        if "status" in cmd:
+            return R(" M src/a.py\0")
+        if "diff" in cmd and "--name-only" in cmd:
+            return R("src/a.py\0")
+        return R()
+
+    class P:
+        def __init__(s, cmd, **kw): calls.append((cmd, kw)); s.stdout, s.stderr, s.returncode = io.StringIO(""), io.StringIO(""), 0
+        def __enter__(s): return s
+        def __exit__(s, *a): pass
+        def wait(s): pass
+
+    real = omi.subprocess.run, omi.subprocess.Popen, omi.shutil.which, omi.main_checkout, omi.WINDOWS, omi.ensure_image
+    auth = Path(omi.os.environ["CODEX_HOME"]) / "auth.json"
+    omi.os.environ.pop(omi.CODEX_ENV, None)
+    with tempfile.TemporaryDirectory() as d:
+        wt = Path(d).resolve()
+        (wt / ".git").write_text("gitdir: /x")
+        task = wt / ".omi" / "tasks" / "TASK-001.md"
+        omi.subprocess.run, omi.subprocess.Popen, omi.shutil.which = run, P, lambda _: "docker"
+        omi.main_checkout, omi.WINDOWS, omi.ensure_image = (lambda _: wt), False, lambda m: "img"
+        saved, sys.stdout = sys.stdout, io.StringIO()
+        try:
+            auth.unlink(missing_ok=True)
+            try:
+                omi.run_role("omi-agent-engineer", wt, task, tool="codex")
+                raise AssertionError("ran without credentials")
+            except SystemExit as e:
+                assert "codex login" in str(e) and "omi token set --tool codex" in str(e), e
+            assert not [c for c in calls if c[0][:2] == ["docker", "run"]]
+            tok = "h." + "e30" + ".secretsig"
+            auth.write_text(json.dumps({"auth_mode": "chatgpt", "tokens": {"access_token": tok, "refresh_token": "REAL-REFRESH"}}))
+            calls.clear()
+            omi.run_role("omi-agent-engineer", wt, task, tool="codex")
+            argv, kw = next(c for c in calls if c[0][:2] == ["docker", "run"])
+            assert omi.CODEX_AUTH_ENV in argv and not any(tok in x or "REAL-REFRESH" in x for x in argv)
+            i = argv.index("img")
+            assert argv[i + 1:i + 3] == ["sh", "-c"] and "printenv OMI_CODEX_AUTH" in argv[i + 3] and "codex" in argv[i + 5:]
+            assert tok in kw["env"][omi.CODEX_AUTH_ENV] and "REAL-REFRESH" not in kw["env"][omi.CODEX_AUTH_ENV]
+        finally:
+            sys.stdout = saved
+            auth.unlink(missing_ok=True)
+            omi.subprocess.run, omi.subprocess.Popen, omi.shutil.which, omi.main_checkout, omi.WINDOWS, omi.ensure_image = real
 
 
 def test_subprocess_text_encoding():
@@ -1913,6 +2013,8 @@ if __name__ == "__main__":
     test_parallel()
     test_usage()
     test_tool_choice_and_quota_switch()
+    test_codex_chatgpt_login()
+    test_codex_chatgpt_run()
     test_git_non_ascii()
     test_subprocess_text_encoding()
     test_skills()
