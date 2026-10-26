@@ -3,10 +3,11 @@ id: TASK-045
 title: Codex CLI in the worker image
 status: in-progress
 depends: TASK-028
-scope: src/omi/template/docker/**, src/omi/__init__.py, tests/**, README.md
+scope: src/omi/template/docker/**, src/omi/template/dot-omi/config.json, src/omi/__init__.py, tests/**, README.md
 skills: [omi-skill-docker-worker-pitfalls, omi-skill-windows-powershell]
 role: omi-agent-engineer
 workflow: omi-flow-feature-sensitive
+step: architect
 ---
 ## Goal
 `omi run --tool codex` works in the container with a pinned Codex CLI version.
@@ -23,3 +24,13 @@ Done:
 Not done:
 Tests:
 Next: TASK-040
+
+## Steps
+- plan started 2026-10-26 09:02
+- plan done 2026-10-26 09:02
+- architect started 2026-10-26 09:02
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read | verdict |
+|---|---|---|---|---|---|---|---|---|
+| omi-agent-architect | claude-opus-5-5 | high | 12 | 7743 | 171921 | 93s | - | n/a |
