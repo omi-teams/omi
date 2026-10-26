@@ -7,7 +7,7 @@ scope: src/omi/__init__.py, tests/**, README.md
 role: omi-agent-engineer
 skills: [omi-skill-windows-powershell]
 workflow: omi-flow-feature-sensitive
-step: build
+step: review
 ---
 ## Goal
 The PO uses several Claude accounts. Worker agents used the token stored by `omi token set` (made with `claude setup-token` under whatever account was logged in then), not the account of the current Claude Code session. Make agents follow the session, as Codex follows the host ChatGPT login (TASK-065).
@@ -26,12 +26,16 @@ Tests: python3 tests/test_omi.py ok.
 Next: Coordinator real run.
 Coordinator probe 2026-10-26: the session access token from ~/.claude/.credentials.json passed as CLAUDE_CODE_OAUTH_TOKEN into the worker image made `claude -p "Reply with exactly: PONG"` answer PONG (exit 0). The file has claudeAiOauth.{accessToken, expiresAt (ms), refreshToken, refreshTokenExpiresAt, scopes, subscriptionType, ...}. Architect step skipped: same pattern as TASK-065, proven by this probe.
 
+Coordinator real run 2026-10-26: `omi run omi-agent-reviewer TASK-067` with this worktree's code printed `claude auth: session` and the reviewer ran (VERDICT PASS) on the session account.
+Round 2 (review notes): (1) run_role: call claude_secret() once for claude (no second read via tool_secret). (2) After a codex->claude quota switch, print the `claude auth: <source>` line (and the expiry note) too. (3) Add a run-level test asserting `claude auth: session` with a temp CLAUDE_CONFIG_DIR.
 ## Steps
 - plan started 2026-10-26 11:49
 - plan done 2026-10-26 11:49
 - architect started 2026-10-26 11:49
 - architect skipped 2026-10-26 11:49: same pattern as TASK-065, proven by the Coordinator probe in the Checkpoint
 - build started 2026-10-26 11:49
+- build done 2026-10-26 11:50
+- review started 2026-10-26 11:50
 
 ## Reports
 2026-10-26 11:50 omi-agent-engineer (claude):
@@ -44,8 +48,19 @@ Coordinator probe 2026-10-26: the session access token from ~/.claude/.credentia
 > - README "Lấy và lưu key" now says agents follow the Claude Code login by default.
 > - Suggested commit: `feat(run): claude agents follow the current Claude Code session login`
 > - Open: the real run that shows `claude auth: session`, as the task asks for.
+2026-10-26 11:51 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/__init__.py:1633 `run_role` calls `tool_secret(tool)` and then `claude_secret()` again for claude. The credentials file is read twice and the first result is thrown away. -> Call `claude_secret()` once, and only fall back to `tool_secret` for codex.
+> - src/omi/__init__.py:1755 When codex hits its usage limit and the run switches to claude, `claude auth: <source>` and the expiry note are not printed. The AC says `omi run` prints which source it used. -> After the switch, print the source line when `other == "claude"`.
+> - tests/test_omi.py:1652 No test drives `run_role` with a session credential, so `claude auth: session` is never checked in the output. Only the `env` case is asserted, at line 1466. -> Add a run-level assertion for `session`. The Coordinator's real-run proof should also cover it.
+> 
+> AC: Secret order env → session → stored; only the access token is read; the refresh token stays on the host ✓ `claude_secret()` at src/omi/__init__.py:960-976 follows that order. It reads only `accessToken` and `expiresAt`. The token goes into the container by env name via `worker_argv(env_names=(TOKEN_ENV,))`. `test_claude_session_login` covers env > session > stored and that `REAL-REFRESH` is never returned. Nothing writes or logs the session value.
+> AC: Expired session is skipped with the note and falls through to stored; the no-token message names the option ✓ The note text is exact. The test covers both expired → stored and expired with nothing stored, where the value is None and the note is kept. The no-token `sys.exit` message includes the Claude Code login and the note.
+> [... truncated ...]
+> AC: Real run proof and README note ◐ The README "Lấy và lưu key" now says agents follow the Claude Code login by default. The real-run proof (`claude auth: session`) is still open and is the Coordinator's job.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 20 | 5879 | 287406 | 77s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 2052 | 95998 | 30s | - | PASS be878b3 |
