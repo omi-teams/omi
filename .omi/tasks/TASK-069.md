@@ -19,6 +19,7 @@ References in `.omi/references/<id>.md` (frontmatter `id, summary`) are listed i
 - [ ] `refs:` is in `.omi/tasks/_template.md` (root and template) and is Coordinator-owned frontmatter like `skills`.
 - [ ] The template ships references `postgres-conventions` and `nextjs-app-router` and the catalog; `omi init` creates them. Tested.
 - [ ] Template and root `AGENTS.md` mention references in one line each.
+- [ ] Carried from TASK-068 review: `omi run` stops when a matched rule or a named ref has validation errors (id, summary), and the test in `test_rules` uses `rmtree(..., onexc=...)` instead of the deprecated `onerror`. Tested.
 - [ ] All tests pass.
 
 ## Checkpoint
