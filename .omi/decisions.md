@@ -65,3 +65,4 @@
 - 2026-10-26 | TASK-077 third fix round (missing test program message) on Claude sonnet/low | review FAIL after 2 rounds, small known fix | PO in chat
 - 2026-10-26 | TASK-079 option B: ship v0.2.0 template shas for manifest backfill; scope adds template_shas.json, pyproject.toml | existing 0.2.0 projects would otherwise get every file as .omi-new | PO in chat
 - 2026-10-26 | omi upgrade updates .omi/tasks/_template.md like other template files; only TASK-* files are protected | it is a template, TASK-077 changed it | PO in chat
+- 2026-10-26 | TASK-079 fix round 2 on Claude opus/high | review FAIL twice, argument injection via omi_repo | PO in chat
