@@ -1,7 +1,7 @@
 ---
 id: TASK-069
 title: Add references a task names with refs, passed to agents as paths
-status: planned
+status: in-progress
 depends: TASK-068
 scope: src/omi/__init__.py, tests/**, src/omi/template/**, .omi/references/**, .omi/tasks/_template.md, AGENTS.md
 role: omi-agent-engineer
