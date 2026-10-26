@@ -1485,7 +1485,9 @@ def engineer_cmd(agent_text, task_rel, model=None, effort=None, skills=""):
 def codex_cmd(agent_text, task_rel, model, effort, skills=""):
     body = agent_text.split("---", 2)[2].strip() if agent_text.startswith("---") else agent_text
     # the container is the boundary; codex's own sandbox cannot nest in it
-    return ["codex", "exec", *(["-m", model] if model != CODEX_DEFAULT else []), "-c", f"model_reasoning_effort={effort}",
+    # project_doc_max_bytes=0: codex must not load the Coordinator's AGENTS.md; the role prompt is all it sees
+    return ["codex", "exec", "-c", "project_doc_max_bytes=0", *(["-m", model] if model != CODEX_DEFAULT else []),
+            "-c", f"model_reasoning_effort={effort}",
             "--dangerously-bypass-approvals-and-sandbox", "--json", f"{body}\n\nTask file: /work/{task_rel}\nWorktree: /work{skills}"]
 
 

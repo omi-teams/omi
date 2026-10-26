@@ -749,7 +749,11 @@ def test_roles():
         (root / ".omi" / "agents" / "reviewer.md").unlink()
         assert "tests/test_omi.py" not in omi.test_command(root, root)[-1]
     a = omi.codex_cmd("---\n---\nbody", "t.md", "claude-sonnet-5-5", "low")
-    assert a[:6] == ["codex", "exec", "-m", "claude-sonnet-5-5", "-c", "model_reasoning_effort=low"] and "/work/t.md" in a[-1]
+    assert a[:8] == ["codex", "exec", "-c", "project_doc_max_bytes=0", "-m", "claude-sonnet-5-5", "-c", "model_reasoning_effort=low"] and "/work/t.md" in a[-1]
+    # codex-default: no -m, still no project docs
+    assert omi.codex_cmd("---\n---\nbody", "t.md", omi.CODEX_DEFAULT, "low")[:4] == ["codex", "exec", "-c", "project_doc_max_bytes=0"]
+    # claude's command never gets the codex option
+    assert "project_doc_max_bytes=0" not in omi.engineer_cmd("---\n---\nbody", "t.md", "claude-sonnet-5-5", "low", "")
 
 
 def test_run_read_role():
@@ -1956,7 +1960,7 @@ def test_tool_choice_and_quota_switch():
 
             # task `tool:` beats the role default, --tool beats the task; codex gets its own alias table
             task.write_text(task.read_text().replace("scope:", "tool: codex\nscope:", 1), encoding="utf-8")
-            assert go(R(ok_codex)) == 0 and calls[0][calls[0].index("codex") + 1:][:3] == ["exec", "-m", "gpt-x"]
+            assert go(R(ok_codex)) == 0 and calls[0][calls[0].index("codex") + 1:][:5] == ["exec", "-c", "project_doc_max_bytes=0", "-m", "gpt-x"]
             assert "tool: codex (gpt-x)" in sys.stdout.getvalue() and "| gpt-x (codex) |" in task.read_text()
             assert "DONE codex" in task.read_text().partition("## Reports")[2].partition("## Usage")[0]
             # a report cannot create or hijack sections: every line is quoted
@@ -2025,7 +2029,7 @@ def test_tool_choice_and_quota_switch():
             assert "opus-5.5" in calls[0][calls[0].index("--name") + 1]
             assert go(R(ok_claude), model="haiku", effort="low") == 0 and "claude-haiku-5-5" in calls[0] and "low" in calls[0]
             (wt / ".omi" / "config.json").write_text('{"codex_models": {"opus": "gpt-o", "sonnet": "gpt-x"}}')
-            assert go(R(ok_codex), tool="codex") == 0 and calls[0][calls[0].index("codex") + 1:][:3] == ["exec", "-m", "gpt-o"]
+            assert go(R(ok_codex), tool="codex") == 0 and calls[0][calls[0].index("codex") + 1:][:5] == ["exec", "-c", "project_doc_max_bytes=0", "-m", "gpt-o"]
             assert "model_reasoning_effort=high" in calls[0] and "gpt-o" in calls[0][calls[0].index("--name") + 1]
             assert go(R(claude_quota, 1), R(ok_codex)) == 0 and "gpt-o" in calls[1] and "| gpt-o (codex) |" in task.read_text()
             # unmapped codex alias: codex-default and one warning naming it
