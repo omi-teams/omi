@@ -1,7 +1,7 @@
 ---
 id: TASK-068
 title: Add rules auto-loaded by task scope, with their own token budget
-status: planned
+status: in-progress
 depends:
 scope: src/omi/__init__.py, tests/**, src/omi/template/**, .omi/rules/**, .omi/config.json, AGENTS.md
 role: omi-agent-engineer
