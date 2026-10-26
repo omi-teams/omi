@@ -1881,9 +1881,9 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
     want_model = model or (tm.get("model") if write else None) or am.get("model")
     models = {tool: resolve_model(main, want_model, tool)}
 
-    def warn_default(t):
-        if t == "codex" and models[t] == CODEX_DEFAULT and want_model != CODEX_DEFAULT:
-            print(f"WARNING: no codex_models entry for '{want_model}'; codex runs with {CODEX_DEFAULT}")
+    def warn_default(t, alias=want_model):
+        if t == "codex" and models[t] == CODEX_DEFAULT and alias != CODEX_DEFAULT:
+            print(f"WARNING: no codex_models entry for '{alias}'; codex runs with {CODEX_DEFAULT}")
 
     warn_default(tool)
     read = am["access"] == "read"
@@ -1995,6 +1995,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
             except SystemExit:  # a full ID of one tool: the other uses the role's alias, else its default
                 try:
                     models[other] = resolve_model(main, am.get("model"), other)
+                    warn_default(other, am.get("model"))
                 except SystemExit:
                     if other == "codex":
                         models[other] = CODEX_DEFAULT

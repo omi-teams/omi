@@ -27,7 +27,7 @@ The Coordinator records its model choice in the task file (`model:` alias haiku|
 Review round 1 PASS; the PO asked to fix two small points first (PO: "Sửa 2 điểm nhỏ trước"). Windows host: tests ok (Coordinator).
 - Quota-switch fallback: after `models[other] = resolve_model(main, am.get("model"), other)` also warn when it resolved to `codex-default`, naming the alias actually used (`am.get("model")`). Test: task model is a full claude ID, claude hits its limit, role alias missing from `codex_models` -> one WARNING naming that alias.
 - Test the codex error path: a codex run exiting non-zero with an `error` event and a `turn.failed` event (not a usage limit) prints both messages and `exit code N`, and writes them to `## Reports`.
-Done: all criteria implemented + tested (Windows run not possible here).
+Done: all criteria implemented + tested; both review-round fixes (fallback warning, codex error-path test) done.
 Not done: Windows host test run.
 Tests: python3 tests/test_omi.py ok (Linux).
 Next: Coordinator review/commit.
@@ -113,9 +113,65 @@ Next: Coordinator review/commit.
 > AC: An unmapped codex alias runs with `codex-default` and prints one warning naming the alias ✓ The test checks that `-m` is absent, `WARNING` appears exactly once, and `'haiku'` appears in the output. The only gap is the fallback path in the first finding.
 > [... truncated ...]
 > AC: All tests pass on the Linux worker and the Windows host ✗ `python3 tests/test_omi.py` passes on Linux. The Windows host run was not done, and the author says so.
+2026-10-26 14:37 omi-agent-engineer (claude):
+> DONE
+> - Files changed: `src/omi/__init__.py`, `tests/test_omi.py`, `.omi/tasks/TASK-072.md` (Checkpoint).
+> - Quota-switch fallback: when the alias from `am.get("model")` resolves to `codex-default`, `omi run` now prints one WARNING naming that alias. `warn_default` takes an optional `alias` argument for this. The test uses a full claude `--model` with the role's `sonnet` missing from `codex_models`, and checks one WARNING naming `'sonnet'`.
+> - Codex error path: a new test runs codex with an `error` event and a `turn.failed` event, exiting 4. It checks that both messages and `exit code 4` are printed and written to `## Reports`.
+> - Tests: `python3 tests/test_omi.py` passes on Linux. I did not run the Windows host.
+> - Suggested commit: `feat(run): Coordinator sets model and effort per task; surface CLI errors`
+2026-10-26 14:37 hook post-run passed:
+> Conflict. The container name "/tmpf1jd2s3w-TASK-001-engineer-codex-gpt-x-medium-073715" is already in useBind for 0.0.0.0:8080 failed: port is already in usewrote /tmp/tmpyj0088zg/.omi/skills/CATALOG.md (2 skills)
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/__pycache__/proxy.cpython-313.pyc
+> create docker/__pycache__/proxy.cpython-314.pyc
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .omi/agents/CATALOG.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/config.json
+> create .omi/decisions.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/CATALOG.md
+> create .omi/plans/PLAN-000.md
+> create .omi/references/CATALOG.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/CATALOG.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 20 | 6884 | 324836 | 102s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 2378 | 74134 | 45s | - | PASS d73e3f2 |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 12 | 2418 | 161115 | 50s | 1/1 omi-skill-lean-implementation | - |

@@ -2008,6 +2008,7 @@ def test_tool_choice_and_quota_switch():
             assert go(R(claude_quota, 1), R(ok_codex), model="claude-sonnet-5-5") == 0 and "gpt-x" in calls[1]  # the role's alias
             (wt / ".omi" / "config.json").write_text("{}")
             assert go(R(claude_quota, 1), R(ok_codex), model="claude-sonnet-5-5") == 0 and "-m" not in calls[1]
+            assert sys.stdout.getvalue().count("WARNING") == 1 and "'sonnet'" in sys.stdout.getvalue()
             (wt / ".omi" / "config.json").write_text('{"codex_models": {"sonnet": "gpt-x"}}')
             # codex hits its limit with a full codex --model: claude uses the role's alias, not the codex ID
             assert go(R(codex_quota, 1), R(json.dumps({"result": "ok", "usage": {}})), tool="codex", model="gpt-5.1-codex") == 0
@@ -2056,6 +2057,14 @@ def test_tool_choice_and_quota_switch():
             rep = task.read_text().partition("## Reports")[2]
             assert "> ERROR: boom happened" in rep and "> exit code 3" in rep
             (wt / ".omi" / "config.json").write_text('{"codex_models": {"sonnet": "gpt-x"}}')
+            # codex error and turn.failed events (not a usage limit) are printed and recorded
+            cfail = "\n".join(json.dumps(e) for e in ({"type": "error", "message": "codex broke"},
+                                                     {"type": "turn.failed", "error": {"message": "turn went bad"}}))
+            assert go(R(cfail, 4), tool="codex") == 4
+            out = sys.stdout.getvalue()
+            assert "codex broke" in out and "turn went bad" in out and "exit code 4" in out
+            rep = task.read_text().partition("## Reports")[2]
+            assert "codex broke" in rep and "turn went bad" in rep and "exit code 4" in rep
             # a container name already in use: one retry with a 2-char suffix on the stamp
             assert go(R("", 125, 'Conflict. The container name "/NAME" is already in use'), R(ok_codex), tool="codex") == 0
             assert len(calls) == 2 and "--name" in calls[0]
