@@ -7,7 +7,7 @@ scope: src/omi/__init__.py, src/omi/template/**, tests/**, README.md
 role: omi-agent-engineer
 skills: []
 workflow: omi-flow-bugfix
-step: reproduce
+step: review
 ---
 ## Goal
 The three defects found by the TASK-057 sandbox (docs/research/omi-eval.md): a fresh `omi init` project runs `omi run` with a workflow without manual fixes.
@@ -28,6 +28,10 @@ Next: review
 - plan started 2026-10-26 10:34
 - plan done 2026-10-26 10:34
 - reproduce started 2026-10-26 10:34
+- reproduce done 2026-10-26 10:35
+- fix started 2026-10-26 10:35
+- fix skipped 2026-10-26 10:35: the reproduce run wrote the failing test and the root-cause fix together; fix verified in review
+- review started 2026-10-26 10:35
 
 ## Reports
 2026-10-26 10:35 omi-agent-engineer (claude):
@@ -38,8 +42,20 @@ Next: review
 > - New `test_init_fresh_project` covers the catalogs, the `.gitignore` handling, and the no-pytest fallback with pass and fail cases. `python3 tests/test_omi.py` passes.
 > - Open: README untouched, because it didn't mention these. Re-running `omi init` regenerates the three catalogs, since they are generated files.
 > - Suggested commit: `fix(init): write catalogs and .gitignore, run tests without pytest`
+2026-10-26 10:35 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - No blocking findings. `python3 tests/test_omi.py` ran and ended with `ok`.
+> - One minor gap: `src/omi/__init__.py:504` only matches the exact line `__pycache__/`. An existing `__pycache__` or `/__pycache__/` entry still gets a second line appended. This is harmless, and the acceptance criterion says "if missing" without defining the match.
+> 
+> AC: `omi init` writes `.omi/skills/CATALOG.md` and the agents and workflows catalogs âœ“ The test run printed `wrote â€¦/skills/CATALOG.md`, `â€¦/agents/CATALOG.md` and `â€¦/workflows/CATALOG.md`. `test_init_fresh_project` asserts all three files exist.
+> AC: test command needs no pytest by default âœ“ `test_command` uses config `"test"`, then `tests/test_omi.py` if present, then pytest if `importlib.util.find_spec("pytest")` finds it, else a script runner over `tests/test_*.py`. The test mocks `find_spec` to return `None`. It checks that the exit code is 3 when a script fails and 0 when it passes. The template `config.json` now has a `"test": ""` key.
+> AC: `omi init` adds a `.gitignore` with `__pycache__/` âœ“ The test covers three cases. It leaves `*.log` and appends `__pycache__/`. A second `omi init` does not add a duplicate. A fresh directory gets exactly `__pycache__/\n`.
+> AC: a fresh-init test exists and `python tests/test_omi.py` passes âœ“ `test_init_fresh_project` is in the diff and the suite passes.
+> 
+> All changed files are within `scope` (`src/omi/__init__.py`, `src/omi/template/**`, `tests/**`). The only other change is the task file itself.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 3379 | 181777 | 42s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 4 | 1161 | 37835 | 23s | - | PASS dff8123 |
