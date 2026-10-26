@@ -12,7 +12,7 @@ tool: claude
 model: sonnet
 effort: medium
 workflow: omi-flow-feature
-step:
+step: build
 ---
 ## Goal
 Gaps #4 #6 #7 #8 #10 #11 #14 #21 (omi-board session 97bfceb1): small CLI behaviours that cost the Coordinator manual work.
@@ -31,7 +31,76 @@ Gaps #4 #6 #7 #8 #10 #11 #14 #21 (omi-board session 97bfceb1): small CLI behavio
 - [ ] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
-Next:
+Done: all criteria implemented with tests (src/omi/__init__.py, tests/test_omi.py, SKILL.md and _template.md root+template). #11: 0.2.0 already returned 6; added the message.
+Not done: Windows host test run.
+Tests: python3 tests/test_omi.py ok (Linux).
+Next: Coordinator review/commit; run tests on the Windows host.
+
+## Steps
+- plan started 2026-10-26 21:35
+- plan done 2026-10-26 21:35
+- build started 2026-10-26 21:35
+
+## Reports
+2026-10-26 21:39 omi-agent-engineer (claude):
+> DONE
+> - Files changed: `src/omi/__init__.py`, `tests/test_omi.py`, `.claude/skills/omi-task/SKILL.md` and the template copy, `.omi/tasks/_template.md` and the template copy, and the `## Checkpoint` in `TASK-077.md`.
+> - Commit message: `fix(cli): shell test command, hook results in Reports, step/scope/review-gate messages (TASK-077)`
+> - Tests: `python3 tests/test_omi.py` prints `ok` on Linux. I did not run it on the Windows host, so that criterion is still open.
+> - #11: 0.2.0 already returned 6 when post-run failed. I only added the `post-run hook failed: the task cannot move to review` message, and a test.
+> - #6: when the config has a `test` command, the agent prompt's `Tests:` line shows the raw command, since containers run it with `sh -c`. The host runs it through `bash -c`, or `cmd /c` on Windows when bash is missing.
+> - #10: scope is now read from `development` for `omi run` (rules and the out-of-scope check), the guard and the `.git*` hint. If the task isn't on `development`, scope is empty.
+> - #14: the `omi status` hint prints only when `.omi/config.json` exists and `test` is empty.
+> - Also added the SKILL.md instruction to push `development` after the start commit.
+2026-10-26 21:39 hook post-run passed:
+> Conflict. The container name "/tmp2n5p1ma1-TASK-001-engineer-codex-gpt-x-medium-143930" is already in useBind for 0.0.0.0:8080 failed: port is already in usewrote /tmp/tmptc4up1ej/.omi/skills/CATALOG.md (2 skills)
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .omi/agents/CATALOG.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/config.json
+> create .omi/decisions.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/CATALOG.md
+> create .omi/plans/PLAN-000.md
+> create .omi/references/CATALOG.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/CATALOG.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> [... truncated ...]
+> ok
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read | verdict |
+|---|---|---|---|---|---|---|---|---|
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 36 | 14114 | 886585 | 211s | 1/2 omi-skill-lean-implementation | - |

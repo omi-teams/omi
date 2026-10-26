@@ -548,7 +548,7 @@ def step_states(text):
 def po_approved(text, sid):
     """The Coordinator records the PO's words as a line `PO approval <step>: <text>` inside `## Steps`."""
     _, sep, rest = text.partition("\n## Steps\n")
-    return bool(sep) and re.search(rf"^PO approval {re.escape(sid)}: *\S", rest.split("\n## ", 1)[0], re.M) is not None
+    return bool(sep) and re.search(rf"^(?:- )?PO approval {re.escape(sid)}: *\S", rest.split("\n## ", 1)[0], re.M) is not None
 
 
 def unticked(text):
@@ -636,7 +636,7 @@ def step(root, tid, action, why=None, now=None):
         if cur and state.get(cur) not in ("done", "skipped"):
             sys.exit(f"{tid}: step {cur} is not done; run `omi step {tid} done` or `skip --why`. Nothing changed.")
         if cur and steps[at]["gate"] == "po" and not po_approved(text, cur):
-            sys.exit(f"{tid}: step {cur} is a po gate; record `PO approval {cur}: <PO's words>` in the task first. "
+            sys.exit(f"{tid}: step {cur} is a po gate; add the line `PO approval {cur}: <PO's words>` under `## Steps` first. "
                      "Nothing changed.")
         if cur and steps[at]["gate"] == "po" and unticked(text):
             sys.exit(f"{tid}: step {cur} is a po gate; tick the reviewed acceptance criteria first:\n"
@@ -669,11 +669,17 @@ def step(root, tid, action, why=None, now=None):
         if (re.findall(r"^\d{4}-\d\d-\d\d \d\d:\d\d hook post-run (FAILED|passed)", text, re.M) or [""])[-1] == "FAILED":
             sys.exit(f"{tid}: the last post-run hook failed; fix it and rerun `omi run` first. Nothing changed.")
         if steps[at]["gate"] == "po" and not po_approved(text, cur):
-            sys.exit(f"{tid}: step {cur} is a po gate; record `PO approval {cur}: <PO's words>` in the task first. "
+            sys.exit(f"{tid}: step {cur} is a po gate; add the line `PO approval {cur}: <PO's words>` under `## Steps` first. "
                      "Nothing changed.")
         if steps[at]["gate"] == "po" and unticked(text):
             sys.exit(f"{tid}: step {cur} is a po gate; tick the reviewed acceptance criteria first:\n"
                      + "\n".join(unticked(text)) + "\nNothing changed.")
+        if steps[at]["gate"] == "review":
+            rows = [[c.strip() for c in l.strip().strip("|").split("|")] for l in text.partition("\n## Usage")[2].split("\n## ", 1)[0].splitlines()
+                    if l.startswith("|") and not l.startswith("|---") and not l.startswith("| role")]
+            last = [r[-1].split()[0] for r in rows if r[0] == steps[at]["role"] and r[-1][:4] in ("PASS", "FAIL")]
+            if last and last[-1] == "FAIL":
+                sys.exit(f"{tid}: the last {steps[at]['role']} verdict is FAIL; run `omi step {tid} back`. Nothing changed.")
         text, msg = add_step_log(text, f"- {cur} done {stamp}"), f"{tid}: step {cur} done"
     elif action == "skip":
         if not (why or "").strip():
@@ -826,6 +832,9 @@ def status(cwd="."):
         print(f"docker/Dockerfile differs from the omi {version()} template; review it (omi init never overwrites it)")
     for line in full_volumes(main_checkout(root) or root):
         print(line)
+    cfg = root / ".omi" / "config.json"
+    if cfg.exists() and not json.loads(cfg.read_text(encoding="utf-8")).get("test"):
+        print('no `test` command in .omi/config.json; set one, e.g. "test": "python3 -m pytest -q"')
     ts = tasks(root)
     for pid, m in load_plans(root, strict=False).items():
         if m["status"] == "active":
@@ -856,6 +865,18 @@ def status(cwd="."):
                 if m.get("status", "planned") == "planned" and set(split(m.get("depends"))) <= done), None)
     print(f"next: {nxt or 'none ready'}")
     print_workers(root)
+
+
+def task_scope(wt, tid):
+    """Scope globs of a task, read from the task file on development; the worktree copy is agent-writable and ignored."""
+    return split(parse(git(wt, "show", f"development:.omi/tasks/{tid}.md") or "").get("scope"))
+
+
+GIT_HINT = ".git* paths need an exact scope entry (no globs), e.g. .github/workflows/ci.yml"
+
+
+def git_hint(paths):
+    return GIT_HINT if any(c.lower().startswith(".git") for p in paths for c in str(p).split("/")) else ""
 
 
 def guard(stdin=None):
@@ -899,6 +920,8 @@ def guard(stdin=None):
             return 0
         else:
             reason = f"is outside the scope of {tid}. Stop and report NEEDS SCOPE to the Coordinator."
+            if git_hint([rel or path]):
+                reason += f" {GIT_HINT}."
     elif engineer:
         reason = "is outside the task worktree."
     else:
@@ -1483,6 +1506,10 @@ def hook_note(task, event, res):
     return rc
 
 
+def wt_task(wt, tid):
+    return Path(wt) / ".omi" / "tasks" / f"{tid}.md"
+
+
 def hook_cmd(event, tid):
     root = main_checkout(".") or Path(".").resolve()
     wt = task_worktrees(root).get(tid)
@@ -1492,8 +1519,7 @@ def hook_cmd(event, tid):
     if res is None:
         print(f"no {event} hook")
         return 0
-    print(res[1], end="")
-    return res[0]
+    return hook_note(wt_task(wt, tid), event, res)
 
 
 def running_workers(main):
@@ -1845,8 +1871,7 @@ def clean(cwd=".", all_images=False):
 
 def out_of_scope(wt, tid, committed=False):
     """Changed paths in wt that the task's scope (read from development) does not allow; committed: also the branch's commits."""
-    shown = git(wt, "show", f"development:.omi/tasks/{tid}.md")
-    globs = split(parse(shown).get("scope")) if shown else []
+    globs = task_scope(wt, tid)
     r = subprocess.run(["git", "-C", str(wt), "status", "--porcelain", "-z", "-uall", "--no-renames"],
                        capture_output=True, encoding="utf-8", errors="replace")
     paths = [e[3:] for e in r.stdout.split("\0") if e]
@@ -1869,9 +1894,11 @@ def test_command(wt, main):
     """`test` from .omi/config.json, else tests/test_omi.py if present, else pytest if importable, else each tests/test_*.py as a script."""
     cfg = Path(main) / ".omi" / "config.json"
     cmd = (json.loads(cfg.read_text(encoding="utf-8")) if cfg.exists() else {}).get("test")
-    if cmd:
-        argv = cmd.split()
-    elif (Path(wt) / "tests" / "test_omi.py").exists():
+    if cmd:  # through a shell, like in the containers, so `VAR=1 cmd` works
+        if shutil.which("bash"):
+            return ["bash", "-c", cmd]
+        return ["cmd", "/c", cmd] if os.name == "nt" else ["sh", "-c", cmd]
+    if (Path(wt) / "tests" / "test_omi.py").exists():
         argv = ["python", "tests/test_omi.py"]
     elif importlib.util.find_spec("pytest"):
         argv = ["python", "-m", "pytest", "-q"]
@@ -1883,7 +1910,9 @@ def test_command(wt, main):
 
 def test_prompt_line(wt, main):
     """The `Tests:` line of the agent prompt: shell-quoted so it parses back to the same argv."""
-    return shlex.join("python3" if a == sys.executable else a for a in test_command(wt, main))
+    argv = test_command(wt, main)
+    return argv[2] if argv[0] in ("bash", "sh", "cmd") and argv[1] in ("-c", "/c") else \
+        shlex.join("python3" if a == sys.executable else a for a in argv)
 
 
 def deterministic_checks(wt, main, tid):
@@ -1891,7 +1920,7 @@ def deterministic_checks(wt, main, tid):
     problems = []
     bad = out_of_scope(wt, tid, committed=True)
     if bad:
-        problems.append("scope check: outside scope: " + ", ".join(bad))
+        problems.append("scope check: outside scope: " + ", ".join(bad) + (f"\n{git_hint(bad)}" if git_hint(bad) else ""))
     saved, sys.stdout = sys.stdout, io.StringIO()
     try:
         check_all_skills(wt)
@@ -1903,9 +1932,13 @@ def deterministic_checks(wt, main, tid):
         r = subprocess.run([sys.executable, "-m", "omi", "workflows", "--check"], cwd=wt, capture_output=True, encoding="utf-8", errors="replace")
         if r.returncode:
             problems.append("workflows --check: " + (r.stdout + r.stderr).strip())
-    r = subprocess.run(test_command(wt, main), cwd=wt, capture_output=True, encoding="utf-8", errors="replace")
-    if r.returncode:
-        problems.append("tests failed:\n" + "\n".join((r.stdout + r.stderr).strip().splitlines()[-20:]))
+    try:
+        r = subprocess.run(test_command(wt, main), cwd=wt, capture_output=True, encoding="utf-8", errors="replace")
+    except OSError as e:
+        problems.append(f"test command failed to start: {e}")
+    else:
+        if r.returncode:
+            problems.append("tests failed:\n" + "\n".join((r.stdout + r.stderr).strip().splitlines()[-20:]))
     return problems
 
 
@@ -1944,11 +1977,14 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
                  f"{f' ({secret[2]})' if secret[2] else ''}. Nothing changed.")
     cur = next((s for s in get_workflow(wt, tm.get("workflow") or DEFAULT_WORKFLOW) if s["id"] == tm.get("step")), None) \
         if tm.get("step") else None
+    if cur and cur["role"] != role:
+        print(f"WARNING: step {cur['id']} of {task.stem} is for {cur['role']}, not {role}; "
+              f"if that step is finished run `omi step {task.stem} done` / `next` first")
     step_ids = task_skills(cur) if cur and cur["role"] == role else []  # the current step's own skills
     own_ids = task_skills(tm) if am["access"] == "write" else []  # task skills are for the implementer
     ids = list(dict.fromkeys([*task_skills(am), *own_ids, *step_ids]))
     declared = check_skills(wt, ids)  # role defaults count against the budget
-    rule_files = task_rules(wt, split(tm.get("scope")))
+    rule_files = task_rules(wt, task_scope(wt, task.stem))
     ref_files = task_references(wt, tm)
     want = effort or (tm.get("effort") if write else None) or am.get("effort")
     efforts = {"claude": want, "codex": codex_effort(want)}
@@ -2107,11 +2143,15 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
         if not read:
             for key in revert_front(task, before):
                 print(f"REVERTED: {key}")
+    if hook_failed:
+        print("post-run hook failed: the task cannot move to review")
     if read:
         return rc or (6 if hook_failed else 0)
     bad = out_of_scope(wt, task.stem)
     for p in bad:
         print(f"OUT OF SCOPE: {p}")
+    if git_hint(bad):
+        print(git_hint(bad))
     return rc or (3 if bad else 0) or (6 if hook_failed else 0)
 
 

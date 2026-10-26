@@ -4,7 +4,7 @@ title: Short imperative title
 status: planned
 depends:
 plan:  # Coordinator-owned optional id from .omi/plans/CATALOG.md
-scope: src/feature/**, tests/test_feature.py
+scope: src/feature/**, tests/test_feature.py  # edit only on development; .git* paths need an exact scope entry (no globs), e.g. .github/workflows/ci.yml
 role: omi-agent-engineer  # a file in .omi/agents; its default skills count against the budget too
 skills: []  # ids from .omi/skills/CATALOG.md; 6000 tokens per run, 2000 per skill; go to the write role only
 refs: []  # Coordinator-owned ids from .omi/references/CATALOG.md; paths passed to all roles, outside budgets

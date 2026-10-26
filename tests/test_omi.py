@@ -628,6 +628,71 @@ def test_worker():
                 omi.os.environ[omi.TOKEN_ENV] = tok
 
 
+def test_cli_correctness():
+    # #6 the configured test command runs through a shell
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / ".omi").mkdir()
+        (root / ".omi" / "config.json").write_text(json.dumps({"test": "FOO=1 python3 -c 'import os,sys;sys.exit(0 if os.environ[\"FOO\"]==\"1\" else 1)'"}))
+        argv = omi.test_command(root, root)
+        assert argv[0] in ("bash", "sh", "cmd") and argv[-1] == json.loads((root / ".omi" / "config.json").read_text())["test"]
+        if argv[0] != "cmd":
+            assert subprocess.run(argv, cwd=d).returncode == 0
+        assert omi.test_prompt_line(root, root) == argv[-1]
+        # a program that cannot start: message, no traceback
+        real = omi.test_command, omi.out_of_scope, omi.check_all_skills
+        omi.test_command, omi.out_of_scope, omi.check_all_skills = (
+            lambda *a: [str(root / "no-such-prog")], lambda *a, **k: [], lambda wt: None)
+        try:
+            problems = omi.deterministic_checks(root, root, "TASK-001")
+        finally:
+            omi.test_command, omi.out_of_scope, omi.check_all_skills = real
+        assert len(problems) == 1 and problems[0].startswith("test command failed to start: "), problems
+        # #14 status hint on an empty `test`
+        (root / ".omi" / "config.json").write_text('{"test": ""}')
+        buf = io.StringIO()
+        with omi.contextlib.redirect_stdout(buf):
+            omi.status(root)
+        assert "no `test` command in .omi/config.json" in buf.getvalue()
+        (root / ".omi" / "config.json").write_text('{"test": "true"}')
+        buf = io.StringIO()
+        with omi.contextlib.redirect_stdout(buf):
+            omi.status(root)
+        assert "no `test` command" not in buf.getvalue()
+    # #8 PO approval with or without a leading `- `
+    assert omi.po_approved("x\n## Steps\n- PO approval accept: ok\n", "accept")
+    assert omi.po_approved("x\n## Steps\nPO approval accept: ok\n", "accept")
+    assert not omi.po_approved("x\n## Steps\n- PO approval accept:\n", "accept")
+    # #4 hint for .git* paths
+    assert "exact scope entry (no globs), e.g. .github/workflows/ci.yml" in omi.git_hint([".github/x.yml"])
+    assert omi.git_hint(["src/a.py"]) == ""
+    # #10 scope comes from development, not from the worktree copy
+    real_git = omi.git
+    omi.git = lambda cwd, *a: "---\nscope: a/**\n---\n" if "show" in a else None
+    try:
+        assert omi.task_scope("/nowhere", "TASK-001") == ["a/**"]
+    finally:
+        omi.git = real_git
+    # review gate: `done` refuses after a FAIL verdict
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        omi.init(root)
+        task = root / ".omi" / "tasks" / "TASK-001.md"
+        task.parent.mkdir(parents=True, exist_ok=True)
+        row = lambda v: f"| omi-agent-reviewer | sonnet | low | 1 | 1 | 1 | 5s | - | {v} |\n"
+        base = ("---\nid: TASK-001\nworkflow: omi-flow-feature\nstep: review\n---\n## Steps\n- plan done 2026-01-01 00:00\n"
+                "- build done 2026-01-01 00:00\n- review started 2026-01-01 00:00\n\n## Usage\n" + omi.USAGE_HEAD
+                + "\n|---|---|---|---|---|---|---|---|---|\n")
+        task.write_text(base + row("FAIL abc1234"))
+        try:
+            omi.step(root, "TASK-001", "done")
+            raise AssertionError("done passed after FAIL")
+        except SystemExit as e:
+            assert "FAIL" in str(e) and "omi step TASK-001 back" in str(e), e
+        task.write_text(base + row("FAIL abc1234") + row("PASS def5678"))
+        assert omi.step(root, "TASK-001", "done") == 0
+
+
 def test_hooks():
     real = omi.subprocess.run, omi.shutil.which, omi.main_checkout, omi.WINDOWS, omi.os.environ.get(omi.TOKEN_ENV)
     calls, st = [], {}
@@ -707,6 +772,7 @@ def test_hooks():
             calls.clear()
             assert go() == 6 and len(agents()) == 1 and hooks()[0][0][-2:] == ["python3", "-"]
             assert "hook post-run FAILED (exit 3)" in task.read_text()
+            assert "post-run hook failed: the task cannot move to review" in sys.stdout.getvalue()
             real_tw = omi.task_worktrees
             omi.task_worktrees = lambda _: {"TASK-001": str(wt)}
             task.write_text(task.read_text().replace("status: in-progress", "workflow: omi-flow-feature\nstep: plan")
@@ -717,7 +783,20 @@ def test_hooks():
             except SystemExit as e:
                 assert "post-run hook failed" in str(e), e
             st["hook_rc"] = 0
-            assert go() == 0 and omi.step(main, "TASK-001", "done") == 0
+            assert go() == 0
+            assert "WARNING: step plan of TASK-001 is for coordinator, not omi-agent-engineer" in sys.stdout.getvalue()
+            # a manual `omi hook` records its result like `omi run`
+            real_mc = omi.main_checkout
+            omi.main_checkout = lambda _: main
+            st["hook_rc"] = 3
+            try:
+                assert omi.hook_cmd("post-run", "TASK-001") == 3
+                assert "hook post-run FAILED (exit 3)" in task.read_text()
+                st["hook_rc"] = 0
+                assert omi.hook_cmd("post-run", "TASK-001") == 0 and "hook post-run passed" in task.read_text()
+            finally:
+                omi.main_checkout = real_mc
+            assert omi.step(main, "TASK-001", "done") == 0
             # the guard reads only the Reports header line: hook output cannot fake `passed`
             st["hook_rc"] = 3
             assert go() == 6
@@ -2742,6 +2821,7 @@ if __name__ == "__main__":
     test_workflows()
     test_worker()
     test_roles()
+    test_cli_correctness()
     test_hooks()
     test_run_read_role()
     test_incremental_review()
