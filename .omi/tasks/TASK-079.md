@@ -12,7 +12,7 @@ tool: claude
 model: sonnet
 effort: medium
 workflow: omi-flow-feature-sensitive
-step: build
+step: review
 ---
 ## Goal
 A project that runs omi moves to a newer omi with one PO command: install the new version, add new template files, update template files the project never changed, and list the ones it did change for the PO to decide. This also fixes Dockerfile drift.
@@ -62,6 +62,8 @@ Review round 3 FAIL (PO chose a small fix, then security review):
 
 Coordinator host check after review round 3 fix: Windows `python tests/test_omi.py` -> rc=0, ok.
 
+Open (review round 4 PASS, low severity, later task): scp-form omi_repo breaks the pip URL; non-dict config.json fails after files are written; `--to` still calls ls-remote; stale `.omi-new` overwritten on a repeat apply.
+
 ## Steps
 - plan started 2026-10-26 22:07
 - plan done 2026-10-26 22:07
@@ -80,6 +82,8 @@ Coordinator host check after review round 3 fix: Windows `python tests/test_omi.
 - review started 2026-10-26 22:30
 - review failed 2026-10-26 22:34
 - build started 2026-10-26 22:34
+- build done 2026-10-26 22:40
+- review started 2026-10-26 22:40
 
 ## Reports
 2026-10-26 22:08 omi-agent-architect (claude):
@@ -348,6 +352,16 @@ Coordinator host check after review round 3 fix: Windows `python tests/test_omi.
 > create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-26 22:42 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/__init__.py:623 `valid_repo` accepts scp-style `git@host:path`, but `upgrade_cmd` puts it into `git+{repo}@{tag}` for pip (line 665). pip needs `git+ssh://git@host/path`, so the install fails for that form while `--check` works. -> Reject the scp form, or convert it to `ssh://git@host/path` before building the pip URL. Low severity.
+> - src/omi/__init__.py:605-608 `upgrade_apply` assumes `config.json` parses to a dict. A valid JSON non-dict, such as `[]`, makes `merge_keys` raise `AttributeError` after the template files are already written, with no manifest or version stamp. The round-2 fix only guarded invalid JSON. -> Check `isinstance(old_cfg, dict)` in the pre-flight and exit with the same "nothing was changed" message. Low severity.
+> - src/omi/__init__.py:657-660 `upgrade --to vX.Y.Z` still calls `git ls-remote` and exits with "no vX.Y.Z tag" if the remote has none. An explicit tag does not need that lookup. -> Skip `latest_tag` when `requested` is set and not `--check`. Low severity.
+> - src/omi/__init__.py:601-604 After a modified file is later resolved, a stale `<path>.omi-new` stays on disk, and a repeat `--apply` overwrites it silently. No data loss; the skill tells the PO to delete it. Informational only.
+> 
+> AC: `omi init` writes the manifest and backfills a project that has none ✓ `test_upgrade` covers a fresh init, a CRLF-modified pristine file, an edited `AGENTS.md` that is not recorded, and a fake released template. `template_shas.json` has 61 entries for 0.2.0 and is listed in `pyproject.toml` package-data.
+> [... truncated ...]
+> Rules and scope: type hints are present on the new public functions and files are read as UTF-8, which matches python.md. The docker rule does not apply to this diff. All changed files are within `scope`.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -360,3 +374,4 @@ Coordinator host check after review round 3 fix: Windows `python tests/test_omi.
 | omi-agent-engineer | claude-opus-5-5 | high | 34 | 11265 | 649712 | 239s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 229107 | 1739 | 186752 | 99s | - | FAIL c968083 |
 | omi-agent-engineer | gpt-6.1-sol (codex) | high | 640327 | 6845 | 590080 | 263s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 4769 | 136777 | 106s | - | PASS 7f0f612 |
