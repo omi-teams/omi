@@ -1,7 +1,7 @@
 ---
 id: TASK-079
 title: omi upgrade and /omi-upgrade - install a newer omi and update unmodified template files
-status: in-progress
+status: done
 depends: TASK-078
 scope: src/omi/__init__.py, src/omi/template_shas.json, pyproject.toml, tests/**, src/omi/template/**, .claude/skills/omi-upgrade/**, AGENTS.md, README.md
 role: omi-agent-engineer
@@ -12,20 +12,20 @@ tool: claude
 model: sonnet
 effort: medium
 workflow: omi-flow-feature-sensitive
-step: build
+step: accept
 ---
 ## Goal
 A project that runs omi moves to a newer omi with one PO command: install the new version, add new template files, update template files the project never changed, and list the ones it did change for the PO to decide. This also fixes Dockerfile drift.
 
 ## Acceptance criteria
-- [ ] `omi init` writes `.omi/manifest.json`: `{"version": X, "files": {"<project path>": "<sha256 of the template file it installed>"}}` for every template file it creates. A project without a manifest gets one on its next `omi init`/`omi upgrade`, recording only files that are byte-identical (CRLF/LF ignored) to the current template or to a released template listed in `src/omi/template_shas.json` (`{"0.2.0": {path: sha}}`, built once from tag v0.2.0, shipped as package data). Tested.
-- [ ] `omi upgrade --check` lists remote tags (`git ls-remote --tags` of `omi_repo` in `.omi/config.json`, default https://github.com/omi-teams/omi-squad2), picks the highest `vX.Y.Z` (SemVer, ignores date tags), and prints `omi <installed> -> <latest>` or `up to date`. Tested with a fake subprocess.
-- [ ] `omi upgrade [--to vX.Y.Z]` runs `python -m pip install --user --upgrade "git+<omi_repo>@<tag>"`, then runs `python -m omi upgrade --apply` in a new process so the newly installed omi updates the project. Tested on argv.
-- [ ] `omi upgrade --apply`: per template file, missing in the project -> create; unchanged since install (sha matches manifest) -> overwrite with the new template; changed by the project -> keep it, print `kept (modified): <path>`, and write the new version next to it as `<path>.omi-new`. Then update `.omi/manifest.json` and `.omi/version`, regenerate catalogs, print a summary. Never touch task files (`.omi/tasks/TASK-*`; `_template.md` is a template file and is updated like the others), `.omi/plans/PLAN-*` other than PLAN-000, `.omi/decisions.md`; `.omi/config.json` only gains new keys from the template, existing values stay. Tested.
-- [ ] Skill `.claude/skills/omi-upgrade/SKILL.md` (root and template) and an AGENTS.md line for `omi-upgrade`: run `--check`, ask the PO (pick-list) which version, run the upgrade, show the summary, for each `.omi-new` ask the PO keep / take new / merge, then commit on `development` and run the tests.
-- [ ] README upgrade section uses `/omi-upgrade` or `python -m omi upgrade`.
-- [ ] Real check (Coordinator): a sandbox initialised with 0.2.0 files plus one locally edited template file runs `--apply` with this branch's code: new files created, unchanged files updated, the edited file kept with a `.omi-new` next to it.
-- [ ] All tests pass on the Linux worker and the Windows host.
+- [x] `omi init` writes `.omi/manifest.json`: `{"version": X, "files": {"<project path>": "<sha256 of the template file it installed>"}}` for every template file it creates. A project without a manifest gets one on its next `omi init`/`omi upgrade`, recording only files that are byte-identical (CRLF/LF ignored) to the current template or to a released template listed in `src/omi/template_shas.json` (`{"0.2.0": {path: sha}}`, built once from tag v0.2.0, shipped as package data). Tested.
+- [x] `omi upgrade --check` lists remote tags (`git ls-remote --tags` of `omi_repo` in `.omi/config.json`, default https://github.com/omi-teams/omi-squad2), picks the highest `vX.Y.Z` (SemVer, ignores date tags), and prints `omi <installed> -> <latest>` or `up to date`. Tested with a fake subprocess.
+- [x] `omi upgrade [--to vX.Y.Z]` runs `python -m pip install --user --upgrade "git+<omi_repo>@<tag>"`, then runs `python -m omi upgrade --apply` in a new process so the newly installed omi updates the project. Tested on argv.
+- [x] `omi upgrade --apply`: per template file, missing in the project -> create; unchanged since install (sha matches manifest) -> overwrite with the new template; changed by the project -> keep it, print `kept (modified): <path>`, and write the new version next to it as `<path>.omi-new`. Then update `.omi/manifest.json` and `.omi/version`, regenerate catalogs, print a summary. Never touch task files (`.omi/tasks/TASK-*`; `_template.md` is a template file and is updated like the others), `.omi/plans/PLAN-*` other than PLAN-000, `.omi/decisions.md`; `.omi/config.json` only gains new keys from the template, existing values stay. Tested.
+- [x] Skill `.claude/skills/omi-upgrade/SKILL.md` (root and template) and an AGENTS.md line for `omi-upgrade`: run `--check`, ask the PO (pick-list) which version, run the upgrade, show the summary, for each `.omi-new` ask the PO keep / take new / merge, then commit on `development` and run the tests.
+- [x] README upgrade section uses `/omi-upgrade` or `python -m omi upgrade`.
+- [x] Real check (Coordinator): a sandbox initialised with 0.2.0 files plus one locally edited template file runs `--apply` with this branch's code: new files created, unchanged files updated, the edited file kept with a `.omi-new` next to it.
+- [x] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
 Done: security round 3 fixes. init checks every template destination with upgrade_write_safe before reading or copying. Invalid JSON, non-object manifests, and non-object files recover as an empty manifest with one warning. Non-default omi_repo is shown by --check and requires an exact --repo confirmation before any install subprocess. Root and template omi-upgrade skills show the repo in the PO pick-list and require confirmation.
@@ -94,6 +94,7 @@ Security round 4 FAIL:
 Coordinator host check after security round 4 fix: Windows `python tests/test_omi.py` -> rc=0, ok.
 
 ## Steps
+PO approval accept: xonng thì merge rồi dừng phiên
 - plan started 2026-10-26 22:07
 - plan done 2026-10-26 22:07
 - architect started 2026-10-26 22:07
@@ -133,6 +134,13 @@ Coordinator host check after security round 4 fix: Windows `python tests/test_om
 - security started 2026-10-26 23:23
 - security failed 2026-10-26 23:27
 - build started 2026-10-26 23:27
+- build done 2026-10-26 23:32
+- review started 2026-10-26 23:32
+- review done 2026-10-26 23:35
+- security started 2026-10-26 23:35
+- security done 2026-10-26 23:38
+- accept started 2026-10-26 23:38
+- accept done 2026-10-26 23:38
 
 ## Reports
 2026-10-26 22:08 omi-agent-architect (claude):
@@ -676,6 +684,21 @@ Coordinator host check after security round 4 fix: Windows `python tests/test_om
 > create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-26 23:35 omi-agent-reviewer (codex):
+> VERDICT: PASS
+> AC: Init manifest and legacy backfill ✓ Tests cover normalized hashes and released-template matching; 61 v0.2.0 hashes ship as package data.
+> AC: Remote version check ✓ Mocked subprocess tests verify tag ordering, date exclusion, and output.
+> AC: Install and new-process apply ✓ Tests verify exact pip and apply argv.
+> AC: Apply behavior and protection ✓ Tests cover create/update/keep, `.omi-new`, protected files, config merging, metadata, and catalogs.
+> AC: Upgrade skills and AGENTS entry ✓ Root and template contain the required workflow.
+> AC: README upgrade instructions ✓ Documents CLI and `/omi-upgrade`.
+> AC: Real v0.2.0 sandbox check ✓ Coordinator records 1 created, 8 updated, 1 modified file preserved with `.omi-new`; not independently repeated.
+> AC: Linux and Windows tests ✓ Linux command exited 0 with `ok`; Coordinator records Windows exit 0.
+2026-10-26 23:38 omi-agent-security-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/__init__.py:1040 A non-default `omi_repo` lets pip install and run code from a repo the project's own config names. A bare `--repo <url>` that matches the config unlocks it, so the confirmation is enforced only by the skill text, not by the CLI. | why: PO decision in security round 3; the code does what that decision specifies | verified: read `upgrade_cmd` and the skill steps 2-3; `valid_repo` blocks leading `-` and whitespace, and `ls-remote` gets `--` | -> none required.
+> - src/omi/__init__.py:973-976 A hard-linked `<path>.omi-new` can still overwrite its target. | why: the PO accepted this in the task file on 2026-10-26 (security round 2) | verified: read the task file and the code, not re-run | -> follow-up task: write via temp file and `os.replace`.
+> UNVERIFIED: Windows test run. It is only recorded in the task file; I ran `python3 tests/test_omi.py` on Linux (exit 0, `ok`).
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -700,3 +723,5 @@ Coordinator host check after security round 4 fix: Windows `python tests/test_om
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 3213 | 343428 | 162s | - | PASS a750913 |
 | omi-agent-security-reviewer | gpt-6.1-sol (codex) | medium | 796696 | 3089 | 727296 | 168s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL a750913 |
 | omi-agent-engineer | claude-haiku-5-5 | low | 16 | 3366 | 355616 | 142s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
+| omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 696793 | 2362 | 635904 | 163s | - | PASS 177857b |
+| omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 10 | 2577 | 292806 | 128s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS 177857b |
