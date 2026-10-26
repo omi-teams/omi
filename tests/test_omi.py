@@ -688,7 +688,7 @@ def test_hooks():
             assert calls.index((argv, kw)) < calls.index(agents()[0]) and kw["input"] == b"echo hi\n"
             assert argv[argv.index("--network") + 1] == "none" and "--rm" in argv and f"{wt}:/work:ro" in argv
             assert "-w" in argv and argv[argv.index("-w") + 1] == "/work" and "omi-worker=1" in argv
-            assert [a for i, a in enumerate(argv) if argv[i - 1] == "-e"] == ["HOME=/home/node"]  # no token name
+            assert [a for i, a in enumerate(argv) if argv[i - 1] == "-e"] == ["HOME=/home/node", *omi.CACHE_ENV]  # no token name
             assert omi.TOKEN_ENV not in kw["env"] and "tok" not in " ".join(argv)
             assert "hook pre-run passed" in task.read_text()
             # failing pre-run: agent never started, output in Reports
@@ -1041,6 +1041,32 @@ def test_container_names():
     assert "--name" not in omi.worker_argv(Path("/w"), "img", ["x"])
     a = omi.worker_argv(Path("/w"), "img", ["x"], "n1", "my-repo")
     assert a[a.index("omi-repo=my-repo") - 1] == "--label"
+
+
+def test_worker_cache_tmpfs_and_full_volumes():
+    a = omi.worker_argv(Path("/w"), "img", ["x"])
+    assert "/cache:rw,exec,nosuid,uid=1000,gid=1000,size=2048m" in a and "/tmp:rw,noexec,nosuid,size=512m" in a
+    assert "/home/node:rw,noexec,nosuid,uid=1000,gid=1000,size=512m" in a
+    for kv in ("XDG_CACHE_HOME=/cache", "GOCACHE=/cache/go-build", "GOMODCACHE=/cache/go-mod", "npm_config_cache=/cache/npm", "PIP_CACHE_DIR=/cache/pip"):
+        assert a[a.index(kv) - 1] == "-e", kv
+    assert "size=64m" in " ".join(omi.worker_argv(Path("/w"), "img", ["x"], cache_mb=64))
+    with tempfile.TemporaryDirectory() as d:
+        assert omi.worker_sizes(d) == {"cache_mb": 2048, "tmp_mb": 512}
+        (Path(d) / ".omi").mkdir()
+        (Path(d) / ".omi" / "config.json").write_text('{"worker": {"cache_mb": 4096}}', encoding="utf-8")
+        assert omi.worker_sizes(d) == {"cache_mb": 4096, "tmp_mb": 512}
+        real = omi.subprocess.run
+
+        def fake(argv, **kw):
+            out = {"ps": "c1\n", "exec": "Filesystem 1024-blocks Used Available Capacity Mounted on\n"
+                   "tmpfs 100 95 5 95% /cache\ntmpfs 100 10 90 10% /home/node\n"}[argv[1]]
+            return omi.subprocess.CompletedProcess(argv, 0, out, "")
+        omi.subprocess.run = fake
+        try:
+            lines = omi.full_volumes(Path(d))
+        finally:
+            omi.subprocess.run = real
+        assert len(lines) == 1 and lines[0].startswith("c1: /cache is 95% full"), lines
 
 
 def test_network_allowlist():
@@ -2661,6 +2687,7 @@ def test_status_drift_hints():
 
 
 if __name__ == "__main__":
+    test_worker_cache_tmpfs_and_full_volumes()
     test_parallel()
     test_usage()
     test_tool_choice_and_quota_switch()
