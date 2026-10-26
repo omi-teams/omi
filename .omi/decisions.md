@@ -70,3 +70,4 @@
 - 2026-10-26 | TASK-079 security fix round (init manifest symlink) on Claude sonnet/medium | security FAIL, same guard as --apply | PO in chat
 - 2026-10-26 | TASK-079 fix round: all four open low-severity notes on Codex gpt-6.1-sol/medium | review FAIL, gate blocks merge | PO in chat
 - 2026-10-26 | Accept hard-link .omi-new risk in omi upgrade (TASK-079) | git cannot carry hard links; needs local write access that already allows direct edits; follow-up: atomic write | PO in chat
+- 2026-10-26 | omi upgrade: non-default omi_repo needs --repo confirmation and is shown to the PO (TASK-079) | a cloned project could point pip at an attacker repo | PO in chat
