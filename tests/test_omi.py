@@ -1077,6 +1077,76 @@ def test_template_docker():
         assert (Path(t) / "docker" / "Dockerfile").exists()
 
 
+def test_rules():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        omi.init(root)
+        for r in ("go", "python", "postgres", "nextjs", "docker"):
+            assert (root / ".omi" / "rules" / f"{r}.md").exists() and omi.load_rules(root)[r][2] <= 800, r
+        cat = (root / ".omi" / "rules" / "CATALOG.md").read_text()
+        assert "- go:" in cat and "**/*.go" in cat and "tokens]" in cat
+        assert [f.stem for f in omi.task_rules(root, ["src/**/*.go"])] == ["go"]
+        assert [f.stem for f in omi.task_rules(root, ["src/a.py", "docker/**"])] == ["docker", "python"]
+        assert omi.task_rules(root, ["docs/**"]) == []
+        assert "Rules (you must follow these)" in omi.rule_prompt(root, omi.task_rules(root, ["a.go"]))
+        assert omi.rule_limits(root) == {"tokens": 2000, "rule_tokens": 800}
+        (root / ".omi" / "config.json").write_text('{"rule_limits": {"tokens": 100}}')
+        assert omi.rule_limits(root) == {"tokens": 100, "rule_tokens": 800}
+
+        def fails(fn, *words):
+            try:
+                fn()
+            except SystemExit as e:
+                assert all(w in str(e) for w in words), str(e)
+                return
+            raise AssertionError("should fail")
+
+        fails(lambda: omi.task_rules(root, ["a.go", "a.py"]), "rule budget", "go ", "python ", "tokens")
+        (root / ".omi" / "config.json").write_text("{}")
+        (root / ".omi" / "rules" / "bad.md").write_text("---\nid: other\nsummary:\napplies:\n---\n" + "x" * 4000)
+        saved, sys.stdout = sys.stdout, io.StringIO()
+        try:
+            fails(lambda: omi.rules_catalog(root), "bad:", "differs from file name", "summary", "applies", "at most 800")
+        finally:
+            sys.stdout = saved
+        # run adds the rule paths to the prompt, and stops before the agent when over budget
+        (root / ".omi" / "rules" / "bad.md").unlink()
+        real = omi.subprocess.run, omi.shutil.which, omi.main_checkout, omi.WINDOWS, omi.os.environ.get(omi.TOKEN_ENV)
+        calls = []
+
+        class R:
+            def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
+
+        def run(cmd, **kw):
+            calls.append(cmd)
+            return R("---\nscope: src/**/*.go\n---\n") if "show" in cmd else R(" M src/a.go\0") if "status" in cmd else R()
+
+        omi.shutil.rmtree(root / ".git")
+        (root / ".git").write_text("gitdir: /x")
+        task = root / ".omi" / "tasks" / "TASK-001.md"
+        task.parent.mkdir(exist_ok=True)
+        task.write_text("---\nid: TASK-001\nscope: src/**/*.go\n---\n")
+        omi.subprocess.run, omi.shutil.which, omi.main_checkout, omi.WINDOWS = run, lambda _: "docker", lambda _: root, False
+        omi.os.environ[omi.TOKEN_ENV] = "tok"
+        saved, sys.stdout = sys.stdout, io.StringIO()
+        try:
+            omi.run_role("omi-agent-engineer", root, task)
+            prompt = next(c for c in calls if c[:2] == ["docker", "run"])
+            prompt = next(a for a in prompt if "Task file:" in a)
+            assert "Rules (you must follow these):\n/work/.omi/rules/go.md" in prompt and "python.md" not in prompt
+            calls.clear()
+            (root / ".omi" / "config.json").write_text('{"rule_limits": {"tokens": 10}}')
+            fails(lambda: omi.run_role("omi-agent-engineer", root, task), "rule budget", "go ")
+            assert not [c for c in calls if c[:2] == ["docker", "run"]]
+        finally:
+            sys.stdout = saved
+            omi.subprocess.run, omi.shutil.which, omi.main_checkout, omi.WINDOWS = real[:4]
+            if real[4] is None:
+                omi.os.environ.pop(omi.TOKEN_ENV, None)
+            else:
+                omi.os.environ[omi.TOKEN_ENV] = real[4]
+
+
 def test_skills():
     with tempfile.TemporaryDirectory() as t:
         root = Path(t)
@@ -2085,6 +2155,7 @@ if __name__ == "__main__":
     test_git_non_ascii()
     test_subprocess_text_encoding()
     test_skills()
+    test_rules()
     test_skills_check()
     test_workflows()
     test_worker()
