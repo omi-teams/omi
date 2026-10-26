@@ -1,0 +1,12 @@
+{
+  "models": {
+    "haiku": "claude-haiku-5-5",
+    "sonnet": "claude-sonnet-5-5",
+    "opus": "claude-opus-5-5"
+  },
+  "codex_models": {
+    "haiku": "gpt-6.1-sol",
+    "sonnet": "gpt-6.1-sol",
+    "opus": "gpt-6.1-sol"
+  }
+}
