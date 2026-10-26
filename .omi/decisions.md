@@ -58,3 +58,4 @@
 - 2026-10-26 | Codex worker agents must not load the Coordinator AGENTS.md | PO: "Chặn Codex đọc AGENTS.md" | TASK-073
 - 2026-10-26 | omi uses SemVer 0.x (pyproject.toml is the only source; tag v0.2.0); release tags by date stay | PO: "SemVer 0.x" | TASK-074
 - 2026-10-26 | Order: TASK-074 (version, packaging) first, then install omi into omi-board and start its idea | PO | TASK-074
+- 2026-10-26 | Install omi with `python -m pip install --user ...@<tag>` (hooks use `python -m omi`; one omi per Python, no pipx); omi status warns on version and Dockerfile drift | PO: "Gọn: pip --user + 2 cảnh báo" | TASK-075
