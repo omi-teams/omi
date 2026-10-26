@@ -7,7 +7,7 @@ scope: src/omi/__init__.py, src/omi/template/**, .omi/agents/**, .omi/config.jso
 role: omi-agent-engineer
 skills: [omi-skill-docker-worker-pitfalls, omi-skill-windows-powershell]
 workflow: omi-flow-feature-sensitive
-step:
+step: architect
 ---
 ## Goal
 The Coordinator can run any role with Claude Code or Codex, chosen in files; an agent that runs out of quota is continued by the other tool automatically; a new Coordinator session (Claude Code or Codex) resumes a task with nothing lost.
@@ -25,3 +25,13 @@ Done:
 Not done:
 Tests:
 Next:
+
+## Steps
+- plan started 2026-10-26 09:43
+- plan done 2026-10-26 09:43
+- architect started 2026-10-26 09:43
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read | verdict |
+|---|---|---|---|---|---|---|---|---|
+| omi-agent-architect | claude-opus-5-5 | high | 14 | 7439 | 223795 | 91s | - | n/a |
