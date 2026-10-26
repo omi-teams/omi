@@ -19,7 +19,7 @@ steps:
 - architect: architect, opus/high.
 - build: engineer, sonnet/medium.
 - review: reviewer, sonnet/medium, fresh each round.
-- security: security-reviewer, sonnet/medium.
+- security: security-reviewer, sonnet/medium; opus/high when the diff touches auth, payment or secrets (AGENTS.md Quota rules).
 - accept: Coordinator; the PO decides.
 
 ## Review-fail rule

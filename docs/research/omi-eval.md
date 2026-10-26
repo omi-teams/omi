@@ -111,7 +111,7 @@ Hai skill/agent đã được rút gọn (kích thước file giảm còn khoả
 Chênh lệch so với baseline (cùng cặp, đã làm tròn):
 
 - **debug-root-cause (rút gọn):** output +42%, cache +26%, lỗi được sửa đúng ở cả hai biến thể.
-- **security-reviewer (rút gọn):** output +4%, cache +54%. Biến thể rút gọn tìm được các lỗi của baseline, kèm một phát hiện chưa kiểm chứng.
+- **security-reviewer (rút gọn):** output +4%, cache +54%. Biến thể rút gọn tìm được cùng ba lỗi như baseline nhưng bỏ sót kiểm tra scheme, kèm một phát hiện chưa kiểm chứng.
 
 So với lần đo TASK-057: debug-root-cause đầy đủ là +35% output và +29% cache; bản rút gọn là +42% và +26%. Security-reviewer đầy đủ là +44% output và +57% cache; bản rút gọn là +4% output và +54% cache (baseline ở TASK-059 là 697 output, khác với 578 ở TASK-057, nên không so trực tiếp được hai lần đo).
 

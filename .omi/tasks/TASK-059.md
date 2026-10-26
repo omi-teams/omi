@@ -27,6 +27,10 @@ Coordinator re-measure 2026-10-26 (fresh sandbox from this worktree's template, 
 Write (docs-writer): append a Vietnamese section "Đo lại sau TASK-059" to docs/research/omi-eval.md with the numbers above and the conclusion; change nothing else.
 Docs-writer 2026-10-26: DONE. Section "Đo lại sau TASK-059" appended to docs/research/omi-eval.md. Not done: none. Next: Coordinator commits.
 Coordinator round 3 (review notes): (1) security-reviewer step 1: also read "any skill files the prompt lists"; add "Read-only Bash; no network beyond what the prompt grants." Trim elsewhere to stay <= 226 tokens; if impossible, <= 250 and say so. (2) omi-flow-feature-sensitive (and template copy): the security step must follow the AGENTS.md rule (opus/high when the diff touches auth, payment or secrets), not a fixed sonnet/medium. (3) docs/research/omi-eval.md: say the slim run found the same three bugs but not the scheme check.
+Round 3 done (engineer): (1) security-reviewer step 1 now also reads "any skill files the prompt lists"; added "Read-only Bash; no network unless granted."; now 224 tokens (<=226), .omi and template identical. (2) omi-flow-feature-sensitive security step now says opus/high when the diff touches auth, payment or secrets (AGENTS.md Quota rules), .omi and template identical. (3) docs/research/omi-eval.md: slim run found the same three bugs but missed the scheme check.
+Tests: `PYTHONPATH=src python3 -m omi skills --check` ok (19 checked); `python3 tests/test_omi.py` ok.
+Not done: none in scope. Criterion 2 sandbox numbers are already recorded by the Coordinator.
+
 ## Steps
 - plan started 2026-10-26 10:41
 - plan done 2026-10-26 10:41
@@ -74,6 +78,22 @@ Coordinator round 3 (review notes): (1) security-reviewer step 1: also read "any
 > 
 > [... truncated ...]
 > AC: Re-run of the bugfix and security pairs; correctness kept; numbers appended to omi-eval.md. âœ“ The bug was fixed and all planted issues were caught, per the Coordinator's re-measure. The "Ä�o láº¡i sau TASK-059" section is in the diff, and the numbers match the checkpoint. I did not re-run the sandbox pairs myself. The original "+10% tokens" target was not met (+42%/+26% and +4%/+54%). The task text was amended with the PO's 2026-10-26 decision to keep the slim versions, and the docs record
+2026-10-26 10:51 omi-agent-engineer (claude):
+> DONE
+> 
+> Files changed:
+> - `.omi/agents/omi-agent-security-reviewer.md` and template copy (identical): step 1 reads any skill files the prompt lists; added "Read-only Bash; no network unless granted."; trimmed wording to 224 tokens (limit 226).
+> - `.omi/workflows/omi-flow-feature-sensitive.md` and template copy (identical): security step is now opus/high when the diff touches auth, payment or secrets, per the AGENTS.md rule.
+> - `docs/research/omi-eval.md`: slim run "found the same three bugs but missed the scheme check."
+> - `.omi/tasks/TASK-059.md`: round-3 checkpoint added.
+> 
+> Suggested commit: `fix(omi): restore reviewer skill reads and auth/payment model rule in sensitive flow`
+> 
+> Tests: `PYTHONPATH=src python3 -m omi skills --check` ok (19 checked); `python3 tests/test_omi.py` printed ok.
+> 
+> Open issues:
+> - The `python3 tests/test_omi.py` exit code was not captured (the pipe hid it), though the output ended with "ok".
+> - Criterion 2 sandbox numbers were already recorded by the Coordinator; I did not re-run them.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -82,3 +102,4 @@ Coordinator round 3 (review notes): (1) security-reviewer step 1: also read "any
 | omi-agent-engineer | claude-haiku-5-5 | low | 30 | 9309 | 408870 | 103s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-docs-writer | claude-haiku-5-5 | low | 10 | 2597 | 111892 | 20s | - | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1869 | 78356 | 31s | - | PASS bd3d7ba |
+| omi-agent-engineer | claude-haiku-5-5 | low | 32 | 12049 | 488157 | 78s | - | - |
