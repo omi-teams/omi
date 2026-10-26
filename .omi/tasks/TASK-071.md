@@ -1,27 +1,27 @@
 ---
 id: TASK-071
 title: Add omi hooks (pre-run, post-run, pre-merge) run in Docker
-status: in-progress
+status: done
 depends: TASK-070
 scope: src/omi/__init__.py, tests/**, src/omi/template/**, .omi/hooks/**, .claude/skills/omi-task/SKILL.md, AGENTS.md
 role: omi-agent-engineer
 skills: [omi-skill-docker-worker-pitfalls, omi-skill-windows-powershell]
 tool:
 workflow: omi-flow-feature-sensitive
-step: build
+step: accept
 ---
 ## Goal
 Scripts `.omi/hooks/<event>.sh|.py` for events `pre-run`, `post-run`, `pre-merge` run in the Docker worker with the worktree as cwd; a non-zero exit blocks that step. Hooks are read from the main checkout, never from the worktree. Spec: `docs/specs/template-kinds.md` (Hooks).
 
 ## Acceptance criteria
-- [ ] `omi run` runs `pre-run` before the agent and `post-run` after it; a non-zero exit stops the run (pre-run: agent not started; post-run: task not moved to review) and the hook output goes to `## Reports`. Tested.
-- [ ] Hook files come from the main checkout; a hook added or changed inside the worktree is not run. Tested.
-- [ ] Hooks run in the worker container with no host secrets or token env; no container is left behind. Tested where Docker is available, otherwise the docker command line is asserted.
-- [ ] `python -m omi hook pre-merge <TASK-ID>` runs the hook against the task worktree and exits with its code; `omi-task` SKILL.md (root and template) calls it before merging.
-- [ ] No hook file for an event means that step is a no-op.
-- [ ] The template ships `post-run.sh` that runs the project's tests when it finds them (pytest, go test, npm test), otherwise exits 0; `omi init` creates it. Tested.
-- [ ] Template and root `AGENTS.md` mention hooks in one line each.
-- [ ] All tests pass.
+- [x] `omi run` runs `pre-run` before the agent and `post-run` after it; a non-zero exit stops the run (pre-run: agent not started; post-run: task not moved to review) and the hook output goes to `## Reports`. Tested.
+- [x] Hook files come from the main checkout; a hook added or changed inside the worktree is not run. Tested.
+- [x] Hooks run in the worker container with no host secrets or token env; no container is left behind. Tested where Docker is available, otherwise the docker command line is asserted.
+- [x] `python -m omi hook pre-merge <TASK-ID>` runs the hook against the task worktree and exits with its code; `omi-task` SKILL.md (root and template) calls it before merging.
+- [x] No hook file for an event means that step is a no-op.
+- [x] The template ships `post-run.sh` that runs the project's tests when it finds them (pytest, go test, npm test), otherwise exits 0; `omi init` creates it. Tested.
+- [x] Template and root `AGENTS.md` mention hooks in one line each.
+- [x] All tests pass.
 
 ## Checkpoint
 Round 3 fixes done: step guard regex anchored to the Reports header (test: faked `> hook post-run passed` output still blocks); run_hook has `--name` + `hook_timeout` (default 600), on timeout `docker rm -f` and rc 124 with message (fake-subprocess test); tests/ case asserts the pytest message. Tests ok. Next: Coordinator review and commit.
@@ -46,6 +46,7 @@ Round 1 fixes done: post-run.sh (template) exits 1 naming the missing tool (go, 
 Next: Coordinator review and commit.
 
 ## Steps
+PO approval accept: Sửa vòng 3 rồi merge (Recommended)
 - plan started 2026-10-26 14:14
 - plan done 2026-10-26 14:14
 - architect started 2026-10-26 14:14
@@ -57,6 +58,13 @@ Next: Coordinator review and commit.
 - security started 2026-10-26 14:24
 - security failed 2026-10-26 14:26
 - build started 2026-10-26 14:26
+- build done 2026-10-26 14:28
+- review started 2026-10-26 14:28
+- review done 2026-10-26 14:29
+- security started 2026-10-26 14:29
+- security done 2026-10-26 14:30
+- accept started 2026-10-26 14:30
+- accept done 2026-10-26 14:30
 
 ## Reports
 2026-10-26 14:16 omi-agent-architect (claude):
@@ -136,6 +144,39 @@ Next: Coordinator review and commit.
 > - **Test tweak:** the "only under tests/" case now also asserts `"pytest not in the worker image" in r.stdout`.
 > - **Commit:** `fix: anchor post-run guard, add hook timeout and container name (TASK-071)`, ending with `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`.
 > - **Open issue:** the template `post-run.sh` has still not run in a real container.
+2026-10-26 14:29 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/__init__.py:242 `hook_timeout` is used unvalidated. A non-numeric value in `.omi/config.json` makes `subprocess.run` raise, and a malformed JSON file crashes `omi run` and `omi hook`. -> Coerce with `int(...)` and fall back to 600 on error. This is not a blocker.
+> - src/omi/__init__.py:197 The `step done` guard trusts any line in the task file that looks like a Reports header. The agent can write that line itself, because `revert_front` only restores front matter. -> Accept it as a known limit, since the agent could already edit the task file. This is not a blocker.
+> 
+> AC: `omi run` runs `pre-run` before the agent and `post-run` after it, a non-zero exit stops the run, and the hook output goes to `## Reports` ✓ `test_hooks` covers each part.
+> - A failing `pre-run` returns 6 and no agent starts.
+> - A failing `post-run` returns 6 and `step done` is refused.
+> - Reports contain "hook pre-run FAILED (exit 3)" and "> HOOKOUT".
+> - The guard regex is anchored to the header line, and a faked `> hook post-run passed` output line still blocks.
+> 
+> AC: Hook files come from the main checkout, and a hook added in the worktree is not run ✓ `run_hook` reads `Path(main)/.omi/hooks`. The test puts `pre-run.sh` only in the worktree and asserts there are no hook calls.
+> 
+> AC: Hooks run with no host secrets or token env, and no container is left behind ✓ for the argv; I did not run real Docker.
+> - The test asserts `--network none`, `--rm`, a `:ro` worktree, and `HOME=/home/node` as the only `-e`.
+> - The token is popped from the child env and is not in argv.
+> - A timeout runs `docker rm -f <name>` and returns rc 124.
+> - The task file records a real-Docker probe by the Coordinator that confirmed this.
+> 
+> [... truncated ...]
+> Scope: all changed files are in `scope`, plus the task file.
+2026-10-26 14:30 omi-agent-security-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/__init__.py:266 `hook_timeout` is read from `.omi/config.json` with no validation. | why: a non-numeric value makes `subprocess.run` raise, and malformed JSON crashes `omi run` and `omi hook`. | verified: read the code; I did not run a repro. -> Coerce with `int(...)` inside try/except and fall back to 600. Not a blocker.
+> - src/omi/__init__.py:221 The `step done` guard trusts any line in the task file shaped like a Reports header. | why: an agent can write a fake `... hook post-run passed` header line itself, because `revert_front` only restores front matter. Hook output lines are prefixed `> `, so output alone cannot fake it. | verified: read the regex and `hook_note`. -> Accept as a known limit, since the agent can already edit the task file. Not a blocker.
+> 
+> I ran `python3 tests/test_omi.py` and it prints `ok`. The hook container looks isolated:
+> - It runs with `--network none` and `env_names=()`, and the token is removed from the child environment.
+> - The script is read from the main checkout and the worktree is mounted `:ro`.
+> - Hooks run for write roles only.
+> - A timeout kills the container by name.
+> 
+> UNVERIFIED: the template `post-run.sh` has not run in a real container, so I can't say whether the `:ro` worktree blocks go and Python cache writes. A real Docker run on a Go project would confirm. The diff touches no CI workflow files.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -147,3 +188,5 @@ Next: Coordinator review and commit.
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 4 | 2889 | 54999 | 44s | - | PASS a872b9d |
 | omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 6 | 2017 | 101684 | 43s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS a872b9d |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 3686 | 267365 | 61s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 4 | 2307 | 61828 | 40s | - | PASS c4afed2 |
+| omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 6 | 1558 | 114854 | 39s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS c4afed2 |
