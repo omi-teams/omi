@@ -7,7 +7,7 @@ scope: src/omi/__init__.py, tests/**
 role: omi-agent-engineer
 skills: []
 workflow: omi-flow-bugfix
-step: reproduce
+step: review
 ---
 ## Goal
 Bug: in TASK-064 the engineer wrote `step: done` into the task frontmatter, which broke `omi step` until the Coordinator restored it. `step:` and `status:` are Coordinator-owned (set by `omi step` and by the Coordinator).
@@ -27,6 +27,10 @@ Next: review/commit
 - plan started 2026-10-26 11:33
 - plan done 2026-10-26 11:33
 - reproduce started 2026-10-26 11:33
+- reproduce done 2026-10-26 11:34
+- fix started 2026-10-26 11:34
+- fix skipped 2026-10-26 11:34: the reproduce run wrote the test and the fix together
+- review started 2026-10-26 11:34
 
 ## Reports
 2026-10-26 11:34 omi-agent-engineer (claude):
@@ -38,8 +42,18 @@ Next: review/commit
 > - Test: the mocked agent run edits `status:` and the Checkpoint. The Checkpoint edit stays, `status:` is restored, and `REVERTED: status` is printed. I used `status` rather than `step` because a `step:` in that test's fake worktree makes `run_role` load the workflow, which fails there on missing skills. The revert code treats every owned field the same way.
 > - `python3 tests/test_omi.py` passes.
 > - Suggested commit: `fix(run): revert agent edits to Coordinator-owned task frontmatter`
+2026-10-26 11:35 omi-agent-reviewer (claude):
+> VERDICT: FAIL
+> - tests/test_omi.py:1537 The test edits `status:`, not `step:`. The criterion names `step:`, and the main bug was `step: done` breaking `omi step`. The engineer says a `step:` in the fake worktree makes `run_role` load the workflow, which then fails on missing skills. So the `step` path has no test. -> Add a test that edits `step:` plus the Checkpoint. It can be a separate case with a workflow and skills stubbed, or a direct `revert_front` unit test covering `step`, an added field and a removed field.
+> - src/omi/__init__.py:62-78 `revert_front` rewrites the value from `parse()`, which drops `# comments`. `set_front` also moves the key to the end of the frontmatter, so a revert reorders fields and changes the original lines. -> Keep the raw original frontmatter lines in the snapshot and restore those, instead of re-serialising.
+> - src/omi/__init__.py:1745 If the agent deletes the task file or removes the leading `---`, nothing is restored and no `REVERTED` is printed. The frontmatter is then lost without a report. -> Rewrite the original frontmatter, or the whole file, from the snapshot and report it as reverted.
+> 
+> AC: After an agent run, `omi run` reverts changes to the six fields and prints `REVERTED: <field>`, keeping the rest of the file ✓ `revert_front` plus the `finally` block in `run_role`. Covers changed, added and removed fields, and skips read roles. The test confirms this for `status`.
+> AC: A test where an agent run edits `step:` and the Checkpoint ✗ The test edits `status:` instead. `step` is not exercised.
+> AC: `python tests/test_omi.py` passes ✓ I ran it and it printed `ok`.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 28 | 4356 | 408440 | 57s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1837 | 84559 | 32s | - | FAIL d614202 |
