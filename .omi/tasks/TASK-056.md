@@ -1,7 +1,7 @@
 ---
 id: TASK-056
 title: Short readable container names; two TASK-055 review follow-ups
-status: planned
+status: in-progress
 depends: TASK-055
 scope: src/omi/__init__.py, tests/**, README.md
 role: omi-agent-engineer
