@@ -3,7 +3,7 @@ id: TASK-079
 title: omi upgrade and /omi-upgrade - install a newer omi and update unmodified template files
 status: in-progress
 depends: TASK-078
-scope: src/omi/__init__.py, tests/**, src/omi/template/**, .claude/skills/omi-upgrade/**, AGENTS.md, README.md
+scope: src/omi/__init__.py, src/omi/template_shas.json, pyproject.toml, tests/**, src/omi/template/**, .claude/skills/omi-upgrade/**, AGENTS.md, README.md
 role: omi-agent-engineer
 skills: [omi-skill-windows-powershell]
 refs:
@@ -12,13 +12,13 @@ tool: claude
 model: sonnet
 effort: medium
 workflow: omi-flow-feature-sensitive
-step:
+step: architect
 ---
 ## Goal
 A project that runs omi moves to a newer omi with one PO command: install the new version, add new template files, update template files the project never changed, and list the ones it did change for the PO to decide. This also fixes Dockerfile drift.
 
 ## Acceptance criteria
-- [ ] `omi init` writes `.omi/manifest.json`: `{"version": X, "files": {"<project path>": "<sha256 of the template file it installed>"}}` for every template file it creates. A project without a manifest gets one on its next `omi init`/`omi upgrade`, recording only files that are byte-identical (CRLF/LF ignored) to the current template. Tested.
+- [ ] `omi init` writes `.omi/manifest.json`: `{"version": X, "files": {"<project path>": "<sha256 of the template file it installed>"}}` for every template file it creates. A project without a manifest gets one on its next `omi init`/`omi upgrade`, recording only files that are byte-identical (CRLF/LF ignored) to the current template or to a released template listed in `src/omi/template_shas.json` (`{"0.2.0": {path: sha}}`, built once from tag v0.2.0, shipped as package data). Tested.
 - [ ] `omi upgrade --check` lists remote tags (`git ls-remote --tags` of `omi_repo` in `.omi/config.json`, default https://github.com/omi-teams/omi-squad2), picks the highest `vX.Y.Z` (SemVer, ignores date tags), and prints `omi <installed> -> <latest>` or `up to date`. Tested with a fake subprocess.
 - [ ] `omi upgrade [--to vX.Y.Z]` runs `python -m pip install --user --upgrade "git+<omi_repo>@<tag>"`, then runs `python -m omi upgrade --apply` in a new process so the newly installed omi updates the project. Tested on argv.
 - [ ] `omi upgrade --apply`: per template file, missing in the project -> create; unchanged since install (sha matches manifest) -> overwrite with the new template; changed by the project -> keep it, print `kept (modified): <path>`, and write the new version next to it as `<path>.omi-new`. Then update `.omi/manifest.json` and `.omi/version`, regenerate catalogs, print a summary. Never touch `.omi/tasks`, `.omi/plans/PLAN-*` other than PLAN-000, `.omi/decisions.md`; `.omi/config.json` only gains new keys from the template, existing values stay. Tested.
@@ -32,3 +32,20 @@ Done:
 Not done:
 Tests:
 Next:
+
+## Steps
+- plan started 2026-10-26 22:07
+- plan done 2026-10-26 22:07
+- architect started 2026-10-26 22:07
+
+## Reports
+2026-10-26 22:08 omi-agent-architect (claude):
+> RECOMMEND: B - a manifest plus a shipped `known_shas` file for v0.2.0, so a 0.2.0 project with no manifest (every project today) gets its unchanged files updated instead of flooded with `.omi-new`.
+> OPTIONS: A: manifest only, backfilled from the current template / smallest and matches AC1 word for word, but on the first upgrade from 0.2.0 every unchanged file differs from the 0.3.0 template, so all are "kept (modified)" and the Coordinator real check fails; B: A plus `src/omi/template_shas.json` (`{"0.2.0": {path: sha}}`, built once from tag v0.2.0) so a file matching a released sha is backfilled as unmodified / one extra data file, its hashes must be correct, and it extends AC1's backfill rule; C: hashes computed at run time from `git show v0.2.0` / git is often missing in the installed package and needs the omi repo, so it is fragile.
+> [... truncated ...]
+> NEEDS DECISION: AC1 says backfill records only files identical to the *current* template, but the real check expects a no-manifest 0.2.0 sandbox to have its unchanged files *updated*. Approve B's extension (also match released v0.2.0 hashes), or keep A and have the real check run on a sandbox made by this branch's `omi init`?
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read | verdict |
+|---|---|---|---|---|---|---|---|---|
+| omi-agent-architect | claude-opus-5-5 | high | 12 | 4515 | 152074 | 53s | - | n/a |
