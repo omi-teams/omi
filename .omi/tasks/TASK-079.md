@@ -12,7 +12,7 @@ tool: claude
 model: sonnet
 effort: medium
 workflow: omi-flow-feature-sensitive
-step: review
+step: build
 ---
 ## Goal
 A project that runs omi moves to a newer omi with one PO command: install the new version, add new template files, update template files the project never changed, and list the ones it did change for the PO to decide. This also fixes Dockerfile drift.
@@ -64,6 +64,9 @@ Coordinator host check after review round 3 fix: Windows `python tests/test_omi.
 
 Open (review round 4 PASS, low severity, later task): scp-form omi_repo breaks the pip URL; non-dict config.json fails after files are written; `--to` still calls ls-remote; stale `.omi-new` overwritten on a repeat apply.
 
+Security round 1 FAIL:
+- init reads and writes .omi/manifest.json (and .omi/version) without the symlink guard; a manifest symlink to a JSON file outside the project gets overwritten. init uses upgrade_write_safe for the manifest and version, the same way upgrade_apply does. Test: a manifest symlink leaves its target unchanged (skip when os.symlink raises OSError).
+
 ## Steps
 - plan started 2026-10-26 22:07
 - plan done 2026-10-26 22:07
@@ -84,6 +87,10 @@ Open (review round 4 PASS, low severity, later task): scp-form omi_repo breaks t
 - build started 2026-10-26 22:34
 - build done 2026-10-26 22:40
 - review started 2026-10-26 22:40
+- review done 2026-10-26 22:42
+- security started 2026-10-26 22:42
+- security failed 2026-10-26 22:51
+- build started 2026-10-26 22:51
 
 ## Reports
 2026-10-26 22:08 omi-agent-architect (claude):
@@ -362,6 +369,10 @@ Open (review round 4 PASS, low severity, later task): scp-form omi_repo breaks t
 > AC: `omi init` writes the manifest and backfills a project that has none ✓ `test_upgrade` covers a fresh init, a CRLF-modified pristine file, an edited `AGENTS.md` that is not recorded, and a fake released template. `template_shas.json` has 61 entries for 0.2.0 and is listed in `pyproject.toml` package-data.
 > [... truncated ...]
 > Rules and scope: type hints are present on the new public functions and files are read as UTF-8, which matches python.md. The docker rule does not apply to this diff. All changed files are within `scope`.
+2026-10-26 22:45 omi-agent-security-reviewer (codex):
+> VERDICT: FAIL
+> - src/omi/__init__.py:754 High: `omi init` follows a manifest symlink and overwrites its target | why: a repository can redirect `.omi/manifest.json` to an existing JSON object outside the project | verified: traced `init:774` → `read_manifest:748` → `write_manifest:787`, with no destination guard -> validate manifest and parent paths before reading or writing.
+> UNVERIFIED: none; `python3 tests/test_omi.py` passed.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -375,3 +386,4 @@ Open (review round 4 PASS, low severity, later task): scp-form omi_repo breaks t
 | omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 229107 | 1739 | 186752 | 99s | - | FAIL c968083 |
 | omi-agent-engineer | gpt-6.1-sol (codex) | high | 640327 | 6845 | 590080 | 263s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 4769 | 136777 | 106s | - | PASS 7f0f612 |
+| omi-agent-security-reviewer | gpt-6.1-sol (codex) | medium | 356553 | 1887 | 287488 | 104s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL 47df69f |
