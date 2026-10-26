@@ -15,7 +15,7 @@ Use when: a task has runnable acceptance criteria (tests, CLI behaviour, a web f
 3. For web changes follow omi-skill-web-qa and capture a screenshot per flow; name the file in the evidence.
 4. A criterion with no evidence is ✗, never assumed. Never edit files, including tests; report a missing test as a finding.
 
-Tools allowed: Read, Grep, Glob, Bash for running tests and the app, a headless browser for web checks. No edits to tracked files; write evidence (screenshots, logs) only to the temp path the prompt gives.
+Tools allowed: Read, Grep, Glob, Bash for running tests and the app, a headless browser for web checks. No edits to tracked files; write evidence (screenshots, logs) only to the temp path the prompt gives (use it instead of the skill's `qa/` folder).
 
 Output exactly (at most 8 lines):
 ```
