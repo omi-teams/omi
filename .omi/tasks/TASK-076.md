@@ -31,12 +31,21 @@ Not done: Windows host run and real Go check (Coordinator).
 Tests: python3 tests/test_omi.py ok on Linux.
 Next: Coordinator review and commit.
 
+Review round 1 PASS with fixes (do these, nothing else):
+- full_volumes: add timeout=10 to the docker ps and docker exec calls; catch subprocess.TimeoutExpired with OSError.
+- worker_sizes: a non-object "worker" value (e.g. null) must hit the same sys.exit message, not AttributeError.
+- test_hooks (or a small test): with worker.cache_mb in config, assert the size reaches the docker argv of run_hook.
+
 ## Steps
 - plan started 2026-10-26 21:07
 - plan done 2026-10-26 21:07
 - architect started 2026-10-26 21:07
 - architect done 2026-10-26 21:09
 - build started 2026-10-26 21:09
+- build done 2026-10-26 21:12
+- review started 2026-10-26 21:12
+- review failed 2026-10-26 21:14
+- build started 2026-10-26 21:14
 
 ## Reports
 2026-10-26 21:09 omi-agent-architect (claude):
@@ -102,9 +111,22 @@ Next: Coordinator review and commit.
 > create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-26 21:13 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/__init__.py `full_volumes`: `docker exec ... df` and `docker ps` have no `timeout`, so a hung container or daemon would hang `omi status`. -> Add `timeout=10` to both calls and catch `subprocess.TimeoutExpired` alongside `OSError`.
+> - src/omi/__init__.py `worker_sizes`: a config with `"worker": null` or a non-object value raises a raw `AttributeError` traceback instead of the clean `sys.exit` used for bad sizes. -> Check `isinstance(w, dict)` and use the same error message.
+> - tests/test_omi.py: the sizes read from config are tested only on `worker_sizes` itself. No test checks that `run_hook`, `run_role` or `prove` pass them through to the docker argv. -> Add one assertion in `test_hooks` with a `worker.cache_mb` config and check `size=...m` in the argv.
+> 
+> AC: Every container gets a `/cache` tmpfs with `rw,exec,nosuid,uid=1000,gid=1000`, sized by `worker.cache_mb`, plus the five cache env vars; `/tmp` and `/home/node` stay noexec, sized by `worker.tmp_mb` ✓. `worker_argv` emits the mount and env flags. Defaults are 2048 and 512. All three `worker_argv` callers (`run_hook`, `run_role`, `prove`) pass `**worker_sizes(main)`. `test_worker_cache_tmpfs_and_full_volumes` asserts the flags and env; `tests/test_omi.py` passes.
+> AC: A compiled test binary can run from `/cache` ✓ for the mount flags (`exec` is unit-tested). The real Go run is the Coordinator's check and has not been done.
+> AC: Template and repo `docker/Dockerfile` write `/etc/profile.d/omi-path.sh` and keep the image PATH ✓. The `RUN` captures the build-time `$PATH`, including earlier `ENV PATH` lines, and runs before `USER node`. The two Dockerfiles are byte-identical. I did not build the image.
+> AC: The template Dockerfile has a commented Go toolchain example, and the `omi-idea` skill says TASK-001 adds the toolchain and `network_allow` ✓. Root and template `SKILL.md` match.
+> [... truncated ...]
+> The diff stays within `scope`, apart from the edits to the task file itself.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-architect | claude-opus-5-5 | high | 14 | 4374 | 199813 | 70s | - | n/a |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 24 | 7218 | 357509 | 105s | 2/3 omi-skill-docker-worker-pitfalls omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 2556 | 82201 | 57s | - | PASS 1a20a8c |
