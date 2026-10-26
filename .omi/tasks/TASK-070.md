@@ -1,7 +1,7 @@
 ---
 id: TASK-070
 title: Add plans that group tasks, with progress in omi status
-status: planned
+status: in-progress
 depends: TASK-069
 scope: src/omi/__init__.py, tests/**, src/omi/template/**, .omi/plans/**, .omi/tasks/_template.md, AGENTS.md
 role: omi-agent-engineer
