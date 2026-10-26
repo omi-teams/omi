@@ -833,7 +833,11 @@ def status(cwd="."):
     for line in full_volumes(main_checkout(root) or root):
         print(line)
     cfg = root / ".omi" / "config.json"
-    if cfg.exists() and not json.loads(cfg.read_text(encoding="utf-8")).get("test"):
+    try:
+        missing_test = cfg.exists() and not json.loads(cfg.read_text(encoding="utf-8")).get("test")
+    except ValueError:
+        missing_test = False
+    if missing_test:
         print('no `test` command in .omi/config.json; set one, e.g. "test": "python3 -m pytest -q"')
     ts = tasks(root)
     for pid, m in load_plans(root, strict=False).items():
@@ -1900,7 +1904,7 @@ def test_command(wt, main):
             path = os.pathsep.join(p for p in os.get_exec_path()
                                    if posixpath.basename(p.replace("\\", "/").rstrip("/")).lower() != "system32")
             bash = shutil.which("bash", path=path)
-            return [bash, "-c", cmd] if bash else ["cmd", "/c", cmd]
+            return [bash, "-c", cmd] if bash else f'cmd /d /s /c "{cmd}"'
         return ["bash", "-c", cmd] if shutil.which("bash") else ["sh", "-c", cmd]
     if (Path(wt) / "tests" / "test_omi.py").exists():
         argv = ["python", "tests/test_omi.py"]
@@ -1915,6 +1919,8 @@ def test_command(wt, main):
 def test_prompt_line(wt, main):
     """The `Tests:` line of the agent prompt: shell-quoted so it parses back to the same argv."""
     argv = test_command(wt, main)
+    if isinstance(argv, str):
+        return argv.removeprefix('cmd /d /s /c "')[:-1]
     shell = posixpath.basename(argv[0].replace("\\", "/")).lower().removesuffix(".exe")
     return argv[2] if shell in ("bash", "sh", "cmd") and argv[1] in ("-c", "/c") else \
         shlex.join("python3" if a == sys.executable else a for a in argv)

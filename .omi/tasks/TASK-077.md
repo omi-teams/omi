@@ -31,9 +31,9 @@ Gaps #4 #6 #7 #8 #10 #11 #14 #21 (omi-board session 97bfceb1): small CLI behavio
 - [ ] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
-Done: previous criteria remain implemented. Review round 1 fixes: configured shell test uses quoted sys.executable with forward slashes and runs with both Bash and cmd syntax; Windows shell selection filters System32 from PATH, uses the resolved Git Bash path, then falls back to cmd. Prompt formatting recognizes resolved bash.exe paths. Added mocked Windows regression coverage for Git Bash selection and cmd fallback, including System32-only PATH.
+Done: previous criteria remain implemented. Review round 2 fixes: cmd fallback returns the raw string `cmd /d /s /c "<command>"`, preserving quoted executable paths and commands; test_prompt_line handles that string. status skips the test hint for malformed JSON. Added regression tests for the exact cmd invocation, quoted Python with environment setup and exit codes 0/3 on Windows, malformed status config, the .github/x.yml run output hint, and out_of_scope ignoring a widened worktree scope. Added assertions for the role mismatch warning and root/template scope and push instructions.
 Not done: Windows host test run (unavailable in this Linux container).
-Tests: python3 tests/test_omi.py passed on Linux (exit 0, ok), including the new Windows shell-selection tests.
+Tests: python3 tests/test_omi.py passed on Linux (exit 0, ok) after all changes; Windows-only cmd execution coverage awaits the host run.
 Next: Coordinator runs python3 tests/test_omi.py on the Windows host, reviews the diff and commits on the host.
 
 Review round 1 FAIL (reviewer not started; Coordinator findings from the Windows host run):
@@ -183,6 +183,60 @@ Review round 2 PASS with findings (Coordinator verified finding 1 on the Windows
 > AC: #7 hook result in Reports ✓ `hook_cmd` calls `hook_note`; the test checks the FAILED and passed lines, then `step done` succeeds.
 > [... truncated ...]
 > AC: all tests pass on Linux and Windows ✗ Linux passes (`ok`). The Windows host run is not done.
+2026-10-26 21:50 omi-agent-engineer (codex):
+> DONE
+> Files changed: `src/omi/__init__.py`, `tests/test_omi.py`, `.omi/tasks/TASK-077.md`.
+> Fixed cmd quoting, malformed-config status handling, and added regression coverage.
+> Suggested commit: `fix(cli): preserve Windows cmd quoting and handle malformed status config`
+> Tests: `python3 tests/test_omi.py` passed on Linux (`ok`, exit 0).
+> Checkpoint updated. Open issue: Windows host verification pending.
+2026-10-26 21:50 hook post-run passed:
+> Conflict. The container name "/tmphb4dqueh-TASK-001-engineer-codex-gpt-x-medium-145006" is already in useBind for 0.0.0.0:8080 failed: port is already in usewrote /tmp/tmpscvn8ca4/.omi/skills/CATALOG.md (2 skills)
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .omi/agents/CATALOG.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/config.json
+> create .omi/decisions.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/CATALOG.md
+> create .omi/plans/PLAN-000.md
+> create .omi/references/CATALOG.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/CATALOG.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -190,3 +244,4 @@ Review round 2 PASS with findings (Coordinator verified finding 1 on the Windows
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 36 | 14114 | 886585 | 211s | 1/2 omi-skill-lean-implementation | - |
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 261855 | 3344 | 244608 | 144s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 3379 | 101277 | 57s | - | PASS 6c89ea0 |
+| omi-agent-engineer | gpt-6.1-sol (codex) | medium | 723076 | 4500 | 666240 | 223s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
