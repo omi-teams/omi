@@ -24,6 +24,11 @@ Scripts `.omi/hooks/<event>.sh|.py` for events `pre-run`, `post-run`, `pre-merge
 - [ ] All tests pass.
 
 ## Checkpoint
+Review PASS + security PASS; fix round 3 asked by the PO (PO: "Sửa vòng 3 rồi merge"):
+- `step()` post-run guard: the regex `hook post-run (FAILED|passed)` matches anywhere, including `> ` hook output lines the agent's tests can print, so a failing run can fake `passed`. Anchor it to the Reports header line only: `re.findall(r"^\d{4}-\d\d-\d\d \d\d:\d\d hook post-run (FAILED|passed)", text, re.M)`. Test: a FAILED header whose output contains "hook post-run passed" still blocks `step done`.
+- `run_hook`: add a timeout (`hook_timeout` seconds in `.omi/config.json`, default 600) and `--name` from `container_name(...)`; on timeout `docker rm -f` the container and return a non-zero rc with "hook <event> timed out after N s". Test with a fake subprocess.
+- tests: the "tests only under tests/" case must also assert `"pytest not in the worker image" in r.stdout`.
+Real Docker evidence (Coordinator, Windows host): the template post-run.sh in this repo exits 1 with "post-run: pytest not in the worker image; add it to docker/Dockerfile"; this repo's hook prints ok.
 Round 2 fixes done: post-run.sh detects tests/ and root separately (loop, test with tests only under tests/); symlinks removed from test (empty PATH, script uses only sh builtins). Tests ok. Next: Coordinator review and commit.
 Coordinator check round 2 FAIL (real Docker on the Windows host):
 - Template `post-run.sh` still prints "no tests found" in this repo (which has tests/test_omi.py): `ls tests/test_*.py test_*.py` exits non-zero when either glob matches nothing. Detect each location separately (e.g. `for f in tests/test_*.py test_*.py; do [ -f "$f" ] && found=1; done`). Add a test case with tests only under tests/ and none at the root.
@@ -45,6 +50,12 @@ Next: Coordinator review and commit.
 - architect started 2026-10-26 14:14
 - architect done 2026-10-26 14:16
 - build started 2026-10-26 14:16
+- build done 2026-10-26 14:23
+- review started 2026-10-26 14:23
+- review done 2026-10-26 14:24
+- security started 2026-10-26 14:24
+- security failed 2026-10-26 14:26
+- build started 2026-10-26 14:26
 
 ## Reports
 2026-10-26 14:16 omi-agent-architect (claude):
@@ -97,6 +108,25 @@ Next: Coordinator review and commit.
 > Suggested commit: `fix: detect tests under tests/ in post-run hook; drop symlinks from hook tests (TASK-071)`
 > 
 > Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+2026-10-26 14:24 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/__init__.py:198 `subprocess.run` for a hook has no timeout, so a hanging hook blocks `omi run` or `omi hook` forever. The container has no `--name` and its output is only read when it exits, so there is no handle to kill it. -> Add a timeout, and `--name` so it can be removed.
+> - tests/test_omi.py:465 The "tests only under tests/" case asserts only that "no tests found" is absent. It would also pass if the script failed for some other reason, for example the empty-PATH pytest check. -> Assert `"pytest not in the worker image" in r.stdout` as well.
+> - src/omi/template/dot-omi/hooks/post-run.sh:15 This was not run in real Docker here, and the `:ro` worktree may block go and Python cache writes. Only this repo's own `.omi/hooks/post-run.sh` was run in a real container (by the coordinator). -> Check the template hook in a real container.
+> 
+> AC: `omi run` runs pre-run before the agent and post-run after it; non-zero stops the run and output goes to `## Reports` ✓ `test_hooks` checks that pre-run runs before the agent. A failing pre-run returns 6 with no agent call. A failing post-run returns 6, and `step done` is refused. Reports contain "hook pre-run FAILED (exit 3)" and "> HOOKOUT". Hooks run for write roles only, and the architect run makes no hook call.
+> AC: Hook files come from the main checkout; a hook added inside the worktree is not run ✓ `run_hook` reads `Path(main)/.omi/hooks`. The test puts `pre-run.sh` only in the worktree and asserts no hook call.
+> AC: Hooks run in a container with no host secrets or token env, and no container is left behind ✓ (argv asserted, since Docker is unavailable here) The test asserts `--network none`, `--rm`, `:ro`, the only `-e` is `HOME=/home/node`, `TOKEN_ENV` is not in the child env, and the token value is not in argv. The coordinator also ran a probe hook in real Docker: no token env, no network, and no container left.
+> [... truncated ...]
+> Scope: all changed files fall under the task's `scope`, plus the task file itself.
+2026-10-26 14:25 omi-agent-security-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/__init__.py:169 The `step done` guard takes the last match of the unanchored regex `hook post-run (FAILED|passed)` anywhere in the task text. | why: `hook_note` writes hook output into Reports as `> ` lines, and post-run output includes the agent's own test output. A failing run whose output contains "hook post-run passed" makes the last match `passed` and bypasses the guard. | verified: read the regex and `hook_note`/`append_note`, no repro run; the 14:24 review did not raise this -> anchor it to `^\d{4}-\d\d-\d\d \d\d:\d\d hook post-run (FAILED|passed)` with `re.M`.
+> - src/omi/__init__.py:212 The hook `subprocess.run` has no timeout and the container has no `--name`. | why: a hanging hook blocks `omi run`/`omi hook` forever and leaves an orphan container. | verified: read the code; the 14:24 reviewer already raised this -> add a timeout and a name.
+> - tests/test_omi.py:484 The "only under tests/" case checks only that "no tests found" is absent. | why: it still passes if the script exits 1 for the missing pytest. | verified: read the test -> also assert `"pytest not in the worker image" in r.stdout`.
+> UNVERIFIED: the template `post-run.sh` has not run in a real container (the `:ro` worktree may block go/python cache writes); a Docker run would confirm. `python3 tests/test_omi.py` prints ok.
+> 
+> The isolation looks sound: `--network none`, `env_names=()`, the token popped from the child env, the script read from the main checkout, and `:ro`. No workflow files changed.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -105,3 +135,5 @@ Next: Coordinator review and commit.
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 36 | 14563 | 1008259 | 199s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 14 | 3088 | 191347 | 61s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 14 | 2635 | 177514 | 53s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 4 | 2889 | 54999 | 44s | - | PASS a872b9d |
+| omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 6 | 2017 | 101684 | 43s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS a872b9d |
