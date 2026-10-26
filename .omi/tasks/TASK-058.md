@@ -87,6 +87,15 @@ Coordinator round 3 (review notes): (1) the script fallback must fail when any c
 > Test: `python3 tests/test_omi.py` â†’ `ok`.
 > Suggested commit: `fix(init): fail script test run on signal exit, document test order`
 > Open issues: none.
+2026-10-26 10:39 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/__init__.py:1466 The script fallback exits 0 when `tests/` has no `test_*.py` files, so a project with no tests passes silently. This is minor and no criterion covers it. -> optionally exit non-zero or print a notice when the glob is empty.
+> - src/omi/template/dot-omi/config.json:12 The `"test": ""` key is only documented by an empty value. The explanation is in README.md:36, so I count the criterion as met. -> none needed.
+> 
+> AC: `omi init` writes `.omi/skills/CATALOG.md` and the agents and workflows catalogs âœ“ `init()` calls `skills_catalog`, `agents_catalog` and `workflows_catalog` (`src/omi/__init__.py:132`). The test run printed `wrote â€¦/skills/CATALOG.md (18 skills)`, `â€¦/agents/CATALOG.md (9 roles)` and `â€¦/workflows/CATALOG.md (11 workflows)`. `test_init_fresh_project` asserts all three files exist.
+> AC: The test command needs no pytest by default âœ“ `test_command` (`src/omi/__init__.py:1460`) tries config `"test"`, then `tests/test_omi.py`, then pytest only if `find_spec("pytest")` finds it, else a script runner. The test mocks `find_spec` to return `None`. The runner exits 1 for a script that raises `SystemExit(3)` and 0 for an empty script. It exits 1 when a child is killed by SIGKILL. The template config has the `"test"` key, and README.md:36 describes it and the default order. The `Tests:` line now goes through `shlex.join`, and the test checks `shlex.split` round-trips to the same argv.
+> [... truncated ...]
+> Scope âœ“ The changes are in `src/omi/__init__.py`, `src/omi/template/dot-omi/config.json`, `tests/test_omi.py` and `README.md`. The only other file is the task file `.omi/tasks/TASK-058.md`.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -96,3 +105,4 @@ Coordinator round 3 (review notes): (1) the script fallback must fail when any c
 | omi-agent-engineer | claude-haiku-5-5 | low | 24 | 3871 | 288811 | 63s | - | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 4 | 1603 | 41569 | 29s | - | PASS 3e77256 |
 | omi-agent-engineer | claude-haiku-5-5 | low | 16 | 2752 | 215375 | 33s | - | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 4 | 1633 | 45264 | 31s | - | PASS fbee3f9 |
