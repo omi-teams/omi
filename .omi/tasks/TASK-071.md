@@ -24,6 +24,10 @@ Scripts `.omi/hooks/<event>.sh|.py` for events `pre-run`, `post-run`, `pre-merge
 - [ ] All tests pass.
 
 ## Checkpoint
+Coordinator check round 1 FAIL (before review). Real Docker evidence from a probe hook on the Windows host: cwd /work, uid 1000, worktree read-only, no token env, no network (DNS fails), `python3 tests/test_omi.py` prints ok, exit 3 propagated, no container left. Findings:
+- `post-run.sh` (template and `.omi/hooks`) silently passes when tests exist but the runner is missing: the image has no pytest (`ModuleNotFoundError`), so this repo's own hook runs nothing. Found tests + missing tool (go, npm, pytest) must exit 1 with `post-run: <tool> not in the worker image; add it to docker/Dockerfile`; exit 0 only when no tests exist. Test each branch with `sh` in temp dirs.
+- This repo's `.omi/hooks/post-run.sh` must run `exec python3 tests/test_omi.py` (not the generic detection).
+- `pre-run`/`post-run` run for read roles too (`run_role` has no access check); run them only for write roles, as the architect recommended. Test that a reviewer run makes no hook docker call.
 Done: run_hook/hook_note/hook_cmd, offline argv flag, run_role wiring (rc 6), step done guard, `omi hook` CLI, template+root post-run.sh, AGENTS/SKILL lines, test_hooks.
 Not done: real Docker run of hooks (not available here; argv asserted). Hooks mount the worktree ro, so go/python caches may not write.
 Tests: python3 tests/test_omi.py -> ok
