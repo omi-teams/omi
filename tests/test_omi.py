@@ -574,6 +574,21 @@ def test_run_read_role():
             calls.clear()
             omi.run_role("omi-agent-engineer", wt, task)
             assert f"{wt}:/work" in docker_runs()[0][0]
+            # codex: no key names `omi token set --tool codex`; with the env key it runs, key by name only
+            omi.os.environ.pop(omi.CODEX_ENV, None)
+            calls.clear()
+            try:
+                omi.run_role("omi-agent-engineer", wt, task, tool="codex")
+                raise AssertionError("ran without a key")
+            except SystemExit as e:
+                assert "omi token set --tool codex" in str(e) and not docker_runs(), e
+            omi.os.environ[omi.CODEX_ENV] = "sk-SECRET"
+            try:
+                omi.run_role("omi-agent-engineer", wt, task, tool="codex")
+            finally:
+                del omi.os.environ[omi.CODEX_ENV]
+            argv = docker_runs()[0][0]
+            assert omi.CODEX_ENV in argv and not any("sk-SECRET" in x for x in argv)
             # a failing check blocks the role: no container, failure reported
             for kw, word in (({"tests_rc": 1}, "tests failed"), ({"extra": "docs/x.md\0"}, "outside scope: docs/x.md")):
                 out.truncate(0); out.seek(0)
@@ -900,6 +915,18 @@ def test_credential_manager():
         assert omi.TOKEN_ENV in out.getvalue()
         omi.os.environ[omi.TOKEN_ENV] = "env-tok"
         assert omi.token() == "env-tok"
+        # codex: own target, claude's untouched; env fallback
+        omi.WINDOWS = True
+        omi.os.environ.pop(omi.CODEX_ENV, None)
+        assert omi.token("codex") is None
+        omi.getpass.getpass = lambda prompt: "sk-abc"
+        omi.token_set("codex")
+        assert store[omi.CODEX_CRED_TARGET] == b"sk-abc" and store[omi.CRED_TARGET] == b"tok-123"
+        assert omi.token("codex") == "sk-abc" and omi.token() == "tok-123"
+        assert "sk-abc" not in out.getvalue()
+        del store[omi.CODEX_CRED_TARGET]
+        omi.os.environ[omi.CODEX_ENV] = "sk-env"
+        assert omi.token("codex") == "sk-env"
     finally:
         sys.stdout = saved
         omi.advapi, omi.WINDOWS, omi.getpass.getpass, tok = real
