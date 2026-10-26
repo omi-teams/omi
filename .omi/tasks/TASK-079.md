@@ -29,6 +29,7 @@ A project that runs omi moves to a newer omi with one PO command: install the ne
 
 ## Checkpoint
 Done: security round 3 fixes. init checks every template destination with upgrade_write_safe before reading or copying. Invalid JSON, non-object manifests, and non-object files recover as an empty manifest with one warning. Non-default omi_repo is shown by --check and requires an exact --repo confirmation before any install subprocess. Root and template omi-upgrade skills show the repo in the PO pick-list and require confirmation.
+Security round 4 fix: omi_repo() treats a non-object .omi/config.json as an error (`expected an object`) before any subprocess; test_omi_repo_non_object_config covers --check, install and --to.
 Not done: Coordinator review/security review and Windows host rerun for this revision.
 Tests: python3 tests/test_omi.py passed on Linux (exit 0, ok; PYTHONDONTWRITEBYTECODE=1). New regressions failed before the fix and passed after it: dangling and existing symlink destinations, a symlinked parent, invalid manifest recovery in init/apply, repository confirmation/no-subprocess checks and exact argv for HTTPS/SSH/scp URLs, and matching upgrade skill instructions.
 Next: Coordinator review, Windows rerun, and commit on the host. Suggested commit: fix: guard init destinations and confirm custom upgrade repositories
@@ -621,6 +622,58 @@ Security round 4 FAIL:
 > - src/omi/__init__.py:921 Low: non-object config crashes upgrade commands | why: `.get()` assumes a JSON object | verified: mocked config `[]` raises `AttributeError` for `--check` and `--to`, with zero subprocess calls -> validate the parsed type and exit clearly.
 > UNVERIFIED: None.
 > Tests: `python3 tests/test_omi.py` passed (exit 0).
+2026-10-26 23:29 omi-agent-engineer (claude):
+> DONE
+> Files changed: `src/omi/__init__.py` (`omi_repo()` rejects a non-object `.omi/config.json` with `invalid JSON ...: expected an object; fix it, nothing was changed` before any subprocess), `tests/test_omi.py` (new `test_omi_repo_non_object_config`, registered in the run list), `.omi/tasks/TASK-079.md` (checkpoint).
+> Test: `PYTHONDONTWRITEBYTECODE=1 python3 tests/test_omi.py` → rc=0, `ok` (Linux). Windows rerun still open for the Coordinator.
+> Suggested commit: `fix: reject non-object omi config before upgrade commands`
+> Open issues: none in scope; the earlier accepted hard-link risk and the low-severity follow-ups in the checkpoint remain as recorded.
+2026-10-26 23:31 hook post-run passed:
+> Conflict. The container name "/tmph617b9vq-TASK-001-engineer-codex-gpt-x-medium-162958" is already in useBind for 0.0.0.0:8080 failed: port is already in usewrote /tmp/tmp3zzrlm0g/.omi/skills/CATALOG.md (2 skills)
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/config.json
+> create .omi/decisions.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -644,3 +697,4 @@ Security round 4 FAIL:
 | omi-agent-engineer | gpt-6.1-sol (codex) | high | 1003422 | 8720 | 961536 | 345s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 3213 | 343428 | 162s | - | PASS a750913 |
 | omi-agent-security-reviewer | gpt-6.1-sol (codex) | medium | 796696 | 3089 | 727296 | 168s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL a750913 |
+| omi-agent-engineer | claude-haiku-5-5 | low | 16 | 3366 | 355616 | 142s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |

@@ -484,6 +484,28 @@ def test_omi_repo_validation():
         omi.subprocess.run = real
 
 
+def test_omi_repo_non_object_config():
+    calls = []
+    real = omi.subprocess.run
+    omi.subprocess.run = lambda cmd, **kw: calls.append(cmd)
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            cfg = Path(d) / ".omi" / "config.json"
+            cfg.parent.mkdir()
+            for value in ([], [1], None, "config", 42):
+                cfg.write_text(json.dumps(value), encoding="utf-8")
+                for args in (["--check"], [], ["--to", "v0.2.0"]):
+                    try:
+                        omi.upgrade_cmd(args, d)
+                    except SystemExit as exc:
+                        assert "expected an object" in str(exc), exc
+                    else:
+                        raise AssertionError(f"accepted non-object config {value!r}")
+            assert calls == [], "a non-object config must fail before git or pip runs"
+    finally:
+        omi.subprocess.run = real
+
+
 def test_upgrade_cmd():
     calls = []
     ls = "a\trefs/tags/v0.2.0\nb\trefs/tags/v0.10.0\nc\trefs/tags/v0.10.0^{}\nd\trefs/tags/v2026.10.26\ne\trefs/tags/v0.9.0\nf\trefs/tags/v1000.0.0\ng\trefs/tags/rc-20261026-d55dcd3\n"
@@ -3405,6 +3427,7 @@ if __name__ == "__main__":
     test_invalid_manifest_recovery()
     test_upgrade_symlink_parents()
     test_omi_repo_validation()
+    test_omi_repo_non_object_config()
     test_upgrade_cmd()
     test_upgrade_repo_confirmation()
     test_upgrade_skill_repo_confirmation()

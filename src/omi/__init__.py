@@ -918,9 +918,12 @@ def valid_repo(repo: object) -> bool:
 def omi_repo(root: str | Path = ".") -> str:
     cfg = Path(root) / ".omi" / "config.json"
     try:
-        repo = (json.loads(cfg.read_text(encoding="utf-8")) if cfg.is_file() else {}).get("omi_repo", OMI_REPO)
+        data = json.loads(cfg.read_text(encoding="utf-8")) if cfg.is_file() else {}
     except json.JSONDecodeError as e:
         sys.exit(f"invalid JSON in {cfg}: {e}")
+    if not isinstance(data, dict):
+        sys.exit(f"invalid JSON in {cfg}: expected an object; fix it, nothing was changed")
+    repo = data.get("omi_repo", OMI_REPO)
     if not valid_repo(repo):
         sys.exit(f"invalid omi_repo in {cfg}: {repo!r} (use https://, ssh:// or git@host:path)")
     return repo
