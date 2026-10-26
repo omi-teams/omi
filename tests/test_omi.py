@@ -51,6 +51,92 @@ class FakePopen:
 
 omi.subprocess.Popen = FakePopen
 
+def test_version_stamp_package_hook():
+    import fnmatch, glob
+    want = omi.tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+    assert want == "0.2.0" and omi.version() == want
+    real = omi.importlib.metadata.version
+    omi.importlib.metadata.version = lambda n: "9.9.9"
+    try:
+        assert omi.version() == want  # source checkout: pyproject.toml beats stale metadata
+        real_file = omi.__file__
+        with tempfile.TemporaryDirectory() as d:
+            omi.__file__ = str(Path(d) / "a" / "b" / "omi" / "__init__.py")  # no pyproject next to the code
+            try:
+                assert omi.version() == "9.9.9"  # installed: package metadata
+            finally:
+                omi.__file__ = real_file
+    finally:
+        omi.importlib.metadata.version = real
+
+    def missing(n):
+        raise omi.importlib.metadata.PackageNotFoundError(n)
+    omi.importlib.metadata.version = missing
+    try:
+        assert omi.version() == want  # source checkout: pyproject.toml
+        buf = io.StringIO()
+        buf.reconfigure = lambda **kw: None
+        with omi.contextlib.redirect_stdout(buf):
+            omi.main(["--version"])
+            omi.main(["version"])
+        assert buf.getvalue() == f"omi {want}\n" * 2
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d).resolve()
+            omi.init(root)
+            assert (root / ".omi" / "version").read_text().strip() == want
+            (root / ".omi" / "version").write_text("0.1.0\n")
+            omi.init(root)
+            assert (root / ".omi" / "version").read_text().strip() == want
+            def st():
+                b = io.StringIO()
+                with omi.contextlib.redirect_stdout(b):
+                    omi.status(root)
+                return b.getvalue()
+            out = st()
+            assert f"omi {want} (project {want})" in out and "run `omi init`" not in out
+            (root / ".omi" / "version").write_text("0.1.0\n")
+            out = st()
+            assert f"omi {want} (project 0.1.0)" in out and f"run `omi init` to add the files of omi {want}" in out
+            (root / ".omi" / "version").unlink()
+            assert "run `omi init`" in st()
+    finally:
+        omi.importlib.metadata.version = real
+    assert omi.semver("0.10.0") > omi.semver("0.9.5")
+    # package-data globs cover every template file (checked on a temp copy, never write in the repo)
+    cfg = omi.tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["tool"]["setuptools"]
+    pats, excl = cfg["package-data"]["omi"], cfg["exclude-package-data"]["omi"]
+    with tempfile.TemporaryDirectory() as tmp:
+        pkg = Path(tmp) / "omi"
+        shutil.copytree(omi.TEMPLATE, pkg / "template")
+        pyc = pkg / "template" / "docker" / "__pycache__"
+        pyc.mkdir(exist_ok=True)
+        (pyc / "x.pyc").write_bytes(b"")
+        covered = {Path(p) for pat in pats for p in glob.glob(str(pkg / pat), recursive=True)}
+        covered = {p for p in covered if not any(fnmatch.fnmatch(p.relative_to(pkg).as_posix(), e) for e in excl)}
+        files = {p for p in (pkg / "template").rglob("*") if p.is_file() and "__pycache__" not in p.parts and p.suffix != ".pyc"}
+        real = omi.TEMPLATE
+        omi.TEMPLATE = pkg / "template"
+        try:
+            with tempfile.TemporaryDirectory() as d, omi.contextlib.redirect_stdout(io.StringIO()):
+                omi.init(d)
+                assert not list(Path(d).rglob("__pycache__")) and not list(Path(d).rglob("*.pyc"))
+        finally:
+            omi.TEMPLATE = real
+        assert pyc / "x.pyc" not in covered and (pkg / "template" / "docker" / "proxy.py") in covered
+        assert files <= covered, sorted(files - covered)
+        assert any(p.suffix == ".sh" for p in files) and any("references" in p.parts and "skills" in p.parts for p in files)
+    # post-run.sh runs the configured test command first
+    with tempfile.TemporaryDirectory() as d:
+        omi.init(d)
+        hook = str(Path(d) / ".omi" / "hooks" / "post-run.sh")
+        (Path(d) / "go.mod").write_text("module x\n")  # would pick go test without config
+        cfg = Path(d) / ".omi" / "config.json"
+        c = json.loads(cfg.read_text())
+        c["test"] = "exit 7"
+        cfg.write_text(json.dumps(c))
+        assert subprocess.run(["sh", hook], cwd=d).returncode == 7
+
+
 def test_init_fresh_project():
     with tempfile.TemporaryDirectory() as d:
         root = Path(d).resolve()
@@ -2578,6 +2664,7 @@ if __name__ == "__main__":
     test_clean_and_old_images()
     test_credential_manager()
     test_template_docker()
+    test_version_stamp_package_hook()
     test_init_fresh_project()
     test_init_guard_status()
     test_github_rulesets()
