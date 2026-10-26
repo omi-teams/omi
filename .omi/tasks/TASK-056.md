@@ -10,7 +10,7 @@ workflow: omi-flow-feature
 step: accept
 ---
 ## Goal
-Agent containers are named `<TASK-ID>-<role short>-<tool>-<model>-<effort>-<HHMMSS>`, e.g. `TASK-055-reviewer-claude-sonnet-5.5-medium-143205`; plus two small fixes from the TASK-055 review.
+Agent containers are named `<repo>-<TASK-ID>-<role short>-<tool>-<model>-<effort>-<HHMMSS>`, e.g. `TASK-055-reviewer-claude-sonnet-5.5-medium-143205`; plus two small fixes from the TASK-055 review.
 
 ## Acceptance criteria
 - [ ] `container_name` drops the `omi-<repo>-` prefix and the `omi-agent-` role prefix, adds the tool, and keeps dots in the model version (`claude-sonnet-5-5` -> `claude-sonnet-5.5`, codex IDs as is, `codex-default` as is); Docker charset only. Proxy and network names follow it; `omi clean` still finds everything by label (repo stays in labels). `--prove` names its container the same way as a real run; the TASK-045 length test is updated to compare with a real-run name.
@@ -33,6 +33,9 @@ PO at accept: fix the review notes first (round 2):
 2. Name conflict: if `docker run`/proxy `create` fails because the name is already in use, retry once with a 2-char random suffix appended to the stamp. Test it.
 3. tests: the 63-char test builds a worst-case real name (long codex model ID, `xhigh`) instead of padding; add the codex->claude quota fallback case (full codex `--model` falls back to the role alias).
 Coordinator round 3: `name_taken` must match only Docker's own conflict message for that exact name, e.g. `The container name "/<name>" is already in use` and `network with name <net> already exists`; pass the name in. An agent failing with stderr like "port already in use" must not rerun the agent. Test that case.
+PO at accept (round 4):
+1. Put the repo back in the name, without the `omi-` prefix: `<repo>-<TASK>-<role short>-<tool>-<model>-<effort>-<HHMMSS>`, e.g. `omi-squad2-TASK-055-reviewer-claude-sonnet-5.5-medium-143205` (repo = `repo_label`). Keep the salt retry.
+2. Group each run in Docker Desktop: agent and proxy containers both get `com.docker.compose.project=<name lowercased, chars outside [a-z0-9_-] -> ->` and `com.docker.compose.service=agent|proxy`. Coordinator verified on Docker Desktop with two demo containers: shown as one group. Keep the existing omi labels; `omi clean` unchanged. Tests for both.
 ## Steps
 - plan started 2026-10-26 09:59
 - plan done 2026-10-26 09:59
