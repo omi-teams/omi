@@ -1,7 +1,7 @@
 ---
 id: TASK-057
 title: Final evaluation of skills, roles and workflows against baselines
-status: planned
+status: in-progress
 depends: TASK-039
 scope: docs/research/omi-eval.md, .omi/agents/**, .omi/skills/**, .omi/workflows/**, .omi/decisions.md
 role: omi-agent-engineer
