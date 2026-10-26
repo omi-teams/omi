@@ -87,6 +87,9 @@ Security round 3 FAIL (PO decisions 2026-10-26):
 
 Coordinator host check after security round 3 fix: Windows `python tests/test_omi.py` -> rc=0, ok.
 
+Security round 4 FAIL:
+- omi_repo(): .omi/config.json that parses to a non-object (e.g. `[]`) raises AttributeError in `upgrade --check` and `upgrade --to`. It exits with the same "expected an object" message upgrade_apply uses, before any subprocess. Test.
+
 ## Steps
 - plan started 2026-10-26 22:07
 - plan done 2026-10-26 22:07
@@ -121,6 +124,12 @@ Coordinator host check after security round 3 fix: Windows `python tests/test_om
 - security started 2026-10-26 23:03
 - security failed 2026-10-26 23:11
 - build started 2026-10-26 23:11
+- build done 2026-10-26 23:20
+- review started 2026-10-26 23:20
+- review done 2026-10-26 23:23
+- security started 2026-10-26 23:23
+- security failed 2026-10-26 23:27
+- build started 2026-10-26 23:27
 
 ## Reports
 2026-10-26 22:08 omi-agent-architect (claude):
@@ -597,6 +606,21 @@ Coordinator host check after security round 3 fix: Windows `python tests/test_om
 > create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-26 23:23 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/__init__.py:910 `omi_repo()` assumes `.omi/config.json` parses to an object. With `[]` as the file content, `upgrade --check` and the install path crash with `AttributeError: 'list' object has no attribute 'get'` (reproduced). Nothing is written, so this is low severity. -> Check `isinstance(cfg_data, dict)` and exit with the same "expected an object" message that `upgrade_apply` uses.
+> 
+> AC: `omi init` writes the manifest, and a project without one is backfilled from the current template or a released template ✓ `test_upgrade`, `test_invalid_manifest_recovery` and `test_init_symlink_manifest` pass. `template_shas.json` holds 61 files for 0.2.0 and `pyproject.toml` ships it as package data.
+> AC: `upgrade --check` ✓ `latest_tag` runs `git ls-remote --tags -- <repo>` and `release_tag` ignores date and rc tags. `test_upgrade_cmd` uses a fake subprocess and checks the argv and output.
+> AC: `upgrade [--to]` runs pip, then `--apply` in a new process ✓ The argv is built at `src/omi/__init__.py:951-954` and covered by `test_upgrade_cmd` and `test_upgrade_repo_confirmation`. A scp-form repo is converted to `ssh://`. `--to` skips ls-remote unless `--check` is given.
+> AC: `upgrade --apply` ✓ Create, update, and keep with `.omi-new` are in `src/omi/__init__.py:854-885`. It protects `.omi/tasks/*` except `_template.md`, PLAN-* except PLAN-000, decisions.md and config.json (new keys only). Tests: `test_upgrade_protected`, `test_upgrade_symlink_*`, `test_upgrade_non_object_config` and `test_upgrade_stale_candidate`. The hard-link risk is accepted in the task file.
+> [... truncated ...]
+> Rules and scope: the new public functions have type hints, and text I/O uses UTF-8. The changes are inside `scope`, apart from the TASK-079 checkpoint edits. The docker rule does not apply to this diff.
+2026-10-26 23:26 omi-agent-security-reviewer (codex):
+> VERDICT: FAIL
+> - src/omi/__init__.py:921 Low: non-object config crashes upgrade commands | why: `.get()` assumes a JSON object | verified: mocked config `[]` raises `AttributeError` for `--check` and `--to`, with zero subprocess calls -> validate the parsed type and exit clearly.
+> UNVERIFIED: None.
+> Tests: `python3 tests/test_omi.py` passed (exit 0).
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -618,3 +642,5 @@ Coordinator host check after security round 3 fix: Windows `python tests/test_om
 | omi-agent-security-reviewer | gpt-6.1-sol (codex) | medium | 493819 | 2068 | 441728 | 133s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL d2aa794 |
 | omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 10 | 3892 | 317414 | 117s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL 7323d75 |
 | omi-agent-engineer | gpt-6.1-sol (codex) | high | 1003422 | 8720 | 961536 | 345s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 3213 | 343428 | 162s | - | PASS a750913 |
+| omi-agent-security-reviewer | gpt-6.1-sol (codex) | medium | 796696 | 3089 | 727296 | 168s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL a750913 |
