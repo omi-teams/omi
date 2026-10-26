@@ -934,6 +934,22 @@ def quota_hit(tool, out, rc):
     return bool(rc) and any(re.search(QUOTA_PATTERNS[tool], t, re.I) for t in error_texts(tool, out))
 
 
+def clip_report(text, limit=2000):
+    """Report lines, middle truncated over the limit so the first (DONE/VERDICT) and last (commit) lines survive."""
+    text = text.strip()
+    if len(text) <= limit:
+        return text.splitlines()
+    lines = text.splitlines()
+    head, tail = [l[:500] for l in lines[:1]], [l[:500] for l in lines[-1:]] if len(lines) > 1 else []
+    room, mid = limit - sum(map(len, head + tail)), []
+    for l in lines[1:-1]:
+        if len(l) + 1 > room:
+            break
+        mid.append(l)
+        room -= len(l) + 1
+    return head + mid + ["[... truncated ...]"] + tail
+
+
 def append_note(task, heading, line):
     """Append text to the task file's `## <heading>` section (created before `## Usage`, else at the end)."""
     if not task.exists():
@@ -1023,10 +1039,11 @@ def egress(main, name, image, allow):
             print(f"... and {len(hosts) - 5} more blocked hosts")
 
 
-def container_name(repo, role, tid=None, model=None, effort=None, now=None):
-    """omi-<repo>-<task-id>-<role>-<model-id>-<effort>-<HHMMSS>, limited to Docker's [a-zA-Z0-9_.-]; model/effort `none` for prove."""
+def container_name(role, tid=None, tool="claude", model=None, effort=None, now=None):
+    """<task-id>-<role short>-<tool>-<model>-<effort>-<HHMMSS>, limited to Docker's [a-zA-Z0-9_.-]; model/effort `none` for prove."""
     stamp = (now or datetime.datetime.now()).strftime("%H%M%S")
-    raw = "-".join(p for p in ("omi", repo, tid, role, model or "none", effort or "none", stamp) if p)
+    model = re.sub(r"-(\d+)-(\d+)$", r"-\1.\2", model or "none") if tool == "claude" else model or "none"
+    raw = "-".join(p for p in (tid, re.sub(r"^omi-agent-", "", role), None if model.startswith(tool) else tool, model, effort or "none", stamp) if p)
     return re.sub(r"[^a-zA-Z0-9_.-]", "-", raw)
 
 
@@ -1496,7 +1513,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
         mdl, eff = models[t], efforts[t]
         cmd = (engineer_cmd if t == "claude" else codex_cmd)(text, task_rel, mdl, eff, prompt_skills + note)
         t0 = time.monotonic()
-        name = container_name(main.name, role, task.stem, mdl, eff)
+        name = container_name(role, task.stem, t, mdl, eff)
         with egress(main, name, image, allow_for(main, t)) as (net, proxy):
             r = subprocess.run(worker_argv(wt, image, cmd, name, repo_label(main),
                                              worker_labels(role, task.stem, mdl, eff), ro=read,
@@ -1543,8 +1560,13 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
             other_secret, problem = token(other), None
             try:
                 models[other] = resolve_model(main, want_model, other)
-            except SystemExit as e:
-                problem = str(e).replace(" Nothing changed.", "")
+            except SystemExit:  # a full ID of one tool: the other uses the role's alias, else its default
+                try:
+                    models[other] = resolve_model(main, am.get("model"), other)
+                except SystemExit:
+                    if other != "codex":
+                        problem = f"no {other} model for {want_model}"
+                    models[other] = CODEX_DEFAULT
             if not other_secret:
                 problem = f"no {other} token"
             if problem:
@@ -1559,7 +1581,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
                 return stop_quota("claude and codex both hit their usage limit")
         rc = r.returncode
         print(result if result is not None else (r.stdout or ""))
-        append_note(task, "Reports", f"{datetime.datetime.now():%Y-%m-%d %H:%M} {role} ({tool}):\n" + "\n".join("> " + l for l in (result or "(no report)").strip()[:2000].splitlines()))
+        append_note(task, "Reports", f"{datetime.datetime.now():%Y-%m-%d %H:%M} {role} ({tool}):\n" + "\n".join("> " + l for l in clip_report(result or "(no report)")))
         for sid in ids:
             if sid not in done:
                 print(f"SKILL NOT READ: {sid}")
@@ -1588,9 +1610,10 @@ def worker(wt, task_file=None, model=None, effort=None, prove=False):
     env.pop(TOKEN_ENV, None)
     script = main / "docker" / "prove.sh"
     script = script if script.exists() else TEMPLATE / "docker" / "prove.sh"
-    am = get_role(main, "omi-agent-engineer")  # named like a real run: real role, model, effort
-    name = container_name(main.name, "omi-agent-engineer", "prove",
-                          resolve_model(main, am.get("model")), am.get("effort"))
+    am = get_role(main, "omi-agent-engineer")  # named like a real run: real role, tool, model, effort
+    tm_tool = am.get("tool") or "claude"
+    name = container_name("omi-agent-engineer", "prove", tm_tool,
+                          resolve_model(main, am.get("model"), tm_tool), am.get("effort"))
     with egress(main, name, image, allow) as (net, proxy):
         r = subprocess.run(worker_argv(wt, image, ["sh", "-s"], name, repo_label(main),
                                        worker_labels("prove", None, None, None), network=net, proxy=proxy), env=env,

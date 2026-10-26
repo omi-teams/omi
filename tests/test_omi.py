@@ -405,7 +405,7 @@ def test_worker():
             assert c[c.index("--permission-mode") + 1] == "bypassPermissions"
             assert "/work/.omi/tasks/TASK-001.md" in c[2] and "Checkpoint" in c[c.index("--append-system-prompt") + 1]
             name = argv[argv.index("--name") + 1]
-            assert re.fullmatch(r"omi-.+-TASK-001-omi-agent-engineer-claude-sonnet-5-5-medium-\d{6}", name), name
+            assert re.fullmatch(r"TASK-001-engineer-claude-sonnet-5\.5-medium-\d{6}", name), name
             lab = [argv[i + 1] for i, a in enumerate(argv) if a == "--label"]
             for k, v in (("omi-role", "omi-agent-engineer"), ("omi-task", "TASK-001"), ("omi-model", "claude-sonnet-5-5"), ("omi-effort", "medium")):
                 assert f"{k}={v}" in lab, lab
@@ -426,7 +426,7 @@ def test_worker():
             go_model = lambda m: (calls.clear(), omi.worker(wt, task, model=m, effort="low"))
             go_model("fast")
             argv = next(c[0] for c in calls if c[0][:2] == ["docker", "run"])
-            assert argv[argv.index("--model") + 1] == "claude-haiku-5-5" and "-claude-haiku-5-5-low-" in argv[argv.index("--name") + 1]
+            assert argv[argv.index("--model") + 1] == "claude-haiku-5-5" and "-claude-haiku-5.5-low-" in argv[argv.index("--name") + 1]
             (wt / ".omi" / "config.json").unlink()
             # build log: silent on success, shown (stderr) on failure
             out.truncate(0); out.seek(0)
@@ -654,13 +654,25 @@ def test_prove_exit_and_hosts():
     assert "stream error" not in net
 
 
+def test_clip_report():
+    short = "DONE\nx\ncommit"
+    assert omi.clip_report(short) == ["DONE", "x", "commit"]
+    big = ["DONE"] + ["line %d" % i for i in range(1000)] + ["feat: commit msg"]
+    out = omi.clip_report("\n".join(big))
+    assert out[0] == "DONE" and out[-1] == "feat: commit msg" and "[... truncated ...]" in out
+    assert sum(map(len, out)) < 2200 and out[1] == "line 0"
+
+
 def test_container_names():
     import datetime
     t = datetime.datetime(2026, 1, 1, 14, 32, 5)
-    assert omi.container_name("omi-squad2", "omi-agent-engineer", "TASK-018", "claude-sonnet-5-5", "high", t) == \
-        "omi-omi-squad2-TASK-018-omi-agent-engineer-claude-sonnet-5-5-high-143205"
-    assert len(omi.container_name("omi-squad2", "omi-agent-engineer", "prove", "claude-sonnet-5-5", "medium", t)) >= 60
-    assert omi.container_name("my repo", "prove", now=t) == "omi-my-repo-prove-none-none-143205"
+    assert omi.container_name("omi-agent-reviewer", "TASK-055", "claude", "claude-sonnet-5-5", "medium", t) == \
+        "TASK-055-reviewer-claude-sonnet-5.5-medium-143205"
+    assert omi.container_name("omi-agent-engineer", "TASK-018", "codex", "gpt-5.1-codex", "high", t) == \
+        "TASK-018-engineer-codex-gpt-5.1-codex-high-143205"
+    assert omi.container_name("omi-agent-engineer", "TASK-018", "codex", "codex-default", "high", t) == \
+        "TASK-018-engineer-codex-default-high-143205"
+    assert omi.container_name("my role", "prove", now=t) == "prove-my-role-claude-none-none-143205"
     with tempfile.TemporaryDirectory() as d:
         assert omi.resolve_model(d, "opus") == "claude-opus-5-5" and omi.resolve_model(d, "claude-x-1") == "claude-x-1"
         for bad in ("gpt", None):
@@ -782,7 +794,7 @@ def test_network_allowlist():
     buf = io.StringIO()
     sys.stdout, saved = buf, sys.stdout
     try:
-        long = omi.container_name("omi-squad2", "omi-agent-engineer", "TASK-052", "sonnet", "medium")
+        long = omi.container_name("omi-agent-engineer", "TASK-052", "claude", "claude-sonnet-5-5", "medium") + "-" + "x" * 20
         with real_egress(Path("/My Repo"), long, "img", ["api.anthropic.com"]) as (net, proxy):
             assert (net, proxy) == (f"omi-net-{long}", "omi-proxy")  # a DNS label is at most 63 chars
             host = omi.worker_argv(Path("/w"), "img", ["x"], long, network=net, proxy=proxy)
@@ -1429,6 +1441,11 @@ def test_tool_choice_and_quota_switch():
             assert "QUOTA: claude hit its usage limit" in text.partition("## Checkpoint")[2].partition("##")[0]
             assert "| QUOTA->codex |" in text and "QUOTA->" not in text.rpartition("| gpt-x (codex) |")[2]
             assert "| gpt-x (codex) |" in text and text.count("| omi-agent-engineer |") >= 3
+            # --model is a full Claude ID: codex falls back to codex-default instead of exiting 5
+            assert go(R(claude_quota, 1), R(ok_codex), model="claude-sonnet-5-5") == 0 and "gpt-x" in calls[1]  # the role's alias
+            (wt / ".omi" / "config.json").write_text("{}")
+            assert go(R(claude_quota, 1), R(ok_codex), model="claude-sonnet-5-5") == 0 and "-m" not in calls[1]
+            (wt / ".omi" / "config.json").write_text('{"codex_models": {"sonnet": "gpt-x"}}')
             # the other tool also at its limit, or without a token: exit 5, QUOTA line, one run only when no token
             assert go(R(claude_quota, 1), R(codex_quota, 1)) == 5 and "QUOTA: claude and codex" in sys.stdout.getvalue()
             del omi.os.environ[omi.CODEX_ENV]
@@ -1698,7 +1715,7 @@ def test_parallel():
         finally:
             sys.stdout = realout
             omi.task_worktrees, omi.main_checkout = real, realmc
-    assert omi.container_name("r", "role", "TASK-001") != omi.container_name("r", "role", "TASK-002")
+    assert omi.container_name("role", "TASK-001") != omi.container_name("role", "TASK-002")
     real = omi.git
     omi.git = lambda *a: ("worktree /r\nbranch refs/heads/main\n\nworktree /w1\nbranch refs/heads/task/TASK-A\n\n"
                           "worktree /w2\nbranch refs/heads/task/TASK-B\n")
@@ -1727,6 +1744,7 @@ if __name__ == "__main__":
     test_incremental_review()
     test_review_round_flow()
     test_container_names()
+    test_clip_report()
     test_network_allowlist()
     test_prove_exit_and_hosts()
     test_clean_and_old_images()
