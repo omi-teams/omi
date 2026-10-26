@@ -400,6 +400,28 @@ def set_front(text, key, value):
     return f"---{chr(10).join(lines)}---{body}"
 
 
+FRONT_OWNED = ("step", "status", "workflow", "scope", "role", "skills")  # Coordinator-owned task frontmatter
+
+
+def revert_front(task, before):
+    """Restore the Coordinator-owned frontmatter fields to `before`; returns the fields that had changed."""
+    text = task.read_text(encoding="utf-8")
+    now, changed = parse(text), []
+    for key in FRONT_OWNED:
+        if now.get(key) == before.get(key):
+            continue
+        changed.append(key)
+        if before.get(key) is None:
+            _, front, body = text.split("---", 2)
+            front = "\n".join(ln for ln in front.split("\n") if ln.partition(":")[0].strip() != key)
+            text = f"---{front}---{body}"
+        else:
+            text = set_front(text, key, before[key])
+    if changed:
+        task.write_text(text, encoding="utf-8")
+    return changed
+
+
 def add_step_log(text, line):
     head, sep, rest = text.partition("\n## Steps\n")
     if not sep:
@@ -1567,6 +1589,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
     except ValueError:
         sys.exit(f"{task} is not inside {wt}. Nothing changed.")
     tm = meta(task) if task.exists() else {}
+    before = {k: tm.get(k) for k in FRONT_OWNED}
     am = get_role(main, role)
     get_role(main, tm.get("role") or "omi-agent-engineer")  # unknown task role fails too
     tool = tool or tm.get("tool") or am.get("tool") or "claude"
@@ -1719,6 +1742,9 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
     finally:
         if tmp:
             tmp.cleanup()
+        if not read and task.exists() and task.read_text(encoding="utf-8").startswith("---"):
+            for key in revert_front(task, before):
+                print(f"REVERTED: {key}")
     if read:
         return rc
     bad = out_of_scope(wt, task.stem)

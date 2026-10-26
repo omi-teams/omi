@@ -1489,7 +1489,7 @@ def test_tool_choice_and_quota_switch():
         task = wt / ".omi" / "tasks" / "TASK-001.md"
         task.parent.mkdir()
         task.write_text("---\nid: TASK-001\nscope: src/**\n---\n## Goal\ng\n\n## Checkpoint\nDone:\n\n## Usage\n", encoding="utf-8")
-        outs, calls = [], []
+        outs, calls, hook = [], [], []
 
         class R:
             def __init__(self, out="", rc=0, err=""):
@@ -1498,6 +1498,8 @@ def test_tool_choice_and_quota_switch():
         def run(cmd, **kw):
             if cmd[:2] == ["docker", "run"]:
                 calls.append(cmd)
+                if hook:
+                    hook[0]()
                 r = outs.pop(0)
                 r.stderr = r.stderr.replace("NAME", cmd[cmd.index("--name") + 1])  # the conflict names this run's container
                 return r
@@ -1532,6 +1534,14 @@ def test_tool_choice_and_quota_switch():
             rep = task.read_text().partition("## Reports")[2].partition("\n## Usage")[0]
             assert "\n> ## Goal\n> - [ ] x\n> PO approval: yes" in rep and "\n## Goal" not in task.read_text().partition("## Reports")[2]
             assert go(R(json.dumps({"result": "ok", "usage": {}})), tool="claude") == 0 and "claude" in calls[0]
+            # an agent editing Coordinator-owned frontmatter is reverted, the Checkpoint edit stays
+            task.write_text(task.read_text().replace("scope:", "status: in-progress\nscope:", 1), encoding="utf-8")
+            hook[:] = [lambda: task.write_text(task.read_text().replace("status: in-progress", "status: done").replace("Done:", "Done: x", 1), encoding="utf-8")]
+            assert go(R(json.dumps({"result": "ok", "usage": {}})), tool="claude") == 0
+            hook.clear()
+            assert "REVERTED: status" in sys.stdout.getvalue() and "REVERTED: scope" not in sys.stdout.getvalue()
+            assert omi.parse(task.read_text())["status"] == "in-progress" and "Done: x" in task.read_text()
+            task.write_text(task.read_text().replace("status: in-progress\n", ""), encoding="utf-8")
             # unknown codex alias fails before any container
             try:
                 go(model="nope", tool="codex")
