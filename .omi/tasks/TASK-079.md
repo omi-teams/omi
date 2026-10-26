@@ -70,6 +70,12 @@ Security round 1 FAIL:
 
 Coordinator host check after security round 1 fix: Windows `python tests/test_omi.py` -> rc=0, ok.
 
+Review round 5 FAIL (PO chose to fix all four open notes):
+- upgrade_apply preflight: .omi/config.json that parses to a non-object (e.g. `[]`) exits with the same "nothing was changed" message before any write.
+- scp-form omi_repo `git@host:path` is converted to `ssh://git@host/path` for the pip URL (`git+ssh://git@host/path@tag`); ls-remote keeps working with either form. Test on the pip argv.
+- `upgrade --to vX.Y.Z` (without --check) installs that tag without calling `git ls-remote`.
+- A repeat `--apply` that would overwrite an existing `<path>.omi-new` prints `replaced stale <path>.omi-new` so the PO notices.
+
 ## Steps
 - plan started 2026-10-26 22:07
 - plan done 2026-10-26 22:07
@@ -94,6 +100,10 @@ Coordinator host check after security round 1 fix: Windows `python tests/test_om
 - security started 2026-10-26 22:42
 - security failed 2026-10-26 22:51
 - build started 2026-10-26 22:51
+- build done 2026-10-26 22:54
+- review started 2026-10-26 22:54
+- review failed 2026-10-26 22:57
+- build started 2026-10-26 22:57
 
 ## Reports
 2026-10-26 22:08 omi-agent-architect (claude):
@@ -429,6 +439,19 @@ Coordinator host check after security round 1 fix: Windows `python tests/test_om
 > create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-26 22:56 omi-agent-reviewer (codex):
+> VERDICT: FAIL
+> - src/omi/__init__.py:845 Non-object config JSON such as `[]` passes preflight, then crashes after template writes, leaving manifest/version unfinished; reproduced with mocked writes -> require a JSON object before changing files.
+> - src/omi/__init__.py:940 Accepted scp-style `git@host:path` produces an invalid pip URL (`git+git@host:path@tag`) -> normalize to `git+ssh://git@host/path@tag` or reject that form.
+> 
+> AC: Init manifest and legacy backfill ✓ `test_upgrade` covers creation, CRLF normalization, and released hashes; 61 hashes ship as package data.
+> AC: Remote version check ✓ Fake subprocess tests verify numeric ordering, date exclusion, output, and argv.
+> AC: Install and new-process apply ✗ Default HTTPS argv passes tests; accepted scp-style repositories fail installation.
+> AC: Apply and protected-file preservation ✗ Normal updates, protection, config merging, and symlink tests pass; non-object config leaves a partial upgrade.
+> AC: Upgrade skills and AGENTS entries ✓ Root and template contain the required workflow and entry.
+> AC: README instructions ✓ Documents `/omi-upgrade` and `python -m omi upgrade`.
+> AC: Real 0.2.0 sandbox check ✓ Coordinator records creation, updates, and edited-file preservation with `.omi-new`.
+> AC: Linux and Windows tests ✓ Linux command exited 0 with `ok`; task records Windows exit 0.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -444,3 +467,4 @@ Coordinator host check after security round 1 fix: Windows `python tests/test_om
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 4769 | 136777 | 106s | - | PASS 7f0f612 |
 | omi-agent-security-reviewer | gpt-6.1-sol (codex) | medium | 356553 | 1887 | 287488 | 104s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL 47df69f |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 12 | 2112 | 197291 | 93s | 1/2 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 276781 | 1969 | 237824 | 100s | - | FAIL 4d2b95a |
