@@ -45,3 +45,4 @@
 - 2026-10-26 | Container names <TASK>-<role>-<tool>-<model>-<effort>-<HHMMSS>, repo only in labels | PO | TASK-056
 - 2026-10-26 | Container name <repo>-<TASK>-<role>-<tool>-<model>-<effort>-<HHMMSS> (no omi- prefix); agent+proxy grouped via compose project label, still 2 containers for network isolation | PO | TASK-056
 - 2026-10-26 | Split TASK-039: carry-overs now, baseline evaluation as TASK-057 (~55 runs estimated) | quota first | TASK-039
+- 2026-10-26 | TASK-057 evaluation adopted: fix 3 omi init defects (TASK-058); slim debug-root-cause (+35% out, +29% cache) and security-reviewer (+44% out, +57% cache) then re-measure (TASK-059); keep the rest | PO | docs/research/omi-eval.md
