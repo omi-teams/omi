@@ -7,7 +7,7 @@ scope: src/omi/__init__.py, tests/**
 role: omi-agent-engineer
 skills: []
 workflow: omi-flow-bugfix
-step: done
+step: reproduce
 ---
 ## Goal
 Bug: on Windows (locale cp1252) agent reports and other subprocess output are decoded with the locale, so UTF-8 text from containers and CLIs turns into mojibake (`â†’` for `→`, broken Vietnamese in `## Reports`). Root cause: `subprocess.run/Popen(..., text=True)` without `encoding`.
