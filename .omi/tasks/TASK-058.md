@@ -65,6 +65,20 @@ Coordinator round 2: src/omi/__init__.py:1546 builds the prompt's `Tests:` line 
 > Commit: `fix(init): quote test command in prompt, accept pycache ignore variants`
 > Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>
 > Open: none.
+2026-10-26 10:38 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/__init__.py:1471 The fallback runner uses `max()` of the child exit codes. A test script killed by a signal returns a negative code, so `max([-9, 0])` is 0 and the run reports success. -> use `any(...)` or `max(abs(c) ...)`, for example `sys.exit(1 if any(rc for rc in codes) else 0)`.
+> - src/omi/template/dot-omi/config.json:12 The `"test"` key is documented only by an empty value. Nothing says what the key does or what the default order is, and the README was not touched. -> add a one-line description in the README config section, since README.md is in scope.
+> 
+> AC: `omi init` writes the skills, agents and workflows catalogs âœ“ `init()` calls all three catalog functions (`src/omi/__init__.py:508`). The suite output shows `wrote â€¦/skills/CATALOG.md`, `â€¦/agents/CATALOG.md` and `â€¦/workflows/CATALOG.md`. `test_init_fresh_project` asserts all three files exist.
+> AC: test command needs no pytest by default; the template config documents `"test"` âœ“ (documentation is minimal) `test_command` tries config `"test"`, then `tests/test_omi.py`, then pytest only if `find_spec("pytest")` finds it, else the script runner. The test mocks `find_spec` to return `None`. It checks that the runner exits 3 when a script fails and 0 when it passes. The template has `"test": ""`, which is the documentation noted in the first finding.
+> AC: `omi init` adds a `.gitignore` containing `__pycache__/` âœ“ The test checks four cases:
+> - An existing `*.log` is kept and `__pycache__/` is appended.
+> - A second `omi init` adds no duplicate.
+> - A fresh directory gets exactly `__pycache__/\n`.
+> - Existing `__pycache__`, `/__pycache__/` or `__pycache__/` entries are left unchanged.
+> [... truncated ...]
+> Scope âœ“ Changes are limited to `src/omi/__init__.py`, `src/omi/template/dot-omi/config.json`, `tests/test_omi.py` and the task file.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -72,3 +86,4 @@ Coordinator round 2: src/omi/__init__.py:1546 builds the prompt's `Tests:` line 
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 3379 | 181777 | 42s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 4 | 1161 | 37835 | 23s | - | PASS dff8123 |
 | omi-agent-engineer | claude-haiku-5-5 | low | 24 | 3871 | 288811 | 63s | - | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 4 | 1603 | 41569 | 29s | - | PASS 3e77256 |
