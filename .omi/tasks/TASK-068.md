@@ -23,6 +23,8 @@ Rules in `.omi/rules/<id>.md` (frontmatter `id, summary, applies`) are added to 
 - [ ] All tests pass.
 
 ## Checkpoint
+Review round 2 FAIL (host test run on Windows, reviewer not started):
+- tests/test_omi.py:1131 `omi.shutil.rmtree(root / ".git")` fails with `PermissionError: [WinError 5] Access is denied` on a git object file: git makes objects read-only and Windows cannot unlink read-only files. Since round 1 the test commits files, so objects exist. Make the removal work on Windows (e.g. `rmtree(..., onexc=lambda f, p, e: (os.chmod(p, stat.S_IWRITE), f(p)))`), or avoid deleting a real .git. Tests must pass on the Windows host, not only in the Linux container.
 Review round 1 PASS with a finding the PO asked to fix now (PO: "Sửa luôn trong 068"):
 - `rule_matches` only tests the scope glob as a string against `applies`, so broad scopes (`src/**`, `tests/**`, `**`) never get a rule. Also match `applies` against the real files inside the scope (`git ls-files` in the worktree filtered by the scope globs); keep the current string check so a scope naming new files still matches.
 - Add a test: scope `src/**` with a tracked `src/x.go` gets rule `go`, not `python`; scope `src/**/*.go` with no Go files yet still gets `go`.
@@ -40,6 +42,10 @@ Next: review and commit.
 - review started 2026-10-26 13:48
 - review failed 2026-10-26 13:49
 - build started 2026-10-26 13:49
+- build done 2026-10-26 13:50
+- review started 2026-10-26 13:50
+- review failed 2026-10-26 13:51
+- build started 2026-10-26 13:51
 
 ## Reports
 2026-10-26 13:48 omi-agent-engineer (claude):
