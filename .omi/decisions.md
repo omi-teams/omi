@@ -67,3 +67,4 @@
 - 2026-10-26 | omi upgrade updates .omi/tasks/_template.md like other template files; only TASK-* files are protected | it is a template, TASK-077 changed it | PO in chat
 - 2026-10-26 | TASK-079 fix round 2 on Claude opus/high | review FAIL twice, argument injection via omi_repo | PO in chat
 - 2026-10-26 | TASK-079 fix round 3 (symlink-safe writes) on Codex gpt-6.1-sol/high | third review FAIL, small known fix | PO in chat
+- 2026-10-26 | TASK-079 security fix round (init manifest symlink) on Claude sonnet/medium | security FAIL, same guard as --apply | PO in chat
