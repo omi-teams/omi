@@ -1,16 +1,16 @@
 ---
 id: TASK-078
 title: Role prompts and init defaults - scope is write-only, batched NEEDS SCOPE, LF, quiet telemetry, allowlist by stack
-status: planned
+status: in-progress
 depends: TASK-077
 scope: .omi/agents/**, .omi/skills/**, src/omi/template/**, src/omi/__init__.py, tests/**, docker/**, .claude/skills/omi-idea/SKILL.md
 role: omi-agent-engineer
 skills: []
 refs:
 plan: PLAN-001
-tool:
+tool: claude
 model: sonnet
-effort: low
+effort: medium
 workflow: omi-flow-feature
 step:
 ---
