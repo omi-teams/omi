@@ -905,15 +905,33 @@ def codex_effort(effort):
     return {"max": "xhigh"}.get(effort, effort)
 
 
-# usage/quota stop messages of each CLI (stream-json / --json output), matched in the output tail when the CLI exits non-zero
+# usage/quota stop messages of each CLI, matched only in its own final error events (not in tool output)
 QUOTA_PATTERNS = {
     "claude": r"usage limit reached|hit your (usage )?limit|\d+-hour limit reached|weekly limit reached|credit balance is too low",
     "codex": r"hit your usage limit|usage_limit_reached|insufficient_quota|exceeded your current quota|quota exceeded",
 }
 
 
+def error_texts(tool, out):
+    """Error messages from the CLI's own events: claude `result` with is_error, codex `error` / `turn.failed`."""
+    texts = []
+    for line in (out or "").splitlines():
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(ev, dict):
+            continue
+        if tool == "claude" and ev.get("type") == "result" and ev.get("is_error"):
+            texts.append(str(ev.get("result") or ""))
+        elif tool == "codex" and ev.get("type") in ("error", "turn.failed"):
+            err = ev.get("error")
+            texts.append(str(ev.get("message") or "") + " " + str(err.get("message") if isinstance(err, dict) else err or ""))
+    return texts
+
+
 def quota_hit(tool, out, rc):
-    return bool(rc) and re.search(QUOTA_PATTERNS[tool], (out or "")[-4000:], re.I) is not None
+    return bool(rc) and any(re.search(QUOTA_PATTERNS[tool], t, re.I) for t in error_texts(tool, out))
 
 
 def append_note(task, heading, line):
@@ -1492,7 +1510,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
             verdict += " " + head
         if quota_hit(t, r.stdout, r.returncode):
             verdict = f"QUOTA->{'codex' if t == 'claude' else 'claude'}"
-        record_usage(task, role, models[t] + (" (codex)" if t == "codex" and mdl != CODEX_DEFAULT else ""), efforts[t], nums,
+        record_usage(task, role, models[t] + (" (codex)" if t == "codex" else ""), efforts[t], nums,
                      time.monotonic() - t0, skills_cell(ids, done), verdict)
         return r, result, done
 

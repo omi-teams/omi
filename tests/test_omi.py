@@ -1355,6 +1355,12 @@ def test_tool_choice_and_quota_switch():
         {"type": "turn.completed", "usage": {"input_tokens": 8, "output_tokens": 3, "cached_input_tokens": 3}}))
     assert omi.quota_hit("claude", claude_quota, 1) and omi.quota_hit("codex", codex_quota, 1)
     assert not omi.quota_hit("claude", claude_quota, 0) and not omi.quota_hit("codex", claude_quota, 1)
+    codex_failed = json.dumps({"type": "turn.failed", "error": {"message": "usage_limit_reached"}})
+    assert omi.quota_hit("codex", codex_failed, 1)
+    tool_out = json.dumps({"type": "item.completed", "item": {"type": "command_execution", "aggregated_output": "quota exceeded"}})
+    other_fail = json.dumps({"type": "error", "message": "model crashed"})
+    assert not omi.quota_hit("codex", tool_out + "\n" + other_fail, 1)
+    assert not omi.quota_hit("claude", json.dumps({"type": "user", "message": "quota exceeded"}) + "\n" + json.dumps({"type": "result", "is_error": True, "result": "boom"}), 1)
     with tempfile.TemporaryDirectory() as d:
         wt = Path(d).resolve()
         (wt / ".git").write_text("gitdir: /x")
@@ -1413,7 +1419,7 @@ def test_tool_choice_and_quota_switch():
             # known Claude alias without a codex_models entry: no -m, codex-default shown
             (wt / ".omi" / "config.json").write_text("{}")
             assert go(R(ok_codex), tool="codex") == 0 and "-m" not in calls[0] and "tool: codex (codex-default)" in sys.stdout.getvalue()
-            assert "| codex-default |" in task.read_text()
+            assert "| codex-default (codex) |" in task.read_text()
             (wt / ".omi" / "config.json").write_text('{"codex_models": {"sonnet": "gpt-x"}}')
             # claude hits its limit: same role reruns with codex, note about the partial diff, switch recorded
             task.write_text(task.read_text().replace("tool: codex\n", ""), encoding="utf-8")

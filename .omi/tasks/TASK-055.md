@@ -38,6 +38,7 @@ Coordinator round 2 (from review PASS notes):
 1. `quota_hit`: match only the CLI's own final error events, not the tail of all stdout: claude stream-json `{"type":"result", "is_error":true, ...}` result text; codex `--json` events of type `error` / `turn.failed` message. Test that a non-quota failure whose tool output contains "quota exceeded" does not switch.
 2. Usage model cell names the tool for every codex row: `<model or codex-default> (codex)`; claude rows unchanged.
 Known limit: quota patterns are not tested against real recorded limit output (cannot be captured without hitting a real limit); say so in README.
+Round 3: quota_hit now reads only CLI error events; codex Usage cell always `<model> (codex)`; README known limit added. Tests: python3 tests/test_omi.py ok. Next: review.
 ## Steps
 - plan started 2026-10-26 09:43
 - plan done 2026-10-26 09:43
@@ -54,3 +55,4 @@ Known limit: quota patterns are not tested against real recorded limit output (c
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 34 | 20208 | 959651 | 181s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 24 | 5539 | 417147 | 75s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 3796 | 96369 | 45s | - | PASS 14a739e |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 3988 | 225671 | 45s | 2/2 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell | - |
