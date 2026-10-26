@@ -7,7 +7,7 @@ scope: src/omi/__init__.py, src/omi/template/**, .omi/agents/**, .omi/config.jso
 role: omi-agent-engineer
 skills: [omi-skill-docker-worker-pitfalls, omi-skill-windows-powershell]
 workflow: omi-flow-feature-sensitive
-step: review
+step: security
 ---
 ## Goal
 The Coordinator can run any role with Claude Code or Codex, chosen in files; an agent that runs out of quota is continued by the other tool automatically; a new Coordinator session (Claude Code or Codex) resumes a task with nothing lost.
@@ -47,6 +47,8 @@ Round 3: quota_hit now reads only CLI error events; codex Usage cell always `<mo
 - build started 2026-10-26 09:45
 - build done 2026-10-26 09:50
 - review started 2026-10-26 09:50
+- review done 2026-10-26 09:53
+- security started 2026-10-26 09:53
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -57,3 +59,4 @@ Round 3: quota_hit now reads only CLI error events; codex Usage cell always `<mo
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 3796 | 96369 | 45s | - | PASS 14a739e |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 3988 | 225671 | 45s | 2/2 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 3931 | 100394 | 47s | - | PASS f9153bc |
+| omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 6 | 2356 | 103648 | 35s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS 92628bf |
