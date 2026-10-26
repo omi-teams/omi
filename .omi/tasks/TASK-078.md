@@ -31,6 +31,8 @@ Not done: Windows host run (not available here).
 Tests: python3 tests/test_omi.py ok; skills --check ok.
 Next: Coordinator review.
 
+Coordinator host check: Windows `python tests/test_omi.py` -> rc=0, ok; `python -m omi skills --check` -> skills ok (19 checked).
+
 ## Steps
 - plan started 2026-10-26 22:00
 - plan done 2026-10-26 22:00
