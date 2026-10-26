@@ -771,7 +771,8 @@ def backfill(rel: str, sha: str, current: str, released: dict[str, set[str]]) ->
 
 def init(target="."):
     target = Path(target).resolve()
-    files = read_manifest(target)
+    manifest_safe = upgrade_write_safe(target, ".omi/manifest.json")
+    files = read_manifest(target) if manifest_safe else {}
     current, released = template_shas(), released_shas()
     for rel, src in template_map().items():
         dst = target.joinpath(*rel.split("/"))
@@ -784,9 +785,11 @@ def init(target="."):
         shutil.copyfile(src, dst)
         files[rel] = current[rel]
         print(f"create {rel}")
-    write_manifest(target, files)
-    (target / ".omi" / "version").write_text(version() + "\n", encoding="utf-8")
-    print(f"stamp  .omi/version ({version()})")
+    if manifest_safe:
+        write_manifest(target, files)
+    if upgrade_write_safe(target, ".omi/version"):
+        (target / ".omi" / "version").write_text(version() + "\n", encoding="utf-8")
+        print(f"stamp  .omi/version ({version()})")
     attrs = target / ".gitattributes"
     if not attrs.exists():
         attrs.write_text("* text=auto eol=lf\n", encoding="utf-8")

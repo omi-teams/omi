@@ -303,6 +303,28 @@ def test_upgrade_symlink_metadata():
             assert f"skip (symlink): {rel}" in out.getvalue()
 
 
+def test_init_symlink_manifest():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "project"
+        with omi.contextlib.redirect_stdout(io.StringIO()):
+            omi.init(root)
+        outside = Path(d) / "outside.json"
+        outside.write_bytes(b'{"keep": 1}\n')
+        try:
+            for rel in (".omi/manifest.json", ".omi/version"):
+                (root / rel).unlink()
+                (root / rel).symlink_to(outside)
+        except OSError:
+            print("skip init symlink manifest: symlink creation unavailable")
+            return
+        out = io.StringIO()
+        with omi.contextlib.redirect_stdout(out):
+            omi.init(root)
+        assert outside.read_bytes() == b'{"keep": 1}\n'
+        assert "skip (symlink): .omi/manifest.json" in out.getvalue()
+        assert "skip (symlink): .omi/version" in out.getvalue()
+
+
 def test_upgrade_symlink_parents():
     with tempfile.TemporaryDirectory() as d:
         root = Path(d) / "project"
@@ -3214,6 +3236,7 @@ if __name__ == "__main__":
     test_upgrade_protected()
     test_upgrade_symlink_files()
     test_upgrade_symlink_metadata()
+    test_init_symlink_manifest()
     test_upgrade_symlink_parents()
     test_omi_repo_validation()
     test_upgrade_cmd()
