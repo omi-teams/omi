@@ -360,6 +360,63 @@ def test_init_symlink_manifest():
         assert "skip (symlink): .omi/version" in out.getvalue()
 
 
+def test_init_symlink_destinations():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "project"
+        (root / ".git").mkdir(parents=True)
+        outside = Path(d) / "outside"
+        outside.mkdir()
+        missing = outside / "agents.md"
+        existing = outside / "settings.json"
+        existing.write_bytes(b"keep existing contents\n")
+        (root / ".claude").mkdir()
+        try:
+            (root / "AGENTS.md").symlink_to(missing)
+            (root / "docker").symlink_to(outside, target_is_directory=True)
+            (root / ".claude" / "settings.json").symlink_to(existing)
+        except OSError:
+            print("skip init symlink destinations: symlink creation unavailable")
+            return
+        with omi.contextlib.redirect_stdout(io.StringIO()) as out:
+            omi.init(root)
+        assert not missing.exists()
+        assert list(outside.iterdir()) == [existing]
+        assert existing.read_bytes() == b"keep existing contents\n"
+        files = omi.read_manifest(root)
+        for rel in ("AGENTS.md", "docker/Dockerfile", "docker/prove.sh", "docker/proxy.py", ".claude/settings.json"):
+            assert f"skip (symlink): {rel}" in out.getvalue()
+            assert rel not in files
+        assert (root / "AGENTS.md").is_symlink()
+
+
+def test_invalid_manifest_recovery():
+    invalid = ("{broken", "[]", "null", '"manifest"', "42", "true",
+               '{"files": null}', '{"files": []}', '{"files": "hashes"}', '{"files": 42}', '{"files": true}')
+    for operation in (omi.init, omi.upgrade_apply):
+        for contents in invalid:
+            with tempfile.TemporaryDirectory() as d:
+                root = Path(d)
+                (root / ".git").mkdir()
+                manifest = root / ".omi" / "manifest.json"
+                manifest.parent.mkdir()
+                manifest.write_text(contents, encoding="utf-8")
+                with omi.contextlib.redirect_stdout(io.StringIO()) as out:
+                    assert omi.read_manifest(root) == {}
+                assert len(out.getvalue().splitlines()) == 1
+                assert "warning:" in out.getvalue() and "manifest" in out.getvalue()
+                edited = root / "AGENTS.md"
+                edited.write_text("local edits\n", encoding="utf-8")
+                with omi.contextlib.redirect_stdout(io.StringIO()) as out:
+                    operation(root)
+                assert out.getvalue().count("warning:") == 1
+                assert edited.read_text(encoding="utf-8") == "local edits\n"
+                files = json.loads(manifest.read_text(encoding="utf-8"))["files"]
+                assert "AGENTS.md" not in files
+                assert files["docker/Dockerfile"] == omi.template_shas()["docker/Dockerfile"]
+                if operation is omi.upgrade_apply:
+                    assert (root / "AGENTS.md.omi-new").read_bytes() == (omi.TEMPLATE / "AGENTS.md").read_bytes()
+
+
 def test_upgrade_symlink_parents():
     with tempfile.TemporaryDirectory() as d:
         root = Path(d) / "project"
@@ -455,7 +512,7 @@ def test_upgrade_cmd():
             cfg.parent.mkdir()
             cfg.write_text(json.dumps({"omi_repo": "git@host:team/repo.git"}), encoding="utf-8")
             calls.clear()
-            assert omi.upgrade_cmd(["--to", "v0.9.0"], d) == 0
+            assert omi.upgrade_cmd(["--to", "v0.9.0", "--repo", "git@host:team/repo.git"], d) == 0
             assert calls == [
                 [omi.sys.executable, "-m", "pip", "install", "--user", "--upgrade", "git+ssh://git@host/team/repo.git@v0.9.0"],
                 [omi.sys.executable, "-m", "omi", "upgrade", "--apply"],
@@ -475,6 +532,61 @@ def test_upgrade_cmd():
                 assert calls == [], "invalid arguments must fail before any subprocess"
     finally:
         omi.subprocess.run = real
+
+
+def test_upgrade_repo_confirmation():
+    calls = []
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "a\trefs/tags/v0.10.0\n", "")
+
+    real = omi.subprocess.run
+    omi.subprocess.run = run
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            cfg = Path(d) / ".omi" / "config.json"
+            cfg.parent.mkdir()
+            for repo, pip_repo in (("https://example.com/team/omi", "https://example.com/team/omi"),
+                                   ("ssh://git@host/team/omi", "ssh://git@host/team/omi"),
+                                   ("git@host:team/omi", "ssh://git@host/team/omi")):
+                cfg.write_text(json.dumps({"omi_repo": repo}), encoding="utf-8")
+                for args in ([], ["--to", "v0.9.0"], ["--repo"], ["--repo", omi.OMI_REPO],
+                             ["--to", "v0.9.0", "--repo", "https://example.com/other"]):
+                    calls.clear()
+                    try:
+                        omi.upgrade_cmd(args, d)
+                    except SystemExit as exc:
+                        assert str(exc) == f"omi_repo is not the default; confirm with --repo {repo}"
+                    else:
+                        raise AssertionError(f"installed from unconfirmed repo: {args}")
+                    assert calls == [], "confirmation is required before any subprocess"
+                calls.clear()
+                with omi.contextlib.redirect_stdout(io.StringIO()) as out:
+                    assert omi.upgrade_cmd(["--check"], d) == 0
+                assert out.getvalue().splitlines() == [f"repo: {repo} (not the default)", f"omi {omi.version()} -> 0.10.0"]
+                assert calls == [["git", "ls-remote", "--tags", "--", repo]]
+                for args, tag in ((["--repo", repo], "v0.10.0"),
+                                  (["--to", "v0.9.0", "--repo", repo], "v0.9.0")):
+                    calls.clear()
+                    assert omi.upgrade_cmd(args, d) == 0
+                    expected = [] if "--to" in args else [["git", "ls-remote", "--tags", "--", repo]]
+                    assert calls == expected + [
+                        [omi.sys.executable, "-m", "pip", "install", "--user", "--upgrade", f"git+{pip_repo}@{tag}"],
+                        [omi.sys.executable, "-m", "omi", "upgrade", "--apply"],
+                    ]
+    finally:
+        omi.subprocess.run = real
+
+
+def test_upgrade_skill_repo_confirmation():
+    root = Path(__file__).parents[1]
+    skill = (root / ".claude/skills/omi-upgrade/SKILL.md").read_text(encoding="utf-8")
+    assert skill == (omi.TEMPLATE / "dot-claude/skills/omi-upgrade/SKILL.md").read_text(encoding="utf-8")
+    assert "repo" in skill and "pick-list" in skill
+    assert "confirm" in skill and "non-default" in skill and "--repo <url>" in skill
+    assert "--check" in skill and "--to <tag>" in skill and ".omi-new" in skill
+    assert "development" in skill and "tests" in skill
 
 
 def test_init_fresh_project():
@@ -3289,9 +3401,13 @@ if __name__ == "__main__":
     test_upgrade_symlink_files()
     test_upgrade_symlink_metadata()
     test_init_symlink_manifest()
+    test_init_symlink_destinations()
+    test_invalid_manifest_recovery()
     test_upgrade_symlink_parents()
     test_omi_repo_validation()
     test_upgrade_cmd()
+    test_upgrade_repo_confirmation()
+    test_upgrade_skill_repo_confirmation()
     test_init_guard_status()
     test_status_drift_hints()
     test_github_rulesets()

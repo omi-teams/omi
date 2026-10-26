@@ -745,7 +745,16 @@ def template_shas_cmd(tpl: str | Path, ver: str) -> None:
 
 def read_manifest(target: str | Path) -> dict[str, str]:
     f = Path(target) / ".omi" / "manifest.json"
-    return json.loads(f.read_text(encoding="utf-8")).get("files", {}) if f.is_file() else {}
+    if not f.is_file():
+        return {}
+    try:
+        data = json.loads(f.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        data = None
+    if not isinstance(data, dict) or not isinstance(data.get("files", {}), dict):
+        print(f"warning: invalid manifest {f}; treating as empty")
+        return {}
+    return data.get("files", {})
 
 
 def write_manifest(target: str | Path, files: dict[str, str]) -> None:
@@ -775,6 +784,8 @@ def init(target="."):
     files = read_manifest(target) if manifest_safe else {}
     current, released = template_shas(), released_shas()
     for rel, src in template_map().items():
+        if not upgrade_write_safe(target, rel):
+            continue
         dst = target.joinpath(*rel.split("/"))
         if dst.exists():
             print(f"skip   {rel} (exists)")
@@ -936,6 +947,11 @@ def upgrade_cmd(rest: list[str], root: str | Path = ".") -> int:
     if "--apply" in rest:
         return upgrade_apply(root)
     repo = omi_repo(root)
+    if repo != OMI_REPO:
+        if "--check" in rest:
+            print(f"repo: {repo} (not the default)")
+        elif flag(rest, "--repo") != repo:
+            sys.exit(f"omi_repo is not the default; confirm with --repo {repo}")
     latest = latest_tag(repo) if not requested or "--check" in rest else requested
     if not latest:
         sys.exit(f"no vX.Y.Z tag in {repo}")

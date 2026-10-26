@@ -28,10 +28,10 @@ A project that runs omi moves to a newer omi with one PO command: install the ne
 - [ ] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
-Done: review round 5 fixes. Non-object config JSON exits before any write. scp-form omi_repo is converted to ssh:// for pip; ls-remote retains the original URL. Explicit --to skips ls-remote unless --check is present. Overwriting an existing .omi-new prints replaced stale <path>.omi-new. Previous symlink guards remain in place.
-Not done: Coordinator review and Windows host rerun for round 5.
-Tests: `python3 tests/test_omi.py` passed on Linux (exit 0, ok). Regressions cover all non-object JSON types with no project changes, stale candidate replacement, exact pip/apply argv for HTTPS and scp URLs without remote lookup, and --check with --to retaining remote lookup.
-Next: Coordinator review and Windows rerun; commit on the host. Suggested commit: fix: handle upgrade config validation and repository targets
+Done: security round 3 fixes. init checks every template destination with upgrade_write_safe before reading or copying. Invalid JSON, non-object manifests, and non-object files recover as an empty manifest with one warning. Non-default omi_repo is shown by --check and requires an exact --repo confirmation before any install subprocess. Root and template omi-upgrade skills show the repo in the PO pick-list and require confirmation.
+Not done: Coordinator review/security review and Windows host rerun for this revision.
+Tests: python3 tests/test_omi.py passed on Linux (exit 0, ok; PYTHONDONTWRITEBYTECODE=1). New regressions failed before the fix and passed after it: dangling and existing symlink destinations, a symlinked parent, invalid manifest recovery in init/apply, repository confirmation/no-subprocess checks and exact argv for HTTPS/SSH/scp URLs, and matching upgrade skill instructions.
+Next: Coordinator review, Windows rerun, and commit on the host. Suggested commit: fix: guard init destinations and confirm custom upgrade repositories
 
 Coordinator note for build: git does not work in the worker, so the v0.2.0 hashes cannot be read there. Provide a function that maps a template directory to {posix rel: norm_sha} and a CLI entry the Coordinator can run on the host, e.g. `python -m omi template-shas <template-dir> <version>` writing/merging `src/omi/template_shas.json`. Commit an empty `{}` placeholder; the Coordinator runs it against an export of tag v0.2.0 and commits the data. Tests use a tmp template dir.
 
@@ -542,6 +542,59 @@ Security round 3 FAIL (PO decisions 2026-10-26):
 > NEEDS DECISION: `omi_repo` comes from the project's `.omi/config.json`, so a cloned project can point `omi upgrade` at an attacker repo. pip then installs and runs that code, and the skill's PO pick-list does not show the repo. Is that acceptable, or should the repo be shown or confirmed first?
 > UNVERIFIED: The hard-linked `.omi-new` overwrite is not reported. The PO accepted that risk in the task file (2026-10-26).
 > `python3 tests/test_omi.py` passes (rc=0, ok).
+2026-10-26 23:17 omi-agent-engineer (codex):
+> DONE — implemented all three security-round-3 fixes.
+> Files: `src/omi/__init__.py`, `tests/test_omi.py`, both root/template upgrade skills, `.omi/tasks/TASK-079.md`.
+> Suggested commit: `fix: guard init destinations and confirm custom upgrade repositories`
+> Tests: focused regressions and `python3 tests/test_omi.py` passed on Linux (exit 0).
+> Checkpoint updated; no commit made.
+> Open issues: Coordinator review and Windows rerun; previously accepted hard-link risk remains.
+2026-10-26 23:19 hook post-run passed:
+> Conflict. The container name "/tmpzj85xbuv-TASK-001-engineer-codex-gpt-x-medium-161747" is already in useBind for 0.0.0.0:8080 failed: port is already in usewrote /tmp/tmp5cxj3f62/.omi/skills/CATALOG.md (2 skills)
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/config.json
+> create .omi/decisions.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -562,3 +615,4 @@ Security round 3 FAIL (PO decisions 2026-10-26):
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 3102 | 226250 | 103s | - | PASS d2aa794 |
 | omi-agent-security-reviewer | gpt-6.1-sol (codex) | medium | 493819 | 2068 | 441728 | 133s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL d2aa794 |
 | omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 10 | 3892 | 317414 | 117s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL 7323d75 |
+| omi-agent-engineer | gpt-6.1-sol (codex) | high | 1003422 | 8720 | 961536 | 345s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
