@@ -68,6 +68,8 @@ Open (review round 4 PASS, low severity, later task): scp-form omi_repo breaks t
 Security round 1 FAIL:
 - init reads and writes .omi/manifest.json (and .omi/version) without the symlink guard; a manifest symlink to a JSON file outside the project gets overwritten. init uses upgrade_write_safe for the manifest and version, the same way upgrade_apply does. Test: a manifest symlink leaves its target unchanged (skip when os.symlink raises OSError).
 
+Coordinator host check after security round 1 fix: Windows `python tests/test_omi.py` -> rc=0, ok.
+
 ## Steps
 - plan started 2026-10-26 22:07
 - plan done 2026-10-26 22:07
