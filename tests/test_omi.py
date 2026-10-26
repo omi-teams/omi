@@ -633,11 +633,16 @@ def test_cli_correctness():
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
         (root / ".omi").mkdir()
-        (root / ".omi" / "config.json").write_text(json.dumps({"test": "FOO=1 python3 -c 'import os,sys;sys.exit(0 if os.environ[\"FOO\"]==\"1\" else 1)'"}))
+        python = sys.executable.replace("\\", "/")
+        command = f'"{python}" -c "import os,sys;sys.exit(0 if os.environ[\'FOO\']==\'1\' else 1)"'
+        cfg = root / ".omi" / "config.json"
+        cfg.write_text(json.dumps({"test": command}), encoding="utf-8")
+        shell = omi.test_command(root, root)[0]
+        command = ('set "FOO=1" && ' if shell == "cmd" else "FOO=1 ") + command
+        cfg.write_text(json.dumps({"test": command}), encoding="utf-8")
         argv = omi.test_command(root, root)
-        assert argv[0] in ("bash", "sh", "cmd") and argv[-1] == json.loads((root / ".omi" / "config.json").read_text())["test"]
-        if argv[0] != "cmd":
-            assert subprocess.run(argv, cwd=d).returncode == 0
+        assert argv[0] == shell and argv[-1] == command
+        assert subprocess.run(argv, cwd=d).returncode == 0
         assert omi.test_prompt_line(root, root) == argv[-1]
         # a program that cannot start: message, no traceback
         real = omi.test_command, omi.out_of_scope, omi.check_all_skills
@@ -691,6 +696,41 @@ def test_cli_correctness():
             assert "FAIL" in str(e) and "omi step TASK-001 back" in str(e), e
         task.write_text(base + row("FAIL abc1234") + row("PASS def5678"))
         assert omi.step(root, "TASK-001", "done") == 0
+
+
+def test_windows_test_shell():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / ".omi").mkdir()
+        (root / ".omi" / "config.json").write_text('{"test": "FOO=1 example"}', encoding="utf-8")
+        real = omi.WINDOWS, omi.shutil.which, omi.os.get_exec_path
+        system32 = "C:\\Windows\\sYsTeM32\\"
+        git_bin = r"C:\Program Files\Git\bin"
+        bash = git_bin + r"\bash.exe"
+        try:
+            omi.WINDOWS = True
+            omi.os.get_exec_path = lambda: [system32, git_bin]
+
+            def which(name, path=None):
+                assert name == "bash" and path == git_bin, path
+                return bash
+
+            omi.shutil.which = which
+            assert omi.test_command(root, root) == [bash, "-c", "FOO=1 example"]
+            assert omi.test_prompt_line(root, root) == "FOO=1 example"
+
+            def missing(name, path=None):
+                assert name == "bash" and path == git_bin, path
+                return None
+
+            omi.shutil.which = missing
+            assert omi.test_command(root, root) == ["cmd", "/c", "FOO=1 example"]
+            assert omi.test_prompt_line(root, root) == "FOO=1 example"
+            omi.os.get_exec_path = lambda: [system32]
+            omi.shutil.which = lambda name, path=None: None if path == "" else system32 + "bash.exe"
+            assert omi.test_command(root, root) == ["cmd", "/c", "FOO=1 example"]
+        finally:
+            omi.WINDOWS, omi.shutil.which, omi.os.get_exec_path = real
 
 
 def test_hooks():
@@ -2822,6 +2862,7 @@ if __name__ == "__main__":
     test_worker()
     test_roles()
     test_cli_correctness()
+    test_windows_test_shell()
     test_hooks()
     test_run_read_role()
     test_incremental_review()

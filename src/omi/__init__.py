@@ -1895,9 +1895,13 @@ def test_command(wt, main):
     cfg = Path(main) / ".omi" / "config.json"
     cmd = (json.loads(cfg.read_text(encoding="utf-8")) if cfg.exists() else {}).get("test")
     if cmd:  # through a shell, like in the containers, so `VAR=1 cmd` works
-        if shutil.which("bash"):
-            return ["bash", "-c", cmd]
-        return ["cmd", "/c", cmd] if os.name == "nt" else ["sh", "-c", cmd]
+        if WINDOWS:
+            # System32's bash.exe launches WSL rather than the host's Git Bash.
+            path = os.pathsep.join(p for p in os.get_exec_path()
+                                   if posixpath.basename(p.replace("\\", "/").rstrip("/")).lower() != "system32")
+            bash = shutil.which("bash", path=path)
+            return [bash, "-c", cmd] if bash else ["cmd", "/c", cmd]
+        return ["bash", "-c", cmd] if shutil.which("bash") else ["sh", "-c", cmd]
     if (Path(wt) / "tests" / "test_omi.py").exists():
         argv = ["python", "tests/test_omi.py"]
     elif importlib.util.find_spec("pytest"):
@@ -1911,7 +1915,8 @@ def test_command(wt, main):
 def test_prompt_line(wt, main):
     """The `Tests:` line of the agent prompt: shell-quoted so it parses back to the same argv."""
     argv = test_command(wt, main)
-    return argv[2] if argv[0] in ("bash", "sh", "cmd") and argv[1] in ("-c", "/c") else \
+    shell = posixpath.basename(argv[0].replace("\\", "/")).lower().removesuffix(".exe")
+    return argv[2] if shell in ("bash", "sh", "cmd") and argv[1] in ("-c", "/c") else \
         shlex.join("python3" if a == sys.executable else a for a in argv)
 
 
