@@ -121,3 +121,34 @@ So với lần đo TASK-057: debug-root-cause đầy đủ là +35% output và +
 - Mục tiêu "không quá baseline +10% token" **chưa đạt** ở cả hai skill.
 - PO quyết định giữ bản rút gọn kèm bước kiểm chứng, vì bản này giữ được các phát hiện đúng và kiểm chứng bằng cách chạy.
 - n=1, nên chênh lệch dưới khoảng 10% vẫn không đáng tin.
+
+## Baseline architect (TASK-061)
+
+Bài đo lại cho role `architect`. Bài này thay thế baseline architect không hợp lệ của TASK-057 (ở đó baseline dùng prompt review, nên số liệu không so sánh được).
+
+- **Bài:** change-request (cùng bài với TASK-057).
+- **Môi trường:** sandbox mới cho mỗi lần chạy, cùng task, cùng model opus, cùng effort high, n=1.
+- **Biến thể A:** role `architect` + skill change-request.
+- **Biến thể B:** prompt thường "đưa ra 2–3 phương án và một khuyến nghị", không role, không skill.
+
+| Biến thể | Đúng | Output | Cache | Giây |
+|---|---|---|---|---|
+| A: architect + change-request | có: 3 phương án có chi phí và rủi ro, đúng 1 khuyến nghị kèm lý do (chọn A: chuyển tại chỗ, `ValueError` khi `page < 0`) | 1610 | 76389 | 26 |
+| B: prompt thường | có: 3 phương án có chi phí và rủi ro, đúng 1 khuyến nghị kèm lý do (chọn A) | 2185 | 51628 | 29 |
+
+Chênh lệch của A so với B (đã làm tròn): output −26%, cache +48%, thời gian −3 giây.
+
+**Nội dung thêm của architect** (B không có):
+
+- Chia task thành các bước, có chọn model cho từng bước.
+- Cảnh báo phạm vi: task scope `.omi/tasks/**` không chứa được thay đổi code, nên cần task khác hoặc mở rộng scope.
+- Cảnh báo task trùng lặp.
+- Trình bày theo format cố định: RECOMMEND / OPTIONS / STRUCTURE / RISKS / TASKS.
+
+**Đề xuất (PO quyết định):** giữ role `architect`. Cấu trúc đầu ra của role phù hợp với bước replan của Coordinator. Đổi lại là chi phí cache cao hơn 48%, còn output thấp hơn 26%.
+
+**Giới hạn:**
+
+- n=1. Chênh lệch dưới khoảng 10% không đáng tin. Cả hai biến thể đều chọn cùng phương án, nên kết quả đúng/sai không phân biệt được hai biến thể.
+- Bài nhỏ, một repo đồ chơi.
+- Biến thể A có cả role và skill, nên chưa tách được riêng yếu tố role.
