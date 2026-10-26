@@ -6,7 +6,7 @@ depends: TASK-068
 scope: src/omi/__init__.py, tests/**, src/omi/template/**, .omi/references/**, .omi/tasks/_template.md, AGENTS.md
 role: omi-agent-engineer
 skills: []
-tool:
+tool: codex  # PO: try codex on simpler tasks
 workflow: omi-flow-feature
 step:
 ---
