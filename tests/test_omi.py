@@ -95,28 +95,29 @@ def test_version_stamp_package_hook():
     finally:
         omi.importlib.metadata.version = real
     assert omi.semver("0.10.0") > omi.semver("0.9.5")
-    # package-data globs cover every template file
-    pkg = Path("src/omi")
-    pats = omi.tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["tool"]["setuptools"]["package-data"]["omi"]
-    excl = omi.tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["tool"]["setuptools"]["exclude-package-data"]["omi"]
-    covered = {Path(p) for pat in pats for p in glob.glob(str(pkg / pat), recursive=True)}
-    covered = {p for p in covered if not any(fnmatch.fnmatch(p.relative_to(pkg).as_posix(), e) for e in excl)}
-    assert Path("src/omi/template/docker/__pycache__/x.pyc") not in covered
-    files = {p for p in (pkg / "template").rglob("*") if p.is_file() and "__pycache__" not in p.parts and p.suffix != ".pyc"}
-    pyc = pkg / "template" / "docker" / "__pycache__"
-    pyc.mkdir(exist_ok=True)
-    (pyc / "x.pyc").write_bytes(b"")
-    try:
-        with tempfile.TemporaryDirectory() as d, omi.contextlib.redirect_stdout(io.StringIO()):
-            omi.init(d)
-            assert not list(Path(d).rglob("__pycache__")) and not list(Path(d).rglob("*.pyc"))
+    # package-data globs cover every template file (checked on a temp copy, never write in the repo)
+    cfg = omi.tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["tool"]["setuptools"]
+    pats, excl = cfg["package-data"]["omi"], cfg["exclude-package-data"]["omi"]
+    with tempfile.TemporaryDirectory() as tmp:
+        pkg = Path(tmp) / "omi"
+        shutil.copytree(omi.TEMPLATE, pkg / "template")
+        pyc = pkg / "template" / "docker" / "__pycache__"
+        pyc.mkdir(exist_ok=True)
+        (pyc / "x.pyc").write_bytes(b"")
+        covered = {Path(p) for pat in pats for p in glob.glob(str(pkg / pat), recursive=True)}
+        covered = {p for p in covered if not any(fnmatch.fnmatch(p.relative_to(pkg).as_posix(), e) for e in excl)}
+        files = {p for p in (pkg / "template").rglob("*") if p.is_file() and "__pycache__" not in p.parts and p.suffix != ".pyc"}
+        real = omi.TEMPLATE
+        omi.TEMPLATE = pkg / "template"
+        try:
+            with tempfile.TemporaryDirectory() as d, omi.contextlib.redirect_stdout(io.StringIO()):
+                omi.init(d)
+                assert not list(Path(d).rglob("__pycache__")) and not list(Path(d).rglob("*.pyc"))
+        finally:
+            omi.TEMPLATE = real
         assert pyc / "x.pyc" not in covered and (pkg / "template" / "docker" / "proxy.py") in covered
-    finally:
-        (pyc / "x.pyc").unlink()
-        if not any(pyc.iterdir()):
-            pyc.rmdir()
-    assert files <= covered, sorted(files - covered)
-    assert any(p.suffix == ".sh" for p in files) and any("references" in p.parts and "skills" in p.parts for p in files)
+        assert files <= covered, sorted(files - covered)
+        assert any(p.suffix == ".sh" for p in files) and any("references" in p.parts and "skills" in p.parts for p in files)
     # post-run.sh runs the configured test command first
     with tempfile.TemporaryDirectory() as d:
         omi.init(d)
