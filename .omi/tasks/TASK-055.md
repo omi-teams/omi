@@ -1,7 +1,7 @@
 ---
 id: TASK-055
 title: Pick Claude Code or Codex per role and task, switch on agent quota, resume after Coordinator quota
-status: planned
+status: in-progress
 depends: TASK-045, TASK-054
 scope: src/omi/__init__.py, src/omi/template/**, .omi/agents/**, .omi/config.json, .omi/tasks/_template.md, .claude/skills/omi-task/**, AGENTS.md, tests/**, README.md
 role: omi-agent-engineer
