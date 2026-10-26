@@ -233,6 +233,115 @@ def test_upgrade_protected():
         assert (plans / "PLAN-001.md").read_text(encoding="utf-8") == mine
 
 
+def test_upgrade_symlink_files():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "project"
+        with omi.contextlib.redirect_stdout(io.StringIO()):
+            omi.init(root)
+        outside = Path(d) / "outside.md"
+        outside.write_bytes(b"old template\n")
+        decisions = root / ".omi" / "decisions.md"
+        decisions.write_bytes(b"project decisions\n")
+        ref = root / ".omi" / "references" / "postgres-conventions.md"
+        ref.write_bytes(ref.read_bytes() + b"\nlocal change\n")
+        prove = root / "docker" / "prove.sh"
+        prove.write_bytes(prove.read_bytes() + b"\nlocal change\n")
+        agents = root / "AGENTS.md"
+        agents.unlink()
+        settings = root / ".claude" / "settings.json"
+        settings.unlink()
+        links = {ref.with_name(ref.name + ".omi-new"): Path("../decisions.md"),
+                 prove.with_name(prove.name + ".omi-new"): outside,
+                 agents: outside, settings: Path(d) / "missing.json"}
+        try:
+            for link, dest in links.items():
+                link.symlink_to(dest)
+        except OSError:
+            print("skip upgrade symlink files: symlink creation unavailable")
+            return
+        files = omi.read_manifest(root)
+        files["AGENTS.md"] = omi.norm_sha(outside.read_bytes())
+        omi.write_manifest(root, files)
+        edited = {p: p.read_bytes() for p in (ref, prove)}
+        out = io.StringIO()
+        with omi.contextlib.redirect_stdout(out):
+            assert omi.upgrade_apply(root) == 0
+        assert decisions.read_bytes() == b"project decisions\n"
+        assert outside.read_bytes() == b"old template\n"
+        assert not (Path(d) / "missing.json").exists()
+        for link in links:
+            assert link.is_symlink()
+            assert f"skip (symlink): {link.relative_to(root).as_posix()}" in out.getvalue()
+        for p, content in edited.items():
+            assert p.read_bytes() == content
+        assert omi.read_manifest(root)["AGENTS.md"] == files["AGENTS.md"]
+
+
+def test_upgrade_symlink_metadata():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "project"
+        with omi.contextlib.redirect_stdout(io.StringIO()):
+            omi.init(root)
+        outside = Path(d) / "outside.txt"
+        outside.write_bytes(b"preserve even invalid JSON\n")
+        rels = [".omi/config.json", ".omi/manifest.json", ".omi/version"]
+        rels += [f".omi/{kind}/CATALOG.md" for kind in ("skills", "agents", "workflows", "rules", "references", "plans")]
+        try:
+            for rel in rels:
+                link = root / rel
+                link.unlink()
+                link.symlink_to(outside)
+        except OSError:
+            print("skip upgrade symlink metadata: symlink creation unavailable")
+            return
+        out = io.StringIO()
+        with omi.contextlib.redirect_stdout(out):
+            assert omi.upgrade_apply(root) == 0
+        assert outside.read_bytes() == b"preserve even invalid JSON\n"
+        for rel in rels:
+            assert (root / rel).is_symlink()
+            assert f"skip (symlink): {rel}" in out.getvalue()
+
+
+def test_upgrade_symlink_parents():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d) / "project"
+        with omi.contextlib.redirect_stdout(io.StringIO()):
+            omi.init(root)
+        outside = Path(d) / "outside"
+        (root / "docker").rename(outside)
+        # A missing destination through a linked parent must not be created either.
+        (outside / "proxy.py").unlink()
+        # An internal directory link could otherwise overwrite protected task files.
+        rules = root / ".omi" / "rules"
+        shutil.rmtree(rules)
+        tasks = root / ".omi" / "tasks"
+        (tasks / "python.md").write_bytes(b"protected task data\n")
+        try:
+            (root / "docker").symlink_to(outside, target_is_directory=True)
+            rules.symlink_to(tasks, target_is_directory=True)
+        except OSError:
+            print("skip upgrade symlink parents: symlink creation unavailable")
+            return
+        before = {p: p.read_bytes() for base in (outside, tasks) for p in base.rglob("*") if p.is_file()}
+        out = io.StringIO()
+        with omi.contextlib.redirect_stdout(out):
+            assert omi.upgrade_apply(root) == 0
+        after = {p: p.read_bytes() for base in (outside, tasks) for p in base.rglob("*") if p.is_file()}
+        assert before == after
+        assert "skip (symlink): docker/proxy.py" in out.getvalue()
+        assert "skip (symlink): .omi/rules/python.md" in out.getvalue()
+        assert "skip (symlink): .omi/rules/CATALOG.md" in out.getvalue()
+        # A link above all omi state files must also prevent metadata and catalog writes.
+        (root / ".omi").rename(Path(d) / "outside-omi")
+        (root / ".omi").symlink_to(Path(d) / "outside-omi", target_is_directory=True)
+        state = Path(d) / "outside-omi"
+        before = {p: p.read_bytes() for p in state.rglob("*") if p.is_file()}
+        with omi.contextlib.redirect_stdout(io.StringIO()):
+            assert omi.upgrade_apply(root) == 0
+        assert before == {p: p.read_bytes() for p in state.rglob("*") if p.is_file()}
+
+
 def test_omi_repo_validation():
     for ok in (omi.OMI_REPO, "ssh://git@host/x/y.git", "git@github.com:omi-teams/omi-squad2.git"):
         assert omi.valid_repo(ok), ok
@@ -3103,6 +3212,9 @@ if __name__ == "__main__":
     test_init_fresh_project()
     test_upgrade()
     test_upgrade_protected()
+    test_upgrade_symlink_files()
+    test_upgrade_symlink_metadata()
+    test_upgrade_symlink_parents()
     test_omi_repo_validation()
     test_upgrade_cmd()
     test_init_guard_status()

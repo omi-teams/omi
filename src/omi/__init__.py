@@ -823,19 +823,33 @@ def protected(rel: str) -> bool:
     return rel.startswith(".omi/plans/PLAN-") and rel != ".omi/plans/PLAN-000.md"
 
 
+def upgrade_write_safe(target: Path, rel: str) -> bool:
+    """Skip links (including parent directories) and destinations outside the project."""
+    dst = target / rel
+    if (any(p.is_symlink() for p in (dst, *dst.parents) if p.is_relative_to(target))
+            or not dst.resolve().is_relative_to(target)):
+        print(f"skip (symlink): {rel}")
+        return False
+    return True
+
+
 def upgrade_apply(target: str | Path = ".") -> int:
     target = Path(target).resolve()
     # parse the project config before any file changes, so a broken one leaves the project untouched
     cfg = target / ".omi" / "config.json"
+    cfg_safe = upgrade_write_safe(target, ".omi/config.json")
     try:
-        old_cfg = json.loads(cfg.read_text(encoding="utf-8")) if cfg.is_file() else None
+        old_cfg = json.loads(cfg.read_text(encoding="utf-8")) if cfg_safe and cfg.is_file() else None
     except json.JSONDecodeError as e:
         sys.exit(f"invalid JSON in {cfg}: {e}; fix it, nothing was changed")
-    files = read_manifest(target)
+    manifest_safe = upgrade_write_safe(target, ".omi/manifest.json")
+    files = read_manifest(target) if manifest_safe else {}
     current, released = template_shas(), released_shas()
     counts = {"created": 0, "updated": 0, "kept": 0}
     for rel, src in template_map().items():
         if protected(rel):
+            continue
+        if not upgrade_write_safe(target, rel):
             continue
         dst = target.joinpath(*rel.split("/"))
         new = src.read_bytes()
@@ -856,19 +870,22 @@ def upgrade_apply(target: str | Path = ".") -> int:
             counts["updated"] += 1
             print(f"update {rel}")
         else:
-            dst.with_name(dst.name + ".omi-new").write_bytes(new)
+            if upgrade_write_safe(target, rel + ".omi-new"):
+                dst.with_name(dst.name + ".omi-new").write_bytes(new)
             counts["kept"] += 1
             print(f"kept (modified): {rel}")
     tpl_cfg = json.loads(template_map()[".omi/config.json"].read_text(encoding="utf-8"))
-    if old_cfg is not None:
-        cfg.write_text(json.dumps(merge_keys(old_cfg, tpl_cfg), indent=2) + "\n", encoding="utf-8")
-    else:
+    if cfg_safe:
         cfg.parent.mkdir(parents=True, exist_ok=True)
-        cfg.write_text(json.dumps(tpl_cfg, indent=2) + "\n", encoding="utf-8")
-    write_manifest(target, files)
-    (target / ".omi" / "version").write_text(version() + "\n", encoding="utf-8")
-    for catalog in (skills_catalog, agents_catalog, workflows_catalog, rules_catalog, references_catalog, plans_catalog):
-        catalog(target)
+        cfg.write_text(json.dumps(merge_keys(old_cfg, tpl_cfg) if old_cfg is not None else tpl_cfg, indent=2) + "\n", encoding="utf-8")
+    if manifest_safe:
+        write_manifest(target, files)
+    if upgrade_write_safe(target, ".omi/version"):
+        (target / ".omi" / "version").write_text(version() + "\n", encoding="utf-8")
+    for kind, catalog in (("skills", skills_catalog), ("agents", agents_catalog), ("workflows", workflows_catalog),
+                          ("rules", rules_catalog), ("references", references_catalog), ("plans", plans_catalog)):
+        if upgrade_write_safe(target, f".omi/{kind}/CATALOG.md"):
+            catalog(target)
     print(f"upgrade {version()}: {counts['created']} created, {counts['updated']} updated, {counts['kept']} kept (see *.omi-new)")
     return 0
 
