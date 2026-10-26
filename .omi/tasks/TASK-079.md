@@ -37,6 +37,7 @@ Coordinator note for build: git does not work in the worker, so the v0.2.0 hashe
 
 Coordinator host steps (2026-10-26):
 - template_shas.json: `git archive v0.2.0 src/omi/template` exported, `python -m omi template-shas <export>/src/omi/template 0.2.0` with this branch -> 61 files.
+- Windows: `python tests/test_omi.py` -> rc=0, ok.
 - Real check: sandbox `git init` + v0.2.0 `omi init` (no manifest), appended a line to .omi/agents/omi-agent-reviewer.md, then this branch's `omi upgrade --apply` -> `1 created, 8 updated, 1 kept`; created .claude/skills/omi-upgrade/SKILL.md, updated AGENTS.md, docker/Dockerfile, docker/proxy.py and 5 more; `kept (modified): .omi/agents/omi-agent-reviewer.md` with `omi-agent-reviewer.md.omi-new` next to it; .omi/version and .omi/manifest.json written.
 
 ## Steps
