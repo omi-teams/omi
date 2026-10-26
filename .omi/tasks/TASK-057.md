@@ -1,23 +1,23 @@
 ---
 id: TASK-057
 title: Final evaluation of skills, roles and workflows against baselines
-status: in-progress
+status: done
 depends: TASK-039
 scope: docs/research/omi-eval.md, .omi/agents/**, .omi/skills/**, .omi/workflows/**, .omi/decisions.md
 role: omi-agent-engineer
 skills: []
 workflow: omi-flow-spike
-step: write
+step: decide
 ---
 ## Goal
 One evaluation for everything, using real usage numbers. Keep only what earns its place. Estimated ~55 runs (2026-10-26); the PO picks full or lean scope before it starts.
 
 ## Acceptance criteria
-- [ ] Every skill and every role is covered by a scenario inside the workflow runs below, each also run once with a plain prompt (no skill/role) as baseline; one baseline per skill or role, not per workflow.
-- [ ] One scenario per workflow family (feature, bugfix, docs-only, change-request, incident, release), run in the Docker worker; record tokens, review rounds, steps skipped and problems.
-- [ ] A skill, role or step that does not beat its baseline on correctness, tokens or review rounds is removed or reworked; decisions logged with the numbers.
-- [ ] Report to the PO: total default context added by skills, roles and workflows.
-
+(Lean scope picked by the PO 2026-10-26.)
+- [x] The most-loaded skills and roles have one baseline each (engineer, lean-implementation, debug-root-cause, reviewer, security-reviewer, docs-writer, architect, incident); results under ## Results.
+- [x] One scenario per agent-run workflow family (feature, bugfix, docs-only, change-request, incident) in the Docker worker, with tokens and problems recorded; release has no agent run and is listed as not measured.
+- [x] Items that do not beat their baseline are proposed for rework; PO decision logged in decisions.md with the numbers.
+- [x] Report to the PO with the total default context (3402 tokens): docs/research/omi-eval.md.
 ## Plan (Coordinator, lean scope picked by the PO 2026-10-26)
 Default context measured (tokens, `omi.tokens`): AGENTS.md 1297, skills CATALOG 889, workflows CATALOG 830, agents CATALOG 386 = 3402. Roles 239-632; skills 528-1107.
 Sandbox: a toy Python repo made with `omi init` in the Coordinator scratchpad; every scenario is one sandbox task, same start commit. n=1 per variant (noisy; say so).
@@ -60,6 +60,10 @@ Write step (docs-writer): write docs/research/omi-eval.md in Vietnamese from ## 
 - research started 2026-10-26 10:23
 - research skipped 2026-10-26 10:30: evidence is the Coordinator-run sandbox runs recorded under ## Results; a researcher cannot run Docker
 - write started 2026-10-26 10:30
+- write done 2026-10-26 10:31
+- decide started 2026-10-26 10:31
+PO approval decide: "Theo đề xuất" (TASK-058 omi defects, TASK-059 slim debug-root-cause and security-reviewer, keep the rest)
+- decide done 2026-10-26 10:32
 
 ## Reports
 2026-10-26 10:31 omi-agent-docs-writer (claude):
