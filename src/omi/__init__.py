@@ -30,7 +30,7 @@ USAGE = """usage: omi <command>
   clean [--all]   remove this repo's worker containers and old worker images (--all: the current image too)
   skills [check <task-file>]   write .omi/skills/CATALOG.md; or check a task's skills against the budget
   skills --check   validate every skill against the contract (parts, size, source, no widened permissions)
-  token set    store the `claude setup-token` value in Windows Credential Manager
+  token set [--tool claude|codex]   store the `claude setup-token` value (or the OpenAI API key) in Windows Credential Manager
   agents       write .omi/agents/CATALOG.md (one line per role)
   workflows [--check]   write .omi/workflows/CATALOG.md (one line per workflow); --check validates every workflow
   step <TASK-ID> next|done|back|skip --why <reason>   record the task's workflow step (gates cannot be skipped)
@@ -41,6 +41,8 @@ USAGE = """usage: omi <command>
 WINDOWS = sys.platform == "win32"
 CRED_TARGET = "omi/CLAUDE_CODE_OAUTH_TOKEN"
 TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"
+CODEX_CRED_TARGET = "omi/OPENAI_API_KEY"
+CODEX_ENV = "OPENAI_API_KEY"
 
 
 def git(cwd, *args):
@@ -835,19 +837,19 @@ def advapi():
     return ctypes.WinDLL("advapi32")
 
 
-def cred_write(secret):
+def cred_write(secret, target=CRED_TARGET):
     data = secret.encode()
     buf = ctypes.create_string_buffer(data, len(data))
-    c = CRED(Type=1, TargetName=CRED_TARGET, UserName="omi", Persist=2,  # GENERIC, LOCAL_MACHINE
+    c = CRED(Type=1, TargetName=target, UserName="omi", Persist=2,  # GENERIC, LOCAL_MACHINE
              CredentialBlobSize=len(data), CredentialBlob=ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)))
     if not advapi().CredWriteW(ctypes.byref(c), 0):
         sys.exit("could not store the token in Windows Credential Manager.")
 
 
-def cred_read():
+def cred_read(target=CRED_TARGET):
     p = ctypes.POINTER(CRED)()
     api = advapi()
-    if not api.CredReadW(CRED_TARGET, 1, 0, ctypes.byref(p)):
+    if not api.CredReadW(target, 1, 0, ctypes.byref(p)):
         return None
     try:
         return ctypes.string_at(p.contents.CredentialBlob, p.contents.CredentialBlobSize).decode()
@@ -855,19 +857,22 @@ def cred_read():
         api.CredFree(p)
 
 
-def token_set():
+def token_set(tool="claude"):
+    codex = tool == "codex"
+    env, target = (CODEX_ENV, CODEX_CRED_TARGET) if codex else (TOKEN_ENV, CRED_TARGET)
     if not WINDOWS:
-        print(f"no credential store support here; export {TOKEN_ENV} in the shell that runs omi worker.")
+        print(f"no credential store support here; export {env} in the shell that runs omi.")
         return
-    secret = getpass.getpass("paste the `claude setup-token` value (hidden): ").strip()
+    secret = getpass.getpass(f"paste the {'OpenAI API key' if codex else '`claude setup-token` value'} (hidden): ").strip()
     if not secret:
         sys.exit("empty token; nothing stored.")
-    cred_write(secret)
-    print(f"stored in Windows Credential Manager as {CRED_TARGET}")
+    cred_write(secret, target)
+    print(f"stored in Windows Credential Manager as {target}")
 
 
-def token():
-    return (cred_read() if WINDOWS else None) or os.environ.get(TOKEN_ENV)
+def token(tool="claude"):
+    env, target = (CODEX_ENV, CODEX_CRED_TARGET) if tool == "codex" else (TOKEN_ENV, CRED_TARGET)
+    return (cred_read(target) if WINDOWS else None) or os.environ.get(env)
 
 
 DEFAULT_MODELS = {"haiku": "claude-haiku-5-5", "sonnet": "claude-sonnet-5-5", "opus": "claude-opus-5-5"}
@@ -1390,10 +1395,11 @@ def run_role(role, wt, task_file, model=None, effort=None, tool="claude"):
     if tool not in ("claude", "codex"):
         sys.exit(f"unknown tool `{tool}`: claude or codex. Nothing changed.")
     need_docker()  # read roles too: no host fallback
-    secret = token() if tool == "claude" else os.environ.get("OPENAI_API_KEY")
-    key = TOKEN_ENV if tool == "claude" else "OPENAI_API_KEY"
+    secret = token(tool)
+    key = TOKEN_ENV if tool == "claude" else CODEX_ENV
     if not secret:
-        sys.exit(f"no token: run `omi token set` (Windows) or set {key}. Nothing changed.")
+        cmd = "omi token set" + (" --tool codex" if tool == "codex" else "")
+        sys.exit(f"no token: run `{cmd}` (Windows) or set {key}. Nothing changed.")
     tm = meta(task) if task.exists() else {}
     am = get_role(main, role)
     get_role(main, tm.get("role") or "omi-agent-engineer")  # unknown task role fails too
@@ -1546,7 +1552,9 @@ def main(argv=None):
     elif cmd == "guard":
         sys.exit(guard())
     elif cmd == "token" and rest[:1] == ["set"]:
-        token_set()
+        if "--tool" in rest and rest[rest.index("--tool") + 1:][:1] not in (["claude"], ["codex"]):
+            sys.exit("usage: omi token set [--tool claude|codex]")
+        token_set(rest[rest.index("--tool") + 1] if "--tool" in rest else "claude")
     elif cmd == "worker" and rest:
         prove = "--prove" in rest
         if not prove and (len(rest) < 2 or rest[1].startswith("--")):
