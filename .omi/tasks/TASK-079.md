@@ -91,6 +91,8 @@ Coordinator host check after security round 3 fix: Windows `python tests/test_om
 Security round 4 FAIL:
 - omi_repo(): .omi/config.json that parses to a non-object (e.g. `[]`) raises AttributeError in `upgrade --check` and `upgrade --to`. It exits with the same "expected an object" message upgrade_apply uses, before any subprocess. Test.
 
+Coordinator host check after security round 4 fix: Windows `python tests/test_omi.py` -> rc=0, ok.
+
 ## Steps
 - plan started 2026-10-26 22:07
 - plan done 2026-10-26 22:07
