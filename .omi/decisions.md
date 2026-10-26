@@ -50,3 +50,4 @@
 - 2026-10-26 | Keep omi-agent-architect: same correctness as a plain opus prompt, -26% output, +48% cache, adds task split, scope gap and duplicate check | PO | TASK-061
 - 2026-10-26 | Codex uses the PO ChatGPT subscription via a short-lived access token (TASK-065), not an API key; refresh token never leaves the host | PO | TASK-065
 - 2026-10-26 | Claude worker agents follow the current Claude Code session login (access token read at run time; env override; stored token as fallback) | PO: "đi theo phiên, tương tự như codex" | TASK-067
+- 2026-10-26 | Accept session-token risk for Claude agents: scopes include file_upload, mcp_servers, plugins, profile, sessions:claude_code (setup-token: inference only); limited by egress to api.anthropic.com and a lifetime of hours | PO | TASK-067

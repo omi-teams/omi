@@ -957,10 +957,42 @@ def codex_login():
     return json.dumps(slim), None
 
 
+def claude_secret():
+    """(value, source, note) for claude: env override, then the Claude Code session login, then the stored token.
+    Only the access token is read, at run time; the refresh token is never touched."""
+    if os.environ.get(TOKEN_ENV):
+        return os.environ[TOKEN_ENV], "env", None
+    path = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / ".credentials.json"
+    note = None
+    try:
+        oauth = json.loads(path.read_text(encoding="utf-8"))["claudeAiOauth"]
+        access = oauth["accessToken"]
+        exp = oauth.get("expiresAt")
+        if access and isinstance(exp, (int, float)) and exp <= time.time() * 1000:
+            note = "session login expired: use Claude Code once to refresh"
+        elif access:
+            return access, "session", None
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    stored = cred_read(CRED_TARGET) if WINDOWS else None
+    return stored, "stored", note
+
+
+def claude_auth():
+    """claude_secret() as (env name, value, problem), printing the source and any expiry note once."""
+    val, source, note = claude_secret()
+    if note:
+        print(note)
+    if val:
+        print(f"claude auth: {source}")
+    return TOKEN_ENV, val, note
+
+
 def tool_secret(tool):
     """(env name, value, problem) for a tool; codex: stored API key, env OPENAI_API_KEY, then the host ChatGPT login."""
     if tool == "claude":
-        return TOKEN_ENV, token(), None
+        val, _, note = claude_secret()
+        return TOKEN_ENV, val, note
     key = token("codex")
     if key:
         return CODEX_ENV, key, None
@@ -1609,12 +1641,13 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
         sys.exit(f"unknown tool `{tool}`: claude or codex. Nothing changed.")
     other = "codex" if tool == "claude" else "claude"
     need_docker()  # read roles too: no host fallback
-    secret = tool_secret(tool)
+    secret = claude_auth() if tool == "claude" else tool_secret(tool)
     if not secret[1]:
         if tool == "codex":
             sys.exit(f"no codex credentials: run `omi token set --tool codex` (Windows) or set {CODEX_ENV}, "
                      f"or use your ChatGPT login ({secret[2]}). Nothing changed.")
-        sys.exit(f"no token: run `omi token set` (Windows) or set {TOKEN_ENV}. Nothing changed.")
+        sys.exit(f"no token: run `omi token set` (Windows), set {TOKEN_ENV}, or log in to Claude Code on the host"
+                 f"{f' ({secret[2]})' if secret[2] else ''}. Nothing changed.")
     cur = next((s for s in get_workflow(wt, tm.get("workflow") or DEFAULT_WORKFLOW) if s["id"] == tm.get("step")), None) \
         if tm.get("step") else None
     step_ids = task_skills(cur) if cur and cur["role"] == role else []  # the current step's own skills
@@ -1722,7 +1755,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
         print(f"tool: {tool} ({models[tool]})")
         r, result, done = attempt(tool, secret)
         if quota_hit(tool, r.stdout, r.returncode):
-            other_secret, problem = tool_secret(other), None
+            other_secret, problem = (claude_auth() if other == "claude" else tool_secret(other)), None
             try:
                 models[other] = resolve_model(main, want_model, other)
             except SystemExit:  # a full ID of one tool: the other uses the role's alias, else its default
