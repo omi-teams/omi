@@ -57,6 +57,9 @@ Note: the Windows run after review round 1 is recorded above (rc=0, ok).
 
 Coordinator host check after review round 2 fix: Windows `python tests/test_omi.py` -> rc=0; latest_tag on the real repo -> v0.2.0.
 
+Review round 3 FAIL (PO chose a small fix, then security review):
+- upgrade_apply writes (create, update, `.omi-new`, manifest, version, config) follow symlinks: a `<path>.omi-new` symlink to ../decisions.md or outside the repo gets overwritten. Every write target that is a symlink, or whose resolved path is outside the project root, is skipped with a `skip (symlink): <path>` line. Tests: a `.omi-new` symlink and an updated file that is a symlink both leave their targets unchanged. On Windows, creating symlinks may need privileges; the tests skip that part when os.symlink raises OSError.
+
 ## Steps
 - plan started 2026-10-26 22:07
 - plan done 2026-10-26 22:07
@@ -71,6 +74,10 @@ Coordinator host check after review round 2 fix: Windows `python tests/test_omi.
 - review started 2026-10-26 22:22
 - review failed 2026-10-26 22:24
 - build started 2026-10-26 22:24
+- build done 2026-10-26 22:30
+- review started 2026-10-26 22:30
+- review failed 2026-10-26 22:34
+- build started 2026-10-26 22:34
 
 ## Reports
 2026-10-26 22:08 omi-agent-architect (claude):
@@ -274,6 +281,18 @@ Coordinator host check after review round 2 fix: Windows `python tests/test_omi.
 > create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-26 22:32 omi-agent-reviewer (codex):
+> VERDICT: FAIL
+> - src/omi/__init__.py:859 Writing `.omi-new` follows existing symlinks and can overwrite protected files. For example, a modified `.omi/rules/python.md` with `python.md.omi-new -> ../decisions.md` causes decisions.md to be overwritten -> reject symlink destinations and resolve parent paths before writing.
+> 
+> AC: Init manifest and legacy backfill ✓ `test_upgrade` passes; 61 released hashes are shipped as package data.
+> AC: Remote version check ✓ Fake subprocess tests verify version ordering, date-tag exclusion, and output.
+> AC: Install and new-process apply ✓ `test_upgrade_cmd` verifies pip and apply argv.
+> AC: Apply and protected-file preservation ✗ Normal update paths pass tests; symlink destinations bypass protection.
+> AC: Upgrade skills and AGENTS entries ✓ Root and template contain the required workflow and command entry.
+> AC: README upgrade instructions ✓ Documents `python -m omi upgrade` and `/omi-upgrade`.
+> AC: Real sandbox check ✓ Coordinator records creation, updates, and preservation of an edited file with `.omi-new`.
+> AC: Linux and Windows tests ✓ Linux suite completed with exit 0 and `ok`; Coordinator records Windows exit 0.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -284,3 +303,4 @@ Coordinator host check after review round 2 fix: Windows `python tests/test_omi.
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 327207 | 2666 | 291456 | 138s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 4 | 3382 | 63463 | 84s | - | FAIL 2a0e3cb |
 | omi-agent-engineer | claude-opus-5-5 | high | 34 | 11265 | 649712 | 239s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
+| omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 229107 | 1739 | 186752 | 99s | - | FAIL c968083 |
