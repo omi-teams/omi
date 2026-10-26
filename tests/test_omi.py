@@ -36,7 +36,8 @@ class FakePopen:
             return cls.real(cmd, **kw)
         self = object.__new__(cls)
         r = subprocess.run(cmd, **kw)
-        self.stdout, self.stderr, self.returncode = io.StringIO(r.stdout), io.StringIO(r.stderr), r.returncode
+        dec = lambda b: b.decode(kw.get("encoding") or "cp1252", kw.get("errors") or "strict") if isinstance(b, bytes) else b  # Windows locale
+        self.stdout, self.stderr, self.returncode = io.StringIO(dec(r.stdout)), io.StringIO(dec(r.stderr)), r.returncode
         return self
 
     def __enter__(self): return self
@@ -1623,6 +1624,53 @@ def test_git_non_ascii():
         assert diff is not None and "Tiếng Việt có dấu" in diff, "git() must decode UTF-8 output"
 
 
+def test_subprocess_text_encoding():
+    import ast
+    src = (Path(__file__).parents[1] / "src" / "omi" / "__init__.py").read_text(encoding="utf-8")
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, ast.Call) and any(k.arg == "text" for k in node.keywords):
+            assert any(k.arg == "encoding" for k in node.keywords), f"line {node.lineno}: text=True needs encoding= (locale decoding on Windows)"
+    # the agent run path: UTF-8 output from the container must reach ## Reports unchanged
+    real = omi.subprocess.run, omi.shutil.which, omi.main_checkout, omi.WINDOWS, omi.os.environ.get(omi.TOKEN_ENV)
+    report = "Xong → Tiếng Việt có dấu"
+    stdout = (json.dumps({"result": report, "usage": {"input_tokens": 1, "output_tokens": 1}}, ensure_ascii=False) + "\n").encode("utf-8")
+
+    class R:
+        def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
+
+    def run(cmd, **kw):
+        if cmd[:2] == ["docker", "info"]:
+            return R()
+        if "show" in cmd:
+            return R("---\nscope: src/**\n---\n")
+        if "status" in cmd:
+            return R(" M src/a.py\0")
+        if "diff" in cmd and "--name-only" in cmd:
+            return R("src/a.py\0")
+        if cmd[:2] == ["docker", "run"]:
+            return R(stdout)  # bytes, as a real process would produce them
+        return R()
+
+    with tempfile.TemporaryDirectory() as d:
+        wt = Path(d).resolve()
+        (wt / ".git").write_text("gitdir: /x")
+        task = wt / ".omi" / "tasks" / "TASK-001.md"
+        task.parent.mkdir(parents=True)
+        task.write_text("---\nid: TASK-001\nscope: src/**\n---\n## Goal\n- [ ] x\n", encoding="utf-8")
+        omi.subprocess.run, omi.shutil.which = run, lambda _: "docker"
+        omi.main_checkout, omi.WINDOWS = (lambda _: wt), False
+        omi.os.environ[omi.TOKEN_ENV] = "tok"
+        sys.stdout, saved = io.StringIO(), sys.stdout
+        try:
+            omi.run_role("omi-agent-reviewer", wt, task)
+        finally:
+            sys.stdout = saved
+            omi.subprocess.run, omi.shutil.which, omi.main_checkout, omi.WINDOWS = real[:4]
+            if real[4] is None: omi.os.environ.pop(omi.TOKEN_ENV, None)
+            else: omi.os.environ[omi.TOKEN_ENV] = real[4]
+        assert report in task.read_text(encoding="utf-8").partition("## Reports")[2], "UTF-8 report must reach ## Reports unchanged"
+
+
 def test_workflows():
     def fails(fn, *words):
         try:
@@ -1866,6 +1914,7 @@ if __name__ == "__main__":
     test_usage()
     test_tool_choice_and_quota_switch()
     test_git_non_ascii()
+    test_subprocess_text_encoding()
     test_skills()
     test_skills_check()
     test_workflows()

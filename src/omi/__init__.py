@@ -704,7 +704,7 @@ class GhError(SystemExit):
 
 def gh(*args, body=None):
     r = subprocess.run(["gh", "api", *args, *(["--input", "-"] if body else [])],
-                       input=json.dumps(body) if body else None, capture_output=True, text=True)
+                       input=json.dumps(body) if body else None, capture_output=True, encoding="utf-8", errors="replace")
     if r.returncode:
         out = r.stderr.strip() or r.stdout.strip()
         m = re.search(r"HTTP (\d{3})", out)
@@ -746,7 +746,7 @@ def same(live, want):
 
 def accounts():
     """(logins, active) from local gh state (no network); None if gh cannot tell."""
-    r = subprocess.run(["gh", "auth", "status", "--json", "hosts"], capture_output=True, text=True)
+    r = subprocess.run(["gh", "auth", "status", "--json", "hosts"], capture_output=True, encoding="utf-8", errors="replace")
     try:
         hs = json.loads(r.stdout)["hosts"].get("github.com", [])
     except (ValueError, KeyError):
@@ -803,7 +803,7 @@ def github(po=False):
 def repo_info():
     """nameWithOwner via the active gh account; exits if the repo is unreadable or private."""
     r = subprocess.run(["gh", "repo", "view", "--json", "nameWithOwner,visibility", "--jq", ".nameWithOwner+\" \"+.visibility"],
-                       capture_output=True, text=True)
+                       capture_output=True, encoding="utf-8", errors="replace")
     if r.returncode:
         sys.exit(f"cannot read repo from gh: {r.stderr.strip()}")
     repo, vis = r.stdout.split()
@@ -1028,7 +1028,7 @@ def egress(main, name, image, allow):
     net, proxy, repo = f"omi-net-{name}", f"{name}-proxy", repo_label(main)
     labels = ["--label", "omi-worker=1", "--label", f"omi-repo={repo}"]
     script = TEMPLATE / "docker" / "proxy.py"
-    docker = lambda *a: subprocess.run(["docker", *a], capture_output=True, text=True, errors="replace")
+    docker = lambda *a: subprocess.run(["docker", *a], capture_output=True, encoding="utf-8", errors="replace")
     logs, made = "", {"net": False, "proxy": False}
     try:
         r = docker("network", "create", "--internal", *labels, net)
@@ -1117,7 +1117,7 @@ def running_workers(main):
     fmt = "\t".join("{{.Label \"%s\"}}" % k for k in ("omi-task", "omi-role", "omi-model", "omi-effort", "omi-started"))
     try:
         r = subprocess.run(["docker", "ps", "--filter", "label=omi-worker=1", "--filter", f"label=omi-repo={repo_label(main)}",
-                            "--format", fmt], capture_output=True, text=True, errors="replace")
+                            "--format", fmt], capture_output=True, encoding="utf-8", errors="replace")
     except OSError:
         return []
     return [l.split("\t") for l in r.stdout.splitlines() if l.count("\t") == 4] if r.returncode == 0 else []
@@ -1399,7 +1399,7 @@ def old_images(main, keep):
     """Images of this repo's worker other than `keep`."""
     r = subprocess.run(["docker", "images", "--filter", f"label=omi-repo={repo_label(main)}",
                         "--format", "{{.Repository}}:{{.Tag}}"],
-                       capture_output=True, text=True, errors="replace")
+                       capture_output=True, encoding="utf-8", errors="replace")
     return [i for i in r.stdout.split() if i != keep and i.startswith(image_repo(main) + ":")]
 
 
@@ -1408,7 +1408,7 @@ def ensure_image(main):
     if subprocess.run(["docker", "image", "inspect", tag], capture_output=True).returncode:
         r = subprocess.run(["docker", "build", "-t", tag, "--label", "omi-worker=1",
                             "--label", f"omi-repo={repo_label(main)}", str(d)],
-                           capture_output=True, text=True, errors="replace")
+                           capture_output=True, encoding="utf-8", errors="replace")
         if r.returncode:
             print(r.stdout, r.stderr, sep="\n", file=sys.stderr)
             sys.exit("docker build failed.")
@@ -1422,12 +1422,12 @@ def clean(cwd=".", all_images=False):
     main = main_checkout(cwd) or Path(cwd).resolve()
     r = subprocess.run(["docker", "ps", "-a", "-q", "--filter", "label=omi-worker=1",
                         "--filter", f"label=omi-repo={repo_label(main)}"],
-                       capture_output=True, text=True, errors="replace")
+                       capture_output=True, encoding="utf-8", errors="replace")
     ids = r.stdout.split()
     if ids:
         subprocess.run(["docker", "rm", "-f", *ids], capture_output=True)
     r = subprocess.run(["docker", "network", "ls", "-q", "--filter", f"label=omi-repo={repo_label(main)}"],
-                       capture_output=True, text=True, errors="replace")
+                       capture_output=True, encoding="utf-8", errors="replace")
     nets = r.stdout.split()
     if nets:
         subprocess.run(["docker", "network", "rm", *nets], capture_output=True)
@@ -1446,7 +1446,7 @@ def out_of_scope(wt, tid, committed=False):
     paths = [e[3:] for e in r.stdout.split("\0") if e]
     if committed:
         d = subprocess.run(["git", "-C", str(wt), "diff", "--name-only", "-z", "--no-renames", "development...HEAD"],
-                           capture_output=True, text=True)
+                           capture_output=True, encoding="utf-8", errors="replace")
         paths += [p for p in d.stdout.split("\0") if p and p not in paths]
     def bad(p):
         if p == f".omi/tasks/{tid}.md":
@@ -1494,10 +1494,10 @@ def deterministic_checks(wt, main, tid):
     finally:
         sys.stdout = saved
     if (Path(wt) / ".omi" / "workflows").is_dir():
-        r = subprocess.run([sys.executable, "-m", "omi", "workflows", "--check"], cwd=wt, capture_output=True, text=True)
+        r = subprocess.run([sys.executable, "-m", "omi", "workflows", "--check"], cwd=wt, capture_output=True, encoding="utf-8", errors="replace")
         if r.returncode:
             problems.append("workflows --check: " + (r.stdout + r.stderr).strip())
-    r = subprocess.run(test_command(wt, main), cwd=wt, capture_output=True, text=True, errors="replace")
+    r = subprocess.run(test_command(wt, main), cwd=wt, capture_output=True, encoding="utf-8", errors="replace")
     if r.returncode:
         problems.append("tests failed:\n" + "\n".join((r.stdout + r.stderr).strip().splitlines()[-20:]))
     return problems
@@ -1569,7 +1569,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
                                                   {**worker_labels(role, task.stem, mdl, eff), **compose_labels(name, "agent")}, ro=read,
                                                   mounts=mounts, env_names=(envs[t],), network=net, proxy=proxy),
                                       env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                      text=True, errors="replace") as p:
+                                      encoding="utf-8", errors="replace") as p:
                     err = []
 
                     def pump():  # echo the agent's stderr live, keep a copy for the name-conflict check
