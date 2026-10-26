@@ -5,6 +5,7 @@ import ctypes
 import datetime
 import getpass
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -500,6 +501,13 @@ def init(target="."):
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(src, dst)
         print(f"create {rel}")
+    ignore = target / ".gitignore"
+    lines = ignore.read_text(encoding="utf-8").splitlines() if ignore.exists() else []
+    if "__pycache__/" not in lines:
+        ignore.write_text("".join(l + "\n" for l in lines) + "__pycache__/\n", encoding="utf-8")
+        print("update .gitignore (__pycache__/)")
+    for catalog in (skills_catalog, agents_catalog, workflows_catalog):
+        catalog(target)
     if not (target / ".git").exists():
         subprocess.run(["git", "init", "-q", "-b", "main", str(target)], check=True)
         print("git init (branch main)")
@@ -1450,11 +1458,18 @@ def out_of_scope(wt, tid, committed=False):
 
 
 def test_command(wt, main):
-    """`test` from .omi/config.json, else tests/test_omi.py if present, else pytest."""
+    """`test` from .omi/config.json, else tests/test_omi.py if present, else pytest if importable, else each tests/test_*.py as a script."""
     cfg = Path(main) / ".omi" / "config.json"
     cmd = (json.loads(cfg.read_text(encoding="utf-8")) if cfg.exists() else {}).get("test")
-    argv = cmd.split() if cmd else ["python", *(["tests/test_omi.py"] if (Path(wt) / "tests" / "test_omi.py").exists()
-                                               else ["-m", "pytest", "-q"])]
+    if cmd:
+        argv = cmd.split()
+    elif (Path(wt) / "tests" / "test_omi.py").exists():
+        argv = ["python", "tests/test_omi.py"]
+    elif importlib.util.find_spec("pytest"):
+        argv = ["python", "-m", "pytest", "-q"]
+    else:
+        argv = ["python", "-c", "import glob,subprocess,sys;sys.exit(max([subprocess.call([sys.executable,f]) "
+                                "for f in sorted(glob.glob('tests/test_*.py'))] or [0]))"]
     return [sys.executable if argv[0] == "python" else argv[0], *argv[1:]]
 
 

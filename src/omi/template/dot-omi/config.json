@@ -9,5 +9,6 @@
     "claude": "2.1.302",
     "codex": "0.164.0"
   },
+  "test": "",
   "network_allow": ["api.anthropic.com"]
 }

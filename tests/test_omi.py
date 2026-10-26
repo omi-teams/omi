@@ -25,6 +25,34 @@ def git(cwd, *args):
                    cwd=cwd, check=True, capture_output=True)
 
 
+def test_init_fresh_project():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        (root / ".gitignore").write_text("*.log")
+        omi.init(root)
+        for kind in ("skills", "agents", "workflows"):
+            assert (root / ".omi" / kind / "CATALOG.md").exists(), kind
+        assert (root / ".gitignore").read_text().splitlines() == ["*.log", "__pycache__/"]
+        omi.init(root)
+        assert (root / ".gitignore").read_text().count("__pycache__/") == 1
+        assert '"test"' in (root / ".omi" / "config.json").read_text()
+    with tempfile.TemporaryDirectory() as d:
+        omi.init(d)
+        assert (Path(d) / ".gitignore").read_text() == "__pycache__/\n"
+        (Path(d) / "tests").mkdir()
+        (Path(d) / "tests" / "test_a.py").write_text("raise SystemExit(3)")
+        real = omi.importlib.util.find_spec
+        omi.importlib.util.find_spec = lambda n: None
+        try:
+            cmd = omi.test_command(d, d)
+        finally:
+            omi.importlib.util.find_spec = real
+        assert "pytest" not in cmd
+        assert subprocess.run(cmd, cwd=d).returncode == 3
+        (Path(d) / "tests" / "test_a.py").write_text("")
+        assert subprocess.run(cmd, cwd=d).returncode == 0
+
+
 def test_init_guard_status():
     with tempfile.TemporaryDirectory() as d:
         root = Path(d).resolve()
