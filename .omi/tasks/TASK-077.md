@@ -46,6 +46,10 @@ Review round 2 PASS with findings (Coordinator verified finding 1 on the Windows
 - #4: one assertion that `omi run` output for a `.github/x.yml` change contains the .git* hint.
 - #10: a test where the worktree task copy has a wider scope than development, and out_of_scope still uses the development scope.
 
+Review round 3 FAIL (PO chose one more small fix round):
+- deterministic_checks: with the configured test command run through a shell, a missing program gives exit 127 (sh/bash) or 9009 (cmd), not OSError. Those exit codes report `test command failed to start: <last stderr line>` instead of `tests failed`. Test with a real nonexistent program in the configured `test` command.
+Coordinator host check: Windows `python tests/test_omi.py` -> rc=0, ok (commit "fix(cli): preserve Windows cmd quoting...").
+
 ## Steps
 - plan started 2026-10-26 21:35
 - plan done 2026-10-26 21:35
@@ -58,6 +62,10 @@ Review round 2 PASS with findings (Coordinator verified finding 1 on the Windows
 - review started 2026-10-26 21:44
 - review failed 2026-10-26 21:46
 - build started 2026-10-26 21:46
+- build done 2026-10-26 21:51
+- review started 2026-10-26 21:51
+- review failed 2026-10-26 21:54
+- build started 2026-10-26 21:54
 
 ## Reports
 2026-10-26 21:39 omi-agent-engineer (claude):
@@ -237,6 +245,22 @@ Review round 2 PASS with findings (Coordinator verified finding 1 on the Windows
 > create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-26 21:53 omi-agent-reviewer (codex):
+> VERDICT: FAIL
+> - src/omi/__init__.py:1951 A missing configured program produces `tests failed: ... command not found`, rather than the required `test command failed to start: <reason>`; the new test bypasses the shell -> Handle shell command-start failures and test an actual nonexistent configured program.
+> - .omi/tasks/TASK-077.md:35 Windows host verification remains incomplete -> Run `python3 tests/test_omi.py` on Windows and record the result.
+> 
+> AC: #6 shell execution and startup errors ✗ Shell execution works; reproduced missing-program diagnostic mismatch.
+> AC: #14 empty-test hint ✓ `status()` and regression assertions cover empty and configured commands.
+> AC: #7 manual hook reports ✓ `hook_cmd()` records results; tests verify a passing hook clears the guard.
+> AC: #11 post-run failure ✓ Tests assert exit 6 and the required message.
+> AC: #8 PO approval syntax ✓ Both forms are tested; refusal includes the line to add.
+> AC: #21 role mismatch warning ✓ Tests assert the warning and step suggestions.
+> AC: #4 .git* scope hint ✓ Run-output and root/template assertions cover the required text.
+> AC: #10 development scope ✓ Run, guard, and scope checks read development; widened-worktree regression passes.
+> AC: review FAIL guard ✓ Tests verify refusal after FAIL and acceptance after subsequent PASS.
+> AC: push development instructions ✓ Root and template instructions updated and asserted.
+> AC: Linux and Windows tests ✗ Linux command passed (exit 0, `ok`); Windows run remains unverified.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -245,3 +269,4 @@ Review round 2 PASS with findings (Coordinator verified finding 1 on the Windows
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 261855 | 3344 | 244608 | 144s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 3379 | 101277 | 57s | - | PASS 6c89ea0 |
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 723076 | 4500 | 666240 | 223s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
+| omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 317040 | 1543 | 276864 | 103s | - | FAIL 5474e5b |
