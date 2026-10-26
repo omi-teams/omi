@@ -49,6 +49,7 @@ Review round 2 PASS with findings (Coordinator verified finding 1 on the Windows
 Review round 3 FAIL (PO chose one more small fix round):
 - deterministic_checks: with the configured test command run through a shell, a missing program gives exit 127 (sh/bash) or 9009 (cmd), not OSError. Those exit codes report `test command failed to start: <last stderr line>` instead of `tests failed`. Test with a real nonexistent program in the configured `test` command.
 Coordinator host check: Windows `python tests/test_omi.py` -> rc=0, ok (commit "fix(cli): preserve Windows cmd quoting...").
+Coordinator host check: Windows `python tests/test_omi.py` -> rc=0, ok (commit "fix(cli): report shell command-not-found..."; the new 127 test runs through Git Bash on this host).
 
 Round 3 fix done: deterministic_checks reports `test command failed to start: <last stderr line>` for exit 127/9009; test with a real nonexistent configured program. Linux tests ok; Windows host run pending.
 
