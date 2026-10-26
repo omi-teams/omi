@@ -8,7 +8,7 @@ Phiên bản (SemVer 0.x) chỉ ghi ở `pyproject.toml`; `omi init` ghi nó và
 
 ```sh
 python -m pip install --user "git+https://github.com/omi-teams/omi-squad2@v0.2.0"     # cài từ tag
-python -m pip install --user --upgrade "git+https://github.com/omi-teams/omi-squad2@<tag mới>"   # nâng cấp, rồi chạy `omi init` trong từng dự án
+python -m omi upgrade [--check|--to vX.Y.Z]   # nâng cấp omi rồi cập nhật file khung chưa bị sửa (file đã sửa: giữ nguyên, bản mới ở <file>.omi-new); trong Claude Code: /omi-upgrade
 omi --version             # omi 0.2.0
 # Mỗi Python trên máy có một omi (hook và AGENTS.md gọi `python -m omi`); người phát triển omi dùng `pip install -e .` thay cho lệnh trên.
 mkdir my-app && cd my-app

@@ -31,6 +31,7 @@ TOOLS = ("git", "gh", "docker", "claude", "codex")
 STATUSES = ("in-progress", "review", "blocked", "planned")
 USAGE = """usage: omi <command>
   init [dir]   install the squad into a project (never overwrites)
+  upgrade [--check | --to vX.Y.Z]   install a newer omi and update the project's unmodified template files (modified ones get <path>.omi-new)
   version      print the omi version (also --version)
   status       show tasks, checkpoints and the next suggested task
   guard        Claude Code PreToolUse hook: block writes outside task scope
@@ -709,23 +710,97 @@ def semver(v):
     return tuple(int(n) for n in re.findall(r"\d+", v.split("-")[0].split("+")[0])[:3])
 
 
+SHAS = Path(__file__).parent / "template_shas.json"
+OMI_REPO = "https://github.com/omi-teams/omi-squad2"
+UPGRADE_SKIP = (".omi/decisions.md", ".omi/config.json")
+
+
+def norm_sha(data: bytes) -> str:
+    """sha256 of the bytes with CRLF folded to LF, so a Windows checkout hashes like Linux."""
+    return hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest()
+
+
+def template_map(tpl: Path = TEMPLATE) -> dict[str, Path]:
+    """{project posix path: template file}; dot-xxx dirs become .xxx, generated CATALOG.md files are left out."""
+    found = {}
+    for src in sorted(Path(tpl).rglob("*")):
+        if src.is_dir() or "__pycache__" in src.parts or src.suffix == ".pyc" or src.name == "CATALOG.md":
+            continue
+        parts = ["." + p[4:] if p.startswith("dot-") else p for p in src.relative_to(tpl).parts]
+        found[PurePosixPath(*parts).as_posix()] = src
+    return found
+
+
+def template_shas(tpl: Path = TEMPLATE) -> dict[str, str]:
+    return {rel: norm_sha(src.read_bytes()) for rel, src in template_map(tpl).items()}
+
+
+def template_shas_cmd(tpl: str | Path, ver: str) -> None:
+    """Maintainer step: record the hashes of a released template (an export of its tag) in template_shas.json."""
+    known = json.loads(SHAS.read_text(encoding="utf-8")) if SHAS.is_file() else {}
+    known[ver] = template_shas(tpl)
+    SHAS.write_text(json.dumps(known, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"template-shas {ver}: {len(known[ver])} files")
+
+
+def read_manifest(target: str | Path) -> dict[str, str]:
+    f = Path(target) / ".omi" / "manifest.json"
+    if not f.is_file():
+        return {}
+    try:
+        data = json.loads(f.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        data = None
+    if not isinstance(data, dict) or not isinstance(data.get("files", {}), dict):
+        print(f"warning: invalid manifest {f}; treating as empty")
+        return {}
+    return data.get("files", {})
+
+
+def write_manifest(target: str | Path, files: dict[str, str]) -> None:
+    f = Path(target) / ".omi" / "manifest.json"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps({"version": version(), "files": dict(sorted(files.items()))}, indent=2) + "\n", encoding="utf-8")
+
+
+def released_shas() -> dict[str, set[str]]:
+    """{project path: shas of every released template version}; read once per run."""
+    known = json.loads(SHAS.read_text(encoding="utf-8")) if SHAS.is_file() else {}
+    found = {}
+    for files in known.values():
+        for rel, sha in files.items():
+            found.setdefault(rel, set()).add(sha)
+    return found
+
+
+def backfill(rel: str, sha: str, current: str, released: dict[str, set[str]]) -> str | None:
+    """The manifest sha for a file that has none: its own sha when it is a pristine current or released template."""
+    return sha if sha == current or sha in released.get(rel, ()) else None
+
+
 def init(target="."):
     target = Path(target).resolve()
-    for src in sorted(TEMPLATE.rglob("*")):
-        if src.is_dir() or "__pycache__" in src.parts or src.suffix == ".pyc":
+    manifest_safe = upgrade_write_safe(target, ".omi/manifest.json")
+    files = read_manifest(target) if manifest_safe else {}
+    current, released = template_shas(), released_shas()
+    for rel, src in template_map().items():
+        if not upgrade_write_safe(target, rel):
             continue
-        # template stores dot-dirs as dot-xxx so packaging doesn't drop them
-        parts = ["." + p[4:] if p.startswith("dot-") else p for p in src.relative_to(TEMPLATE).parts]
-        rel = PurePosixPath(*parts)
-        dst = target.joinpath(*parts)
+        dst = target.joinpath(*rel.split("/"))
         if dst.exists():
             print(f"skip   {rel} (exists)")
+            if rel not in files and (b := backfill(rel, norm_sha(dst.read_bytes()), current[rel], released)):
+                files[rel] = b
             continue
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(src, dst)
+        files[rel] = current[rel]
         print(f"create {rel}")
-    (target / ".omi" / "version").write_text(version() + "\n", encoding="utf-8")
-    print(f"stamp  .omi/version ({version()})")
+    if manifest_safe:
+        write_manifest(target, files)
+    if upgrade_write_safe(target, ".omi/version"):
+        (target / ".omi" / "version").write_text(version() + "\n", encoding="utf-8")
+        print(f"stamp  .omi/version ({version()})")
     attrs = target / ".gitattributes"
     if not attrs.exists():
         attrs.write_text("* text=auto eol=lf\n", encoding="utf-8")
@@ -742,6 +817,155 @@ def init(target="."):
         print("git init (branch main)")
     print("tools: " + ", ".join(f"{t} {'ok' if shutil.which(t) else 'MISSING'}" for t in TOOLS))
     print("next: open Claude Code or Codex here and type omi-idea")
+
+
+def merge_keys(old: dict, new: dict) -> dict:
+    """`old` plus every key `new` has and `old` lacks (recursively); existing values stay."""
+    for k, v in new.items():
+        if k not in old:
+            old[k] = v
+        elif isinstance(old[k], dict) and isinstance(v, dict):
+            merge_keys(old[k], v)
+    return old
+
+
+def protected(rel: str) -> bool:
+    if rel in UPGRADE_SKIP:
+        return True
+    if rel.startswith(".omi/tasks/"):
+        return rel != ".omi/tasks/_template.md"
+    return rel.startswith(".omi/plans/PLAN-") and rel != ".omi/plans/PLAN-000.md"
+
+
+def upgrade_write_safe(target: Path, rel: str) -> bool:
+    """Skip links (including parent directories) and destinations outside the project."""
+    dst = target / rel
+    if (any(p.is_symlink() for p in (dst, *dst.parents) if p.is_relative_to(target))
+            or not dst.resolve().is_relative_to(target)):
+        print(f"skip (symlink): {rel}")
+        return False
+    return True
+
+
+def upgrade_apply(target: str | Path = ".") -> int:
+    target = Path(target).resolve()
+    # parse the project config before any file changes, so a broken one leaves the project untouched
+    cfg = target / ".omi" / "config.json"
+    cfg_safe = upgrade_write_safe(target, ".omi/config.json")
+    try:
+        old_cfg = json.loads(cfg.read_text(encoding="utf-8")) if cfg_safe and cfg.is_file() else None
+        if cfg_safe and cfg.is_file() and not isinstance(old_cfg, dict):
+            sys.exit(f"invalid JSON in {cfg}: expected an object; fix it, nothing was changed")
+    except json.JSONDecodeError as e:
+        sys.exit(f"invalid JSON in {cfg}: {e}; fix it, nothing was changed")
+    manifest_safe = upgrade_write_safe(target, ".omi/manifest.json")
+    files = read_manifest(target) if manifest_safe else {}
+    current, released = template_shas(), released_shas()
+    counts = {"created": 0, "updated": 0, "kept": 0}
+    for rel, src in template_map().items():
+        if protected(rel):
+            continue
+        if not upgrade_write_safe(target, rel):
+            continue
+        dst = target.joinpath(*rel.split("/"))
+        new = src.read_bytes()
+        if not dst.exists():
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_bytes(new)
+            files[rel] = current[rel]
+            counts["created"] += 1
+            print(f"create {rel}")
+            continue
+        sha = norm_sha(dst.read_bytes())
+        base = files.get(rel) or backfill(rel, sha, current[rel], released)
+        if sha == current[rel]:
+            files[rel] = sha
+        elif base == sha:
+            dst.write_bytes(new)
+            files[rel] = current[rel]
+            counts["updated"] += 1
+            print(f"update {rel}")
+        else:
+            if upgrade_write_safe(target, rel + ".omi-new"):
+                candidate = dst.with_name(dst.name + ".omi-new")
+                stale = candidate.exists()
+                candidate.write_bytes(new)
+                if stale:
+                    print(f"replaced stale {rel}.omi-new")
+            counts["kept"] += 1
+            print(f"kept (modified): {rel}")
+    tpl_cfg = json.loads(template_map()[".omi/config.json"].read_text(encoding="utf-8"))
+    if cfg_safe:
+        cfg.parent.mkdir(parents=True, exist_ok=True)
+        cfg.write_text(json.dumps(merge_keys(old_cfg, tpl_cfg) if old_cfg is not None else tpl_cfg, indent=2) + "\n", encoding="utf-8")
+    if manifest_safe:
+        write_manifest(target, files)
+    if upgrade_write_safe(target, ".omi/version"):
+        (target / ".omi" / "version").write_text(version() + "\n", encoding="utf-8")
+    for kind, catalog in (("skills", skills_catalog), ("agents", agents_catalog), ("workflows", workflows_catalog),
+                          ("rules", rules_catalog), ("references", references_catalog), ("plans", plans_catalog)):
+        if upgrade_write_safe(target, f".omi/{kind}/CATALOG.md"):
+            catalog(target)
+    print(f"upgrade {version()}: {counts['created']} created, {counts['updated']} updated, {counts['kept']} kept (see *.omi-new)")
+    return 0
+
+
+def valid_repo(repo: object) -> bool:
+    """https://, ssh:// or git@host:path; no whitespace and no leading `-`, so git and pip never read it as an option."""
+    return isinstance(repo, str) and bool(re.fullmatch(r"(?:https|ssh)://[^\s-]\S*|\w[\w.-]*@\w[\w.-]*:\S+", repo))
+
+
+def omi_repo(root: str | Path = ".") -> str:
+    cfg = Path(root) / ".omi" / "config.json"
+    try:
+        data = json.loads(cfg.read_text(encoding="utf-8")) if cfg.is_file() else {}
+    except json.JSONDecodeError as e:
+        sys.exit(f"invalid JSON in {cfg}: {e}")
+    if not isinstance(data, dict):
+        sys.exit(f"invalid JSON in {cfg}: expected an object; fix it, nothing was changed")
+    repo = data.get("omi_repo", OMI_REPO)
+    if not valid_repo(repo):
+        sys.exit(f"invalid omi_repo in {cfg}: {repo!r} (use https://, ssh:// or git@host:path)")
+    return repo
+
+
+def release_tag(tag: str) -> bool:
+    """Release tags use vX.Y.Z with major < 1000; vYYYY.MM.DD tags are dates."""
+    return bool(re.fullmatch(r"v\d+\.\d+\.\d+", tag)) and semver(tag)[0] < 1000
+
+
+def latest_tag(repo: str) -> str | None:
+    """Highest vX.Y.Z tag of the remote (SemVer order; date tags and rc tags are ignored)."""
+    r = subprocess.run(["git", "ls-remote", "--tags", "--", repo], capture_output=True, text=True, encoding="utf-8")
+    if r.returncode:
+        sys.exit(f"git ls-remote failed: {r.stderr.strip()}")
+    tags = set(re.findall(r"refs/tags/(v\d+\.\d+\.\d+)$", r.stdout, re.M))
+    return max((tag for tag in tags if release_tag(tag)), key=semver, default=None)
+
+
+def upgrade_cmd(rest: list[str], root: str | Path = ".") -> int:
+    requested = flag(rest, "--to")
+    if "--to" in rest and (not requested or not release_tag(requested)):
+        sys.exit("usage: omi upgrade [--check | --to vX.Y.Z]")
+    if "--apply" in rest:
+        return upgrade_apply(root)
+    repo = omi_repo(root)
+    if repo != OMI_REPO:
+        if "--check" in rest:
+            print(f"repo: {repo} (not the default)")
+        elif flag(rest, "--repo") != repo:
+            sys.exit(f"omi_repo is not the default; confirm with --repo {repo}")
+    latest = latest_tag(repo) if not requested or "--check" in rest else requested
+    if not latest:
+        sys.exit(f"no vX.Y.Z tag in {repo}")
+    if "--check" in rest:
+        print(f"omi {version()} -> {latest[1:]}" if semver(latest) > semver(version()) else "up to date")
+        return 0
+    tag = requested or latest
+    if "://" not in repo:
+        repo = "ssh://" + repo.replace(":", "/", 1)
+    rc = subprocess.run([sys.executable, "-m", "pip", "install", "--user", "--upgrade", f"git+{repo}@{tag}"]).returncode
+    return rc or subprocess.run([sys.executable, "-m", "omi", "upgrade", "--apply"]).returncode
 
 
 def task_worktrees(root):
@@ -2237,6 +2461,10 @@ def main(argv=None):
         print(f"omi {version()}")
     elif cmd == "init":
         init(*rest[:1])
+    elif cmd == "upgrade":
+        sys.exit(upgrade_cmd(rest))
+    elif cmd == "template-shas" and len(rest) == 2:
+        template_shas_cmd(*rest)
     elif cmd == "status":
         status(*rest[:1])
     elif cmd == "github":
