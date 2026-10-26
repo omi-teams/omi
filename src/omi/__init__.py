@@ -275,7 +275,7 @@ def rule_prompt(root, files):
     return "\nRules (you must follow these):\n" + "\n".join("/work/" + Path(f).relative_to(root).as_posix() for f in files)
 
 
-def load_plans(root):
+def load_plans(root, strict=True):
     """Validated plan frontmatter, keyed by file name."""
     found, bad = {}, []
     for f in sorted((Path(root) / ".omi" / "plans").glob("*.md")):
@@ -288,9 +288,13 @@ def load_plans(root):
         if m.get("status") not in ("active", "done"):
             errs.append("`status` must be active or done")
         bad.extend(f"{f.stem}: {e}" for e in errs)
-        found[f.stem] = m
+        if not errs:
+            found[f.stem] = m
     if bad:
-        sys.exit("plans check failed:\n" + "\n".join(bad))
+        if strict:
+            sys.exit("plans check failed:\n" + "\n".join(bad))
+        for error in bad:
+            print(f"plans check failed: {error}")
     return found
 
 
@@ -785,7 +789,7 @@ def status(cwd="."):
     root = Path(git(cwd, "rev-parse", "--show-toplevel") or cwd).resolve()
     print(f"branch: {git(root, 'rev-parse', '--abbrev-ref', 'HEAD')}")
     ts = tasks(root)
-    for pid, m in load_plans(root).items():
+    for pid, m in load_plans(root, strict=False).items():
         if m["status"] == "active":
             members = [t for t in ts.values() if t.get("plan") == pid]
             done_count = sum(t.get("status") == "done" for t in members)

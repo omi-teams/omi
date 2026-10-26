@@ -1233,6 +1233,22 @@ def test_plans():
         assert "PLAN-001 Ship feature: done 1/2" in text, text
         assert "PLAN-002 Empty: done 0/0" in text, text
         assert "PLAN-000" not in text, text
+        # A malformed plan must not break the session-start status hook.
+        plan.write_text(original.replace("title: Ship feature", "title:").replace("status: active", "status: planned"))
+        with omi.contextlib.redirect_stdout(io.StringIO()) as out:
+            omi.status(root)
+        text = out.getvalue()
+        assert "plans check failed: PLAN-001: missing `title`" in text, text
+        assert "plans check failed: PLAN-001: `status` must be active or done" in text, text
+        assert "PLAN-001 : done" not in text, text
+        assert "PLAN-002 Empty: done 0/0" in text, text
+        assert "done: 3/4" in text and "[review] TASK-002" in text and "next: none ready" in text, text
+        try:
+            omi.check_task_plan(root, {"plan": "PLAN-001"})
+            raise AssertionError("invalid plan accepted by run validation")
+        except SystemExit as e:
+            assert "plans check failed:" in str(e) and "PLAN-001: missing `title`" in str(e), str(e)
+        plan.write_text(original)
         for f in task_dir.glob("TASK-*.md"):
             f.unlink()
         with omi.contextlib.redirect_stdout(io.StringIO()) as out:

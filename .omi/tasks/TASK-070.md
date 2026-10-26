@@ -23,12 +23,10 @@ Plans in `.omi/plans/PLAN-NNN.md` (frontmatter `id, title, status: active|done`,
 - [ ] All tests pass.
 
 ## Checkpoint
-Review round 1 PASS with a finding the PO asked to fix now (PO: "Sửa điểm 1 rồi merge"):
-- src/omi/__init__.py `status()` calls `load_plans`, which `sys.exit`s on any invalid plan; one malformed plan stops `omi status` (the session-start hook). In `status`, print one line per plan error (e.g. `plans check failed: PLAN-001: missing title`) and keep printing the rest of the status. `omi plans` and `omi run` keep failing hard. Add a test.
-Done: Implemented plan validation/catalog CLI, unknown task plan rejection before worker startup, active plan progress (including 0/0), Coordinator-owned plan frontmatter, root/template instructions, and PLAN-000 example/catalog installed by init. Added tests for all acceptance criteria.
+Done: Fixed the review finding: status reports each plan validation error, skips malformed plans, and continues showing valid plan progress and task status. Plans catalog generation and run validation still fail hard on invalid plans. Previous TASK-070 acceptance criteria remain implemented.
 Not done: None in implementation scope; Coordinator review pending.
-Tests: PASS — python3 tests/test_omi.py (exit 0, final output: ok).
-Next: Coordinator reviews diff and runs the review workflow; suggested commit: feat(plans): group tasks and show plan progress in status.
+Tests: PASS — python3 tests/test_omi.py (exit 0, final output: ok). Regression test covers multiple errors in a malformed plan, valid plan progress, remaining task status, and strict run validation; existing CLI validation tests pass.
+Next: Coordinator reviews the fix and completes the review/merge workflow. Suggested commit: fix(plans): keep status available when a plan is invalid.
 
 ## Steps
 - plan started 2026-10-26 14:05
@@ -60,6 +58,12 @@ Next: Coordinator reviews diff and runs the review workflow; suggested commit: f
 > AC: Template ships `PLAN-000.md` and the catalog, and `omi init` creates them ✓ Both files are in `dot-omi/plans`. `plans_catalog` is added to the `init` catalog list, and the test asserts both exist after `init`.
 > AC: Template and root `AGENTS.md` each mention plans in one line ✓ Both files get an identical single line.
 > AC: All tests pass ✓ `python3 tests/test_omi.py` prints `ok`.
+2026-10-26 14:11 omi-agent-engineer (codex):
+> DONE — `omi status` báo từng lỗi plan và tiếp tục hiển thị; `omi plans`/`omi run` vẫn từ chối plan lỗi.
+> Files: `src/omi/__init__.py`, `tests/test_omi.py`, `.omi/tasks/TASK-070.md` (checkpoint).
+> Commit đề xuất: `fix(plans): keep status available when a plan is invalid`
+> Tests: `python3 tests/test_omi.py` PASS, exit 0, kết thúc `ok`.
+> Vấn đề còn mở: Không; chờ Coordinator review. Chưa commit.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -67,3 +71,4 @@ Next: Coordinator reviews diff and runs the review workflow; suggested commit: f
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | n/a | n/a | n/a | 31s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 280687 | 4255 | 247552 | 114s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 4 | 1484 | 43354 | 35s | - | PASS 87659a5 |
+| omi-agent-engineer | gpt-6.1-sol (codex) | medium | 215829 | 1903 | 180736 | 79s | 1/1 omi-skill-lean-implementation | - |
