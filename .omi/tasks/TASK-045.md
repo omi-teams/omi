@@ -1,10 +1,12 @@
 ---
 id: TASK-045
 title: Codex CLI in the worker image
-status: planned
+status: in-progress
 depends: TASK-028
 scope: src/omi/template/docker/**, src/omi/__init__.py, tests/**, README.md
 skills: [omi-skill-docker-worker-pitfalls, omi-skill-windows-powershell]
+role: omi-agent-engineer
+workflow: omi-flow-feature-sensitive
 ---
 ## Goal
 `omi run --tool codex` works in the container with a pinned Codex CLI version.
