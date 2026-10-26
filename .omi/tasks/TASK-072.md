@@ -1,7 +1,7 @@
 ---
 id: TASK-072
 title: Coordinator picks model and effort per task in the task file
-status: planned
+status: in-progress
 depends: TASK-071
 scope: src/omi/__init__.py, tests/**, src/omi/template/**, .omi/tasks/_template.md, AGENTS.md
 role: omi-agent-engineer
