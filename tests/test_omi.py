@@ -137,6 +137,88 @@ def test_version_stamp_package_hook():
         assert subprocess.run(["sh", hook], cwd=d).returncode == 7
 
 
+def test_upgrade():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        omi.init(root)
+        man = json.loads((root / ".omi" / "manifest.json").read_text(encoding="utf-8"))
+        assert man["version"] == omi.version() and man["files"][".claude/settings.json"] == omi.template_shas()[".claude/settings.json"]
+        # a project without manifest: pristine files are backfilled, edited ones are not
+        (root / ".omi" / "manifest.json").unlink()
+        (root / "docker" / "prove.sh").write_bytes((root / "docker" / "prove.sh").read_bytes().replace(b"\n", b"\r\n"))
+        (root / "AGENTS.md").write_text("mine\n", encoding="utf-8")
+        omi.init(root)
+        files = json.loads((root / ".omi" / "manifest.json").read_text(encoding="utf-8"))["files"]
+        assert "docker/prove.sh" in files and "AGENTS.md" not in files
+        # a released template (fake tag dir) counts as pristine
+        old = root / "oldtpl"
+        shutil.copytree(omi.TEMPLATE, old, ignore=shutil.ignore_patterns("__pycache__"))
+        (old / "docker" / "Dockerfile").write_text("FROM old\n", encoding="utf-8")
+        real = omi.SHAS
+        omi.SHAS = root / "shas.json"
+        try:
+            omi.template_shas_cmd(old, "0.0.1")
+            assert omi.released_shas("docker/Dockerfile") and "docker/Dockerfile" in json.loads(omi.SHAS.read_text(encoding="utf-8"))["0.0.1"]
+            (root / "docker" / "Dockerfile").write_text("FROM old\n", encoding="utf-8")
+            (root / ".omi" / "manifest.json").unlink()
+            (root / ".omi" / "agents" / "omi-agent-engineer.md").unlink()
+            (root / ".omi" / "tasks" / "TASK-001.md").write_text("task\n", encoding="utf-8")
+            (root / ".omi" / "decisions.md").write_text("mine\n", encoding="utf-8")
+            cfg = root / ".omi" / "config.json"
+            c = json.loads(cfg.read_text(encoding="utf-8"))
+            c["test"] = "pytest"
+            del c["network_allow"]
+            cfg.write_text(json.dumps(c), encoding="utf-8")
+            omi.init(root)
+            ref = root / ".omi" / "references" / "postgres-conventions.md"
+            ref.write_text(ref.read_text(encoding="utf-8") + "\nmine\n", encoding="utf-8")
+            edited = ref.read_text(encoding="utf-8")
+            (root / "docker" / "Dockerfile").write_text("FROM old\n", encoding="utf-8")
+            (root / ".omi" / "manifest.json").unlink()
+            out = io.StringIO()
+            with omi.contextlib.redirect_stdout(out):
+                omi.upgrade_apply(root)
+        finally:
+            omi.SHAS = real
+        text = out.getvalue()
+        assert (root / ".omi" / "agents" / "omi-agent-engineer.md").is_file()
+        assert (root / "docker" / "Dockerfile").read_bytes() == (omi.TEMPLATE / "docker" / "Dockerfile").read_bytes()
+        assert "kept (modified): .omi/references/postgres-conventions.md" in text
+        assert (root / ".omi" / "references" / "postgres-conventions.md.omi-new").is_file()
+        assert (root / ".omi" / "references" / "postgres-conventions.md").read_text(encoding="utf-8") == edited
+        assert (root / ".omi" / "tasks" / "TASK-001.md").read_text(encoding="utf-8") == "task\n"
+        assert (root / ".omi" / "decisions.md").read_text(encoding="utf-8") == "mine\n"
+        c = json.loads((root / ".omi" / "config.json").read_text(encoding="utf-8"))
+        assert c["test"] == "pytest" and c["network_allow"] == ["api.anthropic.com"]
+        assert (root / ".omi" / "version").read_text(encoding="utf-8").strip() == omi.version()
+
+
+def test_upgrade_cmd():
+    calls = []
+    ls = "a\trefs/tags/v0.2.0\nb\trefs/tags/v0.10.0\nc\trefs/tags/v0.10.0^{}\nd\trefs/tags/2026-10-01\ne\trefs/tags/v0.9.0\n"
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, ls, "")
+
+    real = omi.subprocess.run
+    omi.subprocess.run = run
+    try:
+        assert omi.latest_tag("https://x/y") == "v0.10.0"
+        assert calls[0] == ["git", "ls-remote", "--tags", "https://x/y"]
+        with tempfile.TemporaryDirectory() as d:
+            out = io.StringIO()
+            with omi.contextlib.redirect_stdout(out):
+                omi.upgrade_cmd(["--check"], d)
+            assert out.getvalue().strip() == f"omi {omi.version()} -> 0.10.0"
+            calls.clear()
+            assert omi.upgrade_cmd(["--to", "v0.9.0"], d) == 0
+            assert calls[1] == [omi.sys.executable, "-m", "pip", "install", "--user", "--upgrade", f"git+{omi.OMI_REPO}@v0.9.0"]
+            assert calls[2] == [omi.sys.executable, "-m", "omi", "upgrade", "--apply"]
+    finally:
+        omi.subprocess.run = real
+
+
 def test_init_fresh_project():
     with tempfile.TemporaryDirectory() as d:
         root = Path(d).resolve()
@@ -2942,6 +3024,8 @@ if __name__ == "__main__":
     test_template_docker()
     test_version_stamp_package_hook()
     test_init_fresh_project()
+    test_upgrade()
+    test_upgrade_cmd()
     test_init_guard_status()
     test_status_drift_hints()
     test_github_rulesets()
