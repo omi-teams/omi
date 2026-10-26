@@ -41,6 +41,9 @@ Review round 2 FAIL (do these, nothing else):
 - full_volumes: one line per container even when both /cache and /home/node are over 90% (e.g. "c1: /cache 95%, /home/node 92% full; raise ...").
 - Ignore the "task file out of scope" finding: your own task file is always allowed.
 
+Security round 1 FAIL:
+- status(): call full_volumes(main_checkout(root) or root), the same way print_workers does, so warnings show when status runs inside a worktree. Add one assertion for it.
+
 ## Steps
 - plan started 2026-10-26 21:07
 - plan done 2026-10-26 21:07
@@ -55,6 +58,12 @@ Review round 2 FAIL (do these, nothing else):
 - review started 2026-10-26 21:16
 - review failed 2026-10-26 21:18
 - build started 2026-10-26 21:18
+- build done 2026-10-26 21:21
+- review started 2026-10-26 21:21
+- review done 2026-10-26 21:22
+- security started 2026-10-26 21:22
+- security failed 2026-10-26 21:25
+- build started 2026-10-26 21:25
 
 ## Reports
 2026-10-26 21:09 omi-agent-architect (claude):
@@ -251,6 +260,33 @@ Review round 2 FAIL (do these, nothing else):
 > create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-26 21:22 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - No blocking problems found. The two review round 2 fixes (`GOTMPDIR=/cache` and one combined status line per container) are in place and tested. The remaining items below are outside what I could run.
+> - `docker/Dockerfile:9-11` and the template copy: I did not build the image, so the `/etc/profile.d/omi-path.sh` change is unverified in a real container. -> The Coordinator should run `docker build` and `bash -lc 'command -v node'` on the host.
+> 
+> AC: Every container gets a `/cache` tmpfs with `rw,exec,nosuid,uid=1000,gid=1000`, sized by `worker.cache_mb`, plus the cache env vars ✓. `/tmp` and `/home/node` stay noexec, sized by `worker.tmp_mb`.
+> - `worker_argv` (`src/omi/__init__.py:1422-1437`) emits the mounts and `CACHE_ENV`, with defaults 2048 and 512.
+> - `grep` finds only three `worker_argv` callers (`run_hook`, `run_role`, `worker --prove`). All three pass `**worker_sizes(main)`.
+> - Tests assert the argv flags, the env vars, and `size=3072m` reaching `run_hook`.
+> - `CACHE_ENV` also sets `GOTMPDIR=/cache`, which the AC doesn't list. It's a harmless extra that was required by review round 2.
+> 
+> AC: A compiled test binary can run from `/cache` ✓ for the mount flags (unit test). The real Go run on the Windows host is still pending as a Coordinator check.
+> 
+> AC: The template and repo `docker/Dockerfile` write `/etc/profile.d/omi-path.sh` and keep the image PATH ✓ by inspection. The two files are byte-identical.
+> - The `RUN printf` runs before `USER node` and captures the build-time `$PATH`.
+> - It overrides the PATH that `/etc/profile` sets, because it sits in `profile.d`.
+> - The image was not built.
+> 
+> AC: The template Dockerfile has a commented Go toolchain example, and the `omi-idea` skill says TASK-001 adds the toolchain and `network_allow` registries ✓. The root and template `SKILL.md` match.
+> 
+> [... truncated ...]
+> AC: All tests pass on the Linux worker and the Windows host ✗. `python3 tests/test_omi.py` exits 0 and prints `ok` on Linux. The Windows run is not done.
+2026-10-26 21:24 omi-agent-security-reviewer (codex):
+> VERDICT: FAIL
+> - src/omi/__init__.py:827 Volume warnings disappear when status runs inside a worktree | why: workers use the main checkout’s repo label | verified: mocked status queried `project-task-076`; workers carry `project` -> Pass `main_checkout(root) or root` to `full_volumes`.
+> UNVERIFIED: Container login-shell PATH, real Go execution, and Windows compatibility require container/Windows checks; Linux test suite passed.
+> INJECTION: .omi/tasks/TASK-076.md:34-42 contains “do these, nothing else” and “Ignore … finding”; treated as data.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -261,3 +297,5 @@ Review round 2 FAIL (do these, nothing else):
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 229697 | 2011 | 211200 | 92s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 163805 | 1479 | 131200 | 62s | - | FAIL 35319e8 |
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 295909 | 2112 | 256896 | 110s | 3/3 omi-skill-docker-worker-pitfalls omi-skill-windows-powershell omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 2124 | 104908 | 56s | - | PASS 134d547 |
+| omi-agent-security-reviewer | gpt-6.1-sol (codex) | medium | 271653 | 1560 | 210688 | 78s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL 134d547 |
