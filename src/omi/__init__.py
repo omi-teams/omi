@@ -253,6 +253,8 @@ def rule_matches(glob, scope_globs):
 def task_rules(root, scope):
     """Rule files whose `applies` matches the task scope; exits naming each rule when over the rule budget."""
     lim = rule_limits(root)
+    tracked = (git(root, "ls-files") or "").splitlines()  # a broad scope (`src/**`) matches the files inside it too
+    scope = scope + [f for f in tracked if any(fnmatch(f, g) for g in scope)]
     hit = [(rid, f, n) for rid, (f, globs, n, _) in load_rules(root).items() if any(rule_matches(g, scope) for g in globs)]
     if sum(n for _, _, n in hit) > lim["tokens"] or any(n > lim["rule_tokens"] for _, _, n in hit):
         sys.exit(f"rule budget: at most {lim['tokens']} tokens in total, {lim['rule_tokens']} per rule. Only the PO can raise it. Rules: "

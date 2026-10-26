@@ -1088,6 +1088,13 @@ def test_rules():
         assert [f.stem for f in omi.task_rules(root, ["src/**/*.go"])] == ["go"]
         assert [f.stem for f in omi.task_rules(root, ["src/a.py", "docker/**"])] == ["docker", "python"]
         assert omi.task_rules(root, ["docs/**"]) == []
+        # broad scope: rules match the tracked files inside it; a scope naming new files still matches
+        (root / "src").mkdir()
+        (root / "src" / "x.go").write_text("package x\n")
+        omi.subprocess.run(["git", "-C", str(root), "add", "src/x.go"], check=True)
+        assert [f.stem for f in omi.task_rules(root, ["src/**"])] == ["go"]
+        assert [f.stem for f in omi.task_rules(root, ["src/**/*.go"])] == ["go"]
+        assert [f.stem for f in omi.task_rules(root, ["lib/**/*.go"])] == ["go"]
         assert "Rules (you must follow these)" in omi.rule_prompt(root, omi.task_rules(root, ["a.go"]))
         assert omi.rule_limits(root) == {"tokens": 2000, "rule_tokens": 800}
         (root / ".omi" / "config.json").write_text('{"rule_limits": {"tokens": 100}}')

@@ -29,6 +29,7 @@ Review round 1 PASS with a finding the PO asked to fix now (PO: "Sửa luôn tro
 Done: all criteria (rules cmd, rule_limits, run prompt + budget stop, 5 template rules + catalog, AGENTS.md lines, test_rules).
 Not done: -
 Tests: python3 tests/test_omi.py ok
+Round 2: `task_rules` now also matches `applies` against tracked files inside the scope (`git ls-files`); test added in test_rules. Tests ok.
 Next: review and commit.
 
 ## Steps
@@ -65,9 +66,17 @@ Next: review and commit.
 > AC: over budget, `omi run` exits before starting the agent and names each rule with its token count ✓ `task_rules` calls `sys.exit` with "rule budget … go N tokens". The test asserts no `docker run` call and that the message names `go`.
 > [... truncated ...]
 > AC: all tests pass ✓ `python3 tests/test_omi.py` ends with `ok`.
+2026-10-26 13:50 omi-agent-engineer (claude):
+> DONE
+> - Files changed: `src/omi/__init__.py`, `tests/test_omi.py`, and the Checkpoint in `.omi/tasks/TASK-068.md`.
+> - Fix: `task_rules` now also expands the scope into the tracked files it covers (`git ls-files` filtered by the scope globs) and matches `applies` against those. The string check stays, so a scope naming new files still matches.
+> - Tests: added to `test_rules`. Scope `src/**` with a tracked `src/x.go` gets `go`, and scope `src/**/*.go` and `lib/**/*.go` (no Go files) also get `go`. `python3 tests/test_omi.py` ends with `ok`.
+> - Commit: `fix(rules): match rules against tracked files inside a broad task scope`
+> - Open issues: none.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 26 | 9725 | 519593 | 114s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 2247 | 76330 | 37s | - | PASS f62106c |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 14 | 2266 | 172600 | 38s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
