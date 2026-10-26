@@ -405,8 +405,10 @@ def test_worker():
             assert c[c.index("--permission-mode") + 1] == "bypassPermissions"
             assert "/work/.omi/tasks/TASK-001.md" in c[2] and "Checkpoint" in c[c.index("--append-system-prompt") + 1]
             name = argv[argv.index("--name") + 1]
-            assert re.fullmatch(r"omi-.+-TASK-001-omi-agent-engineer-claude-sonnet-5-5-medium-\d{6}", name), name
+            assert re.fullmatch(r"[a-z0-9_.-]+-TASK-001-engineer-claude-sonnet-5\.5-medium-\d{6}", name), name
             lab = [argv[i + 1] for i, a in enumerate(argv) if a == "--label"]
+            proj = omi.compose_labels(name, "agent")["com.docker.compose.project"]
+            assert f"com.docker.compose.project={proj}" in lab and "com.docker.compose.service=agent" in lab
             for k, v in (("omi-role", "omi-agent-engineer"), ("omi-task", "TASK-001"), ("omi-model", "claude-sonnet-5-5"), ("omi-effort", "medium")):
                 assert f"{k}={v}" in lab, lab
             assert any(l.startswith("omi-started=") for l in lab) and "omi-worker=1" in lab
@@ -426,7 +428,7 @@ def test_worker():
             go_model = lambda m: (calls.clear(), omi.worker(wt, task, model=m, effort="low"))
             go_model("fast")
             argv = next(c[0] for c in calls if c[0][:2] == ["docker", "run"])
-            assert argv[argv.index("--model") + 1] == "claude-haiku-5-5" and "-claude-haiku-5-5-low-" in argv[argv.index("--name") + 1]
+            assert argv[argv.index("--model") + 1] == "claude-haiku-5-5" and "-claude-haiku-5.5-low-" in argv[argv.index("--name") + 1]
             (wt / ".omi" / "config.json").unlink()
             # build log: silent on success, shown (stderr) on failure
             out.truncate(0); out.seek(0)
@@ -654,13 +656,31 @@ def test_prove_exit_and_hosts():
     assert "stream error" not in net
 
 
+def test_clip_report():
+    short = "DONE\nx\ncommit"
+    assert omi.clip_report(short) == ["DONE", "x", "commit"]
+    big = ["DONE"] + ["line %d" % i for i in range(1000)] + ["feat: commit msg"]
+    out = omi.clip_report("\n".join(big))
+    assert out[0] == "DONE" and out[-1] == "feat: commit msg" and "[... truncated ...]" in out
+    assert sum(map(len, out)) < 2200 and out[1] == "line 0"
+
+
 def test_container_names():
     import datetime
     t = datetime.datetime(2026, 1, 1, 14, 32, 5)
-    assert omi.container_name("omi-squad2", "omi-agent-engineer", "TASK-018", "claude-sonnet-5-5", "high", t) == \
-        "omi-omi-squad2-TASK-018-omi-agent-engineer-claude-sonnet-5-5-high-143205"
-    assert len(omi.container_name("omi-squad2", "omi-agent-engineer", "prove", "claude-sonnet-5-5", "medium", t)) >= 60
-    assert omi.container_name("my repo", "prove", now=t) == "omi-my-repo-prove-none-none-143205"
+    assert omi.container_name("omi-squad2", "omi-agent-reviewer", "TASK-055", "claude", "claude-sonnet-5-5", "medium", t) == \
+        "omi-squad2-TASK-055-reviewer-claude-sonnet-5.5-medium-143205"
+    assert omi.container_name("omi-squad2", "omi-agent-engineer", "TASK-018", "codex", "gpt-5.1-codex", "high", t) == \
+        "omi-squad2-TASK-018-engineer-codex-gpt-5.1-codex-high-143205"
+    assert omi.container_name("omi-squad2", "omi-agent-engineer", "TASK-018", "codex", "codex-default", "high", t) == \
+        "omi-squad2-TASK-018-engineer-codex-default-high-143205"
+    assert omi.container_name("omi-squad2", "my role", "prove", now=t) == "omi-squad2-prove-my-role-claude-none-none-143205"
+    assert omi.container_name("omi-squad2", "omi-agent-engineer", "TASK-018", "codex", "codex-default", "high", t, salt="a3") == \
+        "omi-squad2-TASK-018-engineer-codex-default-high-143205a3"
+    # compose project: lowercased run name, chars outside [a-z0-9_-] become '-'
+    assert omi.compose_labels("omi-squad2-TASK-055-reviewer-claude-sonnet-5.5-medium-143205", "agent") == {
+        "com.docker.compose.project": "omi-squad2-task-055-reviewer-claude-sonnet-5-5-medium-143205",
+        "com.docker.compose.service": "agent"}
     with tempfile.TemporaryDirectory() as d:
         assert omi.resolve_model(d, "opus") == "claude-opus-5-5" and omi.resolve_model(d, "claude-x-1") == "claude-x-1"
         for bad in ("gpt", None):
@@ -673,6 +693,9 @@ def test_container_names():
     labels = omi.worker_labels("omi-agent-engineer", "TASK-1", "m", "low")
     a = omi.worker_argv(Path("/w"), "img", ["x"], "n", "r", labels)
     assert "omi-model=m" in a and "omi-effort=low" in a and "omi-task=TASK-1" in a and "omi-role=omi-agent-engineer" in a
+    # agent container joins the run's compose group (same project as its proxy)
+    a = omi.worker_argv(Path("/w"), "img", ["x"], "n", "r", {**labels, **omi.compose_labels("n", "agent")})
+    assert "com.docker.compose.project=n" in a and "com.docker.compose.service=agent" in a
     # status lists running workers (docker mocked); nothing when none
     import datetime as dt
     started = (dt.datetime.now() - dt.timedelta(minutes=75)).isoformat(timespec="seconds")
@@ -771,7 +794,7 @@ def test_network_allowlist():
     calls = []
 
     class R:
-        def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
+        def __init__(s, out="", rc=0, err=""): s.stdout, s.returncode, s.stderr = out, rc, err
 
     def run(cmd, **kw):
         calls.append(cmd)
@@ -782,11 +805,12 @@ def test_network_allowlist():
     buf = io.StringIO()
     sys.stdout, saved = buf, sys.stdout
     try:
-        long = omi.container_name("omi-squad2", "omi-agent-engineer", "TASK-052", "sonnet", "medium")
+        # worst real name: a long codex model ID at xhigh effort
+        long = omi.container_name("my-repo", "omi-agent-engineer", "TASK-052", "codex", "gpt-5.1-codex-mini-high-preview-2026-10-26", "xhigh")
         with real_egress(Path("/My Repo"), long, "img", ["api.anthropic.com"]) as (net, proxy):
-            assert (net, proxy) == (f"omi-net-{long}", "omi-proxy")  # a DNS label is at most 63 chars
+            assert (net, proxy) == (f"omi-net-{long}", "omi-proxy") and len(f"{long}-proxy") > 63
             host = omi.worker_argv(Path("/w"), "img", ["x"], long, network=net, proxy=proxy)
-            assert "HTTPS_PROXY=http://omi-proxy:3128" in host and len(f"{long}-proxy") > 63
+            assert "HTTPS_PROXY=http://omi-proxy:3128" in host
             inside = list(calls)
     finally:
         sys.stdout = saved
@@ -795,6 +819,8 @@ def test_network_allowlist():
     create = next(c for c in inside if c[1] == "create")
     assert create[-3:] == ["python3", "/proxy.py", "api.anthropic.com"] and "--read-only" in create and "--cap-drop" in create
     assert not any("TOKEN" in a or ":/work" in a for a in create) and "omi-repo=my-repo" in create
+    assert f"com.docker.compose.project={omi.compose_labels(long, 'proxy')['com.docker.compose.project']}" in create
+    assert "com.docker.compose.service=proxy" in create
     assert [c[1] for c in inside if c[1] in ("create", "start")] == ["create", "start"]
     assert next(c for c in inside if c[1:3] == ["network", "connect"])[3:5] == ["--alias", "omi-proxy"]
     assert any(c[1:3] == ["network", "connect"] for c in inside)
@@ -825,6 +851,38 @@ def test_network_allowlist():
     # prove.sh checks both an allowed and a blocked host
     sh = (omi.TEMPLATE / "docker" / "prove.sh").read_text()
     assert "api.anthropic.com" in sh and "example.com" in sh and "1.1.1.1" in sh and "network_allow" in sh
+    # a name already in use: NameTaken, and only what this run created is removed (never another run's proxy)
+    conflicts = {"network": "network with name omi-net-n already exists", "proxy": 'The container name "/n-proxy" is already in use'}
+    for taken in ("network", "proxy", "port"):
+        seen = []
+
+        def run3(cmd, **kw):
+            seen.append(cmd)
+            if (cmd[1:3] == ["network", "create"]) if taken == "network" else (cmd[1] == "create"):
+                return R(rc=1, err=conflicts.get(taken, "Bind for 0.0.0.0:8080 failed: port is already in use"))
+            return R("omi-proxy ready\n" if cmd[1] == "logs" else "")
+
+        omi.subprocess.run = run3
+        try:
+            try:
+                with real_egress(Path("/My Repo"), "n", "img", ["a.com"]):
+                    pass
+            except omi.NameTaken:
+                assert taken != "port", "a port conflict must not count as a taken name"
+            except SystemExit as e:
+                assert taken == "port" and "cannot" in str(e), e
+            else:
+                raise AssertionError("taken name accepted")
+        finally:
+            omi.subprocess.run = real
+        cmds = [c[1:3] for c in seen]
+        if taken != "port":
+            assert ["rm", "-f"] not in cmds and (["network", "rm"] in cmds) == (taken == "proxy"), (taken, cmds)
+    # only Docker's own message for this exact name counts
+    assert omi.name_taken('Conflict. The container name "/x" is already in use', "x")
+    assert omi.name_taken("network with name omi-net-x already exists", "omi-net-x")
+    assert not omi.name_taken('Conflict. The container name "/x" is already in use', "y")
+    assert not omi.name_taken("Bind failed: port already in use", "x")
 
 
 def test_clean_and_old_images():
@@ -1372,13 +1430,15 @@ def test_tool_choice_and_quota_switch():
         outs, calls = [], []
 
         class R:
-            def __init__(self, out="", rc=0):
-                self.stdout, self.stderr, self.returncode = out, "", rc
+            def __init__(self, out="", rc=0, err=""):
+                self.stdout, self.stderr, self.returncode = out, err, rc
 
         def run(cmd, **kw):
             if cmd[:2] == ["docker", "run"]:
                 calls.append(cmd)
-                return outs.pop(0)
+                r = outs.pop(0)
+                r.stderr = r.stderr.replace("NAME", cmd[cmd.index("--name") + 1])  # the conflict names this run's container
+                return r
             if cmd[:2] == ["git", "-C"] and "show" in cmd:
                 return R("---\nscope: src/**\n---\n")
             return R()
@@ -1429,6 +1489,27 @@ def test_tool_choice_and_quota_switch():
             assert "QUOTA: claude hit its usage limit" in text.partition("## Checkpoint")[2].partition("##")[0]
             assert "| QUOTA->codex |" in text and "QUOTA->" not in text.rpartition("| gpt-x (codex) |")[2]
             assert "| gpt-x (codex) |" in text and text.count("| omi-agent-engineer |") >= 3
+            # --model is a full Claude ID: codex falls back to codex-default instead of exiting 5
+            assert go(R(claude_quota, 1), R(ok_codex), model="claude-sonnet-5-5") == 0 and "gpt-x" in calls[1]  # the role's alias
+            (wt / ".omi" / "config.json").write_text("{}")
+            assert go(R(claude_quota, 1), R(ok_codex), model="claude-sonnet-5-5") == 0 and "-m" not in calls[1]
+            (wt / ".omi" / "config.json").write_text('{"codex_models": {"sonnet": "gpt-x"}}')
+            # codex hits its limit with a full codex --model: claude uses the role's alias, not the codex ID
+            assert go(R(codex_quota, 1), R(json.dumps({"result": "ok", "usage": {}})), tool="codex", model="gpt-5.1-codex") == 0
+            assert any("claude-sonnet-5-5" in a for a in calls[1]) and not any("gpt-5.1-codex" in a for a in calls[1])
+            assert "| claude-sonnet-5-5 |" in task.read_text()
+            # a container name already in use: one retry with a 2-char suffix on the stamp
+            assert go(R("", 125, 'Conflict. The container name "/NAME" is already in use'), R(ok_codex), tool="codex") == 0
+            assert len(calls) == 2 and "--name" in calls[0]
+            first, second = (c[c.index("--name") + 1] for c in calls)
+            assert re.fullmatch(r".*-\d{6}", first) and re.fullmatch(r".*-\d{6}[0-9a-f]{2}", second), (first, second)
+            # a port clash or any other stderr with "already in use" does not rerun the agent
+            calls.clear()
+            try:
+                go(R("", 125, "Bind for 0.0.0.0:8080 failed: port is already in use"))
+            except SystemExit:
+                pass
+            assert len(calls) == 1, calls
             # the other tool also at its limit, or without a token: exit 5, QUOTA line, one run only when no token
             assert go(R(claude_quota, 1), R(codex_quota, 1)) == 5 and "QUOTA: claude and codex" in sys.stdout.getvalue()
             del omi.os.environ[omi.CODEX_ENV]
@@ -1698,7 +1779,7 @@ def test_parallel():
         finally:
             sys.stdout = realout
             omi.task_worktrees, omi.main_checkout = real, realmc
-    assert omi.container_name("r", "role", "TASK-001") != omi.container_name("r", "role", "TASK-002")
+    assert omi.container_name("role", "TASK-001") != omi.container_name("role", "TASK-002")
     real = omi.git
     omi.git = lambda *a: ("worktree /r\nbranch refs/heads/main\n\nworktree /w1\nbranch refs/heads/task/TASK-A\n\n"
                           "worktree /w2\nbranch refs/heads/task/TASK-B\n")
@@ -1727,6 +1808,7 @@ if __name__ == "__main__":
     test_incremental_review()
     test_review_round_flow()
     test_container_names()
+    test_clip_report()
     test_network_allowlist()
     test_prove_exit_and_hosts()
     test_clean_and_old_images()

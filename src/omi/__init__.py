@@ -10,6 +10,7 @@ import json
 import os
 import posixpath
 import re
+import secrets
 import shlex
 import shutil
 import subprocess
@@ -934,6 +935,22 @@ def quota_hit(tool, out, rc):
     return bool(rc) and any(re.search(QUOTA_PATTERNS[tool], t, re.I) for t in error_texts(tool, out))
 
 
+def clip_report(text, limit=2000):
+    """Report lines, middle truncated over the limit so the first (DONE/VERDICT) and last (commit) lines survive."""
+    text = text.strip()
+    if len(text) <= limit:
+        return text.splitlines()
+    lines = text.splitlines()
+    head, tail = [l[:500] for l in lines[:1]], [l[:500] for l in lines[-1:]] if len(lines) > 1 else []
+    room, mid = limit - sum(map(len, head + tail)), []
+    for l in lines[1:-1]:
+        if len(l) + 1 > room:
+            break
+        mid.append(l)
+        room -= len(l) + 1
+    return head + mid + ["[... truncated ...]"] + tail
+
+
 def append_note(task, heading, line):
     """Append text to the task file's `## <heading>` section (created before `## Usage`, else at the end)."""
     if not task.exists():
@@ -984,26 +1001,44 @@ def prove_rc(out, rc):
     return rc or (1 if bad else 0)
 
 
+class NameTaken(Exception):
+    """docker refused a container or network name that another run already holds."""
+
+
+def name_taken(err, name):
+    """True only for Docker's own conflict message for this exact name (not e.g. "port already in use")."""
+    return f'The container name "/{name}" is already in use' in err or f"network with name {name} already exists" in err
+
+
 @contextlib.contextmanager
 def egress(main, name, image, allow):
     """Internal docker network plus a CONNECT-only allowlist proxy (docker/proxy.py, no token, no worktree);
-    yields (network, proxy host name on that network). Both are removed on exit; hosts the proxy refused are reported."""
+    yields (network, proxy host name on that network). What this run created is removed on exit; hosts the proxy refused are reported.
+    A name already in use raises NameTaken and removes nothing, so another run's proxy or network is never touched."""
     net, proxy, repo = f"omi-net-{name}", f"{name}-proxy", repo_label(main)
     labels = ["--label", "omi-worker=1", "--label", f"omi-repo={repo}"]
     script = TEMPLATE / "docker" / "proxy.py"
     docker = lambda *a: subprocess.run(["docker", *a], capture_output=True, text=True, errors="replace")
-    logs = ""
+    logs, made = "", {"net": False, "proxy": False}
     try:
         r = docker("network", "create", "--internal", *labels, net)
         if r.returncode:
+            if name_taken(r.stderr, net):
+                raise NameTaken(net)
             sys.exit(f"cannot create the worker network: {r.stderr.strip()}. Nothing changed.")
-        for cmd in (["create", "--name", proxy, *labels, "--user", "node", "--read-only", "--cap-drop", "ALL",
+        made["net"] = True
+        proxy_labels = [x for k, v in compose_labels(name, "proxy").items() for x in ("--label", f"{k}={v}")]
+        for cmd in (["create", "--name", proxy, *labels, *proxy_labels, "--user", "node", "--read-only", "--cap-drop", "ALL",
                      "--security-opt", "no-new-privileges", "-v", f"{script}:/proxy.py:ro", image,
                      "python3", "/proxy.py", *allow],
                     ["network", "connect", "--alias", PROXY_ALIAS, net, proxy], ["start", proxy]):
             r = docker(*cmd)
             if r.returncode:
+                if cmd[0] == "create" and name_taken(r.stderr, proxy):
+                    raise NameTaken(proxy)
                 sys.exit(f"cannot start the egress proxy (docker {cmd[0]}): {r.stderr.strip()}. Nothing changed.")
+            if cmd[0] == "create":
+                made["proxy"] = True
         for _ in range(50):
             logs = docker("logs", proxy).stdout
             if "omi-proxy ready" in logs:
@@ -1013,9 +1048,11 @@ def egress(main, name, image, allow):
             sys.exit("the egress proxy did not start. Nothing changed.")
         yield net, PROXY_ALIAS
     finally:
-        logs = docker("logs", proxy).stdout or logs
-        docker("rm", "-f", proxy)
-        docker("network", "rm", net)
+        if made["proxy"]:
+            logs = docker("logs", proxy).stdout or logs
+            docker("rm", "-f", proxy)
+        if made["net"]:
+            docker("network", "rm", net)
         hosts = list(dict.fromkeys(re.findall(r"^BLOCKED (\S+)$", logs, re.M)))
         for h in hosts[:5]:
             print(f'NETWORK BLOCKED: {h} - add to "network_allow" in .omi/config.json')
@@ -1023,11 +1060,18 @@ def egress(main, name, image, allow):
             print(f"... and {len(hosts) - 5} more blocked hosts")
 
 
-def container_name(repo, role, tid=None, model=None, effort=None, now=None):
-    """omi-<repo>-<task-id>-<role>-<model-id>-<effort>-<HHMMSS>, limited to Docker's [a-zA-Z0-9_.-]; model/effort `none` for prove."""
-    stamp = (now or datetime.datetime.now()).strftime("%H%M%S")
-    raw = "-".join(p for p in ("omi", repo, tid, role, model or "none", effort or "none", stamp) if p)
+def container_name(repo, role, tid=None, tool="claude", model=None, effort=None, now=None, salt=""):
+    """<repo>-<task-id>-<role short>-<tool>-<model>-<effort>-<HHMMSS><salt>, limited to Docker's [a-zA-Z0-9_.-]; model/effort `none` for prove.
+    salt: a random suffix, only after a name conflict."""
+    stamp = (now or datetime.datetime.now()).strftime("%H%M%S") + salt
+    model = re.sub(r"-(\d+)-(\d+)$", r"-\1.\2", model or "none") if tool == "claude" else model or "none"
+    raw = "-".join(p for p in (repo, tid, re.sub(r"^omi-agent-", "", role), None if model.startswith(tool) else tool, model, effort or "none", stamp) if p)
     return re.sub(r"[^a-zA-Z0-9_.-]", "-", raw)
+
+
+def compose_labels(name, service):
+    """Docker Desktop groups containers by the compose project label; one project per run, named after its agent container."""
+    return {"com.docker.compose.project": re.sub(r"[^a-z0-9_-]", "-", name.lower()), "com.docker.compose.service": service}
 
 
 def repo_label(main):
@@ -1496,12 +1540,27 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
         mdl, eff = models[t], efforts[t]
         cmd = (engineer_cmd if t == "claude" else codex_cmd)(text, task_rel, mdl, eff, prompt_skills + note)
         t0 = time.monotonic()
-        name = container_name(main.name, role, task.stem, mdl, eff)
-        with egress(main, name, image, allow_for(main, t)) as (net, proxy):
-            r = subprocess.run(worker_argv(wt, image, cmd, name, repo_label(main),
-                                             worker_labels(role, task.stem, mdl, eff), ro=read,
-                                             mounts=mounts, env_names=(envs[t],), network=net, proxy=proxy),
-                                env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True, errors="replace")
+
+        def run_once(name):
+            with egress(main, name, image, allow_for(main, t)) as (net, proxy):
+                r = subprocess.run(worker_argv(wt, image, cmd, name, repo_label(main),
+                                                 {**worker_labels(role, task.stem, mdl, eff), **compose_labels(name, "agent")}, ro=read,
+                                                 mounts=mounts, env_names=(envs[t],), network=net, proxy=proxy),
+                                    env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    text=True, errors="replace")
+            if r.returncode and name_taken(r.stderr or "", name):
+                raise NameTaken(name)
+            sys.stderr.write(r.stderr or "")
+            return r
+
+        for salt in ("", secrets.token_hex(1)):  # a name in use: one retry with a random 2-char suffix
+            try:
+                r = run_once(container_name(repo_label(main), role, task.stem, t, mdl, eff, salt=salt))
+                break
+            except NameTaken:
+                continue
+        else:
+            sys.exit(f"container name in use again for {role} ({t}). Nothing changed.")
         result, *nums = parse_usage(t, r.stdout)
         done = skills_read(wt, ids, opened_files(t, r.stdout))
         verdict = (verdict_of(result) or "n/a") if read else "-"
@@ -1543,8 +1602,14 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
             other_secret, problem = token(other), None
             try:
                 models[other] = resolve_model(main, want_model, other)
-            except SystemExit as e:
-                problem = str(e).replace(" Nothing changed.", "")
+            except SystemExit:  # a full ID of one tool: the other uses the role's alias, else its default
+                try:
+                    models[other] = resolve_model(main, am.get("model"), other)
+                except SystemExit:
+                    if other == "codex":
+                        models[other] = CODEX_DEFAULT
+                    else:
+                        problem = f"no {other} model for {want_model}"
             if not other_secret:
                 problem = f"no {other} token"
             if problem:
@@ -1559,7 +1624,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
                 return stop_quota("claude and codex both hit their usage limit")
         rc = r.returncode
         print(result if result is not None else (r.stdout or ""))
-        append_note(task, "Reports", f"{datetime.datetime.now():%Y-%m-%d %H:%M} {role} ({tool}):\n" + "\n".join("> " + l for l in (result or "(no report)").strip()[:2000].splitlines()))
+        append_note(task, "Reports", f"{datetime.datetime.now():%Y-%m-%d %H:%M} {role} ({tool}):\n" + "\n".join("> " + l for l in clip_report(result or "(no report)")))
         for sid in ids:
             if sid not in done:
                 print(f"SKILL NOT READ: {sid}")
@@ -1588,14 +1653,25 @@ def worker(wt, task_file=None, model=None, effort=None, prove=False):
     env.pop(TOKEN_ENV, None)
     script = main / "docker" / "prove.sh"
     script = script if script.exists() else TEMPLATE / "docker" / "prove.sh"
-    am = get_role(main, "omi-agent-engineer")  # named like a real run: real role, model, effort
-    name = container_name(main.name, "omi-agent-engineer", "prove",
-                          resolve_model(main, am.get("model")), am.get("effort"))
-    with egress(main, name, image, allow) as (net, proxy):
-        r = subprocess.run(worker_argv(wt, image, ["sh", "-s"], name, repo_label(main),
-                                       worker_labels("prove", None, None, None), network=net, proxy=proxy), env=env,
-                           input=script.read_bytes().replace(b"\r\n", b"\n"), stdout=subprocess.PIPE,
-                           stderr=subprocess.STDOUT)
+    am = get_role(main, "omi-agent-engineer")  # named like a real run: real role, tool, model, effort
+    tm_tool = am.get("tool") or "claude"
+    model, effort = resolve_model(main, am.get("model"), tm_tool), am.get("effort")
+    for salt in ("", secrets.token_hex(1)):  # a name in use: one retry with a random 2-char suffix
+        name = container_name(repo_label(main), "omi-agent-engineer", "prove", tm_tool, model, effort, salt=salt)
+        try:
+            with egress(main, name, image, allow) as (net, proxy):
+                r = subprocess.run(worker_argv(wt, image, ["sh", "-s"], name, repo_label(main),
+                                               {**worker_labels("prove", None, None, None), **compose_labels(name, "agent")},
+                                               network=net, proxy=proxy), env=env,
+                                   input=script.read_bytes().replace(b"\r\n", b"\n"), stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT)
+            if r.returncode and name_taken(r.stdout.decode("utf-8", "replace"), name):
+                raise NameTaken(name)
+            break
+        except NameTaken:
+            continue
+    else:
+        sys.exit("container name in use again for --prove. Nothing changed.")
     out = r.stdout.decode("utf-8", "replace")
     print(out, end="")
     return prove_rc(out, r.returncode)
