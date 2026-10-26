@@ -21,7 +21,7 @@ A project that runs omi moves to a newer omi with one PO command: install the ne
 - [ ] `omi init` writes `.omi/manifest.json`: `{"version": X, "files": {"<project path>": "<sha256 of the template file it installed>"}}` for every template file it creates. A project without a manifest gets one on its next `omi init`/`omi upgrade`, recording only files that are byte-identical (CRLF/LF ignored) to the current template or to a released template listed in `src/omi/template_shas.json` (`{"0.2.0": {path: sha}}`, built once from tag v0.2.0, shipped as package data). Tested.
 - [ ] `omi upgrade --check` lists remote tags (`git ls-remote --tags` of `omi_repo` in `.omi/config.json`, default https://github.com/omi-teams/omi-squad2), picks the highest `vX.Y.Z` (SemVer, ignores date tags), and prints `omi <installed> -> <latest>` or `up to date`. Tested with a fake subprocess.
 - [ ] `omi upgrade [--to vX.Y.Z]` runs `python -m pip install --user --upgrade "git+<omi_repo>@<tag>"`, then runs `python -m omi upgrade --apply` in a new process so the newly installed omi updates the project. Tested on argv.
-- [ ] `omi upgrade --apply`: per template file, missing in the project -> create; unchanged since install (sha matches manifest) -> overwrite with the new template; changed by the project -> keep it, print `kept (modified): <path>`, and write the new version next to it as `<path>.omi-new`. Then update `.omi/manifest.json` and `.omi/version`, regenerate catalogs, print a summary. Never touch `.omi/tasks`, `.omi/plans/PLAN-*` other than PLAN-000, `.omi/decisions.md`; `.omi/config.json` only gains new keys from the template, existing values stay. Tested.
+- [ ] `omi upgrade --apply`: per template file, missing in the project -> create; unchanged since install (sha matches manifest) -> overwrite with the new template; changed by the project -> keep it, print `kept (modified): <path>`, and write the new version next to it as `<path>.omi-new`. Then update `.omi/manifest.json` and `.omi/version`, regenerate catalogs, print a summary. Never touch task files (`.omi/tasks/TASK-*`; `_template.md` is a template file and is updated like the others), `.omi/plans/PLAN-*` other than PLAN-000, `.omi/decisions.md`; `.omi/config.json` only gains new keys from the template, existing values stay. Tested.
 - [ ] Skill `.claude/skills/omi-upgrade/SKILL.md` (root and template) and an AGENTS.md line for `omi-upgrade`: run `--check`, ask the PO (pick-list) which version, run the upgrade, show the summary, for each `.omi-new` ask the PO keep / take new / merge, then commit on `development` and run the tests.
 - [ ] README upgrade section uses `/omi-upgrade` or `python -m omi upgrade`.
 - [ ] Real check (Coordinator): a sandbox initialised with 0.2.0 files plus one locally edited template file runs `--apply` with this branch's code: new files created, unchanged files updated, the edited file kept with a `.omi-new` next to it.
@@ -40,12 +40,21 @@ Coordinator host steps (2026-10-26):
 - Windows: `python tests/test_omi.py` -> rc=0, ok.
 - Real check: sandbox `git init` + v0.2.0 `omi init` (no manifest), appended a line to .omi/agents/omi-agent-reviewer.md, then this branch's `omi upgrade --apply` -> `1 created, 8 updated, 1 kept`; created .claude/skills/omi-upgrade/SKILL.md, updated AGENTS.md, docker/Dockerfile, docker/proxy.py and 5 more; `kept (modified): .omi/agents/omi-agent-reviewer.md` with `omi-agent-reviewer.md.omi-new` next to it; .omi/version and .omi/manifest.json written.
 
+Review round 1 FAIL:
+- latest_tag: `git ls-remote` of the real repo returns tags rc-20261026-d55dcd3, v0.2.0 and v2026.10.26; latest_tag picks v2026.10.26 today (verified on the host). Date tags in vYYYY.MM.DD form are not releases: tags with major >= 1000 are ignored, and `--to` rejects them the same way. The existing test uses `2026-10-01`, which never matched; it needs the v2026.10.26 form.
+- `upgrade --to` without a value installs the latest version silently (reviewer reproduced it). A missing value exits with the usage line before any install.
+- `.omi/tasks/_template.md` being updated is intended (PO decision; criterion text clarified). No change needed.
+
 ## Steps
 - plan started 2026-10-26 22:07
 - plan done 2026-10-26 22:07
 - architect started 2026-10-26 22:07
 - architect done 2026-10-26 22:10
 - build started 2026-10-26 22:10
+- build done 2026-10-26 22:15
+- review started 2026-10-26 22:15
+- review failed 2026-10-26 22:18
+- build started 2026-10-26 22:18
 
 ## Reports
 2026-10-26 22:08 omi-agent-architect (claude):
@@ -112,9 +121,23 @@ Coordinator host steps (2026-10-26):
 > create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-26 22:17 omi-agent-reviewer (codex):
+> VERDICT: FAIL
+> - src/omi/__init__.py:817 `.omi/tasks/_template.md` is explicitly eligible for creation or replacement, violating “Never touch .omi/tasks” -> protect every path under `.omi/tasks/`.
+> - src/omi/__init__.py:890 A bare `upgrade --to` silently installs the latest version; reproduced with mocked subprocesses -> reject missing flag values before running installation.
+> 
+> AC: Init manifest and legacy backfill ✓ `test_upgrade` passes; shipped hashes contain 61 v0.2.0 files; package data includes them.
+> AC: Remote version check ✓ `test_upgrade_cmd` verifies numeric version ordering, date-tag exclusion, and check output.
+> AC: Install and new-process apply ✓ `test_upgrade_cmd` verifies pip and apply argv for a valid explicit tag.
+> AC: Apply updates and preserves protected content ✗ Task-template exemption violates directory protection; other update, preservation, config, and stamping checks pass.
+> AC: Upgrade skills and AGENTS entries ✓ Root and template contain the required workflow and command entry.
+> AC: README upgrade instructions ✓ Documents `python -m omi upgrade` and `/omi-upgrade`.
+> AC: Real v0.2.0 sandbox check ✓ Coordinator records 1 created, 8 updated, 1 modified file preserved with `.omi-new`; not independently repeated.
+> AC: Linux and Windows tests ✓ `python3 tests/test_omi.py` completed with exit 0 and `ok`; Coordinator records Windows exit 0.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-architect | claude-opus-5-5 | high | 12 | 4515 | 152074 | 53s | - | n/a |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 11516 | 297805 | 180s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
+| omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 208445 | 1944 | 171904 | 117s | - | FAIL b8079e3 |
