@@ -25,6 +25,7 @@ Tests: `PYTHONPATH=src python3 -m omi skills --check` ok (19 checked); `python3 
 
 Coordinator re-measure 2026-10-26 (fresh sandbox from this worktree's template, n=1, sonnet/medium; out / cache): bugfix + slim debug-root-cause 1192 / 106745, 18s, bug fixed; bugfix no skill 841 / 84563, 13s, bug fixed (+42% / +26%). Security slim role 722 / 50210, 12s, FAIL with injection + token leak + token to any host, verified by running, plus UNVERIFIED curl option injection via a `-` URL; plain read 697 / 32669, 11s, same three + scheme check (+4% / +54%). File size halved (591->294, 453->225 tokens) but per-run cost barely moved: the gap is the extra tool turns (running code to verify, grepping callers), each re-reading the context. PO decision: keep slim + verification.
 Write (docs-writer): append a Vietnamese section "Đo lại sau TASK-059" to docs/research/omi-eval.md with the numbers above and the conclusion; change nothing else.
+Docs-writer 2026-10-26: DONE. Section "Đo lại sau TASK-059" appended to docs/research/omi-eval.md. Not done: none. Next: Coordinator commits.
 ## Steps
 - plan started 2026-10-26 10:41
 - plan done 2026-10-26 10:41
@@ -55,9 +56,16 @@ Write (docs-writer): append a Vietnamese section "Đo lại sau TASK-059" to doc
 > Debug skill is 294 tokens (limit 295) with the MIT comment restored. To fit, I dropped the Inputs detail to one line and tightened some wording; the `inputs` section stays because the validator requires it.
 > Open: criterion 2 (sandbox re-run and numbers in `docs/research/omi-eval.md`) is still the Coordinator's.
 > Note: `TASK-059.md` changed on disk while I was working; I left the external change as is.
+2026-10-26 10:48 omi-agent-docs-writer (claude):
+> DONE
+> Files changed: docs/research/omi-eval.md (appended "Ä�o láº¡i sau TASK-059"); .omi/tasks/TASK-059.md (checkpoint line only)
+> Commit: docs: add TASK-059 re-measurement to omi eval report
+> Not verified: `python3 tests/test_omi.py` not run (docs-only change); sandbox numbers taken from the Coordinator's checkpoint, not re-run
+> Open: the security-reviewer slim run FAILed its check; the report records this and the unverified curl option-injection finding as stated. Criterion 1 target (+10% tokens) is recorded as not met, per PO decision.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-haiku-5-5 | low | 44 | 10895 | 611382 | 107s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-haiku-5-5 | low | 30 | 9309 | 408870 | 103s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-docs-writer | claude-haiku-5-5 | low | 10 | 2597 | 111892 | 20s | - | - |

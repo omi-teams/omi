@@ -96,3 +96,28 @@ Quyết định thuộc về PO.
 - Một số cặp khác model hoặc effort (docs-writer dùng haiku/low so với sonnet; architect dùng opus/high). Chênh lệch không tách được yếu tố skill khỏi yếu tố model.
 - Họ release không được đo: chỉ có bước của Coordinator, không có lần chạy agent.
 - Chưa đo số vòng review trong bảng này; chỉ số thời gian và token có đủ.
+
+## Đo lại sau TASK-059
+
+Hai skill/agent đã được rút gọn (kích thước file giảm còn khoảng một nửa). Đo lại bằng cùng cặp bài của TASK-057, sandbox mới từ template của worktree, n=1, sonnet/medium.
+
+| Cặp | Biến thể | Đúng | Output | Cache | Giây |
+|---|---|---|---|---|---|
+| bugfix: engineer + debug-root-cause (rút gọn, 294 token) | đầy đủ | có, lỗi đã sửa | 1192 | 106745 | 18 |
+| bugfix: engineer, không skill | không skill | có, lỗi đã sửa | 841 | 84563 | 13 |
+| security được cài: security-reviewer (rút gọn, 225 token) | đầy đủ | **FAIL**: tìm ra injection, rò rỉ token, token gửi tới host bất kỳ (đã kiểm chứng bằng cách chạy); thêm một lỗi option injection của curl qua URL `-` (chưa kiểm chứng) | 722 | 50210 | 12 |
+| security được cài: đọc thường | thường | tìm ra cùng ba lỗi + kiểm tra scheme | 697 | 32669 | 11 |
+
+Chênh lệch so với baseline (cùng cặp, đã làm tròn):
+
+- **debug-root-cause (rút gọn):** output +42%, cache +26%, lỗi được sửa đúng ở cả hai biến thể.
+- **security-reviewer (rút gọn):** output +4%, cache +54%. Biến thể rút gọn tìm được các lỗi của baseline, kèm một phát hiện chưa kiểm chứng.
+
+So với lần đo TASK-057: debug-root-cause đầy đủ là +35% output và +29% cache; bản rút gọn là +42% và +26%. Security-reviewer đầy đủ là +44% output và +57% cache; bản rút gọn là +4% output và +54% cache (baseline ở TASK-059 là 697 output, khác với 578 ở TASK-057, nên không so trực tiếp được hai lần đo).
+
+**Kết luận:**
+
+- Rút gọn file không giảm chi phí đáng kể. Phần chênh lệch đến từ số lượt tool bổ sung (chạy code để kiểm chứng, grep caller), mỗi lượt lại đọc lại context. Kích thước prompt không phải nguyên nhân chính.
+- Mục tiêu "không quá baseline +10% token" **chưa đạt** ở cả hai skill.
+- PO quyết định giữ bản rút gọn kèm bước kiểm chứng, vì bản này giữ được các phát hiện đúng và kiểm chứng bằng cách chạy.
+- n=1, nên chênh lệch dưới khoảng 10% vẫn không đáng tin.
