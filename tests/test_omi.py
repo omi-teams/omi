@@ -656,9 +656,9 @@ def test_init_fresh_project():
         omi.init(root)
         for kind in ("skills", "agents", "workflows", "references"):
             assert (root / ".omi" / kind / "CATALOG.md").exists(), kind
-        assert (root / ".gitignore").read_text().splitlines() == ["*.log", "__pycache__/"]
+        assert (root / ".gitignore").read_text().splitlines() == ["*.log", "__pycache__/", ".omi-cache/"]
         omi.init(root)
-        assert (root / ".gitignore").read_text().count("__pycache__/") == 1
+        assert (root / ".gitignore").read_text().splitlines() == ["*.log", "__pycache__/", ".omi-cache/"]
         assert (root / ".gitattributes").read_text() == "* text=auto eol=lf\n"
         (root / ".gitattributes").write_text("custom\n")
         omi.init(root)
@@ -666,7 +666,7 @@ def test_init_fresh_project():
         assert '"test"' in (root / ".omi" / "config.json").read_text()
     with tempfile.TemporaryDirectory() as d:
         omi.init(d)
-        assert (Path(d) / ".gitignore").read_text() == "__pycache__/\n"
+        assert (Path(d) / ".gitignore").read_text() == "__pycache__/\n.omi-cache/\n"
         (Path(d) / "tests").mkdir()
         (Path(d) / "tests" / "test_a.py").write_text("raise SystemExit(3)")
         real = omi.importlib.util.find_spec
@@ -688,7 +688,54 @@ def test_init_fresh_project():
         for existing in ("__pycache__", "/__pycache__/", "__pycache__/"):
             (Path(d) / ".gitignore").write_text(existing + "\n")
             omi.init(d)
-            assert (Path(d) / ".gitignore").read_text() == existing + "\n", existing
+            assert (Path(d) / ".gitignore").read_text() == existing + "\n.omi-cache/\n", existing
+
+
+def test_download_cache_gitignore():
+    for apply in (omi.init, lambda root: omi.upgrade_cmd(["--apply"], root)):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            ignore = root / ".gitignore"
+            apply(root)
+            assert ignore.read_text(encoding="utf-8") == "__pycache__/\n.omi-cache/\n"
+            for existing in ("", "*.log", ".omi-cache", "/.omi-cache/", ".omi-cache/"):
+                ignore.write_text("__pycache__/\n" + existing, encoding="utf-8")
+                apply(root)
+                expected = ["__pycache__/"] + ([existing] if existing else [])
+                if existing in ("", "*.log"):
+                    expected.append(".omi-cache/")
+                assert ignore.read_text(encoding="utf-8").splitlines() == expected
+                before = ignore.read_bytes()
+                apply(root)
+                assert ignore.read_bytes() == before
+            # Git's actual ignore matching covers download cache contents.
+            git(root, "init", "-q")
+            git(root, "check-ignore", ".omi-cache/go-mod/example/file", ".omi-cache/npm/pkg", ".omi-cache/pip/pkg")
+    root = Path(__file__).parents[1]
+    assert ".omi-cache/" in (root / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert "Cache tải xuống (Go modules, npm, pip) nằm trong `.omi-cache/`" in (root / "README.md").read_text(encoding="utf-8")
+
+
+def test_download_cache_scope():
+    real = omi.subprocess.run, omi.task_scope
+    try:
+        omi.task_scope = lambda *args: ["src/**"]
+        def run(argv, **kw):
+            paths = ("?? .omi-cache/go-mod/example/file\0?? .omi-cache/npm/pkg/.github/config\0"
+                     "?? .omi-cache/pip/pkg\0!! .omi-cache/npm/ignored\0 M .omi-cache/pip/tracked\0"
+                     "?? .omi-cache-other/file\0?? src/ok.py\0?? outside.py\0")
+            diff = ".omi-cache/x/.gitattributes\0.omi-cache/go-mod/x\0"
+            return subprocess.CompletedProcess(argv, 0, paths if "status" in argv else diff)
+        omi.subprocess.run = run
+        with tempfile.TemporaryDirectory() as d:
+            assert omi.out_of_scope(d, "TASK-086") == [
+                ".omi-cache/npm/pkg/.github/config", ".omi-cache/pip/tracked", ".omi-cache-other/file", "outside.py"]
+            assert omi.out_of_scope(d, "TASK-086", committed=True) == [
+                ".omi-cache/go-mod/example/file", ".omi-cache/npm/pkg/.github/config", ".omi-cache/pip/pkg",
+                ".omi-cache/npm/ignored", ".omi-cache/pip/tracked", ".omi-cache-other/file", "outside.py",
+                ".omi-cache/x/.gitattributes", ".omi-cache/go-mod/x"]
+    finally:
+        omi.subprocess.run, omi.task_scope = real
 
 
 def test_init_guard_status():
@@ -1351,6 +1398,7 @@ def test_hooks():
             # no hook file: no extra docker call
             calls.clear()
             assert go() == 0 and not hooks() and len(agents()) == 1
+            assert_download_cache_env(agents()[0][0])
             # a hook only in the worktree is not run
             (wt / ".omi" / "hooks").mkdir(exist_ok=True)
             (wt / ".omi" / "hooks" / "pre-run.sh").write_text("exit 1")
@@ -1367,6 +1415,7 @@ def test_hooks():
             calls.clear()
             assert go() == 0
             (argv, kw), = hooks()
+            assert_download_cache_env(argv)
             assert "/cache:rw,exec,nosuid,uid=1000,gid=1000,size=3072m" in argv
             assert calls.index((argv, kw)) < calls.index(agents()[0]) and kw["input"] == b"echo hi\n"
             assert argv[argv.index("--network") + 1] == "none" and "--rm" in argv and f"{wt}:/work:ro" in argv
@@ -1447,6 +1496,8 @@ def test_hooks():
             finally:
                 omi.deterministic_checks = real_dc
             assert agents() and not hooks()
+            assert_download_cache_env(agents()[0][0])
+            assert f"{wt}:/work:ro" in agents()[0][0]
             (main / ".omi" / "hooks" / "pre-run.sh").unlink()
             # pre-merge CLI: runs against the task worktree, exits with the hook's code; no hook is a no-op
             try:
@@ -1741,12 +1792,19 @@ def test_container_names():
     assert a[a.index("omi-repo=my-repo") - 1] == "--label"
 
 
+def assert_download_cache_env(argv):
+    env = [arg for i, arg in enumerate(argv) if i and argv[i - 1] == "-e"]
+    for kv in ("XDG_CACHE_HOME=/cache", "GOCACHE=/cache/go-build", "GOTMPDIR=/cache",
+               "GOMODCACHE=/work/.omi-cache/go-mod", "npm_config_cache=/work/.omi-cache/npm",
+               "PIP_CACHE_DIR=/work/.omi-cache/pip", "GOFLAGS=-modcacherw"):
+        assert kv in env, (kv, env)
+
+
 def test_worker_cache_tmpfs_and_full_volumes():
     a = omi.worker_argv(Path("/w"), "img", ["x"])
     assert "/cache:rw,exec,nosuid,uid=1000,gid=1000,size=2048m" in a and "/tmp:rw,noexec,nosuid,size=512m" in a
     assert "/home/node:rw,noexec,nosuid,uid=1000,gid=1000,size=512m" in a
-    for kv in ("XDG_CACHE_HOME=/cache", "GOCACHE=/cache/go-build", "GOMODCACHE=/cache/go-mod", "GOTMPDIR=/cache", "npm_config_cache=/cache/npm", "PIP_CACHE_DIR=/cache/pip"):
-        assert a[a.index(kv) - 1] == "-e", kv
+    assert_download_cache_env(a)
     assert "size=64m" in " ".join(omi.worker_argv(Path("/w"), "img", ["x"], cache_mb=64))
     with tempfile.TemporaryDirectory() as d:
         assert omi.worker_sizes(d) == {"cache_mb": 2048, "tmp_mb": 512}
@@ -3719,6 +3777,8 @@ if __name__ == "__main__":
     test_upgrade_gitattributes()
     test_model_catalog_and_task_start()
     test_worker_cache_tmpfs_and_full_volumes()
+    test_download_cache_gitignore()
+    test_download_cache_scope()
     test_parallel()
     test_usage()
     test_tool_choice_and_quota_switch()

@@ -810,6 +810,19 @@ def ensure_gitattributes(target: Path) -> None:
         print("create .gitattributes (* text=auto eol=lf)")
 
 
+def ensure_gitignore(target: Path) -> None:
+    """Ignore generated Python files and worktree download caches without duplicating entries."""
+    if not upgrade_write_safe(target, ".gitignore"):
+        return
+    ignore = target / ".gitignore"
+    lines = ignore.read_text(encoding="utf-8").splitlines() if ignore.exists() else []
+    for name in ("__pycache__", ".omi-cache"):
+        if not {name, name + "/", "/" + name + "/"} & set(lines):
+            lines.append(name + "/")
+            ignore.write_text("".join(line + "\n" for line in lines), encoding="utf-8")
+            print(f"update .gitignore ({name}/)")
+
+
 def init(target="."):
     target = Path(target).resolve()
     manifest_safe = upgrade_write_safe(target, ".omi/manifest.json")
@@ -834,11 +847,7 @@ def init(target="."):
         (target / ".omi" / "version").write_text(version() + "\n", encoding="utf-8")
         print(f"stamp  .omi/version ({version()})")
     ensure_gitattributes(target)
-    ignore = target / ".gitignore"
-    lines = ignore.read_text(encoding="utf-8").splitlines() if ignore.exists() else []
-    if not {"__pycache__", "__pycache__/", "/__pycache__/"} & set(lines):
-        ignore.write_text("".join(l + "\n" for l in lines) + "__pycache__/\n", encoding="utf-8")
-        print("update .gitignore (__pycache__/)")
+    ensure_gitignore(target)
     for catalog in (skills_catalog, agents_catalog, workflows_catalog, rules_catalog, references_catalog, plans_catalog):
         catalog(target)
     if not (target / ".git").exists():
@@ -936,6 +945,7 @@ def upgrade_apply(target: str | Path = ".") -> int:
         if upgrade_write_safe(target, f".omi/{kind}/CATALOG.md"):
             catalog(target)
     ensure_gitattributes(target)
+    ensure_gitignore(target)
     print(f"upgrade {version()}: {counts['created']} created, {counts['updated']} updated, {counts['kept']} kept (see *.omi-new)")
     return 0
 
@@ -1693,8 +1703,8 @@ def repo_label(main):
     return re.sub(r"[^a-zA-Z0-9_.-]", "-", main.name.lower())
 
 
-CACHE_ENV = ("XDG_CACHE_HOME=/cache", "GOCACHE=/cache/go-build", "GOMODCACHE=/cache/go-mod", "GOTMPDIR=/cache",
-             "npm_config_cache=/cache/npm", "PIP_CACHE_DIR=/cache/pip")
+CACHE_ENV = ("XDG_CACHE_HOME=/cache", "GOCACHE=/cache/go-build", "GOMODCACHE=/work/.omi-cache/go-mod", "GOTMPDIR=/cache",
+             "npm_config_cache=/work/.omi-cache/npm", "PIP_CACHE_DIR=/work/.omi-cache/pip", "GOFLAGS=-modcacherw")
 
 
 def worker_sizes(main):
@@ -2143,7 +2153,9 @@ def out_of_scope(wt, tid, committed=False):
     globs = task_scope(wt, tid)
     r = subprocess.run(["git", "-C", str(wt), "status", "--porcelain", "-z", "-uall", "--no-renames"],
                        capture_output=True, encoding="utf-8", errors="replace")
-    paths = [e[3:] for e in r.stdout.split("\0") if e]
+    entries = [e for e in r.stdout.split("\0") if e]
+    paths = [e[3:] for e in entries]
+    untracked = {e[3:] for e in entries if e[:2] in ("??", "!!")}
     if committed:
         d = subprocess.run(["git", "-C", str(wt), "diff", "--name-only", "-z", "--no-renames", "development...HEAD"],
                            capture_output=True, encoding="utf-8", errors="replace")
@@ -2155,6 +2167,8 @@ def out_of_scope(wt, tid, committed=False):
             return True
         if any(c.lower().startswith(".git") or re.fullmatch(r"(?i)git[^~/]*~\d+(\.[^/]*)?", c) for c in p.split("/")) and p not in globs:
             return True  # .gitattributes, .githooks..., and their Windows 8.3 names (GIT~1): host git processes them; only an exact scope entry allows
+        if not committed and p in untracked and p.startswith(".omi-cache/"):
+            return False
         return not any(PurePosixPath(p).full_match(g) for g in globs)
     return [p for p in paths if bad(p)]
 

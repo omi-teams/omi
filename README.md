@@ -31,6 +31,8 @@ claude                    # rồi gõ /omi-idea, /omi-task TASK-001, /omi-status
 | `.omi/tasks/TASK-NNN.md` | Mỗi task một file: brief, scope, acceptance criteria, checkpoint |
 | `.omi/decisions.md` | Nhật ký quyết định của PO |
 
+Cache tải xuống (Go modules, npm, pip) nằm trong `.omi-cache/` của worktree (được gitignore) để hook và reviewer dùng lại dependency của engineer; cache build vẫn ở tmpfs `/cache`.
+
 ## Lấy và lưu key
 
 - **Claude (mặc định theo đăng nhập Claude Code):** agent dùng tài khoản của phiên Claude Code hiện tại. Thứ tự: biến môi trường `CLAUDE_CODE_OAUTH_TOKEN` (ghi đè rõ ràng), rồi đăng nhập phiên (`accessToken` trong `~/.claude/.credentials.json` hoặc `$CLAUDE_CONFIG_DIR/.credentials.json`, đọc lúc chạy, không lưu, không ghi log; refresh token không rời máy host), rồi token đã lưu. Token phiên hết hạn thì mở Claude Code một lần để làm mới; `omi run` in `claude auth: env|session|stored`.
