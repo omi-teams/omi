@@ -5,8 +5,94 @@
     "opus": "claude-opus-5-5"
   },
   "codex_models": {
-    "haiku": "gpt-6.1-sol",
+    "haiku": "gpt-6-luna",
     "sonnet": "gpt-6.1-sol",
-    "opus": "gpt-6.1-sol"
+    "opus": "gpt-6-astra"
+  },
+  "model_notes": {
+    "claude": {
+      "models": {
+        "haiku": {
+          "fits": "mechanical docs, renames and simple config (low)",
+          "avoid": "architecture and security review"
+        },
+        "sonnet": {
+          "fits": "everyday features, bugfixes, refactoring and review (medium)",
+          "avoid": "unassessed high risk decisions"
+        },
+        "opus": {
+          "fits": "architecture, difficult analysis and repeated review failures (high)",
+          "avoid": "mechanical work when cost matters"
+        }
+      },
+      "efforts": {
+        "low": {
+          "fits": "clear mechanical tasks and planning",
+          "avoid": "difficult analysis"
+        },
+        "medium": {
+          "fits": "routine implementation and review",
+          "avoid": "defaulting to it for unresolved architectural risk"
+        },
+        "high": {
+          "fits": "architecture, auth, payment, secrets and difficult fixes",
+          "avoid": "mechanical work"
+        },
+        "xhigh": {
+          "fits": "PO-selected deeper analysis",
+          "avoid": "default use; quality gains are unmeasured"
+        },
+        "max": {
+          "fits": "PO-selected hardest analysis",
+          "avoid": "default use; quality and cost are unmeasured"
+        }
+      }
+    },
+    "codex": {
+      "models": {
+        "haiku": {
+          "fits": "mechanical docs, renames and simple config (low)",
+          "avoid": "architecture and security review"
+        },
+        "sonnet": {
+          "fits": "everyday features, bugfixes, refactoring and review (medium)",
+          "avoid": "unassessed high risk decisions"
+        },
+        "opus": {
+          "fits": "architecture, difficult analysis and repeated review failures (high)",
+          "avoid": "mechanical work when cost matters"
+        }
+      },
+      "efforts": {
+        "low": {
+          "fits": "clear mechanical tasks and planning",
+          "avoid": "difficult analysis"
+        },
+        "medium": {
+          "fits": "routine implementation and review",
+          "avoid": "defaulting to it for unresolved architectural risk"
+        },
+        "high": {
+          "fits": "architecture, auth, payment, secrets and difficult fixes",
+          "avoid": "mechanical work"
+        },
+        "xhigh": {
+          "fits": "PO-selected deeper analysis",
+          "avoid": "default use; quality gains are unmeasured"
+        },
+        "max": {
+          "fits": "PO-selected hardest analysis",
+          "avoid": "default use; quality and cost are unmeasured"
+        },
+        "none": {
+          "fits": "explicit PO choice for work without reasoning",
+          "avoid": "default use or a missing effort label"
+        },
+        "ultra": {
+          "fits": "explicit deep analysis on sol, astra or terra",
+          "avoid": "default use and luna; no measured quality advantage"
+        }
+      }
+    }
   }
 }
