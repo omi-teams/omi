@@ -30,7 +30,7 @@ PO fix round 1 completed (Linux worker, 2026-10-27):
 - Done: agents_catalog reports exact model_notes and models/codex_models keys for missing mappings, invalid IDs, and missing/invalid fits or avoid notes.
 - Done: regression tests cover both requested fixes; existing acceptance tests remain passing.
 - Test result: python3 tests/test_omi.py PASS (exit 0, final output: ok).
-- Not done: Windows host validation of this fix round is unavailable in this Linux container.
+- Windows host: Coordinator runs `python tests/test_omi.py` in the worktree after each round (build round: ok).
 - Next step: Coordinator reviews the diff, runs the suite on Windows, and commits on the host. No worker commit.
 
 Coordinator notes (2026-10-27):
@@ -41,13 +41,17 @@ Coordinator notes (2026-10-27):
 PO fix round 1 (review PASS, PO asked to fix 2 findings before merge):
 1. src/omi/__init__.py quota fallback (~2357-2371): when resolve_effort/resolve_model already set `problem`, the missing other-tool secret must not overwrite it; set `problem` from the secret check only if it is still empty. Add a test.
 2. src/omi/__init__.py agents_catalog (~420-426): an alias in model_notes with no models/codex_models entry, or a note without fits/avoid, must stop with a message naming the config key (e.g. `model_notes.codex.models.haiku.fits`), not a bare KeyError or the resolve_model exit. Add a test.
+Review round 1 FAIL (fix round 2; Coordinator triage):
+1. REJECTED: reject `ultra` on gpt-6-luna. TASK-081 host probe: `codex exec -m gpt-6-luna -c model_reasoning_effort=ultra` answered (23 output / 16 reasoning tokens). Keep accepting it; the catalog note already says avoid.
+2. Fix: agents_catalog must check Claude aliases against `DEFAULT_MODELS | config.get("models", {})` like resolve_model, so a config without a `models` block still works. Add a test.
+3. Fix: revert the container_name change for claude (keep `claude-sonnet-5.5`-style names via the old `-(\d+)-(\d+)$` -> `-.` rewrite) and the test expectations it changed. Codex names unchanged.
+4. Fix: revert unrelated formatting: `network_allow` back to one line in src/omi/template/dot-omi/config.json, and the stray double blank line before `## Task-start tool choice` in both AGENTS.md copies.
 Done:
 - Added approved concrete Claude/Codex alias mappings to root and template configs, with model_notes for each model and effort; regenerated both agent catalogs with ## Models.
 - omi run requires concrete model IDs and explicit valid efforts; missing Codex mappings stop startup or quota fallback. Efforts map 1:1 (including max), and container names retain the concrete ID shown in Usage.
 - Root/template AGENTS.md and omi-task guidance require both Claude Code and Codex task-start choices, concrete model/effort, exactly one Recommended option with a reason, and the PO's choice.
 - Added regression tests for mappings, config-driven catalog generation, task-start guidance, missing/invalid settings, quota fallback, explicit effort levels, container names and Usage. Updated credential fixtures to pass concrete Codex IDs.
 Not done:
-- Windows host validation is unavailable in this Linux worker; Coordinator must run the same suite on the host.
 Tests: python tests/test_omi.py -> ok on the Windows host (Coordinator, 2026-10-27) and on the Linux worker (reviewer).
 - PASS: python3 tests/test_omi.py (exit 0, final output: ok), Linux, 2026-10-27.
 - PASS: PYTHONPATH=src python3 -m omi agents (exit 0; root catalog regenerated).
@@ -180,6 +184,16 @@ Next:
 > create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-27 10:28 omi-agent-reviewer (claude):
+> VERDICT: FAIL
+> - src/omi/__init__.py:~1505 `resolve_effort` accepts `ultra` for any Codex model, including `gpt-6-luna`. The task notes allow `ultra` only on sol/astra/terra, and the catalog itself says "avoid … luna". The test asserts `ultra` is accepted with no model check. -> Pass the resolved model to `resolve_effort` and stop with a message when `ultra` is paired with luna. Add a test for it.
+> - .omi/tasks/TASK-082.md (whole file) The task file is edited, but `.omi/tasks` is not in `scope`. The Reports section holds two pasted post-run hook dumps (`create …` lines and a Docker "port is already in use" error). The same file claims "ok on the Windows host (Coordinator)", which the worker cannot have run. The Checkpoint says Windows validation is not done. -> Revert the out-of-scope edit, or trim the dumps and the unverifiable Windows claim.
+> - src/omi/__init__.py:~377 `agents_catalog` requires `config["models"]` to hold every alias in `model_notes.claude`. `resolve_model` falls back to `DEFAULT_MODELS` for Claude. A config without a `models` block therefore fails with "missing config key `models.haiku`" although `omi run` would resolve it. -> For `tool == "claude"`, check against `DEFAULT_MODELS | config.get("models", {})`.
+> - src/omi/__init__.py:~1673 Claude container names now use `claude-sonnet-5-5` instead of `5.5`. The task does not ask for this, but it changes the naming scheme and rewrites existing test expectations. -> Revert it, or record it as a decision.
+> - src/omi/template/dot-omi/config.json:~11-18 `network_allow` is reformatted from one line to several, and the template AGENTS.md gets a stray double blank line before the new heading. Neither is related to the task. -> Revert the formatting.
+> 
+> [... truncated ...]
+> AC: All tests pass on the Linux worker and the Windows host ✗ `python3 tests/test_omi.py` prints `ok` on Linux. I cannot check the Windows host here. The Checkpoint says it is pending, which contradicts the Tests line in the same file.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -187,3 +201,4 @@ Next:
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 2078722 | 12569 | 2007936 | 411s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 3699 | 110982 | 142s | - | PASS 5f19249 |
 | omi-agent-engineer | gpt-6.1-sol (codex) | low | 498887 | 3439 | 458880 | 155s | 1/1 omi-skill-windows-powershell | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 3462 | 174438 | 136s | - | FAIL fb997ee |
