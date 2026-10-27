@@ -76,3 +76,4 @@
 - 2026-10-27 | Keep Claude Code's subprocess credential scrub in the worker: no nested `claude` login; Claude model probes run on the host by the Coordinator. TASK-084 narrowed to nested `codex exec` in a codex worker + README note | any fix exposes the PO's Claude session token to code the agent runs | TASK-084
 - 2026-10-27 | Gap #17: download caches (GOMODCACHE, npm, pip) live in the worktree at .omi-cache/ (gitignored), build caches stay in /cache tmpfs | hook/reviewer see deps via the existing ro worktree mount; no new Docker objects; cleaned with the worktree | TASK-086
 - 2026-10-27 | Not-yet-upgraded projects: omi run adds .omi-cache/ to the repo's info/exclude; TASK-087 ships in 0.3.0 | no tracked change or auto-commit, works for every worktree | TASK-087
+- 2026-10-27 | Bump to 0.3.0 in TASK-088 before cutting the rc; record 0.3.0 template shas | rc and v0.3.0 tag must match omi --version | TASK-088
