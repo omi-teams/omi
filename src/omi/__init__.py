@@ -802,6 +802,14 @@ def backfill(rel: str, sha: str, current: str, released: dict[str, set[str]]) ->
     return sha if sha == current or sha in released.get(rel, ()) else None
 
 
+def ensure_gitattributes(target: Path) -> None:
+    """Create the project's line-ending policy only when absent."""
+    attrs = target / ".gitattributes"
+    if upgrade_write_safe(target, ".gitattributes") and not attrs.exists():
+        attrs.write_text("* text=auto eol=lf\n", encoding="utf-8")
+        print("create .gitattributes (* text=auto eol=lf)")
+
+
 def init(target="."):
     target = Path(target).resolve()
     manifest_safe = upgrade_write_safe(target, ".omi/manifest.json")
@@ -825,10 +833,7 @@ def init(target="."):
     if upgrade_write_safe(target, ".omi/version"):
         (target / ".omi" / "version").write_text(version() + "\n", encoding="utf-8")
         print(f"stamp  .omi/version ({version()})")
-    attrs = target / ".gitattributes"
-    if not attrs.exists():
-        attrs.write_text("* text=auto eol=lf\n", encoding="utf-8")
-        print("create .gitattributes (* text=auto eol=lf)")
+    ensure_gitattributes(target)
     ignore = target / ".gitignore"
     lines = ignore.read_text(encoding="utf-8").splitlines() if ignore.exists() else []
     if not {"__pycache__", "__pycache__/", "/__pycache__/"} & set(lines):
@@ -930,6 +935,7 @@ def upgrade_apply(target: str | Path = ".") -> int:
                           ("rules", rules_catalog), ("references", references_catalog), ("plans", plans_catalog)):
         if upgrade_write_safe(target, f".omi/{kind}/CATALOG.md"):
             catalog(target)
+    ensure_gitattributes(target)
     print(f"upgrade {version()}: {counts['created']} created, {counts['updated']} updated, {counts['kept']} kept (see *.omi-new)")
     return 0
 
@@ -2220,6 +2226,20 @@ def need_docker():
         sys.exit("Docker is not running; start Docker Desktop and retry. Nothing changed.")
 
 
+def parse_step_settings(value: str) -> dict[str, dict[str, str]]:
+    """Parse per-step tool/model/effort overrides, allowing empty parts."""
+    settings = {}
+    if not value.strip():
+        return settings
+    for entry in value.split(","):
+        match = re.fullmatch(r"\s*([a-z0-9][a-z0-9-]*)=([^/=,\s]*)/([^/=,\s]*)/([^/=,\s]*)\s*", entry)
+        if not match or match[1] in settings:
+            sys.exit(f"invalid step_settings entry `{entry.strip()}`: expected <step>=<tool>/<model>/<effort>, ... "
+                     "(parts may be empty). Nothing changed.")
+        settings[match[1]] = dict(zip(("tool", "model", "effort"), match.groups()[1:]))
+    return settings
+
+
 def run_role(role, wt, task_file, model=None, effort=None, tool=None):
     wt = Path(wt).resolve()
     main = main_checkout(wt)
@@ -2235,8 +2255,12 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
     before = task.read_text(encoding="utf-8") if task.exists() else ""
     am = get_role(main, role)
     get_role(main, tm.get("role") or "omi-agent-engineer")  # unknown task role fails too
+    settings = parse_step_settings(tm.get("step_settings", ""))
+    cur = next((s for s in get_workflow(wt, tm.get("workflow") or DEFAULT_WORKFLOW) if s["id"] == tm.get("step")), None) \
+        if tm.get("step") else None
+    step_settings = settings.get(cur["id"], {}) if cur and cur["role"] == role else {}
     task_settings = am["access"] == "write" or role == tm.get("role")  # other read roles keep their own settings
-    tool = tool or (tm.get("tool") if task_settings else None) or am.get("tool") or "claude"
+    tool = tool or step_settings.get("tool") or (tm.get("tool") if task_settings else None) or am.get("tool") or "claude"
     if tool not in ("claude", "codex"):
         sys.exit(f"unknown tool `{tool}`: claude or codex. Nothing changed.")
     other = "codex" if tool == "claude" else "claude"
@@ -2248,8 +2272,6 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
                      f"or use your ChatGPT login ({secret[2]}). Nothing changed.")
         sys.exit(f"no token: run `omi token set` (Windows), set {TOKEN_ENV}, or log in to Claude Code on the host"
                  f"{f' ({secret[2]})' if secret[2] else ''}. Nothing changed.")
-    cur = next((s for s in get_workflow(wt, tm.get("workflow") or DEFAULT_WORKFLOW) if s["id"] == tm.get("step")), None) \
-        if tm.get("step") else None
     if cur and cur["role"] != role:
         print(f"WARNING: step {cur['id']} of {task.stem} is for {cur['role']}, not {role}; "
               f"if that step is finished run `omi step {task.stem} done` / `next` first")
@@ -2259,9 +2281,9 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
     declared = check_skills(wt, ids)  # role defaults count against the budget
     rule_files = task_rules(wt, task_scope(wt, task.stem))
     ref_files = task_references(wt, tm)
-    want = effort or (tm.get("effort") if task_settings else None) or am.get("effort")
+    want = effort or step_settings.get("effort") or (tm.get("effort") if task_settings else None) or am.get("effort")
     efforts = {tool: resolve_effort(want, tool)}
-    want_model = model or (tm.get("model") if task_settings else None) or am.get("model")
+    want_model = model or step_settings.get("model") or (tm.get("model") if task_settings else None) or am.get("model")
     models = {tool: resolve_model(main, want_model, tool)}
 
     read = am["access"] == "read"

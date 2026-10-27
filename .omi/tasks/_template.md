@@ -11,6 +11,7 @@ refs: []  # Coordinator-owned ids from .omi/references/CATALOG.md; paths passed 
 tool:  # claude|codex; write role or the task's own role; overrides its `tool:` (default claude); `omi run --tool` overrides both
 model:  # write role or the task's own role; Coordinator-owned: haiku|sonnet|opus or a full ID; overrides the role's, `omi run --model` overrides both
 effort:  # Coordinator-owned: low|medium|high|max; same order
+step_settings:  # Coordinator-owned: <step>=<tool>/<model>/<effort>, ...; e.g. architect=codex/opus/high, review=claude//; empty parts inherit; CLI > current step > task > role
 workflow: omi-flow-feature  # a file in .omi/workflows (see its CATALOG.md)
 step:  # current step id; set only by `python -m omi step <TASK-ID> next|done|back|skip --why`
 ---
