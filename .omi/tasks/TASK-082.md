@@ -1,7 +1,7 @@
 ---
 id: TASK-082
 title: Model catalog for the Coordinator - concrete model and effort per tool, never codex-default/none
-status: planned
+status: in-progress
 depends: TASK-080, TASK-081
 scope: src/omi/__init__.py, tests/**, src/omi/template/**, .omi/config.json, .omi/agents/**, AGENTS.md, .claude/skills/omi-task/SKILL.md
 role: omi-agent-engineer
