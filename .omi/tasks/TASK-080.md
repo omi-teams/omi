@@ -1,7 +1,7 @@
 ---
 id: TASK-080
 title: Spike - which Claude models and efforts this Claude Code session supports, and what each fits
-status: planned
+status: in-progress
 depends:
 scope: docs/research/models-claude.md
 role: omi-agent-researcher
