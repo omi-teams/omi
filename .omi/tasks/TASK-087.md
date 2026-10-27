@@ -1,14 +1,14 @@
 ---
 id: TASK-087
 title: omi run excludes .omi-cache/ via the repo's info/exclude when .gitignore lacks it
-status: planned
+status: in-progress
 depends: TASK-086
 plan: PLAN-001
 scope: src/omi/__init__.py, tests/test_omi.py
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
+tool: codex
 model: sonnet
 effort: medium
 workflow: omi-flow-feature
