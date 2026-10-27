@@ -54,7 +54,7 @@ omi.subprocess.Popen = FakePopen
 def test_version_stamp_package_hook():
     import fnmatch, glob
     want = omi.tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
-    assert want == "0.2.0" and omi.version() == want
+    assert want == "0.3.0" and omi.version() == want
     real = omi.importlib.metadata.version
     omi.importlib.metadata.version = lambda n: "9.9.9"
     try:
