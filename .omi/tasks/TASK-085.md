@@ -12,7 +12,7 @@ tool: codex
 model: sonnet
 effort: medium
 workflow: omi-flow-feature
-step: build
+step: review
 ---
 ## Goal
 Close the open parts of gaps #9 and #19 (omi-board session 97bfceb1) before releasing 0.3.0. #9: TASK-083 lets the task's own role use the task's tool/model/effort, but other steps (architect, security) still need `--tool/--model/--effort` typed by hand. #19: `omi init` creates `.gitattributes`, but `omi upgrade --apply` does not, so existing projects never get it.
@@ -37,6 +37,8 @@ Next: Coordinator reviews the scoped diff, runs the final suite on Windows, and 
 - review started 2026-10-27 11:24
 - review failed 2026-10-27 11:27
 - build started 2026-10-27 11:27
+- build done 2026-10-27 11:31
+- review started 2026-10-27 11:31
 
 ## Reports
 2026-10-27 11:22 omi-agent-engineer (codex):
@@ -64,50 +66,34 @@ Next: Coordinator reviews the scoped diff, runs the final suite on Windows, and 
 > Tests: Linux full suite and targeted regression tests PASS.
 > Open issue: final Windows host validation remains for Coordinator. No commit made.
 2026-10-27 11:31 hook post-run passed:
-> Conflict. The container name "/tmpv_bsaux5-TASK-001-engineer-codex-gpt-x-medium-042945" is already in useBind for 0.0.0.0:8080 failed: port is already in usecreate AGENTS.md
-> create docker/Dockerfile
-> create docker/prove.sh
-> create docker/proxy.py
-> create .claude/settings.json
-> create .claude/skills/omi-idea/SKILL.md
-> create .claude/skills/omi-release/SKILL.md
-> create .claude/skills/omi-status/SKILL.md
-> create .claude/skills/omi-task/SKILL.md
-> create .claude/skills/omi-upgrade/SKILL.md
-> create .omi/agents/omi-agent-architect.md
-> create .omi/agents/omi-agent-designer-ui.md
-> create .omi/agents/omi-agent-devops.md
-> create .omi/agents/omi-agent-docs-writer.md
-> create .omi/agents/omi-agent-engineer.md
-> create .omi/agents/omi-agent-qa-tester.md
-> create .omi/agents/omi-agent-researcher.md
-> create .omi/agents/omi-agent-reviewer.md
-> create .omi/agents/omi-agent-security-reviewer.md
-> create .omi/hooks/post-run.sh
-> create .omi/plans/PLAN-000.md
-> create .omi/references/nextjs-app-router.md
-> create .omi/references/postgres-conventions.md
-> create .omi/rules/docker.md
-> create .omi/rules/go.md
-> create .omi/rules/nextjs.md
-> create .omi/rules/postgres.md
-> create .omi/rules/python.md
-> create .omi/skills/.gitkeep
-> create .omi/skills/data/omi-skill-data-review/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
-> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
-> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
-> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
-> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
-> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
-> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
-> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-27 11:34 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - .omi/tasks/TASK-085.md:64 The `## Reports` section still holds the junk hook output from round 1 (Docker port conflict, "create AGENTS.md…" lines). The first review asked for it to be cleaned up. -> Trim it to a single "hook post-run passed" line. This doesn't block the verdict.
+> 
+> AC: A task can set `step_settings`, with precedence and a malformed-entry error ✓
+> - `parse_step_settings` (`__init__.py:2229`) accepts empty parts such as `review=claude//`.
+> - `run_role` applies the precedence CLI > current-step settings > task `tool/model/effort` > role file > defaults (`__init__.py:2258-2290`).
+> - The step's settings apply only when the running role is the current step's role.
+> - Tests cover read roles (architect, security-reviewer), each CLI field overriding alone, empty parts inheriting, and non-current steps and roles being ignored.
+> - A malformed entry exits with the expected form, and an unknown step id exits listing the workflow's valid ids.
+> - Agent edits to `tool` and `step_settings` are reverted (both added to `FRONT_OWNED`, with a test).
+> 
+> AC: `omi upgrade --apply` creates `.gitattributes` and never overwrites it ✓
+> - `ensure_gitattributes` is shared by `init` and `upgrade_apply`, and is symlink-safe through `upgrade_write_safe`.
+> - `test_upgrade_gitattributes` checks that the file is created and that custom content is kept.
+> 
+> AC: Docs ✓
+> - Both `_template.md` copies have a single `step_settings:` comment line.
+> - Both AGENTS.md copies list `step_settings` in the "Tool per run" precedence order.
+> - README has the one added line. The Vietnamese `codex_models` text now matches the shipped config defaults (`gpt-6-luna`, `gpt-6.1-sol`, `gpt-6-astra`).
+> - A test checks the template and AGENTS.md copies and the README wording.
+> 
+> AC: All tests pass on the Linux worker and the Windows host — partly ✓
+> - `python3 tests/test_omi.py` passes here and ends with `ok`.
+> [... truncated ...]
+> Scope: every changed file is listed in `scope`, apart from the task file itself.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -115,3 +101,4 @@ Next: Coordinator reviews the scoped diff, runs the final suite on Windows, and 
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 980713 | 8138 | 946048 | 232s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 2242 | 118798 | 129s | - | FAIL ef7965e |
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 551745 | 3723 | 518912 | 150s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1742 | 91022 | 122s | - | PASS e3c1fc9 |
