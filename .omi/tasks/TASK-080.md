@@ -1,7 +1,7 @@
 ---
 id: TASK-080
 title: Spike - which Claude models and efforts this Claude Code session supports, and what each fits
-status: in-progress
+status: done
 depends:
 scope: docs/research/models-claude.md
 role: omi-agent-researcher
@@ -12,7 +12,7 @@ tool: claude
 model: sonnet
 effort: medium
 workflow: omi-flow-spike
-step: write
+step: decide
 ---
 ## Goal
 The Coordinator must pick a concrete model and effort per task, never a default. Find out, from inside the worker (Claude Code CLI 2.1.302, the PO's session login), which Claude models and effort levels are actually usable, and what kind of omi task each fits.
@@ -24,8 +24,8 @@ The Coordinator must pick a concrete model and effort per task, never a default.
 4. A recommended default per omi role (`.omi/agents`) and per workflow step type.
 
 ## Acceptance criteria
-- [ ] Report saved at `docs/research/models-claude.md` (Vietnamese prose, English IDs): a table `model id | alias | effort levels | fits | avoid for | relative cost/speed | evidence`, plus the per-role defaults.
-- [ ] Every claim says how it was verified (command run and its output, or CLI help text); anything not verified is marked as such.
+- [x] Report saved at `docs/research/models-claude.md` (Vietnamese prose, English IDs): a table `model id | alias | effort levels | fits | avoid for | relative cost/speed | evidence`, plus the per-role defaults.
+- [x] Every claim says how it was verified (command run and its output, or CLI help text); anything not verified is marked as such.
 
 ## Checkpoint
 Done: research step (see Reports). In-container nested `claude -p` is "Not logged in"; PO approved the Coordinator probing on the host instead (2026-10-27).
@@ -46,6 +46,8 @@ Next: Coordinator reviews the documentation diff, then decide (PO gate).
 - research started 2026-10-27 09:13
 - research done 2026-10-27 09:17
 - write started 2026-10-27 09:17
+- write done 2026-10-27 09:21
+- decide started 2026-10-27 09:21
 
 ## Reports
 2026-10-27 09:14 omi-agent-researcher (claude):
@@ -117,3 +119,4 @@ Next: Coordinator reviews the documentation diff, then decide (PO gate).
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-researcher | claude-sonnet-5-5 | medium | 10 | 1579 | 91664 | 40s | - | n/a |
 | omi-agent-docs-writer | gpt-6.1-sol (codex) | low | 136643 | 3239 | 115712 | 111s | - | - |
+PO approval decide: Adopt
