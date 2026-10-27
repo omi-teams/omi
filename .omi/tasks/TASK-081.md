@@ -1,7 +1,7 @@
 ---
 id: TASK-081
 title: Spike - which Codex models and efforts this Codex session supports, and what each fits
-status: planned
+status: in-progress
 depends:
 scope: docs/research/models-codex.md
 role: omi-agent-researcher
