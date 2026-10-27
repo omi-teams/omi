@@ -1,7 +1,7 @@
 ---
 id: TASK-082
 title: Model catalog for the Coordinator - concrete model and effort per tool, never codex-default/none
-status: in-progress
+status: done
 depends: TASK-080, TASK-081
 scope: src/omi/__init__.py, tests/**, src/omi/template/**, .omi/config.json, .omi/agents/**, AGENTS.md, .claude/skills/omi-task/SKILL.md
 role: omi-agent-engineer
@@ -18,11 +18,11 @@ step: accept
 From the findings in `docs/research/models-claude.md` and `docs/research/models-codex.md`, give the Coordinator a catalog of concrete model + effort choices per tool, make every run use an explicit model and effort, and make every task-start question offer Claude Code and Codex. Covers gap #1 (empty `codex_models`).
 
 ## Acceptance criteria
-- [ ] `.omi/config.json` (root and template) maps each alias for both tools to concrete IDs from the research (`models`, `codex_models`); the template no longer ships an empty `codex_models`.
-- [ ] `python -m omi agents` writes a `## Models` section in `.omi/agents/CATALOG.md` (root and template): per tool, each model and effort with what it fits and what to avoid, generated from a `model_notes` block in `.omi/config.json` (one line each).
-- [ ] No run goes out as `codex-default` or effort `none`: `omi run` resolves the alias to a concrete ID and an explicit effort for both tools, or stops with a message naming the missing `codex_models`/effort entry. Container name and Usage row always show the concrete model and effort. Tested.
-- [ ] AGENTS.md (root and template) and `omi-task` SKILL.md (root and template): every task-start pick-list has two options, start with Claude Code (model/effort) and start with Codex (model/effort), one marked Recommended with its reason; the PO chooses.
-- [ ] All tests pass on the Linux worker and the Windows host.
+- [x] `.omi/config.json` (root and template) maps each alias for both tools to concrete IDs from the research (`models`, `codex_models`); the template no longer ships an empty `codex_models`.
+- [x] `python -m omi agents` writes a `## Models` section in `.omi/agents/CATALOG.md` (root and template): per tool, each model and effort with what it fits and what to avoid, generated from a `model_notes` block in `.omi/config.json` (one line each).
+- [x] No run goes out as `codex-default` or effort `none`: `omi run` resolves the alias to a concrete ID and an explicit effort for both tools, or stops with a message naming the missing `codex_models`/effort entry. Container name and Usage row always show the concrete model and effort. Tested.
+- [x] AGENTS.md (root and template) and `omi-task` SKILL.md (root and template): every task-start pick-list has two options, start with Claude Code (model/effort) and start with Codex (model/effort), one marked Recommended with its reason; the PO chooses.
+- [x] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
 Review fix round 2 completed (Linux worker, 2026-10-27):
@@ -34,7 +34,7 @@ Review fix round 2 completed (Linux worker, 2026-10-27):
 - Windows host (Coordinator, 2026-10-27): `python tests/test_omi.py` in this worktree -> ok after the build round and after fix round 2.
 - Review round 1 finding "reject ultra on gpt-6-luna" REJECTED by the Coordinator: TASK-081 host probe `codex exec -m gpt-6-luna -c model_reasoning_effort=ultra` answered (23 output / 16 reasoning tokens), so the CLI accepts it; the catalog note says avoid.
 - Coordinator notes from planning: codex_models luna/sol/astra (PO decision), Claude *-5-5 IDs, no fable (needs usage credits).
-- Next: review round 2.
+- Review round 2: PASS.
 
 ## Steps
 - plan started 2026-10-27 10:07
@@ -45,6 +45,9 @@ Review fix round 2 completed (Linux worker, 2026-10-27):
 - review done 2026-10-27 10:20
 - accept started 2026-10-27 10:20
 
+PO approval accept: Sửa 2 lỗi rồi merge
+- accept done 2026-10-27 10:36
+
 ## Reports
 2026-10-27 10:14 omi-agent-engineer (codex):
 > DONE
@@ -53,49 +56,6 @@ Review fix round 2 completed (Linux worker, 2026-10-27):
 > Tests: `python3 tests/test_omi.py` PASS; catalog CLI PASS.
 > Open issues: Windows host tests pending Coordinator validation. No commit made.
 2026-10-27 10:15 hook post-run passed:
-> Conflict. The container name "/tmpfvtu9hoz-TASK-001-engineer-codex-gpt-x-medium-031416" is already in useBind for 0.0.0.0:8080 failed: port is already in usecreate AGENTS.md
-> create docker/Dockerfile
-> create docker/prove.sh
-> create docker/proxy.py
-> create .claude/settings.json
-> create .claude/skills/omi-idea/SKILL.md
-> create .claude/skills/omi-release/SKILL.md
-> create .claude/skills/omi-status/SKILL.md
-> create .claude/skills/omi-task/SKILL.md
-> create .claude/skills/omi-upgrade/SKILL.md
-> create .omi/agents/omi-agent-architect.md
-> create .omi/agents/omi-agent-designer-ui.md
-> create .omi/agents/omi-agent-devops.md
-> create .omi/agents/omi-agent-docs-writer.md
-> create .omi/agents/omi-agent-engineer.md
-> create .omi/agents/omi-agent-qa-tester.md
-> create .omi/agents/omi-agent-researcher.md
-> create .omi/agents/omi-agent-reviewer.md
-> create .omi/agents/omi-agent-security-reviewer.md
-> create .omi/config.json
-> create .omi/decisions.md
-> create .omi/hooks/post-run.sh
-> create .omi/plans/PLAN-000.md
-> create .omi/references/nextjs-app-router.md
-> create .omi/references/postgres-conventions.md
-> create .omi/rules/docker.md
-> create .omi/rules/go.md
-> create .omi/rules/nextjs.md
-> create .omi/rules/postgres.md
-> create .omi/rules/python.md
-> create .omi/skills/.gitkeep
-> create .omi/skills/data/omi-skill-data-review/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
-> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
-> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
-> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
-> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
-> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
-> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
 > [... truncated ...]
 > ok
 2026-10-27 10:19 omi-agent-reviewer (claude):
@@ -117,49 +77,6 @@ Review fix round 2 completed (Linux worker, 2026-10-27):
 > Tests: `python3 tests/test_omi.py` PASS (exit 0, `ok`).
 > Checkpoint updated. Open issues: Windows validation pending Coordinator; no commit made.
 2026-10-27 10:25 hook post-run passed:
-> Conflict. The container name "/tmpaapne3kb-TASK-001-engineer-codex-gpt-x-medium-032326" is already in useBind for 0.0.0.0:8080 failed: port is already in usecreate AGENTS.md
-> create docker/Dockerfile
-> create docker/prove.sh
-> create docker/proxy.py
-> create .claude/settings.json
-> create .claude/skills/omi-idea/SKILL.md
-> create .claude/skills/omi-release/SKILL.md
-> create .claude/skills/omi-status/SKILL.md
-> create .claude/skills/omi-task/SKILL.md
-> create .claude/skills/omi-upgrade/SKILL.md
-> create .omi/agents/omi-agent-architect.md
-> create .omi/agents/omi-agent-designer-ui.md
-> create .omi/agents/omi-agent-devops.md
-> create .omi/agents/omi-agent-docs-writer.md
-> create .omi/agents/omi-agent-engineer.md
-> create .omi/agents/omi-agent-qa-tester.md
-> create .omi/agents/omi-agent-researcher.md
-> create .omi/agents/omi-agent-reviewer.md
-> create .omi/agents/omi-agent-security-reviewer.md
-> create .omi/config.json
-> create .omi/decisions.md
-> create .omi/hooks/post-run.sh
-> create .omi/plans/PLAN-000.md
-> create .omi/references/nextjs-app-router.md
-> create .omi/references/postgres-conventions.md
-> create .omi/rules/docker.md
-> create .omi/rules/go.md
-> create .omi/rules/nextjs.md
-> create .omi/rules/postgres.md
-> create .omi/rules/python.md
-> create .omi/skills/.gitkeep
-> create .omi/skills/data/omi-skill-data-review/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
-> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
-> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
-> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
-> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
-> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
-> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
 > [... truncated ...]
 > ok
 2026-10-27 10:28 omi-agent-reviewer (claude):
@@ -180,51 +97,18 @@ Review fix round 2 completed (Linux worker, 2026-10-27):
 > Tests: `python3 tests/test_omi.py` PASS (exit 0, `ok`).
 > Open issues: Windows host validation pending Coordinator. No commit made.
 2026-10-27 10:33 hook post-run passed:
-> Conflict. The container name "/tmpn4azx_q4-TASK-001-engineer-codex-gpt-x-medium-033130" is already in useBind for 0.0.0.0:8080 failed: port is already in usecreate AGENTS.md
-> create docker/Dockerfile
-> create docker/prove.sh
-> create docker/proxy.py
-> create .claude/settings.json
-> create .claude/skills/omi-idea/SKILL.md
-> create .claude/skills/omi-release/SKILL.md
-> create .claude/skills/omi-status/SKILL.md
-> create .claude/skills/omi-task/SKILL.md
-> create .claude/skills/omi-upgrade/SKILL.md
-> create .omi/agents/omi-agent-architect.md
-> create .omi/agents/omi-agent-designer-ui.md
-> create .omi/agents/omi-agent-devops.md
-> create .omi/agents/omi-agent-docs-writer.md
-> create .omi/agents/omi-agent-engineer.md
-> create .omi/agents/omi-agent-qa-tester.md
-> create .omi/agents/omi-agent-researcher.md
-> create .omi/agents/omi-agent-reviewer.md
-> create .omi/agents/omi-agent-security-reviewer.md
-> create .omi/config.json
-> create .omi/decisions.md
-> create .omi/hooks/post-run.sh
-> create .omi/plans/PLAN-000.md
-> create .omi/references/nextjs-app-router.md
-> create .omi/references/postgres-conventions.md
-> create .omi/rules/docker.md
-> create .omi/rules/go.md
-> create .omi/rules/nextjs.md
-> create .omi/rules/postgres.md
-> create .omi/rules/python.md
-> create .omi/skills/.gitkeep
-> create .omi/skills/data/omi-skill-data-review/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
-> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
-> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
-> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
-> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
-> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
-> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-27 10:36 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - .omi/tasks/TASK-082.md:1 The diff edits the task file, which is outside `scope`. Its Reports section holds three pasted post-run hook dumps: roughly 50 `create …` lines each, plus a Docker "port is already in use" conflict. -> Trim the dumps to a one-line result and drop the file from the code diff.
+> - .omi/tasks/TASK-082.md:34 The Checkpoint says the Windows host ran the tests ("Coordinator … -> ok"), but the engineer's Reports say Windows validation is pending. The Checkpoint also says "Review fix round 2 completed … Next: review round 2", which contradicts the Steps (`accept started`). -> Have the Coordinator reconcile these lines. I can't verify the Windows run from this container.
+> - src/omi/__init__.py:2371-2380 When a quota switch goes from Codex to Claude with an effort of `none` or `ultra`, `resolve_effort` rejects it and the run stops with a message instead of continuing. The effort is not mapped to a Claude level. -> Optional: document this, or map to the nearest level. The behavior is acceptable because it stops and names the problem.
+> 
+> AC: `.omi/config.json` (root and template) maps each alias for both tools to concrete IDs; the template no longer ships an empty `codex_models` ✓ Both configs map luna, sol and astra for Codex and the 5-5 IDs for Claude (diff lines 57-70 and 641-646). `test_model_catalog_and_task_start` asserts the mapping.
+> AC: `omi agents` writes a `## Models` section from `model_notes` (root and template) ✓ Both CATALOG.md files have the section. `agents_catalog` builds the lines from `model_notes`, and the test checks that every alias and effort line matches config and that an edited note reaches the catalog. Malformed notes and missing mappings exit with the config key named.
+> [... truncated ...]
+> AC: All tests pass on the Linux worker and the Windows host ✗ `python3 tests/test_omi.py` ran here and printed `ok`. The Windows run is only claimed in the task file, so I can't confirm it.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -234,3 +118,4 @@ Review fix round 2 completed (Linux worker, 2026-10-27):
 | omi-agent-engineer | gpt-6.1-sol (codex) | low | 498887 | 3439 | 458880 | 155s | 1/1 omi-skill-windows-powershell | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 3462 | 174438 | 136s | - | FAIL fb997ee |
 | omi-agent-engineer | gpt-6.1-sol (codex) | low | 670751 | 2908 | 648320 | 171s | 1/1 omi-skill-windows-powershell | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 4139 | 181213 | 141s | - | PASS 0adfd4e |
