@@ -589,7 +589,7 @@ def set_front(text, key, value):
     return f"---{chr(10).join(lines)}---{body}"
 
 
-FRONT_OWNED = ("step", "status", "workflow", "scope", "role", "skills", "refs", "plan", "model", "effort")  # Coordinator-owned task frontmatter
+FRONT_OWNED = ("step", "status", "workflow", "scope", "role", "skills", "refs", "plan", "model", "effort", "tool", "step_settings")  # Coordinator-owned task frontmatter
 
 
 def front_of(text):
@@ -2226,7 +2226,7 @@ def need_docker():
         sys.exit("Docker is not running; start Docker Desktop and retry. Nothing changed.")
 
 
-def parse_step_settings(value: str) -> dict[str, dict[str, str]]:
+def parse_step_settings(value: str, step_ids: list[str] | None = None) -> dict[str, dict[str, str]]:
     """Parse per-step tool/model/effort overrides, allowing empty parts."""
     settings = {}
     if not value.strip():
@@ -2236,6 +2236,9 @@ def parse_step_settings(value: str) -> dict[str, dict[str, str]]:
         if not match or match[1] in settings:
             sys.exit(f"invalid step_settings entry `{entry.strip()}`: expected <step>=<tool>/<model>/<effort>, ... "
                      "(parts may be empty). Nothing changed.")
+        if step_ids is not None and match[1] not in step_ids:
+            sys.exit(f"unknown step_settings step `{match[1]}`: workflow step ids are "
+                     f"{', '.join(step_ids)}. Nothing changed.")
         settings[match[1]] = dict(zip(("tool", "model", "effort"), match.groups()[1:]))
     return settings
 
@@ -2255,9 +2258,10 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
     before = task.read_text(encoding="utf-8") if task.exists() else ""
     am = get_role(main, role)
     get_role(main, tm.get("role") or "omi-agent-engineer")  # unknown task role fails too
-    settings = parse_step_settings(tm.get("step_settings", ""))
-    cur = next((s for s in get_workflow(wt, tm.get("workflow") or DEFAULT_WORKFLOW) if s["id"] == tm.get("step")), None) \
-        if tm.get("step") else None
+    steps = get_workflow(wt, tm.get("workflow") or DEFAULT_WORKFLOW) \
+        if tm.get("step") or tm.get("step_settings") else []
+    settings = parse_step_settings(tm.get("step_settings", ""), [s["id"] for s in steps])
+    cur = next((s for s in steps if s["id"] == tm.get("step")), None)
     step_settings = settings.get(cur["id"], {}) if cur and cur["role"] == role else {}
     task_settings = am["access"] == "write" or role == tm.get("role")  # other read roles keep their own settings
     tool = tool or step_settings.get("tool") or (tm.get("tool") if task_settings else None) or am.get("tool") or "claude"

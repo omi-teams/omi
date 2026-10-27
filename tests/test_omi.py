@@ -243,7 +243,10 @@ def test_step_settings_format_and_docs():
     for path in (root / "AGENTS.md", omi.TEMPLATE / "AGENTS.md"):
         line = next(line for line in path.read_text(encoding="utf-8").splitlines() if line.startswith("Tool per run:"))
         assert line.index("defaults") < line.index("role file") < line.index("task `tool/model/effort`") < line.index("step_settings:") < line.index("omi run --tool/--model/--effort")
-    assert "step_settings:" in (root / "README.md").read_text(encoding="utf-8")
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    assert "Thiết lập theo bước: `step_settings:" in readme
+    assert "`codex_models` mặc định rỗng" not in readme and "codex-default" not in readme
+    assert "gpt-6-luna" in readme and "gpt-6.1-sol" in readme and "gpt-6-astra" in readme
 
 
 def test_upgrade_non_object_config():
@@ -2983,6 +2986,12 @@ def test_tool_choice_and_quota_switch():
                     raise AssertionError("malformed setting ran")
                 except SystemExit as exc:
                     assert "expected <step>=<tool>/<model>/<effort>" in str(exc) and not calls
+                for sid in ("build", ""):
+                    try:
+                        step_run(sid, "omi-agent-engineer", "architet=codex//", ok_codex)
+                        raise AssertionError("unknown step setting ran")
+                    except SystemExit as exc:
+                        assert "architet" in str(exc) and "build, architect, security" in str(exc) and not calls
             finally:
                 omi.deterministic_checks = det
                 task.write_text("---\nid: TASK-001\nscope: src/**\n---\n## Checkpoint\n", encoding="utf-8")
@@ -2992,6 +3001,17 @@ def test_tool_choice_and_quota_switch():
             assert go(R(ok_codex)) == 0
             hook.clear()
             assert "REVERTED: model" in sys.stdout.getvalue() and "model: opus" in task.read_text()
+            # Agent edits cannot change tools or later steps' settings.
+            for key, old, new in (("tool", "codex", "claude"),
+                                  ("step_settings", "security=codex/opus/high", "security=claude/opus/high")):
+                front(tool="codex", model="opus", workflow="omi-flow-settings",
+                      step_settings=old if key == "step_settings" else "")
+                hook[:] = [lambda key=key, old=old, new=new: task.write_text(
+                    task.read_text(encoding="utf-8").replace(f"{key}: {old}\n", f"{key}: {new}\n"), encoding="utf-8")]
+                assert go(R(ok_codex)) == 0
+                hook.clear()
+                assert f"REVERTED: {key}" in sys.stdout.getvalue()
+                assert f"{key}: {old}\n" in task.read_text(encoding="utf-8")
             front()
             # a non-quota failure prints and records the CLI's error events and the exit code
             boom = json.dumps({"type": "result", "is_error": True, "result": "boom happened"})

@@ -24,15 +24,10 @@ Close the open parts of gaps #9 and #19 (omi-board session 97bfceb1) before rele
 - [ ] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
-Review round 1 FAIL:
-1. src/omi/__init__.py FRONT_OWNED (~592): add `step_settings` and `tool` so revert_front restores them when an agent edits its task file (agent must not change later steps' tool/model/effort). Test like the existing `model: haiku` revert test, for both keys.
-2. parse_step_settings: a step id not in the task's workflow stops with a message listing the workflow's step ids (typo `architet=codex//` must not be silently ignored). Test.
-3. README.md: write the new step_settings line in Vietnamese like the lines around it, and fix the stale sentence in the "Chọn công cụ theo vai trò/task" bullet: `codex_models` is no longer empty by default and `codex-default` no longer exists (TASK-082: haiku/sonnet/opus map to concrete IDs; a missing alias stops the run). Also drop "codex dùng `codex-default`" in the quota part.
-Windows host: Coordinator ran `python tests/test_omi.py` in this worktree after build -> ok.
-Done: Implemented validated per-step tool/model/effort settings with CLI > current step > eligible task > role > defaults precedence; shared create-only .gitattributes helper for init and upgrade; updated both task templates, both AGENTS files and README; added regression coverage.
-Not done: Windows host validation (Linux container only).
-Tests: PASS — python3 tests/test_omi.py (exit 0, final ok); PASS — targeted test_tool_choice_and_quota_switch and test_step_settings_format_and_docs after adding individual CLI-field precedence cases.
-Next: Coordinator reviews the scoped diff, runs python3 tests/test_omi.py on Windows, and commits on the host.
+Done: Addressed review round 1: protected `tool` and `step_settings` in FRONT_OWNED, validated every configured step against the task workflow (including tasks without a current step), and corrected the Vietnamese README model and quota guidance. Added regression coverage for reverted tool/later-step settings, unknown step ids with the workflow's valid ids, and README corrections. Existing acceptance tests cover read roles, precedence, shared create-only .gitattributes behavior, and both documentation copies.
+Not done: Windows host validation of these review fixes (Linux container only); Coordinator previously reported the pre-review implementation passed on Windows.
+Tests: PASS — targeted test_step_settings_format_and_docs and test_tool_choice_and_quota_switch; PASS — python3 tests/test_omi.py (exit 0, final ok).
+Next: Coordinator reviews the scoped diff, runs the final suite on Windows, and commits on the host.
 
 ## Steps
 - plan started 2026-10-27 11:18
@@ -62,9 +57,61 @@ Next: Coordinator reviews the scoped diff, runs python3 tests/test_omi.py on Win
 > AC: `omi upgrade --apply` creates `.gitattributes` without overwriting ✓ the shared `ensure_gitattributes` is used by both `init` and `upgrade_apply`. `test_upgrade_gitattributes` checks that it creates the file and keeps a custom one.
 > [... truncated ...]
 > Scope: all changed files are in `scope`, plus the task file (normal). The `## Reports` section of the task file contains junk hook output ("create AGENTS.md…", a Docker port conflict) that should be cleaned up.
+2026-10-27 11:29 omi-agent-engineer (codex):
+> DONE — addressed all review fixes; checkpoint updated.
+> Files changed: `src/omi/__init__.py`, `tests/test_omi.py`, `README.md`, `.omi/tasks/TASK-085.md`.
+> Suggested commit: `fix: protect and validate per-step run settings`
+> Tests: Linux full suite and targeted regression tests PASS.
+> Open issue: final Windows host validation remains for Coordinator. No commit made.
+2026-10-27 11:31 hook post-run passed:
+> Conflict. The container name "/tmpv_bsaux5-TASK-001-engineer-codex-gpt-x-medium-042945" is already in useBind for 0.0.0.0:8080 failed: port is already in usecreate AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 980713 | 8138 | 946048 | 232s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 2242 | 118798 | 129s | - | FAIL ef7965e |
+| omi-agent-engineer | gpt-6.1-sol (codex) | medium | 551745 | 3723 | 518912 | 150s | 1/1 omi-skill-lean-implementation | - |
