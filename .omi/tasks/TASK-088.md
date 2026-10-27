@@ -1,14 +1,14 @@
 ---
 id: TASK-088
 title: Bump omi to 0.3.0
-status: planned
+status: in-progress
 depends: TASK-087
 plan: PLAN-001
 scope: pyproject.toml, README.md, tests/test_omi.py, .omi/version, src/omi/template_shas.json
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
+tool: claude
 model: haiku
 effort: low
 workflow: omi-flow-feature
