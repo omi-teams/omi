@@ -1,7 +1,7 @@
 ---
 id: TASK-084
 title: Agents in the worker can run the claude and codex CLIs themselves (logged in, network allowed)
-status: in-progress
+status: done
 depends: TASK-083
 plan: PLAN-001
 scope: src/omi/__init__.py, tests/test_omi.py, docker/**, README.md
@@ -12,7 +12,7 @@ tool: codex
 model: opus
 effort: high
 workflow: omi-flow-feature-sensitive
-step: security
+step: accept
 ---
 ## Goal
 In TASK-080/081 a researcher inside the Docker worker ran `claude -p --model haiku "say ok"` and got "Not logged in · Please run /login" even though the agent itself was a logged-in claude; `codex login status` said "Not logged in" (`~/.codex` empty) and the proxy blocked `api.openai.com` / `chatgpt.com`. A model-probe spike must be able to call the CLI of the run's own tool from inside the worker, with the same credentials the agent already has, and without new exposure of secrets.
@@ -61,6 +61,11 @@ Next: Coordinator reviews the diff and commits on the host. Suggested commit: `t
 - review started 2026-10-27 10:58
 - review done 2026-10-27 11:00
 - security started 2026-10-27 11:00
+- security done 2026-10-27 11:04
+- accept started 2026-10-27 11:04
+
+PO approval accept: Accept
+- accept done 2026-10-27 11:10
 
 ## Reports
 2026-10-27 10:42 omi-agent-architect (codex):
@@ -75,49 +80,6 @@ Next: Coordinator reviews the diff and commits on the host. Suggested commit: `t
 > Checkpoint updated with evidence. No runtime changes needed.
 > Open issues: none. No commit made.
 2026-10-27 10:57 hook post-run passed:
-> Conflict. The container name "/tmpg0sryvbg-TASK-001-engineer-codex-gpt-x-medium-035614" is already in useBind for 0.0.0.0:8080 failed: port is already in usecreate AGENTS.md
-> create docker/Dockerfile
-> create docker/prove.sh
-> create docker/proxy.py
-> create .claude/settings.json
-> create .claude/skills/omi-idea/SKILL.md
-> create .claude/skills/omi-release/SKILL.md
-> create .claude/skills/omi-status/SKILL.md
-> create .claude/skills/omi-task/SKILL.md
-> create .claude/skills/omi-upgrade/SKILL.md
-> create .omi/agents/omi-agent-architect.md
-> create .omi/agents/omi-agent-designer-ui.md
-> create .omi/agents/omi-agent-devops.md
-> create .omi/agents/omi-agent-docs-writer.md
-> create .omi/agents/omi-agent-engineer.md
-> create .omi/agents/omi-agent-qa-tester.md
-> create .omi/agents/omi-agent-researcher.md
-> create .omi/agents/omi-agent-reviewer.md
-> create .omi/agents/omi-agent-security-reviewer.md
-> create .omi/config.json
-> create .omi/decisions.md
-> create .omi/hooks/post-run.sh
-> create .omi/plans/PLAN-000.md
-> create .omi/references/nextjs-app-router.md
-> create .omi/references/postgres-conventions.md
-> create .omi/rules/docker.md
-> create .omi/rules/go.md
-> create .omi/rules/nextjs.md
-> create .omi/rules/postgres.md
-> create .omi/rules/python.md
-> create .omi/skills/.gitkeep
-> create .omi/skills/data/omi-skill-data-review/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
-> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
-> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
-> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
-> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
-> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
-> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
-> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
 > [... truncated ...]
 > ok
 2026-10-27 11:00 omi-agent-reviewer (claude):
