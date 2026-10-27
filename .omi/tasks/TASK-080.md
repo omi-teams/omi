@@ -12,7 +12,7 @@ tool: claude
 model: sonnet
 effort: medium
 workflow: omi-flow-spike
-step:
+step: research
 ---
 ## Goal
 The Coordinator must pick a concrete model and effort per task, never a default. Find out, from inside the worker (Claude Code CLI 2.1.302, the PO's session login), which Claude models and effort levels are actually usable, and what kind of omi task each fits.
@@ -28,7 +28,35 @@ The Coordinator must pick a concrete model and effort per task, never a default.
 - [ ] Every claim says how it was verified (command run and its output, or CLI help text); anything not verified is marked as such.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
-Next:
+Done: research step (see Reports). In-container nested `claude -p` is "Not logged in"; PO approved the Coordinator probing on the host instead (2026-10-27).
+Host evidence (Claude Code 2.1.302, PO session login, `claude -p --model <m> --effort low --output-format json "say ok"`; result | duration_ms | total_cost_usd | modelUsage):
+- fable, claude-fable-5-1: is_error, "Fable 5.1 requires usage credits. Switch to another model" | ~630 | 0 | none
+- opus: ok | 6493 | 0.1459 | claude-opus-5-5 ; claude-opus-5-5: ok | 1280 | 0.1281
+- sonnet: ok | 5845 | 0.0727 | claude-sonnet-5-5 ; claude-sonnet-5-5: ok | 2354 | 0.0640
+- haiku: ok | 1617 | 0.0039 | claude-haiku-5-5 ; claude-haiku-5-5: ok | 2224 | 0.0034
+Effort probe (`claude -p --model haiku --effort <e> "What is 17*23? Answer with the number only."`; all answered 391): output_tokens low 29, medium 57, high 61, xhigh 67, max 207; cost ~0.0034-0.0036 each, duration 1.9-2.6 s. So all five levels are accepted; higher effort spends more output (thinking) tokens. Effect on hard tasks and on opus/sonnet: not measured.
+Cost note: on a trivial prompt, opus is ~2x sonnet and ~35x haiku (mostly cached system-prompt cost).
+Not done: write step (docs-writer saves docs/research/models-claude.md from Reports + this evidence; mark the role-default mapping as recommendation, not measured).
+Tests: n/a (docs only)
+Next: write, then decide (PO gate).
+## Steps
+- plan started 2026-10-27 09:13
+- plan done 2026-10-27 09:13
+- research started 2026-10-27 09:13
+
+## Reports
+2026-10-27 09:14 omi-agent-researcher (claude):
+> ANSWER: Q1 (which models answer) and the usage numbers for Q3 can't be verified from this sandbox: the `claude` CLI returns "Not logged in" on every model. Only the CLI's `--model` and `--effort` help text could be checked. I also did not write `docs/research/models-claude.md`, because this researcher role has no writes.
+> - CLI is 2.1.302. `--effort` accepts `low, medium, high, xhigh, max`. [`claude --help`, 2.1.302]
+> - `--model` takes an alias (help text names `fable`, `opus`, `sonnet`) or a full model name. `haiku` is not in the help text. `--fallback-model` takes a comma-separated list. [`claude --help`, 2.1.302]
+> - I ran `claude -p --model <m> --effort low --output-format json "say ok"` for `fable`, `opus`, `sonnet`, `haiku`, `claude-fable-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5` and `claude-haiku-5-5`. Every run returned `is_error:true`, `result:"Not logged in · Please run /login"`, `terminal_reason:"api_error"`, zero tokens, zero cost and about 70 ms. No model was reached, so none is proven or disproven. [run in /tmp, 2026-10-27]
+> - The model IDs `claude-fable-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5` and `claude-haiku-5-5` come from this session's system prompt, not from a successful run. [system prompt]
+> - `.omi/agents` has 9 role files: architect, designer-ui, devops, docs-writer, engineer, qa-tester, researcher, reviewer, security-reviewer. I did not read them, so I have not mapped any role to a default. [/work/.omi/agents]
+> CONFIDENCE: high - on the flag list and the login failure, which are directly observed; the model-by-model findings are unknown, not low-confidence.
+> [... truncated ...]
+> NEEDS DECISION: Should the PO run `/login` in this container (or supply credentials) and re-run this task, and should a role with write access save the report to `docs/research/models-claude.md`?
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read | verdict |
+|---|---|---|---|---|---|---|---|---|
+| omi-agent-researcher | claude-sonnet-5-5 | medium | 10 | 1579 | 91664 | 40s | - | n/a |
