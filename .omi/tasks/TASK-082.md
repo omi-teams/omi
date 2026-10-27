@@ -25,6 +25,11 @@ From the findings in `docs/research/models-claude.md` and `docs/research/models-
 - [ ] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
+Coordinator notes (2026-10-27):
+- PO decision (.omi/decisions.md): codex_models haiku -> gpt-6-luna, sonnet -> gpt-6.1-sol, opus -> gpt-6-astra.
+- Claude models: haiku -> claude-haiku-5-5, sonnet -> claude-sonnet-5-5, opus -> claude-opus-5-5. Do not map claude-fable-5-1: it answers "requires usage credits" on the PO login.
+- "effort none" in the criteria means a missing effort label. Codex does accept `none` as a value, but omi must never send or show it by default.
+- Efforts: Claude low|medium|high|xhigh|max; Codex none|low|medium|high|xhigh|max (+ultra on sol/astra/terra). Map omi efforts 1:1.
 Done:
 Not done:
 Tests:
