@@ -1,7 +1,7 @@
 ---
 id: TASK-083
 title: A task's own read role (e.g. the spike researcher) uses the task's tool, model and effort
-status: in-progress
+status: done
 depends:
 plan: PLAN-001
 scope: src/omi/__init__.py, tests/test_omi.py, .omi/tasks/_template.md, src/omi/template/dot-omi/tasks/_template.md
@@ -12,16 +12,16 @@ tool: codex
 model: sonnet
 effort: medium
 workflow: omi-flow-bugfix
-step: review
+step: accept
 ---
 ## Goal
 `omi run` applies a task's `tool/model/effort` only to write roles (`src/omi/__init__.py` around `write = am["access"] == "write"`). In a spike the task's own `role:` is the read-only researcher, so TASK-081 (`tool: codex`) ran on claude. Fix it at that one place: the task's settings also apply when the role being run is the task's own `role:`. Other read roles (reviewer, security-reviewer) keep their own settings so review stays independent.
 
 ## Acceptance criteria
-- [ ] `omi run <role> <ID>` where `<role>` equals the task's `role:` uses the task's `tool`, `model` and `effort` (then the role's, then defaults), for read roles too; `--tool/--model/--effort` still win.
-- [ ] Running a read role that is not the task's `role:` (e.g. `omi-agent-reviewer` on an engineer task) still ignores the task's tool/model/effort.
-- [ ] A regression test in `tests/test_omi.py` fails before the fix and passes after, covering both cases.
-- [ ] The `tool:`/`model:` comments in both `_template.md` copies say "write role or the task's own role" instead of "write role only".
+- [x] `omi run <role> <ID>` where `<role>` equals the task's `role:` uses the task's `tool`, `model` and `effort` (then the role's, then defaults), for read roles too; `--tool/--model/--effort` still win.
+- [x] Running a read role that is not the task's `role:` (e.g. `omi-agent-reviewer` on an engineer task) still ignores the task's tool/model/effort.
+- [x] A regression test in `tests/test_omi.py` fails before the fix and passes after, covering both cases.
+- [x] The `tool:`/`model:` comments in both `_template.md` copies say "write role or the task's own role" instead of "write role only".
 
 ## Checkpoint
 Done: Applied task tool/model/effort to write roles or the task's own role; updated both templates and regression coverage.
@@ -37,6 +37,11 @@ Next: Coordinator reviews the diff and commits.
 - fix started 2026-10-27 09:53
 - fix done 2026-10-27 09:53
 - review started 2026-10-27 09:53
+- review done 2026-10-27 09:56
+- accept started 2026-10-27 09:56
+
+PO approval accept: Accept
+- accept done 2026-10-27 09:58
 
 ## Reports
 2026-10-27 09:51 omi-agent-engineer (codex):
