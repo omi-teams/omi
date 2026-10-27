@@ -1,7 +1,7 @@
 ---
 id: TASK-081
 title: Spike - which Codex models and efforts this Codex session supports, and what each fits
-status: in-progress
+status: done
 depends:
 scope: docs/research/models-codex.md
 role: omi-agent-researcher
@@ -12,7 +12,7 @@ tool: codex
 model: sonnet
 effort: medium
 workflow: omi-flow-spike
-step: write
+step: decide
 ---
 ## Goal
 Codex runs often show `codex-default` / `none`, so nobody knows which model or effort ran. Find out, from inside the worker (Codex CLI 0.164.0, the PO's ChatGPT login), which Codex models and reasoning efforts are actually usable, and what kind of omi task each fits.
@@ -24,8 +24,8 @@ Codex runs often show `codex-default` / `none`, so nobody knows which model or e
 4. A recommended `codex_models` mapping for the aliases haiku / sonnet / opus, and a default per omi role.
 
 ## Acceptance criteria
-- [ ] Report saved at `docs/research/models-codex.md` (Vietnamese prose, English IDs): a table `model id | effort levels | fits | avoid for | relative cost/speed | evidence`, the default model/effort of `codex exec`, the proposed `codex_models` mapping and per-role defaults.
-- [ ] Every claim says how it was verified (command run and its output, or CLI help/cache content); anything not verified is marked as such.
+- [x] Report saved at `docs/research/models-codex.md` (Vietnamese prose, English IDs): a table `model id | effort levels | fits | avoid for | relative cost/speed | evidence`, the default model/effort of `codex exec`, the proposed `codex_models` mapping and per-role defaults.
+- [x] Every claim says how it was verified (command run and its output, or CLI help/cache content); anything not verified is marked as such.
 
 ## Checkpoint
 Done: research step (see Reports): in-container codex is "Not logged in" and the proxy blocks api.openai.com; the researcher also ran on claude, not codex, although the task says `tool: codex` (omi bug, not part of this spike). PO approved the Coordinator probing on the host (2026-10-27).
@@ -60,6 +60,11 @@ Next: Coordinator reviews the diff and commits; PO gate on codex_models mapping 
 - research started 2026-10-27 09:23
 - research done 2026-10-27 09:30
 - write started 2026-10-27 09:30
+- write done 2026-10-27 09:33
+- decide started 2026-10-27 09:33
+
+PO approval decide: Adopt
+- decide done 2026-10-27 09:44
 
 ## Reports
 2026-10-27 09:25 omi-agent-researcher (claude):
