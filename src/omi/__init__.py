@@ -2208,8 +2208,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
     before = task.read_text(encoding="utf-8") if task.exists() else ""
     am = get_role(main, role)
     get_role(main, tm.get("role") or "omi-agent-engineer")  # unknown task role fails too
-    write = am["access"] == "write"  # the task's tool/model/effort are for the implementer; read roles keep their own
-    tool = tool or (tm.get("tool") if write else None) or am.get("tool") or "claude"
+    task_settings = am["access"] == "write" or role == tm.get("role")  # other read roles keep their own settings
+    tool = tool or (tm.get("tool") if task_settings else None) or am.get("tool") or "claude"
     if tool not in ("claude", "codex"):
         sys.exit(f"unknown tool `{tool}`: claude or codex. Nothing changed.")
     other = "codex" if tool == "claude" else "claude"
@@ -2232,9 +2232,9 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
     declared = check_skills(wt, ids)  # role defaults count against the budget
     rule_files = task_rules(wt, task_scope(wt, task.stem))
     ref_files = task_references(wt, tm)
-    want = effort or (tm.get("effort") if write else None) or am.get("effort")
+    want = effort or (tm.get("effort") if task_settings else None) or am.get("effort")
     efforts = {"claude": want, "codex": codex_effort(want)}
-    want_model = model or (tm.get("model") if write else None) or am.get("model")
+    want_model = model or (tm.get("model") if task_settings else None) or am.get("model")
     models = {tool: resolve_model(main, want_model, tool)}
 
     def warn_default(t, alias=want_model):

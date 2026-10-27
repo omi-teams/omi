@@ -2701,6 +2701,11 @@ def test_review_round_flow():
 
 def test_tool_choice_and_quota_switch():
     import contextlib
+    for template in (Path(__file__).parents[1] / ".omi" / "tasks" / "_template.md",
+                     omi.TEMPLATE / "dot-omi" / "tasks" / "_template.md"):
+        lines = template.read_text(encoding="utf-8").splitlines()
+        for field in ("tool:", "model:"):
+            assert "write role or the task's own role" in next(line for line in lines if line.startswith(field))
     real = (omi.subprocess.run, omi.shutil.which, omi.main_checkout, omi.WINDOWS)
     claude_quota = json.dumps({"type": "result", "is_error": True, "result": "Claude AI usage limit reached|1760000000"})
     codex_quota = json.dumps({"type": "error", "message": "You've hit your usage limit. Upgrade to Pro or try again at 3:05 PM."})
@@ -2835,19 +2840,33 @@ def test_tool_choice_and_quota_switch():
             front(model="haiku")
             assert go(R(ok_codex), tool="codex") == 0 and "-m" not in calls[0]
             assert sys.stdout.getvalue().count("WARNING") == 1 and "'haiku'" in sys.stdout.getvalue()
-            # the task's tool/model apply to the write role only; a read role keeps its own
-            front(tool="codex", model="opus")
+            # Independent read roles ignore task settings; the task's own read role inherits them.
+            front(tool="codex", model="opus", effort="high")
             assert go(R(ok_codex)) == 0 and "codex" in calls[0]
             det, omi.deterministic_checks = omi.deterministic_checks, lambda *a: []
             try:
-                outs[:] = [R(ok_claude)]
-                calls.clear()
-                assert omi.run_role("omi-agent-reviewer", wt, task) == 0 and "claude" in calls[0] and "codex" not in calls[0]
-                outs[:] = [R(ok_codex)]
-                calls.clear()
-                assert omi.run_role("omi-agent-reviewer", wt, task, tool="codex") == 0 and "codex" in calls[0]
+                def review(output, **kw):
+                    outs[:] = [R(output)]
+                    calls.clear()
+                    return omi.run_role("omi-agent-reviewer", wt, task, **kw)
+
+                assert review(ok_claude) == 0
+                assert "claude" in calls[0] and "codex" not in calls[0]
+                assert "claude-sonnet-5-5" in calls[0] and "medium" in calls[0]
+                assert review(ok_codex, tool="codex", model="sonnet", effort="low") == 0
+                assert "gpt-x" in calls[0] and "model_reasoning_effort=low" in calls[0]
+                task.write_text(task.read_text(encoding="utf-8").replace("scope:", "role: omi-agent-reviewer\nscope:", 1), encoding="utf-8")
+                assert review(ok_codex) == 0
+                assert "codex" in calls[0] and "gpt-o" in calls[0] and "model_reasoning_effort=high" in calls[0]
+                assert review(ok_claude, tool="claude", model="haiku", effort="low") == 0
+                assert "claude-haiku-5-5" in calls[0] and "low" in calls[0]
+                front()
+                assert review(ok_claude) == 0
+                assert "claude" in calls[0] and "claude-sonnet-5-5" in calls[0] and "medium" in calls[0]
             finally:
                 omi.deterministic_checks = det
+                task.write_text(task.read_text(encoding="utf-8").replace("role: omi-agent-reviewer\n", ""), encoding="utf-8")
+            front(tool="codex", model="opus")
             # model/effort are Coordinator-owned frontmatter
             hook[:] = [lambda: task.write_text(task.read_text().replace("model: opus", "model: haiku"), encoding="utf-8")]
             assert go(R(ok_codex)) == 0
