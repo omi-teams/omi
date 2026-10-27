@@ -25,6 +25,8 @@ Gap #17 (omi-board session 97bfceb1): the post-run hook and read roles cannot us
 - [ ] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
+Review round 1 FAIL:
+- src/omi/__init__.py out_of_scope: the `.omi-cache/` exemption returns False before the `.git*` component guard and also applies when committed=True, so a force-added `.omi-cache/x/.gitattributes` (or any committed cache file) passes scope. Fix: exempt `.omi-cache/` only for uncommitted (untracked/ignored) entries, never when committed=True, and keep the `.git*` guard ahead of the exemption. Add a test for a committed `.omi-cache/**/.gitattributes` (out of scope) and a committed `.omi-cache/go-mod/x` (out of scope), plus untracked cache files (not out of scope).
 Done: Shared worker cache environment updated for write/read roles and hooks; GOFLAGS=-modcacherw; init/upgrade gitignore helper; cache scope exemption (existing symlink protection retained); Vietnamese README line; regression tests added.
 Not done: -
 Coordinator: Windows host suite passed (ok); sandbox check on Windows host: read-only tree under .omi-cache/go-mod blocks `git worktree remove` (Permission denied), writable tree (-modcacherw) removes cleanly.
@@ -35,6 +37,10 @@ Next: Coordinator reviews diff and runs Windows host suite plus real Go cache wo
 - plan started 2026-10-27 21:36
 - plan done 2026-10-27 21:36
 - build started 2026-10-27 21:36
+- build done 2026-10-27 21:44
+- review started 2026-10-27 21:44
+- review failed 2026-10-27 21:49
+- build started 2026-10-27 21:49
 
 ## Reports
 2026-10-27 21:41 omi-agent-engineer (codex):
@@ -91,8 +97,18 @@ Next: Coordinator reviews diff and runs Windows host suite plus real Go cache wo
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-27 21:49 omi-agent-reviewer (claude):
+> VERDICT: FAIL
+> - src/omi/__init__.py:2166 The `.omi-cache/` exemption in `out_of_scope` returns False before the `.git*` component guard and the scope-glob check. This applies to committed diffs as well as untracked files. An engineer can run `git add -f .omi-cache/x/.gitattributes` (or `.githooks/...`), commit it, and pass the scope check. The file then merges into main and host git processes it. -> Exempt `.omi-cache/` only for untracked or ignored status entries. In the `committed=True` path, don't exempt it, so force-added cache files stay out of scope. Alternatively, run the `.git*` component check before the exemption. Add a test for the committed `.omi-cache/**/.gitattributes` case.
+> 
+> AC: Every container gets the new cache env, tested on argv ✓ `CACHE_ENV` is changed at src/omi/__init__.py:1706 and `assert_download_cache_env` checks the write, read and hook argv. I only saw `CACHE_ENV` used at line 1736 and assumed hooks and read roles go through the same builder. I did not trace that.
+> AC: `.omi-cache/` is gitignored, added by init and upgrade, never out of scope ✓ (with the gap in the finding) `ensure_gitignore` runs from `init` and `upgrade_apply`, and the repo `.gitignore` has the entry. Tests cover idempotency and `git check-ignore`. The scope exemption is too broad for committed files.
+> AC: `git worktree remove` works on the Windows host with a Go module cache ✗ Not verifiable in this container. The task file records a Coordinator sandbox check, but its box is still unticked.
+> AC: README has one Vietnamese line on where download caches live ✓ The line was added at README.md:34.
+> AC: All tests pass on Linux and Windows ✓ for Linux, not checked for Windows. `python3 tests/test_omi.py` exited 0 and printed `ok` here. The Windows result is only the Coordinator's note in the task file.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1263284 | 5995 | 1199360 | 261s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 2241 | 139322 | 254s | - | FAIL d1ea336 |
