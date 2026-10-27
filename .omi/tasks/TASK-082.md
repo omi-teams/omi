@@ -8,7 +8,7 @@ role: omi-agent-engineer
 skills: [omi-skill-windows-powershell]
 refs:
 plan: PLAN-001
-tool:
+tool: codex
 model: sonnet
 effort: medium
 workflow: omi-flow-feature
