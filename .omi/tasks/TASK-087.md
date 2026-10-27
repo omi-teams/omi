@@ -1,7 +1,7 @@
 ---
 id: TASK-087
 title: omi run excludes .omi-cache/ via the repo's info/exclude when .gitignore lacks it
-status: in-progress
+status: done
 depends: TASK-086
 plan: PLAN-001
 scope: src/omi/__init__.py, tests/test_omi.py
@@ -12,7 +12,7 @@ tool: codex
 model: sonnet
 effort: medium
 workflow: omi-flow-feature
-step: build
+step: review
 ---
 ## Goal
 Follow-up to TASK-086 review: in a project not yet upgraded (`.gitignore` lacks `.omi-cache/`), download-cache files show as untracked and paths like `.omi-cache/go-mod/x@v1/.github/...` trip the `.git*` scope guard. PO decision 2026-10-27: `omi run` adds `.omi-cache/` to the repo's shared `info/exclude` (`git rev-parse --git-common-dir`) when missing, so every worktree ignores it without a tracked change.
@@ -21,7 +21,7 @@ Follow-up to TASK-086 review: in a project not yet upgraded (`.gitignore` lacks 
 - [x] Before any role or hook container starts, `omi run` ensures the line `.omi-cache/` exists in `<git-common-dir>/info/exclude` (creates the file/dir if missing, no duplicate on repeat runs, keeps existing lines). Tested.
 - [x] In a repo whose `.gitignore` has no `.omi-cache/`, an untracked `.omi-cache/go-mod/example.com/m@v1/.github/workflows/x.yml` in the task worktree is not reported by `out_of_scope` after that step; a committed file under `.omi-cache/` is still out of scope. Tested with real git (worktree created via `git worktree add`).
 - [x] No tracked file changes from this step (`git status --porcelain` of the main checkout and the worktree unchanged). Tested.
-- [ ] All tests pass on the Linux worker and the Windows host.
+- [x] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
 Done: Added shared info/exclude cache setup before role checks and containers; covered missing directory/file, preserved lines, repeat runs, real linked-worktree scope checks, and unchanged checkout statuses.
@@ -34,6 +34,9 @@ Next: Coordinator reviews diff and runs python3 tests/test_omi.py on Windows. Af
 - plan started 2026-10-27 22:06
 - plan done 2026-10-27 22:06
 - build started 2026-10-27 22:06
+- build done 2026-10-27 22:17
+- review started 2026-10-27 22:17
+- review done 2026-10-27 22:22
 
 ## Reports
 2026-10-27 22:14 omi-agent-engineer (codex):
@@ -89,8 +92,18 @@ Next: Coordinator reviews diff and runs python3 tests/test_omi.py on Windows. Af
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-27 22:22 omi-agent-reviewer (claude):
+> ```
+> VERDICT: PASS
+> - src/omi/__init__.py:1793 `omi hook` (hook_cmd) calls run_hook directly and never calls ensure_cache_excluded, so a hook container started that way can run in a repo whose exclude is not yet set up. The AC covers `omi run` only, so this is minor -> call ensure_cache_excluded(wt) in hook_cmd before run_hook.
+> AC: Before any container, `omi run` ensures `.omi-cache/` is in <common-dir>/info/exclude ✓ ensure_cache_excluded runs at src/omi/__init__.py:2320, before the pre-run hook at 2329 and the role container. It creates the directory and file, appends only when the line is missing, and keeps existing lines. test_download_cache_shared_exclude covers the missing dir, missing file, preserved lines, and repeat runs. The docker-run mocks in test_hooks and test_run_read_role assert the exclude file exists with exactly one entry when the container starts.
+> AC: An untracked .omi-cache/.../.github/... file is not reported by out_of_scope, and a committed cache file still is ✓ The test uses a real `git worktree add`. out_of_scope returns the cache path before the call and [] after. After `git add -f` and a commit, it reports the path again, both committed and uncommitted.
+> AC: No tracked file changes ✓ The test asserts `git status --porcelain -uall` is unchanged for both the main checkout and the worktree.
+> AC: All tests pass on the Linux worker and the Windows host ✓ (partial) `python3 tests/test_omi.py` exits 0 and prints "ok" on Linux in this container. The Windows pass is only the coordinator's note in the task file, and I did not re-run it.
+> ```
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1633186 | 7391 | 1544448 | 450s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 1472 | 128367 | 247s | - | PASS 21b12b4 |
