@@ -211,6 +211,44 @@ def test_upgrade():
         assert cfg.read_text(encoding="utf-8") == "{broken"
 
 
+def test_upgrade_gitattributes():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        omi.upgrade_cmd(["--apply"], root)
+        attrs = root / ".gitattributes"
+        assert attrs.read_text(encoding="utf-8") == "* text=auto eol=lf\n"
+        attrs.write_text("custom\n", encoding="utf-8")
+        omi.upgrade_cmd(["--apply"], root)
+        assert attrs.read_text(encoding="utf-8") == "custom\n"
+
+
+def test_step_settings_format_and_docs():
+    assert omi.parse_step_settings("") == {}
+    assert omi.parse_step_settings("architect=codex/opus/high, review=claude//") == {
+        "architect": {"tool": "codex", "model": "opus", "effort": "high"},
+        "review": {"tool": "claude", "model": "", "effort": ""},
+    }
+    assert omi.parse_step_settings("build=//") == {"build": {"tool": "", "model": "", "effort": ""}}
+    for value in ("review", "review=claude/opus", "=claude//", "review=claude///", "review=claude//,",
+                  "review=claude//, review=codex//", "review=claude/o pus/high"):
+        try:
+            omi.parse_step_settings(value)
+            raise AssertionError(f"accepted malformed entry: {value}")
+        except SystemExit as exc:
+            assert "expected <step>=<tool>/<model>/<effort>, ..." in str(exc)
+    root = Path(__file__).parents[1]
+    for path in (root / ".omi/tasks/_template.md", omi.TEMPLATE / "dot-omi/tasks/_template.md"):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        assert len([line for line in lines if line.startswith("step_settings:  #")]) == 1
+    for path in (root / "AGENTS.md", omi.TEMPLATE / "AGENTS.md"):
+        line = next(line for line in path.read_text(encoding="utf-8").splitlines() if line.startswith("Tool per run:"))
+        assert line.index("defaults") < line.index("role file") < line.index("task `tool/model/effort`") < line.index("step_settings:") < line.index("omi run --tool/--model/--effort")
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    assert "Thiết lập theo bước: `step_settings:" in readme
+    assert "`codex_models` mặc định rỗng" not in readme and "codex-default" not in readme
+    assert "gpt-6-luna" in readme and "gpt-6.1-sol" in readme and "gpt-6-astra" in readme
+
+
 def test_upgrade_non_object_config():
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
@@ -2897,12 +2935,83 @@ def test_tool_choice_and_quota_switch():
             finally:
                 omi.deterministic_checks = det
                 task.write_text(task.read_text(encoding="utf-8").replace("role: omi-agent-reviewer\n", ""), encoding="utf-8")
+            # Per-step settings apply only to the current step's role, including read roles.
+            workflow_dir = wt / ".omi" / "workflows"
+            workflow_dir.mkdir(exist_ok=True)
+            steps = (("build", "omi-agent-engineer"), ("architect", "omi-agent-architect"),
+                     ("security", "omi-agent-security-reviewer"))
+            (workflow_dir / "omi-flow-settings.md").write_text(
+                "---\nid: omi-flow-settings\nsummary: settings test\nsteps:\n" + "".join(
+                    f"- id: {sid} | role: {role} | skills: | input: task | output: report | gate: none | stop: done\n"
+                    for sid, role in steps) + "---\n", encoding="utf-8")
+            base = "---\nid: TASK-001\nscope: src/**\nworkflow: omi-flow-settings\n"
+            det, omi.deterministic_checks = omi.deterministic_checks, lambda *a: []
+            try:
+                def step_run(sid, role, settings, output, own_role="omi-agent-engineer", **kw):
+                    task.write_text(base + f"role: {own_role}\nstep: {sid}\ntool: claude\nmodel: haiku\neffort: low\n"
+                                    + f"step_settings: {settings}\n---\n## Checkpoint\n", encoding="utf-8")
+                    outs[:] = [R(output)]
+                    calls.clear()
+                    return omi.run_role(role, wt, task, **kw)
+
+                settings = "build=codex/opus/high, architect=codex/opus/high, security=codex/opus/high"
+                for sid, role in steps:
+                    assert step_run(sid, role, settings, ok_codex) == 0
+                    assert "gpt-o" in calls[0] and "model_reasoning_effort=high" in calls[0]
+                    assert step_run(sid, role, settings, ok_claude, tool="claude", model="sonnet", effort="medium") == 0
+                    assert "claude-sonnet-5-5" in calls[0] and "medium" in calls[0]
+                assert step_run("build", "omi-agent-engineer", settings, ok_claude, tool="claude") == 0
+                assert "claude-opus-5-5" in calls[0] and "high" in calls[0]
+                assert step_run("build", "omi-agent-engineer", settings, ok_codex, model="sonnet") == 0
+                assert "gpt-x" in calls[0] and "model_reasoning_effort=high" in calls[0]
+                assert step_run("build", "omi-agent-engineer", settings, ok_codex, effort="low") == 0
+                assert "gpt-o" in calls[0] and "model_reasoning_effort=low" in calls[0]
+                # Empty fields inherit independently from task settings for write / own read roles.
+                assert step_run("build", "omi-agent-engineer", "build=//high", ok_claude) == 0
+                assert "claude-haiku-5-5" in calls[0] and "high" in calls[0]
+                assert step_run("build", "omi-agent-engineer", "build=/opus/", ok_claude) == 0
+                assert "claude-opus-5-5" in calls[0] and "low" in calls[0]
+                assert step_run("security", "omi-agent-security-reviewer", "security=//high", ok_claude,
+                                own_role="omi-agent-security-reviewer") == 0
+                assert "claude-haiku-5-5" in calls[0] and "high" in calls[0]
+                # Other read roles inherit role settings, and ignore overrides for non-current steps.
+                assert step_run("security", "omi-agent-security-reviewer", "security=claude//", ok_claude) == 0
+                assert "claude-sonnet-5-5" in calls[0] and "medium" in calls[0]
+                assert step_run("build", "omi-agent-security-reviewer", settings, ok_claude) == 0
+                assert "claude-sonnet-5-5" in calls[0] and "medium" in calls[0]
+                assert step_run("security", "omi-agent-security-reviewer", "architect=codex/opus/high", ok_claude) == 0
+                assert "claude-sonnet-5-5" in calls[0] and "medium" in calls[0]
+                try:
+                    step_run("build", "omi-agent-engineer", "security=codex/opus", ok_claude)
+                    raise AssertionError("malformed setting ran")
+                except SystemExit as exc:
+                    assert "expected <step>=<tool>/<model>/<effort>" in str(exc) and not calls
+                for sid in ("build", ""):
+                    try:
+                        step_run(sid, "omi-agent-engineer", "architet=codex//", ok_codex)
+                        raise AssertionError("unknown step setting ran")
+                    except SystemExit as exc:
+                        assert "architet" in str(exc) and "build, architect, security" in str(exc) and not calls
+            finally:
+                omi.deterministic_checks = det
+                task.write_text("---\nid: TASK-001\nscope: src/**\n---\n## Checkpoint\n", encoding="utf-8")
             front(tool="codex", model="opus")
             # model/effort are Coordinator-owned frontmatter
             hook[:] = [lambda: task.write_text(task.read_text().replace("model: opus", "model: haiku"), encoding="utf-8")]
             assert go(R(ok_codex)) == 0
             hook.clear()
             assert "REVERTED: model" in sys.stdout.getvalue() and "model: opus" in task.read_text()
+            # Agent edits cannot change tools or later steps' settings.
+            for key, old, new in (("tool", "codex", "claude"),
+                                  ("step_settings", "security=codex/opus/high", "security=claude/opus/high")):
+                front(tool="codex", model="opus", workflow="omi-flow-settings",
+                      step_settings=old if key == "step_settings" else "")
+                hook[:] = [lambda key=key, old=old, new=new: task.write_text(
+                    task.read_text(encoding="utf-8").replace(f"{key}: {old}\n", f"{key}: {new}\n"), encoding="utf-8")]
+                assert go(R(ok_codex)) == 0
+                hook.clear()
+                assert f"REVERTED: {key}" in sys.stdout.getvalue()
+                assert f"{key}: {old}\n" in task.read_text(encoding="utf-8")
             front()
             # a non-quota failure prints and records the CLI's error events and the exit code
             boom = json.dumps({"type": "result", "is_error": True, "result": "boom happened"})
@@ -3606,6 +3715,8 @@ def test_model_catalog_and_task_start():
 
 
 if __name__ == "__main__":
+    test_step_settings_format_and_docs()
+    test_upgrade_gitattributes()
     test_model_catalog_and_task_start()
     test_worker_cache_tmpfs_and_full_volumes()
     test_parallel()
