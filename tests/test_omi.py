@@ -716,6 +716,61 @@ def test_download_cache_gitignore():
     assert "Cache tải xuống (Go modules, npm, pip) nằm trong `.omi-cache/`" in (root / "README.md").read_text(encoding="utf-8")
 
 
+def test_download_cache_shared_exclude():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve() / "main"
+        root.mkdir()
+        git(root, "init", "-q", "-b", "development")
+        (root / ".gitignore").write_text("*.log\n", encoding="utf-8")
+        task = root / ".omi" / "tasks" / "TASK-087.md"
+        task.parent.mkdir(parents=True)
+        task.write_text("---\nid: TASK-087\nscope: src/**\n---\n", encoding="utf-8")
+        git(root, "add", ".")
+        git(root, "commit", "-qm", "base")
+        wt = Path(d).resolve() / "task"
+        git(root, "worktree", "add", "-qb", "task-087", str(wt))
+        exclude = root / ".git" / "info" / "exclude"
+        exclude.unlink()
+        exclude.parent.rmdir()
+
+        def statuses():
+            return [omi.git(p, "status", "--porcelain", "-uall") for p in (root, wt)]
+
+        before = statuses()
+        assert before == ["", ""]
+        omi.ensure_cache_excluded(wt)
+        assert exclude.read_text(encoding="utf-8") == ".omi-cache/\n"
+        assert statuses() == before
+        for existing in ("*.local", "# preserved\n*.local\n", "*.local\n.omi-cache/\n"):
+            exclude.write_text(existing, encoding="utf-8")
+            omi.ensure_cache_excluded(wt)
+            expected = existing if ".omi-cache/" in existing.splitlines() else existing.rstrip("\n") + "\n.omi-cache/\n"
+            assert exclude.read_text(encoding="utf-8") == expected
+            first = exclude.read_bytes()
+            omi.ensure_cache_excluded(root)
+            assert exclude.read_bytes() == first
+            assert statuses() == before
+
+        # Older projects have no tracked cache ignore; the shared exclude hides .git* cache paths.
+        exclude.write_text("*.local\n", encoding="utf-8")
+        cached = wt / ".omi-cache" / "go-mod" / "example.com" / "m@v1" / ".github" / "workflows" / "x.yml"
+        cached.parent.mkdir(parents=True)
+        cached.write_text("downloaded\n", encoding="utf-8")
+        cache_rel = cached.relative_to(wt).as_posix()
+        assert omi.out_of_scope(wt, "TASK-087") == [cache_rel]
+        omi.ensure_cache_excluded(wt)
+        assert omi.out_of_scope(wt, "TASK-087") == []
+        assert omi.out_of_scope(wt, "TASK-087", committed=True) == []
+        assert statuses() == before
+        git(root, "check-ignore", cache_rel)
+        git(wt, "check-ignore", cache_rel)
+        git(wt, "add", "-f", cache_rel)
+        git(wt, "commit", "-qm", "tracked cache")
+        assert omi.out_of_scope(wt, "TASK-087", committed=True) == [cache_rel]
+        cached.write_text("changed tracked cache\n", encoding="utf-8")
+        assert omi.out_of_scope(wt, "TASK-087") == [cache_rel]
+
+
 def test_download_cache_scope():
     real = omi.subprocess.run, omi.task_scope
     try:
@@ -1072,6 +1127,8 @@ def test_worker():
         return [c for c in calls if c[0][:2] in (["docker", "run"], ["docker", "build"])]
 
     def run(cmd, **kw):
+        if "--git-common-dir" in cmd:
+            return R(str(Path(cmd[2]) / "shared.git"))
         calls.append((cmd, kw))
         if cmd[:3] == ["docker", "image", "inspect"] and st.get("build_fail"):
             return R(rc=1)
@@ -1361,7 +1418,11 @@ def test_hooks():
         def __init__(s, out=b"", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
 
     def run(cmd, **kw):
+        if "--git-common-dir" in cmd:
+            return R(str(Path(cmd[2]) / "shared.git"))
         calls.append((cmd, kw))
+        if cmd[:2] == ["docker", "run"]:
+            assert (wt / "shared.git" / "info" / "exclude").read_text(encoding="utf-8").splitlines().count(".omi-cache/") == 1
         if cmd[:2] == ["docker", "info"]:
             return R(rc=0)
         if cmd[:2] == ["docker", "run"] and cmd[-2:] in (["sh", "-s"], ["python3", "-"]):
@@ -1598,7 +1659,11 @@ def test_run_read_role():
         def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
 
     def run(cmd, **kw):
+        if "--git-common-dir" in cmd:
+            return R(str(Path(cmd[2]) / "shared.git"))
         calls.append((cmd, kw))
+        if cmd[:2] == ["docker", "run"]:
+            assert (wt / "shared.git" / "info" / "exclude").read_text(encoding="utf-8").splitlines().count(".omi-cache/") == 1
         if cmd[:2] == ["docker", "info"]:
             return R(rc=st["info_rc"])
         if "show" in cmd:
@@ -2190,6 +2255,8 @@ def test_rules():
             def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
 
         def run(cmd, **kw):
+            if "--git-common-dir" in cmd:
+                return R(str(Path(cmd[2]) / "shared.git"))
             calls.append(cmd)
             return R("---\nscope: src/**/*.go\n---\n") if "show" in cmd else R(" M src/a.go\0") if "status" in cmd else R()
 
@@ -2634,6 +2701,8 @@ def test_usage():
     run_out = [claude]
 
     def run(cmd, **kw):
+        if "--git-common-dir" in cmd:
+            return R(str(Path(cmd[2]) / "shared.git"))
         if cmd[:2] == ["docker", "run"]:
             return R(run_out[0])
         if "status" in cmd:
@@ -2729,6 +2798,8 @@ def test_review_round_flow():
         def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
 
     def run(cmd, **kw):
+        if "--git-common-dir" in cmd:
+            return R(str(Path(cmd[2]) / "shared.git"))
         if cmd[:2] == ["docker", "run"]:
             m = next(a.rsplit(":", 2)[0] for a in cmd if a.endswith(":/review:ro"))
             seen["files"] = sorted(p.name for p in Path(m).iterdir())
@@ -2829,6 +2900,8 @@ def test_tool_choice_and_quota_switch():
                 self.stdout, self.stderr, self.returncode = out, err, rc
 
         def run(cmd, **kw):
+            if "--git-common-dir" in cmd:
+                return R(str(Path(cmd[2]) / "shared.git"))
             if cmd[:2] == ["docker", "run"]:
                 calls.append(cmd)
                 if hook:
@@ -3255,6 +3328,8 @@ def test_codex_chatgpt_run():
         def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
 
     def run(cmd, **kw):
+        if "--git-common-dir" in cmd:
+            return R(str(Path(cmd[2]) / "shared.git"))
         calls.append((cmd, kw))
         if "show" in cmd:
             return R("---\nscope: src/**\n---\n")
@@ -3376,6 +3451,8 @@ def test_subprocess_text_encoding():
         def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
 
     def run(cmd, **kw):
+        if "--git-common-dir" in cmd:
+            return R(str(Path(cmd[2]) / "shared.git"))
         if cmd[:2] == ["docker", "info"]:
             return R()
         if "show" in cmd:
@@ -3779,6 +3856,7 @@ if __name__ == "__main__":
     test_worker_cache_tmpfs_and_full_volumes()
     test_download_cache_gitignore()
     test_download_cache_scope()
+    test_download_cache_shared_exclude()
     test_parallel()
     test_usage()
     test_tool_choice_and_quota_switch()
