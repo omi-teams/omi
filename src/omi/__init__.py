@@ -426,7 +426,8 @@ def agents_catalog(root):
                         sys.exit(f"missing or invalid config key `{key}.{field}` in .omi/config.json. Nothing changed.")
                 if kind == "models":
                     mapping = "codex_models" if tool == "codex" else "models"
-                    if not config.get(mapping, {}).get(name):
+                    models = (DEFAULT_MODELS if tool == "claude" else {}) | config.get(mapping, {})
+                    if not models.get(name):
                         sys.exit(f"missing config key `{mapping}.{name}` for `{key}` in .omi/config.json. Nothing changed.")
                     try:
                         model = resolve_model(root, name, tool)
@@ -1671,6 +1672,8 @@ def container_name(repo, role, tid=None, tool="claude", model=None, effort=None,
     salt: a random suffix, only after a name conflict."""
     stamp = (now or datetime.datetime.now()).strftime("%H%M%S") + salt
     model = model or "none"
+    if tool == "claude":
+        model = re.sub(r"-(\d+)-(\d+)$", r"-\1.\2", model)
     raw = "-".join(p for p in (repo, tid, re.sub(r"^omi-agent-", "", role), None if model.startswith(tool) else tool, model, effort or "none", stamp) if p)
     return re.sub(r"[^a-zA-Z0-9_.-]", "-", raw)
 

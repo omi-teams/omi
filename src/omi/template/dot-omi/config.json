@@ -14,9 +14,7 @@
     "codex": "0.164.0"
   },
   "test": "",
-  "network_allow": [
-    "api.anthropic.com"
-  ],
+  "network_allow": ["api.anthropic.com"],
   "model_notes": {
     "claude": {
       "models": {

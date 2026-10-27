@@ -1035,7 +1035,7 @@ def test_worker():
             assert c[c.index("--permission-mode") + 1] == "bypassPermissions"
             assert "/work/.omi/tasks/TASK-001.md" in c[2] and "Checkpoint" in c[c.index("--append-system-prompt") + 1]
             name = argv[argv.index("--name") + 1]
-            assert re.fullmatch(r"[a-z0-9_.-]+-TASK-001-engineer-claude-sonnet-5-5-medium-\d{6}", name), name
+            assert re.fullmatch(r"[a-z0-9_.-]+-TASK-001-engineer-claude-sonnet-5\.5-medium-\d{6}", name), name
             lab = [argv[i + 1] for i, a in enumerate(argv) if a == "--label"]
             proj = omi.compose_labels(name, "agent")["com.docker.compose.project"]
             assert f"com.docker.compose.project={proj}" in lab and "com.docker.compose.service=agent" in lab
@@ -1058,7 +1058,7 @@ def test_worker():
             go_model = lambda m: (calls.clear(), omi.worker(wt, task, model=m, effort="low"))
             go_model("fast")
             argv = next(c[0] for c in calls if c[0][:2] == ["docker", "run"])
-            assert argv[argv.index("--model") + 1] == "claude-haiku-5-5" and "-claude-haiku-5-5-low-" in argv[argv.index("--name") + 1]
+            assert argv[argv.index("--model") + 1] == "claude-haiku-5-5" and "-claude-haiku-5.5-low-" in argv[argv.index("--name") + 1]
             (wt / ".omi" / "config.json").unlink()
             # build log: silent on success, shown (stderr) on failure
             out.truncate(0); out.seek(0)
@@ -1650,7 +1650,7 @@ def test_container_names():
     import datetime
     t = datetime.datetime(2026, 1, 1, 14, 32, 5)
     assert omi.container_name("omi-squad2", "omi-agent-reviewer", "TASK-055", "claude", "claude-sonnet-5-5", "medium", t) == \
-        "omi-squad2-TASK-055-reviewer-claude-sonnet-5-5-medium-143205"
+        "omi-squad2-TASK-055-reviewer-claude-sonnet-5.5-medium-143205"
     assert omi.container_name("omi-squad2", "omi-agent-engineer", "TASK-018", "codex", "gpt-5.1-codex", "high", t) == \
         "omi-squad2-TASK-018-engineer-codex-gpt-5.1-codex-high-143205"
     assert omi.container_name("omi-squad2", "omi-agent-engineer", "TASK-018", "codex", "gpt-6.1-sol", "high", t) == \
@@ -1659,7 +1659,7 @@ def test_container_names():
     assert omi.container_name("omi-squad2", "omi-agent-engineer", "TASK-018", "codex", "gpt-6.1-sol", "high", t, salt="a3") == \
         "omi-squad2-TASK-018-engineer-codex-gpt-6.1-sol-high-143205a3"
     # compose project: lowercased run name, chars outside [a-z0-9_-] become '-'
-    assert omi.compose_labels("omi-squad2-TASK-055-reviewer-claude-sonnet-5-5-medium-143205", "agent") == {
+    assert omi.compose_labels("omi-squad2-TASK-055-reviewer-claude-sonnet-5.5-medium-143205", "agent") == {
         "com.docker.compose.project": "omi-squad2-task-055-reviewer-claude-sonnet-5-5-medium-143205",
         "com.docker.compose.service": "agent"}
     with tempfile.TemporaryDirectory() as d:
@@ -2778,7 +2778,7 @@ def test_tool_choice_and_quota_switch():
                         assert go(R(output), tool=selected, effort=level) == 0
                         expected = "gpt-x" if selected == "codex" else "claude-sonnet-5-5"
                         name = calls[0][calls[0].index("--name") + 1]
-                        assert expected in name and f"-{level}-" in name
+                        assert (expected if selected == "codex" else "claude-sonnet-5.5") in name and f"-{level}-" in name
                         assert f"| {expected}" in task.read_text(encoding="utf-8")
                         assert f"| {level} |" in task.read_text(encoding="utf-8")
                         assert f"omi-effort={level}" in calls[0]
@@ -2858,7 +2858,7 @@ def test_tool_choice_and_quota_switch():
             ok_claude = json.dumps({"result": "ok", "usage": {}})
             front(model="opus", effort="high")
             assert go(R(ok_claude)) == 0 and "claude-opus-5-5" in calls[0] and "high" in calls[0]
-            assert "opus-5-5" in calls[0][calls[0].index("--name") + 1]
+            assert "opus-5.5" in calls[0][calls[0].index("--name") + 1]
             assert go(R(ok_claude), model="haiku", effort="low") == 0 and "claude-haiku-5-5" in calls[0] and "low" in calls[0]
             (wt / ".omi" / "config.json").write_text('{"codex_models": {"opus": "gpt-o", "sonnet": "gpt-x"}}')
             assert go(R(ok_codex), tool="codex") == 0 and calls[0][calls[0].index("codex") + 1:][:5] == ["exec", "-c", "project_doc_max_bytes=0", "-m", "gpt-o"]
@@ -3483,6 +3483,17 @@ def test_model_catalog_and_task_start():
         omi.agents_catalog(target)
         assert "custom fit from config" in (target / ".omi/agents/CATALOG.md").read_text(encoding="utf-8")
         valid_cfg = json.dumps(cfg)
+        for models in (None, {"sonnet": "claude-custom-1-2"}):
+            inherited = json.loads(valid_cfg)
+            if models is None:
+                del inherited["models"]
+            else:
+                inherited["models"] = models
+            config.write_text(json.dumps(inherited), encoding="utf-8")
+            omi.agents_catalog(target)
+            catalog = (target / ".omi/agents/CATALOG.md").read_text(encoding="utf-8")
+            for alias, model in (omi.DEFAULT_MODELS | (models or {})).items():
+                assert f"- {alias}: {model};" in catalog
         for tool, mapping in (("claude", "models"), ("codex", "codex_models")):
             for kind, name in (("models", "haiku"), ("efforts", "medium")):
                 for field in ("fits", "avoid"):
@@ -3499,7 +3510,7 @@ def test_model_catalog_and_task_start():
                             raise AssertionError("invalid catalog note accepted")
                         except SystemExit as exc:
                             assert f"model_notes.{tool}.{kind}.{name}.{field}" in str(exc)
-            for value in (None, "codex-default"):
+            for value in ((None, "codex-default") if tool == "codex" else ("", "codex-default")):
                 broken = json.loads(valid_cfg)
                 if value is None:
                     del broken[mapping]["haiku"]
