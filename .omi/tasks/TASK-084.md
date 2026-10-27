@@ -12,7 +12,7 @@ tool: codex
 model: opus
 effort: high
 workflow: omi-flow-feature-sensitive
-step: review
+step: security
 ---
 ## Goal
 In TASK-080/081 a researcher inside the Docker worker ran `claude -p --model haiku "say ok"` and got "Not logged in · Please run /login" even though the agent itself was a logged-in claude; `codex login status` said "Not logged in" (`~/.codex` empty) and the proxy blocked `api.openai.com` / `chatgpt.com`. A model-probe spike must be able to call the CLI of the run's own tool from inside the worker, with the same credentials the agent already has, and without new exposure of secrets.
@@ -59,6 +59,8 @@ Next: Coordinator reviews the diff and commits on the host. Suggested commit: `t
 - build started 2026-10-27 10:49
 - build done 2026-10-27 10:58
 - review started 2026-10-27 10:58
+- review done 2026-10-27 11:00
+- security started 2026-10-27 11:00
 
 ## Reports
 2026-10-27 10:42 omi-agent-architect (codex):
@@ -132,6 +134,14 @@ Next: Coordinator reviews the diff and commits on the host. Suggested commit: `t
 >   - Mounts are exactly the worktree plus `.git:ro`, and the home directory is tmpfs with `--read-only`.
 > [... truncated ...]
 > AC: README states that nested codex uses the run's login, that nested claude is not logged in by design, and that Claude probes run on the host ✓ The new "CLI lồng trong worker" bullet at README.md:40 covers all three.
+2026-10-27 11:04 omi-agent-security-reviewer (claude):
+> ```
+> VERDICT: PASS
+> - tests/test_omi.py:225 Three blank lines come before `test_codex_auth_boot_nested_process`; PEP 8 wants two. The previous reviewer raised this and it is still there | why: style only, no security impact | verified: read the diff -> trim to two blank lines
+> UNVERIFIED: The real nested `codex exec` run in the Checkpoint was not reproduced here (no docker or network in this container), and it added `-c project_doc_max_bytes=0`, which the AC command does not have. Re-running the exact AC command in a codex worker would confirm it.
+> UNVERIFIED: README.md:40 says auth.json "chỉ mang access token" ("carries only the access token"). That is true for ChatGPT-login runs only. API-key runs put OPENAI_API_KEY in the container env instead (src/omi/__init__.py:2281-2283, env_names). That exposure already existed and is not new. A README clarification on which mode the sentence covers would settle it.
+> ```
+> No runtime code changed. The diff only touches the README, tests and the task file. I checked the codex auth path in src/omi/__init__.py: the boot step writes auth.json with mode 600 and then unsets the variable (`CODEX_AUTH_BOOT` :1413). `attempt` drops the Claude token (:2280), and the worker home is a noexec tmpfs on a `--read-only` container (:1715-1717). The new tests assert all of this, plus the exact allow-list (`DEFAULT_ALLOW` + api.openai.com, and + chatgpt.com in ChatGPT mode). They also assert no secrets in argv or the worktree, and no `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0`. The only token in the tests is a fake. The full suite passes (`python3 tests/test_omi.py` exits 0 with `ok`). There is no CI workflow in the diff, so the CI audit skill does not apply.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -140,3 +150,4 @@ Next: Coordinator reviews the diff and commits on the host. Suggested commit: `t
 | omi-agent-architect | gpt-6-astra (codex) | high | 85332 | 430 | 69248 | 28s | - | n/a |
 | omi-agent-engineer | gpt-6-astra (codex) | high | 1141283 | 5883 | 1088256 | 411s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 4 | 1683 | 47345 | 121s | - | PASS aad6388 |
+| omi-agent-security-reviewer | claude-opus-5-5 | high | 18 | 3559 | 291266 | 165s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS e71b843 |
