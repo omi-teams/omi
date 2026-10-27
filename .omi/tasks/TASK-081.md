@@ -12,7 +12,7 @@ tool: codex
 model: sonnet
 effort: medium
 workflow: omi-flow-spike
-step: research
+step: write
 ---
 ## Goal
 Codex runs often show `codex-default` / `none`, so nobody knows which model or effort ran. Find out, from inside the worker (Codex CLI 0.164.0, the PO's ChatGPT login), which Codex models and reasoning efforts are actually usable, and what kind of omi task each fits.
@@ -50,13 +50,16 @@ Host evidence (codex-cli 0.164.0, PO ChatGPT login, Windows host):
   gpt-6-luna: ultra accepted (23/16) although the cache does not list it for luna; none accepted (5/0); minimal rejected: "Unsupported value: 'minimal' is not supported with the 'gpt-6-luna' model. Supported values are: 'none', 'low', 'medium', 'high', 'xhigh', and 'max'." How the CLI handles ultra on luna (clamped or passed through): unverified.
 - Not measurable here: ChatGPT plan cost per model (usage JSON shows tokens only, no price; token counts are near-equal on a tiny prompt), speed on real tasks (wall time 7.5-11 s is dominated by startup), quality per task type.
 - Coordinator recommendation (from cache descriptions, not benchmarks): codex_models haiku -> gpt-6-luna, sonnet -> gpt-6.1-sol, opus -> gpt-6-astra; efforts map 1:1 (low/medium/high), avoid ultra/max by default; never leave model or effort empty (that is what prints codex-default/none).
-Not done: write step (docs-writer saves docs/research/models-codex.md from Reports + this evidence; mark fits/defaults as recommendation, not measured).
-Tests: n/a (docs only)
-Next: write, then decide (PO gate).
+Write step done (docs-writer): docs/research/models-codex.md saved from this evidence; fits/avoid/role defaults marked as recommendation, not measured. Unverified items listed at the end of the report.
+Not done: container-side codex default (no host config.toml there); ultra on luna clamping; per-model cost on ChatGPT plan; quality/speed on real omi tasks.
+Tests: n/a (docs only; python3 tests/test_omi.py not run by docs-writer)
+Next: Coordinator reviews the diff and commits; PO gate on codex_models mapping (.omi/config.json maps all aliases to gpt-6.1-sol today).
 ## Steps
 - plan started 2026-10-27 09:23
 - plan done 2026-10-27 09:23
 - research started 2026-10-27 09:23
+- research done 2026-10-27 09:30
+- write started 2026-10-27 09:30
 
 ## Reports
 2026-10-27 09:25 omi-agent-researcher (claude):
@@ -69,8 +72,62 @@ Next: write, then decide (PO gate).
 > CONFIDENCE: high that nothing can be verified from here (login and network are both blocked). I have no data to rate any model or effort.
 > GAPS: Everything in questions 1–4 is unverified: the accepted model IDs, the default model and effort of `codex exec`, the effort values per model, usage and speed numbers, the fit per task type, and the recommended mapping and per-role defaults.
 > NEEDS DECISION: Should this spike be re-run in a session with a ChatGPT login and a network path to `api.openai.com`? I can't mark it done or write the report from here without inventing evidence.
+2026-10-27 09:31 omi-agent-docs-writer (claude):
+> DONE
+> Files: `docs/research/models-codex.md` (new), `.omi/tasks/TASK-081.md` (Checkpoint updated)
+> Commit: `docs: add Codex model and effort research (TASK-081)`
+> Not verified: the container's default model and effort (no host `config.toml` there), how `ultra` is handled on `gpt-6-luna`, per-model cost on the ChatGPT plan, quality and speed on real omi tasks. Fits and role defaults are recommendations, not measurements.
+> Open issue: the proposed mapping (haiku → gpt-6-luna, sonnet → gpt-6.1-sol, opus → gpt-6-astra) needs PO approval; `.omi/config.json` currently maps all three aliases to gpt-6.1-sol.
+> Tests not run: docs only; `python3 tests/test_omi.py` was not executed.
+2026-10-27 09:33 hook post-run passed:
+> Conflict. The container name "/tmpiuoojbua-TASK-001-engineer-codex-gpt-x-medium-023128" is already in useBind for 0.0.0.0:8080 failed: port is already in usewrote /tmp/tmpdvtb_t1c/.omi/skills/CATALOG.md (2 skills)
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/config.json
+> create .omi/decisions.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-researcher | claude-sonnet-5-5 | medium | 12 | 1424 | 108686 | 86s | - | n/a |
+| omi-agent-docs-writer | claude-haiku-5-5 | low | 12 | 6533 | 147346 | 37s | - | - |
