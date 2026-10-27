@@ -3077,6 +3077,12 @@ def test_codex_chatgpt_login():
 def test_codex_chatgpt_run():
     """run_role with a ChatGPT login: the token travels by env name only, the boot wrapper writes auth.json in the container."""
     calls = []
+    allowed = []
+
+    @omi.contextlib.contextmanager
+    def egress(main, name, image, allow):
+        allowed.append(allow)
+        yield "test-net", "test-proxy"
 
     class R:
         def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
@@ -3098,6 +3104,9 @@ def test_codex_chatgpt_run():
         def wait(s): pass
 
     real = omi.subprocess.run, omi.subprocess.Popen, omi.shutil.which, omi.main_checkout, omi.WINDOWS, omi.ensure_image
+    real_egress, omi.egress = omi.egress, egress
+    claude_token = omi.os.environ.get(omi.TOKEN_ENV)
+    omi.os.environ[omi.TOKEN_ENV] = "CLAUDE-SECRET"
     auth = Path(omi.os.environ["CODEX_HOME"]) / "auth.json"
     omi.os.environ.pop(omi.CODEX_ENV, None)
     with tempfile.TemporaryDirectory() as d:
@@ -3124,10 +3133,65 @@ def test_codex_chatgpt_run():
             i = argv.index("img")
             assert argv[i + 1:i + 3] == ["sh", "-c"] and "printenv OMI_CODEX_AUTH" in argv[i + 3] and "codex" in argv[i + 5:]
             assert tok in kw["env"][omi.CODEX_AUTH_ENV] and "REAL-REFRESH" not in kw["env"][omi.CODEX_AUTH_ENV]
+            assert omi.TOKEN_ENV not in kw["env"]
+            env_args = [argv[n + 1] for n, arg in enumerate(argv) if arg == "-e"]
+            assert omi.CODEX_AUTH_ENV in env_args and omi.CODEX_ENV not in env_args
+            assert omi.TOKEN_ENV not in env_args and "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=0" not in env_args
+            mounts = [argv[n + 1] for n, arg in enumerate(argv) if arg == "-v"]
+            assert mounts == [f"{wt}:/work", f"{wt / '.git'}:/work/.git:ro"]
+            tmpfs = [argv[n + 1] for n, arg in enumerate(argv) if arg == "--tmpfs"]
+            assert any(m.startswith("/home/node:rw,noexec,nosuid,") for m in tmpfs)
+            assert "HOME=/home/node" in env_args and "--read-only" in argv
+            assert allowed == [[*omi.DEFAULT_ALLOW, "api.openai.com", "chatgpt.com"]]
+            assert not any(secret in repr(calls) for secret in ("CLAUDE-SECRET", "REAL-REFRESH"))
+            for path in wt.rglob("*"):
+                if path.is_file():
+                    assert tok not in path.read_text(encoding="utf-8")
+            # API-key runs pass only their key and add only the API host.
+            calls.clear()
+            allowed.clear()
+            omi.os.environ[omi.CODEX_ENV] = "sk-CODEX-SECRET"
+            omi.run_role("omi-agent-engineer", wt, task, tool="codex", model="gpt-6.1-sol")
+            argv, kw = next(c for c in calls if c[0][:2] == ["docker", "run"])
+            env_args = [argv[n + 1] for n, arg in enumerate(argv) if arg == "-e"]
+            assert omi.CODEX_ENV in env_args and omi.CODEX_AUTH_ENV not in env_args and omi.TOKEN_ENV not in env_args
+            assert "sk-CODEX-SECRET" not in repr(argv) and omi.TOKEN_ENV not in kw["env"]
+            assert allowed == [[*omi.DEFAULT_ALLOW, "api.openai.com"]]
         finally:
             sys.stdout = saved
+            omi.egress = real_egress
+            omi.os.environ.pop(omi.CODEX_ENV, None)
+            omi.os.environ.pop(omi.TOKEN_ENV, None)
+            if claude_token is not None:
+                omi.os.environ[omi.TOKEN_ENV] = claude_token
             auth.unlink(missing_ok=True)
             omi.subprocess.run, omi.subprocess.Popen, omi.shutil.which, omi.main_checkout, omi.WINDOWS, omi.ensure_image = real
+
+
+
+def test_codex_auth_boot_nested_process():
+    """The real POSIX bootstrap leaves slim auth readable by descendants, without its transport env."""
+    if omi.os.name == "nt":
+        return  # the bootstrap runs in the Linux worker
+    with tempfile.TemporaryDirectory() as d:
+        home = Path(d)
+        auth = json.dumps({"auth_mode": "chatgpt", "tokens": {
+            "access_token": "test-access", "refresh_token": "omi-no-refresh"}})
+        # This child starts a grandchild, as a worker agent does for a nested CLI.
+        probe = """import json, os, stat
+from pathlib import Path
+p = Path.home() / '.codex' / 'auth.json'
+assert stat.S_IMODE(p.stat().st_mode) == 0o600
+assert json.loads(p.read_text(encoding='utf-8'))['tokens'] == {
+    'access_token': 'test-access', 'refresh_token': 'omi-no-refresh'}
+assert 'OMI_CODEX_AUTH' not in os.environ
+print('ok')
+"""
+        child = "import subprocess, sys; subprocess.run([sys.executable, '-c', sys.argv[1]], check=True)"
+        result = subprocess.run(["sh", "-c", omi.CODEX_AUTH_BOOT, "sh", sys.executable, "-c", child, probe],
+                                env={"PATH": omi.os.environ["PATH"], "HOME": str(home), omi.CODEX_AUTH_ENV: auth},
+                                capture_output=True, encoding="utf-8", check=True)
+        assert result.stdout == "ok\n" and result.stderr == ""
 
 
 def test_subprocess_text_encoding():
@@ -3550,6 +3614,7 @@ if __name__ == "__main__":
     test_claude_session_login()
     test_codex_chatgpt_login()
     test_codex_chatgpt_run()
+    test_codex_auth_boot_nested_process()
     test_git_non_ascii()
     test_subprocess_text_encoding()
     test_skills()
