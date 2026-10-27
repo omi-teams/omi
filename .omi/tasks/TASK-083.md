@@ -1,7 +1,7 @@
 ---
 id: TASK-083
 title: A task's own read role (e.g. the spike researcher) uses the task's tool, model and effort
-status: planned
+status: in-progress
 depends:
 plan: PLAN-001
 scope: src/omi/__init__.py, tests/test_omi.py, .omi/tasks/_template.md, src/omi/template/dot-omi/tasks/_template.md
