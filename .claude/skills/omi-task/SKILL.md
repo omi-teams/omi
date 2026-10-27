@@ -8,6 +8,7 @@ Several IDs (`omi-task <ID> <ID>`) only when the PO asks: run `python -m omi par
 
 The main checkout stays on `development`. `<wt>` is `../<repo-name>.wt/<ID>`.
 
+0. Before starting or resuming, follow the task-start tool choice below; wait for the PO and record the selected tool, model alias and effort.
 1. Check that every `depends` task is done and that the task's `role` (a file in `.omi/agents`) and `skills` (chosen from `.omi/skills/CATALOG.md`, regenerate with `python -m omi skills`) pass `python -m omi skills check <task-file>` (role default skills count too). Set `status: in-progress`, then commit on `development`. With a remote, push `development` right away (`git push`), so the squash merge of the PR does not conflict with an unpushed local commit.
 2. If `<wt>` already exists, this is a resume (also in a new Claude Code or Codex session; Codex: follow this file for the ID): read its Checkpoint and `## Reports` and verify it with `git -C <wt> status` and `git -C <wt> log development..HEAD`. Otherwise run `git worktree add <wt> -b task/<ID> development`.
    Drive the task through its `workflow:` (none set: pick the lightest fitting one from `.omi/workflows/CATALOG.md` and write it; default `omi-flow-feature`) with `python -m omi step <ID> next` before and `done` after each step; `omi run` loads the current step's skills. `coordinator` steps are yours; before `done` on a `po` gate, record `PO approval <step>: <PO's words>` in `## Steps`.
@@ -24,3 +25,9 @@ The main checkout stays on `development`. `<wt>` is `../<repo-name>.wt/<ID>`.
    - Without a remote: `git merge --squash task/<ID>`, then commit `<type>: <title> (<ID>)`.
 7. Post-merge check: run the project's test command on `development`. Then remove `<wt>` and `task/<ID>` if still present (`gh pr merge --delete-branch` already does both), and clean up: if `python -m omi status` shows no planned task left, run `python -m omi clean --all` (also removes the cached worker image); otherwise run `python -m omi clean` and keep the image as cache for the next task.
 8. Report to the PO in at most 10 lines and stop. The PO picks the next task.
+
+## Task-start tool choice
+For every task-start pick-list (including next-task suggestions and resumes), offer both tools and wait for the PO to choose. Read `.omi/agents/CATALOG.md` (`## Models`, generated from `.omi/config.json` `model_notes`) to choose an alias and effort fitting the task, and resolve concrete IDs from `models` and `codex_models`.
+- Start with Claude Code (<concrete Claude model>/<effort>).
+- Start with Codex (<concrete Codex model>/<effort>).
+Mark exactly one option Recommended and give a task-specific reason; put it first. For an ordinary feature, for example: Start with Claude Code (claude-sonnet-5-5/medium) — Recommended: routine feature implementation; Start with Codex (gpt-6.1-sol/medium). Either tool may be recommended based on the task and available quota. The PO chooses; record `tool`, model alias and explicit `effort` in the task before starting. Never use `codex-default` or an omitted effort; `none` is only an explicit Codex choice.

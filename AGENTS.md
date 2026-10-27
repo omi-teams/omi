@@ -40,6 +40,13 @@ Tool per run: `tool: claude|codex` in the role file, overridden by `tool:` in th
 Resume a task in a new session (Claude Code or Codex, after quota or a crash): run `python -m omi status`, find the task marked in-progress, and follow its `resume: omi-task <ID>` line: in Claude Code type `omi-task <ID>`; in Codex open `.claude/skills/omi-task/SKILL.md` and follow it for that ID. Both start from the task's `## Checkpoint`, `## Reports` and `git -C <wt> status`.
 On Codex use the same `python -m omi run` command (it runs `codex exec` itself with `--tool codex`); never Codex's built-in subagents.
 
+
+## Task-start tool choice
+For every task-start pick-list (including next-task suggestions and resumes), offer both tools and wait for the PO to choose. Read `.omi/agents/CATALOG.md` (`## Models`, generated from `.omi/config.json` `model_notes`) to choose an alias and effort fitting the task, and resolve concrete IDs from `models` and `codex_models`.
+- Start with Claude Code (<concrete Claude model>/<effort>).
+- Start with Codex (<concrete Codex model>/<effort>).
+Mark exactly one option Recommended and give a task-specific reason; put it first. For an ordinary feature, for example: Start with Claude Code (claude-sonnet-5-5/medium) — Recommended: routine feature implementation; Start with Codex (gpt-6.1-sol/medium). Either tool may be recommended based on the task and available quota. The PO chooses; record `tool`, model alias and explicit `effort` in the task before starting. Never use `codex-default` or an omitted effort; `none` is only an explicit Codex choice.
+
 ## Quota rules
 - One task at a time unless the PO asks for parallel work.
 - Parallel work: check `python -m omi parallel <IDs>` first; each task keeps its own worktree.

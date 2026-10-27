@@ -1035,7 +1035,7 @@ def test_worker():
             assert c[c.index("--permission-mode") + 1] == "bypassPermissions"
             assert "/work/.omi/tasks/TASK-001.md" in c[2] and "Checkpoint" in c[c.index("--append-system-prompt") + 1]
             name = argv[argv.index("--name") + 1]
-            assert re.fullmatch(r"[a-z0-9_.-]+-TASK-001-engineer-claude-sonnet-5\.5-medium-\d{6}", name), name
+            assert re.fullmatch(r"[a-z0-9_.-]+-TASK-001-engineer-claude-sonnet-5-5-medium-\d{6}", name), name
             lab = [argv[i + 1] for i, a in enumerate(argv) if a == "--label"]
             proj = omi.compose_labels(name, "agent")["com.docker.compose.project"]
             assert f"com.docker.compose.project={proj}" in lab and "com.docker.compose.service=agent" in lab
@@ -1058,7 +1058,7 @@ def test_worker():
             go_model = lambda m: (calls.clear(), omi.worker(wt, task, model=m, effort="low"))
             go_model("fast")
             argv = next(c[0] for c in calls if c[0][:2] == ["docker", "run"])
-            assert argv[argv.index("--model") + 1] == "claude-haiku-5-5" and "-claude-haiku-5.5-low-" in argv[argv.index("--name") + 1]
+            assert argv[argv.index("--model") + 1] == "claude-haiku-5-5" and "-claude-haiku-5-5-low-" in argv[argv.index("--name") + 1]
             (wt / ".omi" / "config.json").unlink()
             # build log: silent on success, shown (stderr) on failure
             out.truncate(0); out.seek(0)
@@ -1495,8 +1495,6 @@ def test_roles():
         assert "tests/test_omi.py" not in omi.test_command(root, root)[-1]
     a = omi.codex_cmd("---\n---\nbody", "t.md", "claude-sonnet-5-5", "low")
     assert a[:8] == ["codex", "exec", "-c", "project_doc_max_bytes=0", "-m", "claude-sonnet-5-5", "-c", "model_reasoning_effort=low"] and "/work/t.md" in a[-1]
-    # codex-default: no -m, still no project docs
-    assert omi.codex_cmd("---\n---\nbody", "t.md", omi.CODEX_DEFAULT, "low")[:4] == ["codex", "exec", "-c", "project_doc_max_bytes=0"]
     assert "git rm" in a[-1] and "rm` may be refused" in a[-1]
     # claude's command never gets the codex option
     assert "project_doc_max_bytes=0" not in omi.engineer_cmd("---\n---\nbody", "t.md", "claude-sonnet-5-5", "low", "")
@@ -1561,13 +1559,13 @@ def test_run_read_role():
             omi.os.environ.pop(omi.CODEX_ENV, None)
             calls.clear()
             try:
-                omi.run_role("omi-agent-engineer", wt, task, tool="codex")
+                omi.run_role("omi-agent-engineer", wt, task, tool="codex", model="gpt-6.1-sol")
                 raise AssertionError("ran without a key")
             except SystemExit as e:
                 assert "omi token set --tool codex" in str(e) and not docker_runs(), e
             omi.os.environ[omi.CODEX_ENV] = "sk-SECRET"
             try:
-                omi.run_role("omi-agent-engineer", wt, task, tool="codex")
+                omi.run_role("omi-agent-engineer", wt, task, tool="codex", model="gpt-6.1-sol")
             finally:
                 del omi.os.environ[omi.CODEX_ENV]
             argv = docker_runs()[0][0]
@@ -1652,16 +1650,16 @@ def test_container_names():
     import datetime
     t = datetime.datetime(2026, 1, 1, 14, 32, 5)
     assert omi.container_name("omi-squad2", "omi-agent-reviewer", "TASK-055", "claude", "claude-sonnet-5-5", "medium", t) == \
-        "omi-squad2-TASK-055-reviewer-claude-sonnet-5.5-medium-143205"
+        "omi-squad2-TASK-055-reviewer-claude-sonnet-5-5-medium-143205"
     assert omi.container_name("omi-squad2", "omi-agent-engineer", "TASK-018", "codex", "gpt-5.1-codex", "high", t) == \
         "omi-squad2-TASK-018-engineer-codex-gpt-5.1-codex-high-143205"
-    assert omi.container_name("omi-squad2", "omi-agent-engineer", "TASK-018", "codex", "codex-default", "high", t) == \
-        "omi-squad2-TASK-018-engineer-codex-default-high-143205"
+    assert omi.container_name("omi-squad2", "omi-agent-engineer", "TASK-018", "codex", "gpt-6.1-sol", "high", t) == \
+        "omi-squad2-TASK-018-engineer-codex-gpt-6.1-sol-high-143205"
     assert omi.container_name("omi-squad2", "my role", "prove", now=t) == "omi-squad2-prove-my-role-claude-none-none-143205"
-    assert omi.container_name("omi-squad2", "omi-agent-engineer", "TASK-018", "codex", "codex-default", "high", t, salt="a3") == \
-        "omi-squad2-TASK-018-engineer-codex-default-high-143205a3"
+    assert omi.container_name("omi-squad2", "omi-agent-engineer", "TASK-018", "codex", "gpt-6.1-sol", "high", t, salt="a3") == \
+        "omi-squad2-TASK-018-engineer-codex-gpt-6.1-sol-high-143205a3"
     # compose project: lowercased run name, chars outside [a-z0-9_-] become '-'
-    assert omi.compose_labels("omi-squad2-TASK-055-reviewer-claude-sonnet-5.5-medium-143205", "agent") == {
+    assert omi.compose_labels("omi-squad2-TASK-055-reviewer-claude-sonnet-5-5-medium-143205", "agent") == {
         "com.docker.compose.project": "omi-squad2-task-055-reviewer-claude-sonnet-5-5-medium-143205",
         "com.docker.compose.service": "agent"}
     with tempfile.TemporaryDirectory() as d:
@@ -2623,7 +2621,7 @@ def test_incremental_review():
     quota = "| omi-agent-reviewer | m | e | 1 | 1 | 1 | 1s | - | QUOTA->codex |\n"
     assert omi.prior_review(text + quota)[0] == 1
     assert omi.usage_totals("\n## Usage\n|---|\n" + rows + quota).endswith("review rounds: 1")
-    assert omi.codex_effort("max") == "xhigh" and omi.codex_effort("xhigh") == "xhigh" and omi.codex_effort("minimal") == "minimal"
+    assert omi.resolve_effort("max", "codex") == "max" and omi.resolve_effort("xhigh", "codex") == "xhigh"
     assert omi.prior_review("## Usage\n|---|\n| r | m | e | 1 | 1 | 1 | 1s | - | FAIL |\n") == (0, None, set())
 
 
@@ -2762,6 +2760,33 @@ def test_tool_choice_and_quota_switch():
                 sys.stdout.truncate(0); sys.stdout.seek(0)
                 return omi.run_role("omi-agent-engineer", wt, task, **kw)
 
+            role_path = wt / ".omi" / "agents" / "omi-agent-engineer.md"
+            shutil.copytree(omi.TEMPLATE / "dot-omi/agents", role_path.parent, dirs_exist_ok=True)
+            original_role = omi.get_role(wt, "omi-agent-engineer")["_text"]
+            role_path.write_text(re.sub(r"^effort:.*\n", "", original_role, flags=re.M), encoding="utf-8")
+            try:
+                for selected in ("claude", "codex"):
+                    role_path.write_text(re.sub(r"^effort:.*\n", "", original_role, flags=re.M), encoding="utf-8")
+                    try:
+                        go(tool=selected)
+                        raise AssertionError("missing effort ran")
+                    except SystemExit as exc:
+                        assert "effort" in str(exc) and not calls
+                    role_path.write_text(original_role, encoding="utf-8")
+                    for level in ("low", "medium", "high", "xhigh", "max"):
+                        output = ok_codex if selected == "codex" else json.dumps({"result": "ok", "usage": {}})
+                        assert go(R(output), tool=selected, effort=level) == 0
+                        expected = "gpt-x" if selected == "codex" else "claude-sonnet-5-5"
+                        name = calls[0][calls[0].index("--name") + 1]
+                        assert expected in name and f"-{level}-" in name
+                        assert f"| {expected}" in task.read_text(encoding="utf-8")
+                        assert f"| {level} |" in task.read_text(encoding="utf-8")
+                        assert f"omi-effort={level}" in calls[0]
+                        if selected == "codex":
+                            assert f"model_reasoning_effort={level}" in calls[0]
+            finally:
+                shutil.rmtree(role_path.parent)
+
             # task `tool:` beats the role default, --tool beats the task; codex gets its own alias table
             task.write_text(task.read_text().replace("scope:", "tool: codex\nscope:", 1), encoding="utf-8")
             assert go(R(ok_codex)) == 0 and calls[0][calls[0].index("codex") + 1:][:5] == ["exec", "-c", "project_doc_max_bytes=0", "-m", "gpt-x"]
@@ -2799,10 +2824,13 @@ def test_tool_choice_and_quota_switch():
                 raise AssertionError("ran")
             except SystemExit as e:
                 assert "codex_models" in str(e) and not calls
-            # known Claude alias without a codex_models entry: no -m, codex-default shown
+            # Missing alias mapping stops before a container starts.
             (wt / ".omi" / "config.json").write_text("{}")
-            assert go(R(ok_codex), tool="codex") == 0 and "-m" not in calls[0] and "tool: codex (codex-default)" in sys.stdout.getvalue()
-            assert "| codex-default (codex) |" in task.read_text()
+            try:
+                go(R(ok_codex), tool="codex")
+                raise AssertionError("missing mapping ran")
+            except SystemExit as e:
+                assert "codex_models" in str(e) and "sonnet" in str(e) and not calls
             (wt / ".omi" / "config.json").write_text('{"codex_models": {"sonnet": "gpt-x"}}')
             # claude hits its limit: same role reruns with codex, note about the partial diff, switch recorded
             task.write_text(task.read_text().replace("tool: codex\n", ""), encoding="utf-8")
@@ -2812,11 +2840,11 @@ def test_tool_choice_and_quota_switch():
             assert "QUOTA: claude hit its usage limit" in text.partition("## Checkpoint")[2].partition("##")[0]
             assert "| QUOTA->codex |" in text and "QUOTA->" not in text.rpartition("| gpt-x (codex) |")[2]
             assert "| gpt-x (codex) |" in text and text.count("| omi-agent-engineer |") >= 3
-            # --model is a full Claude ID: codex falls back to codex-default instead of exiting 5
+            # A full Claude ID switches using the role alias, but missing mappings stop.
             assert go(R(claude_quota, 1), R(ok_codex), model="claude-sonnet-5-5") == 0 and "gpt-x" in calls[1]  # the role's alias
             (wt / ".omi" / "config.json").write_text("{}")
-            assert go(R(claude_quota, 1), R(ok_codex), model="claude-sonnet-5-5") == 0 and "-m" not in calls[1]
-            assert sys.stdout.getvalue().count("WARNING") == 1 and "'sonnet'" in sys.stdout.getvalue()
+            assert go(R(claude_quota, 1), R(ok_codex), model="claude-sonnet-5-5") == 5
+            assert len(calls) == 1 and "codex_models" in sys.stdout.getvalue()
             (wt / ".omi" / "config.json").write_text('{"codex_models": {"sonnet": "gpt-x"}}')
             # codex hits its limit with a full codex --model: claude uses the role's alias, not the codex ID
             assert go(R(codex_quota, 1), R(json.dumps({"result": "ok", "usage": {}})), tool="codex", model="gpt-5.1-codex") == 0
@@ -2830,16 +2858,19 @@ def test_tool_choice_and_quota_switch():
             ok_claude = json.dumps({"result": "ok", "usage": {}})
             front(model="opus", effort="high")
             assert go(R(ok_claude)) == 0 and "claude-opus-5-5" in calls[0] and "high" in calls[0]
-            assert "opus-5.5" in calls[0][calls[0].index("--name") + 1]
+            assert "opus-5-5" in calls[0][calls[0].index("--name") + 1]
             assert go(R(ok_claude), model="haiku", effort="low") == 0 and "claude-haiku-5-5" in calls[0] and "low" in calls[0]
             (wt / ".omi" / "config.json").write_text('{"codex_models": {"opus": "gpt-o", "sonnet": "gpt-x"}}')
             assert go(R(ok_codex), tool="codex") == 0 and calls[0][calls[0].index("codex") + 1:][:5] == ["exec", "-c", "project_doc_max_bytes=0", "-m", "gpt-o"]
             assert "model_reasoning_effort=high" in calls[0] and "gpt-o" in calls[0][calls[0].index("--name") + 1]
             assert go(R(claude_quota, 1), R(ok_codex)) == 0 and "gpt-o" in calls[1] and "| gpt-o (codex) |" in task.read_text()
-            # unmapped codex alias: codex-default and one warning naming it
+            # An unmapped Codex alias must not run.
             front(model="haiku")
-            assert go(R(ok_codex), tool="codex") == 0 and "-m" not in calls[0]
-            assert sys.stdout.getvalue().count("WARNING") == 1 and "'haiku'" in sys.stdout.getvalue()
+            try:
+                go(R(ok_codex), tool="codex")
+                raise AssertionError("missing haiku mapping ran")
+            except SystemExit as e:
+                assert "codex_models" in str(e) and "haiku" in str(e) and not calls
             # Independent read roles ignore task settings; the task's own read role inherits them.
             front(tool="codex", model="opus", effort="high")
             assert go(R(ok_codex)) == 0 and "codex" in calls[0]
@@ -3063,7 +3094,7 @@ def test_codex_chatgpt_run():
         try:
             auth.unlink(missing_ok=True)
             try:
-                omi.run_role("omi-agent-engineer", wt, task, tool="codex")
+                omi.run_role("omi-agent-engineer", wt, task, tool="codex", model="gpt-6.1-sol")
                 raise AssertionError("ran without credentials")
             except SystemExit as e:
                 assert "codex login" in str(e) and "omi token set --tool codex" in str(e), e
@@ -3071,7 +3102,7 @@ def test_codex_chatgpt_run():
             tok = "h." + "e30" + ".secretsig"
             auth.write_text(json.dumps({"auth_mode": "chatgpt", "tokens": {"access_token": tok, "refresh_token": "REAL-REFRESH"}}))
             calls.clear()
-            omi.run_role("omi-agent-engineer", wt, task, tool="codex")
+            omi.run_role("omi-agent-engineer", wt, task, tool="codex", model="gpt-6.1-sol")
             argv, kw = next(c for c in calls if c[0][:2] == ["docker", "run"])
             assert omi.CODEX_AUTH_ENV in argv and not any(tok in x or "REAL-REFRESH" in x for x in argv)
             i = argv.index("img")
@@ -3402,7 +3433,60 @@ def test_status_drift_hints():
             omi.main_checkout, omi.full_volumes = real
 
 
+def test_model_catalog_and_task_start():
+    root = Path(__file__).parents[1]
+    for base, config_rel, catalog_rel in (
+        (root, ".omi/config.json", ".omi/agents/CATALOG.md"),
+        (omi.TEMPLATE, "dot-omi/config.json", "dot-omi/agents/CATALOG.md"),
+    ):
+        cfg = json.loads((base / config_rel).read_text(encoding="utf-8"))
+        assert cfg["models"] == omi.DEFAULT_MODELS
+        assert cfg["codex_models"] == {"haiku": "gpt-6-luna", "sonnet": "gpt-6.1-sol", "opus": "gpt-6-astra"}
+        catalog = (base / catalog_rel).read_text(encoding="utf-8")
+        assert "## Models" in catalog
+        for tool, key in (("claude", "models"), ("codex", "codex_models")):
+            assert f"### {tool}" in catalog
+            for alias, model in cfg[key].items():
+                note = cfg["model_notes"][tool]["models"][alias]
+                assert f"- {alias}: {model}; fits: {note['fits']}; avoid: {note['avoid']}" in catalog
+            for effort, note in cfg["model_notes"][tool]["efforts"].items():
+                assert f"- effort {effort}; fits: {note['fits']}; avoid: {note['avoid']}" in catalog
+    for path in (root / "AGENTS.md", omi.TEMPLATE / "AGENTS.md",
+                 root / ".claude/skills/omi-task/SKILL.md", omi.TEMPLATE / "dot-claude/skills/omi-task/SKILL.md"):
+        text = path.read_text(encoding="utf-8").split("## Task-start tool choice", 1)[1]
+        for phrase in ("every task-start pick-list", "Start with Claude Code", "Start with Codex",
+                       "exactly one option Recommended", "task-specific reason", "PO chooses", "model>/<effort>"):
+            assert phrase in text, (path, phrase)
+    with tempfile.TemporaryDirectory() as d:
+        target = Path(d)
+        omi.init(target)
+        config = target / ".omi/config.json"
+        cfg = json.loads(config.read_text(encoding="utf-8"))
+        cfg["model_notes"]["codex"]["models"]["sonnet"]["fits"] = "custom fit from config"
+        config.write_text(json.dumps(cfg), encoding="utf-8")
+        omi.agents_catalog(target)
+        assert "custom fit from config" in (target / ".omi/agents/CATALOG.md").read_text(encoding="utf-8")
+        for value in ("", None, "codex-default", "sonnet"):
+            cfg["codex_models"]["sonnet"] = value
+            config.write_text(json.dumps(cfg), encoding="utf-8")
+            try:
+                omi.resolve_model(target, "sonnet", "codex")
+                raise AssertionError("nonconcrete model accepted")
+            except SystemExit as exc:
+                assert "codex_models" in str(exc)
+        for tool in ("claude", "codex"):
+            for effort in (None, "", "minimal"):
+                try:
+                    omi.resolve_effort(effort, tool)
+                    raise AssertionError("invalid effort accepted")
+                except SystemExit as exc:
+                    assert "effort" in str(exc)
+        assert omi.resolve_effort("none", "codex") == "none"
+        assert omi.resolve_effort("ultra", "codex") == "ultra"
+
+
 if __name__ == "__main__":
+    test_model_catalog_and_task_start()
     test_worker_cache_tmpfs_and_full_volumes()
     test_parallel()
     test_usage()
