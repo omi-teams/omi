@@ -1,7 +1,7 @@
 ---
 id: TASK-086
 title: Download caches live in the worktree so hooks and reviewers see the engineer's dependencies
-status: planned
+status: in-progress
 depends:
 plan: PLAN-001
 scope: src/omi/__init__.py, tests/test_omi.py, .gitignore, README.md
