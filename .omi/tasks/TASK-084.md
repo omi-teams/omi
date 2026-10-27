@@ -1,7 +1,7 @@
 ---
 id: TASK-084
 title: Agents in the worker can run the claude and codex CLIs themselves (logged in, network allowed)
-status: planned
+status: in-progress
 depends: TASK-083
 plan: PLAN-001
 scope: src/omi/__init__.py, tests/test_omi.py, docker/**, README.md
