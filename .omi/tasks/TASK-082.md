@@ -25,6 +25,14 @@ From the findings in `docs/research/models-claude.md` and `docs/research/models-
 - [ ] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
+PO fix round 1 completed (Linux worker, 2026-10-27):
+- Done: quota fallback preserves model/effort configuration errors when fallback credentials are also missing.
+- Done: agents_catalog reports exact model_notes and models/codex_models keys for missing mappings, invalid IDs, and missing/invalid fits or avoid notes.
+- Done: regression tests cover both requested fixes; existing acceptance tests remain passing.
+- Test result: python3 tests/test_omi.py PASS (exit 0, final output: ok).
+- Not done: Windows host validation of this fix round is unavailable in this Linux container.
+- Next step: Coordinator reviews the diff, runs the suite on Windows, and commits on the host. No worker commit.
+
 Coordinator notes (2026-10-27):
 - PO decision (.omi/decisions.md): codex_models haiku -> gpt-6-luna, sonnet -> gpt-6.1-sol, opus -> gpt-6-astra.
 - Claude models: haiku -> claude-haiku-5-5, sonnet -> claude-sonnet-5-5, opus -> claude-opus-5-5. Do not map claude-fable-5-1: it answers "requires usage credits" on the PO login.
@@ -119,9 +127,63 @@ Next:
 > AC: `omi agents` writes `## Models` from `model_notes` (root and template) ✓ The diff shows the catalogs. The test checks that every alias and effort line matches config and that an edited note reaches the catalog.
 > [... truncated ...]
 > AC: All tests pass on the Linux worker and the Windows host ✗ `python3 tests/test_omi.py` prints `ok` on Linux. I did not run the Windows host. The task's own "Not done" list says it is pending.
+2026-10-27 10:23 omi-agent-engineer (codex):
+> DONE
+> Files changed: `src/omi/__init__.py`, `tests/test_omi.py`, `.omi/tasks/TASK-082.md`.
+> Fixed fallback error preservation and precise catalog configuration diagnostics.
+> Suggested commit: `fix: preserve fallback errors and validate model catalog notes`
+> Tests: `python3 tests/test_omi.py` PASS (exit 0, `ok`).
+> Checkpoint updated. Open issues: Windows validation pending Coordinator; no commit made.
+2026-10-27 10:25 hook post-run passed:
+> Conflict. The container name "/tmpaapne3kb-TASK-001-engineer-codex-gpt-x-medium-032326" is already in useBind for 0.0.0.0:8080 failed: port is already in usecreate AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/config.json
+> create .omi/decisions.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 2078722 | 12569 | 2007936 | 411s | 2/2 omi-skill-windows-powershell omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 3699 | 110982 | 142s | - | PASS 5f19249 |
+| omi-agent-engineer | gpt-6.1-sol (codex) | low | 498887 | 3439 | 458880 | 155s | 1/1 omi-skill-windows-powershell | - |

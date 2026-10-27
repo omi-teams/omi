@@ -2942,6 +2942,22 @@ def test_tool_choice_and_quota_switch():
             assert go(R(claude_quota, 1), R(codex_quota, 1)) == 5 and "QUOTA: claude and codex" in sys.stdout.getvalue()
             del omi.os.environ[omi.CODEX_ENV]
             assert go(R(claude_quota, 1)) == 5 and len(calls) == 1 and "no ChatGPT login" in sys.stdout.getvalue()
+            # A missing fallback credential must not hide a model/effort configuration error.
+            (wt / ".omi" / "config.json").write_text("{}", encoding="utf-8")
+            assert go(R(claude_quota, 1)) == 5 and len(calls) == 1
+            assert "codex_models" in sys.stdout.getvalue() and "no ChatGPT login" not in sys.stdout.getvalue()
+            (wt / ".omi" / "config.json").write_text('{"codex_models": {"sonnet": "gpt-x"}}', encoding="utf-8")
+            resolve_effort = omi.resolve_effort
+            def fallback_effort(effort, tool):
+                if tool == "codex":
+                    raise SystemExit("missing codex effort entry")
+                return resolve_effort(effort, tool)
+            omi.resolve_effort = fallback_effort
+            try:
+                assert go(R(claude_quota, 1)) == 5 and len(calls) == 1
+                assert "missing codex effort entry" in sys.stdout.getvalue() and "no ChatGPT login" not in sys.stdout.getvalue()
+            finally:
+                omi.resolve_effort = resolve_effort
         finally:
             sys.stdout = saved
             omi.egress, omi.ensure_image = egress, ensure
@@ -3466,6 +3482,35 @@ def test_model_catalog_and_task_start():
         config.write_text(json.dumps(cfg), encoding="utf-8")
         omi.agents_catalog(target)
         assert "custom fit from config" in (target / ".omi/agents/CATALOG.md").read_text(encoding="utf-8")
+        valid_cfg = json.dumps(cfg)
+        for tool, mapping in (("claude", "models"), ("codex", "codex_models")):
+            for kind, name in (("models", "haiku"), ("efforts", "medium")):
+                for field in ("fits", "avoid"):
+                    for value in (None, "", 1):
+                        broken = json.loads(valid_cfg)
+                        note = broken["model_notes"][tool][kind][name]
+                        if value is None:
+                            del note[field]
+                        else:
+                            note[field] = value
+                        config.write_text(json.dumps(broken), encoding="utf-8")
+                        try:
+                            omi.agents_catalog(target)
+                            raise AssertionError("invalid catalog note accepted")
+                        except SystemExit as exc:
+                            assert f"model_notes.{tool}.{kind}.{name}.{field}" in str(exc)
+            for value in (None, "codex-default"):
+                broken = json.loads(valid_cfg)
+                if value is None:
+                    del broken[mapping]["haiku"]
+                else:
+                    broken[mapping]["haiku"] = value
+                config.write_text(json.dumps(broken), encoding="utf-8")
+                try:
+                    omi.agents_catalog(target)
+                    raise AssertionError("missing or invalid catalog model accepted")
+                except SystemExit as exc:
+                    assert f"{mapping}.haiku" in str(exc) and f"model_notes.{tool}.models.haiku" in str(exc)
         for value in ("", None, "codex-default", "sonnet"):
             cfg["codex_models"]["sonnet"] = value
             config.write_text(json.dumps(cfg), encoding="utf-8")

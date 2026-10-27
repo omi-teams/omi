@@ -418,11 +418,23 @@ def agents_catalog(root):
     lines.extend(["", "## Models", "", "Recommendations from the model research; task quality and cost are not benchmarked."])
     for tool, notes in config.get("model_notes", {}).items():
         lines.extend(["", f"### {tool}"])
-        for alias, note in notes.get("models", {}).items():
-            model = resolve_model(root, alias, tool)
-            lines.append(f"- {alias}: {model}; fits: {note['fits']}; avoid: {note['avoid']}")
-        for level, note in notes.get("efforts", {}).items():
-            lines.append(f"- effort {level}; fits: {note['fits']}; avoid: {note['avoid']}")
+        for kind in ("models", "efforts"):
+            for name, note in notes.get(kind, {}).items():
+                key = f"model_notes.{tool}.{kind}.{name}"
+                for field in ("fits", "avoid"):
+                    if not isinstance(note, dict) or not isinstance(note.get(field), str) or not note[field].strip():
+                        sys.exit(f"missing or invalid config key `{key}.{field}` in .omi/config.json. Nothing changed.")
+                if kind == "models":
+                    mapping = "codex_models" if tool == "codex" else "models"
+                    if not config.get(mapping, {}).get(name):
+                        sys.exit(f"missing config key `{mapping}.{name}` for `{key}` in .omi/config.json. Nothing changed.")
+                    try:
+                        model = resolve_model(root, name, tool)
+                    except SystemExit as exc:
+                        sys.exit(f"invalid config key `{mapping}.{name}` for `{key}`: {exc}")
+                    lines.append(f"- {name}: {model}; fits: {note['fits']}; avoid: {note['avoid']}")
+                else:
+                    lines.append(f"- effort {name}; fits: {note['fits']}; avoid: {note['avoid']}")
     out = Path(root) / ".omi" / "agents" / "CATALOG.md"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -2364,7 +2376,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
                     models[other] = resolve_model(main, am.get("model"), other)
             except SystemExit as exc:
                 problem = str(exc)
-            if not other_secret[1]:
+            if not problem and not other_secret[1]:
                 problem = other_secret[2] or f"no {other} token"
             if problem:
                 return stop_quota(f"{tool} hit its usage limit and {other} cannot continue ({problem})")
