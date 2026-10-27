@@ -72,3 +72,4 @@
 - 2026-10-26 | Accept hard-link .omi-new risk in omi upgrade (TASK-079) | git cannot carry hard links; needs local write access that already allows direct edits; follow-up: atomic write | PO in chat
 - 2026-10-26 | omi upgrade: non-default omi_repo needs --repo confirmation and is shown to the PO (TASK-079) | a cloned project could point pip at an attacker repo | PO in chat
 - 2026-10-27 | Split tools per step: a spike runs on the tool it tests, write/review steps on the other tool (080 write: codex; 081 write: claude haiku; 082 engineer: codex, reviewer: claude sonnet) | spread Claude and ChatGPT quota, independent review | TASK-080..082
+- 2026-10-27 | Adopt codex_models haiku->gpt-6-luna, sonnet->gpt-6.1-sol, opus->gpt-6-astra (apply in TASK-082) | TASK-081 host probe: all three answer; cache descriptions fit the tiers | docs/research/models-codex.md
