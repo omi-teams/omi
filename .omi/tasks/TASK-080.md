@@ -12,7 +12,7 @@ tool: claude
 model: sonnet
 effort: medium
 workflow: omi-flow-spike
-step: research
+step: write
 ---
 ## Goal
 The Coordinator must pick a concrete model and effort per task, never a default. Find out, from inside the worker (Claude Code CLI 2.1.302, the PO's session login), which Claude models and effort levels are actually usable, and what kind of omi task each fits.
@@ -36,13 +36,16 @@ Host evidence (Claude Code 2.1.302, PO session login, `claude -p --model <m> --e
 - haiku: ok | 1617 | 0.0039 | claude-haiku-5-5 ; claude-haiku-5-5: ok | 2224 | 0.0034
 Effort probe (`claude -p --model haiku --effort <e> "What is 17*23? Answer with the number only."`; all answered 391): output_tokens low 29, medium 57, high 61, xhigh 67, max 207; cost ~0.0034-0.0036 each, duration 1.9-2.6 s. So all five levels are accepted; higher effort spends more output (thinking) tokens. Effect on hard tasks and on opus/sonnet: not measured.
 Cost note: on a trivial prompt, opus is ~2x sonnet and ~35x haiku (mostly cached system-prompt cost).
-Not done: write step (docs-writer saves docs/research/models-claude.md from Reports + this evidence; mark the role-default mapping as recommendation, not measured).
+Done: write step saved docs/research/models-claude.md in Vietnamese from Reports and host evidence above; role/workflow mappings are recommendations, not measured results. Commands and options checked against the task's recorded help/probes; role and step names checked against repo catalogs/workflows. No new model probes run.
+Not done: independent host re-verification, Sonnet/Opus effort probes beyond low, and real-task quality/cost benchmarks; PO decision remains pending.
 Tests: n/a (docs only)
-Next: write, then decide (PO gate).
+Next: Coordinator reviews the documentation diff, then decide (PO gate).
 ## Steps
 - plan started 2026-10-27 09:13
 - plan done 2026-10-27 09:13
 - research started 2026-10-27 09:13
+- research done 2026-10-27 09:17
+- write started 2026-10-27 09:17
 
 ## Reports
 2026-10-27 09:14 omi-agent-researcher (claude):
@@ -55,8 +58,62 @@ Next: write, then decide (PO gate).
 > CONFIDENCE: high - on the flag list and the login failure, which are directly observed; the model-by-model findings are unknown, not low-confidence.
 > [... truncated ...]
 > NEEDS DECISION: Should the PO run `/login` in this container (or supply credentials) and re-run this task, and should a role with write access save the report to `docs/research/models-claude.md`?
+2026-10-27 09:19 omi-agent-docs-writer (codex):
+> DONE
+> Files changed: docs/research/models-claude.md; .omi/tasks/TASK-080.md (checkpoint).
+> Suggested commit: docs: document Claude model availability and effort recommendations
+> Unverified: independent host results, Sonnet/Opus efforts beyond low, real-task quality and cost.
+> Tests: not run (docs only).
+> Open issues: Coordinator review and PO decision pending.
+2026-10-27 09:21 hook post-run passed:
+> Conflict. The container name "/tmpoix_xm8l-TASK-001-engineer-codex-gpt-x-medium-021922" is already in useBind for 0.0.0.0:8080 failed: port is already in usewrote /tmp/tmp5m9b9ipx/.omi/skills/CATALOG.md (2 skills)
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/config.json
+> create .omi/decisions.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-researcher | claude-sonnet-5-5 | medium | 10 | 1579 | 91664 | 40s | - | n/a |
+| omi-agent-docs-writer | gpt-6.1-sol (codex) | low | 136643 | 3239 | 115712 | 111s | - | - |
