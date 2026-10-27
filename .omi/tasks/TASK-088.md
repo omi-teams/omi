@@ -1,7 +1,7 @@
 ---
 id: TASK-088
 title: Bump omi to 0.3.0
-status: in-progress
+status: done
 depends: TASK-087
 plan: PLAN-001
 scope: pyproject.toml, README.md, tests/test_omi.py, .omi/version, src/omi/template_shas.json
@@ -12,17 +12,17 @@ tool: claude
 model: haiku
 effort: low
 workflow: omi-flow-feature
-step: build
+step: review
 ---
 ## Goal
 Release prep for 0.3.0 (PLAN-001 done criteria). Version is SemVer 0.x with `pyproject.toml` as the only source (decision 2026-10-26, TASK-074). Bump it so `omi --version` and the install instructions match the v0.3.0 tag the PO creates at promote.
 
 ## Acceptance criteria
-- [ ] `pyproject.toml` version is `0.3.0`; `python -m omi --version` prints `omi 0.3.0`.
-- [ ] README install line and `omi --version` example say `v0.3.0` / `omi 0.3.0`.
-- [ ] This repo's `.omi/version` is `0.3.0`.
-- [ ] `src/omi/template_shas.json` gains a `0.3.0` entry equal to the current template's hashes (`python -m omi template-shas src/omi/template 0.3.0`); the `0.2.0` entry is unchanged.
-- [ ] Tests updated for the new version (only the version assertion; tag-parsing fixtures that use `v0.2.0` as sample data stay) and pass on the Linux worker and the Windows host.
+- [x] `pyproject.toml` version is `0.3.0`; `python -m omi --version` prints `omi 0.3.0`.
+- [x] README install line and `omi --version` example say `v0.3.0` / `omi 0.3.0`.
+- [x] This repo's `.omi/version` is `0.3.0`.
+- [x] `src/omi/template_shas.json` gains a `0.3.0` entry equal to the current template's hashes (`python -m omi template-shas src/omi/template 0.3.0`); the `0.2.0` entry is unchanged.
+- [x] Tests updated for the new version (only the version assertion; tag-parsing fixtures that use `v0.2.0` as sample data stay) and pass on the Linux worker and the Windows host.
 
 ## Checkpoint
 Done: pyproject.toml, README (install tag + --version example), .omi/version, template_shas.json 0.3.0 entry (python -m omi template-shas src/omi/template 0.3.0), tests/test_omi.py version assertion (v0.2.0 tag fixtures kept).
@@ -36,6 +36,9 @@ Coordinator (Windows host): tests ok; template_shas['0.3.0'] == template_shas();
 - plan started 2026-10-27 22:29
 - plan done 2026-10-27 22:29
 - build started 2026-10-27 22:29
+- build done 2026-10-27 22:41
+- review started 2026-10-27 22:41
+- review done 2026-10-27 22:45
 
 ## Reports
 2026-10-27 22:37 omi-agent-engineer (claude):
@@ -92,8 +95,19 @@ Coordinator (Windows host): tests ok; template_shas['0.3.0'] == template_shas();
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-27 22:45 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - .omi/tasks/TASK-088.md (whole file) The diff edits the task file, which is outside `scope`. It only holds checkpoint, step and report text that the workflow writes, so I don't count it as a defect. -> No fix needed.
+> - The Windows host run was not repeated here. The task file records it as a coordinator note ("tests ok"), and I only ran the Linux side.
+> 
+> AC: `pyproject.toml` is `0.3.0` and `python -m omi --version` prints `omi 0.3.0` ✓ The diff changes `version = "0.3.0"`. `PYTHONPATH=src python3 -m omi --version` prints `omi 0.3.0`. Without `PYTHONPATH`, `python3 -m omi` fails with "No module named omi" because the package isn't installed in this container.
+> AC: README install line and `--version` example say `v0.3.0` / `omi 0.3.0` ✓ Both lines are updated in the diff. A grep of README.md and pyproject.toml finds no remaining `0.2.0`.
+> AC: `.omi/version` is `0.3.0` ✓ The file reads `0.3.0`.
+> AC: `template_shas.json` has a `0.3.0` entry equal to the current template's hashes, and `0.2.0` is unchanged ✓ The keys are `['0.2.0', '0.3.0']`. `d['0.3.0'] == omi.template_shas()` returns True. The diff only appends after the `0.2.0` block, with no `-` lines in it.
+> AC: Tests updated (version assertion only) and passing on Linux and Windows ✓ The only change in `tests/test_omi.py` is the assertion `0.2.0` → `0.3.0`. `python3 tests/test_omi.py` exits 0 and ends with "ok". The Windows run is a coordinator note in the task file, not something I reproduced.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-haiku-5-5 | low | 24 | 3476 | 305724 | 497s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1357 | 101406 | 243s | - | PASS f911f4b |
