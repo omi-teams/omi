@@ -25,13 +25,12 @@ Gap #17 (omi-board session 97bfceb1): the post-run hook and read roles cannot us
 - [ ] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
-Review round 1 FAIL:
-- src/omi/__init__.py out_of_scope: the `.omi-cache/` exemption returns False before the `.git*` component guard and also applies when committed=True, so a force-added `.omi-cache/x/.gitattributes` (or any committed cache file) passes scope. Fix: exempt `.omi-cache/` only for uncommitted (untracked/ignored) entries, never when committed=True, and keep the `.git*` guard ahead of the exemption. Add a test for a committed `.omi-cache/**/.gitattributes` (out of scope) and a committed `.omi-cache/go-mod/x` (out of scope), plus untracked cache files (not out of scope).
-Done: Shared worker cache environment updated for write/read roles and hooks; GOFLAGS=-modcacherw; init/upgrade gitignore helper; cache scope exemption (existing symlink protection retained); Vietnamese README line; regression tests added.
-Not done: -
-Coordinator: Windows host suite passed (ok); sandbox check on Windows host: read-only tree under .omi-cache/go-mod blocks `git worktree remove` (Permission denied), writable tree (-modcacherw) removes cleanly.
-Tests: python3 tests/test_omi.py PASSED on Linux (exit 0, ok), including write/read/hook argv, init/upgrade ignore idempotency and actual Git ignore matching, cache scope filtering and README checks; Windows validation pending.
-Next: Coordinator reviews diff and runs Windows host suite plus real Go cache worktree-removal sandbox check; no worker commit made. After merge: omi-release 0.3.0, then real /omi-upgrade check on omi-board (PLAN-001 done criteria).
+Done: Review round 1 scope bypass fixed. The `.git*` component guard precedes the cache exemption; only untracked/ignored cache status entries are exempt when committed=False. Tracked cache edits and all cache paths when committed=True follow normal scope checks. Existing symlink protection retained.
+Done: Regression coverage includes committed `.omi-cache/x/.gitattributes`, committed `.omi-cache/go-mod/x`, untracked/ignored cache entries, tracked cache edits, and untracked cache Git control files. Existing tests cover container cache environment, init/upgrade gitignore behavior and README.
+Not done: Coordinator review and Windows host suite rerun for this revision.
+Tests: Targeted scope regression failed before the fix and passed after it; full `python3 tests/test_omi.py` PASSED on Linux (exit 0, final output `ok`).
+Coordinator evidence from prior revision: Windows host suite passed; read-only tree under `.omi-cache/go-mod` blocked `git worktree remove` (Permission denied), writable tree (-modcacherw) removed cleanly. These host checks cannot be repeated in this Linux worker.
+Next: Coordinator reviews diff and reruns Windows host suite. No worker commit. After merge: omi-release 0.3.0, then real /omi-upgrade check on omi-board (PLAN-001 done criteria).
 
 ## Steps
 - plan started 2026-10-27 21:36
@@ -106,9 +105,63 @@ Next: Coordinator reviews diff and runs Windows host suite plus real Go cache wo
 > AC: `git worktree remove` works on the Windows host with a Go module cache ✗ Not verifiable in this container. The task file records a Coordinator sandbox check, but its box is still unticked.
 > AC: README has one Vietnamese line on where download caches live ✓ The line was added at README.md:34.
 > AC: All tests pass on Linux and Windows ✓ for Linux, not checked for Windows. `python3 tests/test_omi.py` exited 0 and printed `ok` here. The Windows result is only the Coordinator's note in the task file.
+2026-10-27 21:52 omi-agent-engineer (codex):
+> DONE — fixed cache scope exemption and added regression coverage.
+> Files changed: `src/omi/__init__.py`, `tests/test_omi.py`, `.omi/tasks/TASK-086.md`.
+> Suggested commit: `fix(worker): restrict download cache scope exemption`
+> Tests: `python3 tests/test_omi.py` passed on Linux (exit 0, `ok`).
+> Open issues: Coordinator review and Windows suite rerun pending. No commit made.
+2026-10-27 21:55 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1263284 | 5995 | 1199360 | 261s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 2241 | 139322 | 254s | - | FAIL d1ea336 |
+| omi-agent-engineer | gpt-6.1-sol (codex) | medium | 736313 | 3014 | 685440 | 196s | 1/1 omi-skill-lean-implementation | - |

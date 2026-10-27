@@ -2153,7 +2153,9 @@ def out_of_scope(wt, tid, committed=False):
     globs = task_scope(wt, tid)
     r = subprocess.run(["git", "-C", str(wt), "status", "--porcelain", "-z", "-uall", "--no-renames"],
                        capture_output=True, encoding="utf-8", errors="replace")
-    paths = [e[3:] for e in r.stdout.split("\0") if e]
+    entries = [e for e in r.stdout.split("\0") if e]
+    paths = [e[3:] for e in entries]
+    untracked = {e[3:] for e in entries if e[:2] in ("??", "!!")}
     if committed:
         d = subprocess.run(["git", "-C", str(wt), "diff", "--name-only", "-z", "--no-renames", "development...HEAD"],
                            capture_output=True, encoding="utf-8", errors="replace")
@@ -2163,10 +2165,10 @@ def out_of_scope(wt, tid, committed=False):
             return False
         if os.path.islink(Path(wt) / p):  # host tools could follow it out of the worktree
             return True
-        if p.startswith(".omi-cache/"):
-            return False
         if any(c.lower().startswith(".git") or re.fullmatch(r"(?i)git[^~/]*~\d+(\.[^/]*)?", c) for c in p.split("/")) and p not in globs:
             return True  # .gitattributes, .githooks..., and their Windows 8.3 names (GIT~1): host git processes them; only an exact scope entry allows
+        if not committed and p in untracked and p.startswith(".omi-cache/"):
+            return False
         return not any(PurePosixPath(p).full_match(g) for g in globs)
     return [p for p in paths if bad(p)]
 

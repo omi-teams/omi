@@ -722,12 +722,18 @@ def test_download_cache_scope():
         omi.task_scope = lambda *args: ["src/**"]
         def run(argv, **kw):
             paths = ("?? .omi-cache/go-mod/example/file\0?? .omi-cache/npm/pkg/.github/config\0"
-                     "?? .omi-cache/pip/pkg\0?? .omi-cache-other/file\0?? src/ok.py\0?? outside.py\0")
-            return subprocess.CompletedProcess(argv, 0, paths if "status" in argv else ".omi-cache/go-mod/committed\0")
+                     "?? .omi-cache/pip/pkg\0!! .omi-cache/npm/ignored\0 M .omi-cache/pip/tracked\0"
+                     "?? .omi-cache-other/file\0?? src/ok.py\0?? outside.py\0")
+            diff = ".omi-cache/x/.gitattributes\0.omi-cache/go-mod/x\0"
+            return subprocess.CompletedProcess(argv, 0, paths if "status" in argv else diff)
         omi.subprocess.run = run
         with tempfile.TemporaryDirectory() as d:
-            for committed in (False, True):
-                assert omi.out_of_scope(d, "TASK-086", committed=committed) == [".omi-cache-other/file", "outside.py"]
+            assert omi.out_of_scope(d, "TASK-086") == [
+                ".omi-cache/npm/pkg/.github/config", ".omi-cache/pip/tracked", ".omi-cache-other/file", "outside.py"]
+            assert omi.out_of_scope(d, "TASK-086", committed=True) == [
+                ".omi-cache/go-mod/example/file", ".omi-cache/npm/pkg/.github/config", ".omi-cache/pip/pkg",
+                ".omi-cache/npm/ignored", ".omi-cache/pip/tracked", ".omi-cache-other/file", "outside.py",
+                ".omi-cache/x/.gitattributes", ".omi-cache/go-mod/x"]
     finally:
         omi.subprocess.run, omi.task_scope = real
 
