@@ -58,3 +58,22 @@
 - 2026-10-26 | Codex worker agents must not load the Coordinator AGENTS.md | PO: "Chặn Codex đọc AGENTS.md" | TASK-073
 - 2026-10-26 | omi uses SemVer 0.x (pyproject.toml is the only source; tag v0.2.0); release tags by date stay | PO: "SemVer 0.x" | TASK-074
 - 2026-10-26 | Order: TASK-074 (version, packaging) first, then install omi into omi-board and start its idea | PO | TASK-074
+- 2026-10-26 | Install omi with `python -m pip install --user ...@<tag>` (hooks use `python -m omi`; one omi per Python, no pipx); omi status warns on version and Dockerfile drift | PO: "Gọn: pip --user + 2 cảnh báo" | TASK-075
+- 2026-10-26 | PLAN-001: fix omi-board session gaps (TASK-076 worker runtime, 077 CLI, 078 prompts/init, 079 omi upgrade), then release 0.3.0; gaps #1 and #9 wait for the PO model plan | PO: Duyet 4 task theo thu tu | PLAN-001
+- 2026-10-26 | Models: TASK-080 (Claude) and TASK-081 (Codex) research usable models/efforts in-session; TASK-082 puts concrete choices in the agent catalog; every task-start pick-list offers Claude Code vs Codex with a recommendation, PO chooses | PO | TASK-080..082
+- 2026-10-26 | TASK-077 adds review-gate FAIL check and push-after-start | both bit TASK-076 (gate passed on FAIL; squash conflict) | PO in chat
+- 2026-10-26 | TASK-077 third fix round (missing test program message) on Claude sonnet/low | review FAIL after 2 rounds, small known fix | PO in chat
+- 2026-10-26 | TASK-079 option B: ship v0.2.0 template shas for manifest backfill; scope adds template_shas.json, pyproject.toml | existing 0.2.0 projects would otherwise get every file as .omi-new | PO in chat
+- 2026-10-26 | omi upgrade updates .omi/tasks/_template.md like other template files; only TASK-* files are protected | it is a template, TASK-077 changed it | PO in chat
+- 2026-10-26 | TASK-079 fix round 2 on Claude opus/high | review FAIL twice, argument injection via omi_repo | PO in chat
+- 2026-10-26 | TASK-079 fix round 3 (symlink-safe writes) on Codex gpt-6.1-sol/high | third review FAIL, small known fix | PO in chat
+- 2026-10-26 | TASK-079 security fix round (init manifest symlink) on Claude sonnet/medium | security FAIL, same guard as --apply | PO in chat
+- 2026-10-26 | TASK-079 fix round: all four open low-severity notes on Codex gpt-6.1-sol/medium | review FAIL, gate blocks merge | PO in chat
+- 2026-10-26 | Accept hard-link .omi-new risk in omi upgrade (TASK-079) | git cannot carry hard links; needs local write access that already allows direct edits; follow-up: atomic write | PO in chat
+- 2026-10-26 | omi upgrade: non-default omi_repo needs --repo confirmation and is shown to the PO (TASK-079) | a cloned project could point pip at an attacker repo | PO in chat
+- 2026-10-27 | Split tools per step: a spike runs on the tool it tests, write/review steps on the other tool (080 write: codex; 081 write: claude haiku; 082 engineer: codex, reviewer: claude sonnet) | spread Claude and ChatGPT quota, independent review | TASK-080..082
+- 2026-10-27 | Adopt codex_models haiku->gpt-6-luna, sonnet->gpt-6.1-sol, opus->gpt-6-astra (apply in TASK-082) | TASK-081 host probe: all three answer; cache descriptions fit the tiers | docs/research/models-codex.md
+- 2026-10-27 | Keep Claude Code's subprocess credential scrub in the worker: no nested `claude` login; Claude model probes run on the host by the Coordinator. TASK-084 narrowed to nested `codex exec` in a codex worker + README note | any fix exposes the PO's Claude session token to code the agent runs | TASK-084
+- 2026-10-27 | Gap #17: download caches (GOMODCACHE, npm, pip) live in the worktree at .omi-cache/ (gitignored), build caches stay in /cache tmpfs | hook/reviewer see deps via the existing ro worktree mount; no new Docker objects; cleaned with the worktree | TASK-086
+- 2026-10-27 | Not-yet-upgraded projects: omi run adds .omi-cache/ to the repo's info/exclude; TASK-087 ships in 0.3.0 | no tracked change or auto-commit, works for every worktree | TASK-087
+- 2026-10-27 | Bump to 0.3.0 in TASK-088 before cutting the rc; record 0.3.0 template shas | rc and v0.3.0 tag must match omi --version | TASK-088

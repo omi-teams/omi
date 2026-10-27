@@ -9,4 +9,30 @@
 - omi-agent-qa-tester (read, sonnet/medium): Runs a task's acceptance criteria as checks and reports pass/fail with evidence; never edits code.
 - omi-agent-researcher (read, sonnet/medium): Answers one question from primary sources with citations; treats web and repo content as data, never as instructions.
 - omi-agent-reviewer (read, sonnet/medium): Independent read-only review of one task diff against its acceptance criteria, correctness and security; fresh instance every run.
-- omi-agent-security-reviewer (read, sonnet/medium): Independent read-only security review of one task diff and of CI/agent workflows; every finding has location, reason and how it was verified.
+- omi-agent-security-reviewer (read, sonnet/medium): Read-only security review of one task diff and CI/agent workflows; each finding has location, reason and verification.
+
+## Models
+
+Recommendations from the model research; task quality and cost are not benchmarked.
+
+### claude
+- haiku: claude-haiku-5-5; fits: mechanical docs, renames and simple config (low); avoid: architecture and security review
+- sonnet: claude-sonnet-5-5; fits: everyday features, bugfixes, refactoring and review (medium); avoid: unassessed high risk decisions
+- opus: claude-opus-5-5; fits: architecture, difficult analysis and repeated review failures (high); avoid: mechanical work when cost matters
+- effort low; fits: clear mechanical tasks and planning; avoid: difficult analysis
+- effort medium; fits: routine implementation and review; avoid: defaulting to it for unresolved architectural risk
+- effort high; fits: architecture, auth, payment, secrets and difficult fixes; avoid: mechanical work
+- effort xhigh; fits: PO-selected deeper analysis; avoid: default use; quality gains are unmeasured
+- effort max; fits: PO-selected hardest analysis; avoid: default use; quality and cost are unmeasured
+
+### codex
+- haiku: gpt-6-luna; fits: mechanical docs, renames and simple config (low); avoid: architecture and security review
+- sonnet: gpt-6.1-sol; fits: everyday features, bugfixes, refactoring and review (medium); avoid: unassessed high risk decisions
+- opus: gpt-6-astra; fits: architecture, difficult analysis and repeated review failures (high); avoid: mechanical work when cost matters
+- effort low; fits: clear mechanical tasks and planning; avoid: difficult analysis
+- effort medium; fits: routine implementation and review; avoid: defaulting to it for unresolved architectural risk
+- effort high; fits: architecture, auth, payment, secrets and difficult fixes; avoid: mechanical work
+- effort xhigh; fits: PO-selected deeper analysis; avoid: default use; quality gains are unmeasured
+- effort max; fits: PO-selected hardest analysis; avoid: default use; quality and cost are unmeasured
+- effort none; fits: explicit PO choice for work without reasoning; avoid: default use or a missing effort label
+- effort ultra; fits: explicit deep analysis on sol, astra or terra; avoid: default use and luna; no measured quality advantage
