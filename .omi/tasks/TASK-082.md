@@ -12,7 +12,7 @@ tool: codex
 model: sonnet
 effort: medium
 workflow: omi-flow-feature
-step: review
+step: accept
 ---
 ## Goal
 From the findings in `docs/research/models-claude.md` and `docs/research/models-codex.md`, give the Coordinator a catalog of concrete model + effort choices per tool, make every run use an explicit model and effort, and make every task-start question offer Claude Code and Codex. Covers gap #1 (empty `codex_models`).
@@ -30,6 +30,9 @@ Coordinator notes (2026-10-27):
 - Claude models: haiku -> claude-haiku-5-5, sonnet -> claude-sonnet-5-5, opus -> claude-opus-5-5. Do not map claude-fable-5-1: it answers "requires usage credits" on the PO login.
 - "effort none" in the criteria means a missing effort label. Codex does accept `none` as a value, but omi must never send or show it by default.
 - Efforts: Claude low|medium|high|xhigh|max; Codex none|low|medium|high|xhigh|max (+ultra on sol/astra/terra). Map omi efforts 1:1.
+PO fix round 1 (review PASS, PO asked to fix 2 findings before merge):
+1. src/omi/__init__.py quota fallback (~2357-2371): when resolve_effort/resolve_model already set `problem`, the missing other-tool secret must not overwrite it; set `problem` from the secret check only if it is still empty. Add a test.
+2. src/omi/__init__.py agents_catalog (~420-426): an alias in model_notes with no models/codex_models entry, or a note without fits/avoid, must stop with a message naming the config key (e.g. `model_notes.codex.models.haiku.fits`), not a bare KeyError or the resolve_model exit. Add a test.
 Done:
 - Added approved concrete Claude/Codex alias mappings to root and template configs, with model_notes for each model and effort; regenerated both agent catalogs with ## Models.
 - omi run requires concrete model IDs and explicit valid efforts; missing Codex mappings stop startup or quota fallback. Efforts map 1:1 (including max), and container names retain the concrete ID shown in Usage.
@@ -49,6 +52,8 @@ Next:
 - build started 2026-10-27 10:07
 - build done 2026-10-27 10:16
 - review started 2026-10-27 10:16
+- review done 2026-10-27 10:20
+- accept started 2026-10-27 10:20
 
 ## Reports
 2026-10-27 10:14 omi-agent-engineer (codex):
