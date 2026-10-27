@@ -2095,6 +2095,19 @@ def main_checkout(wt):
     return Path(common).parent if common else None
 
 
+def ensure_cache_excluded(wt: Path) -> None:
+    """Ignore download caches across all worktrees without changing tracked files."""
+    common = git(wt, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if not common:
+        sys.exit(f"cannot find the shared git directory for {wt}")
+    exclude = Path(common) / "info" / "exclude"
+    existing = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
+    if ".omi-cache/" not in existing.splitlines():
+        exclude.parent.mkdir(parents=True, exist_ok=True)
+        with exclude.open("a", encoding="utf-8") as f:
+            f.write(("\n" if existing and not existing.endswith("\n") else "") + ".omi-cache/\n")
+
+
 def image_repo(main):
     return f"omi-worker-{repo_label(main)}"
 
@@ -2304,6 +2317,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
     want_model = model or step_settings.get("model") or (tm.get("model") if task_settings else None) or am.get("model")
     models = {tool: resolve_model(main, want_model, tool)}
 
+    ensure_cache_excluded(wt)
     read = am["access"] == "read"
     mounts = []
     if read:
