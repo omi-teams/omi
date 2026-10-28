@@ -29,10 +29,16 @@ Not done: Windows host test run (AC3 host part) - Coordinator to run
 Tests: `python3 tests/test_omi.py` exit 0 ("ok") on Linux worker. task_rules: src/omi/run.py -> omi-modules.md, python.md; tests/test_omi.py -> python.md only
 Next: Coordinator runs tests on Windows host, then commits
 
+Review round 1 FAIL: (Coordinator) omi-modules.md says `__init__.py` must not re-export names, but src/omi/__init__.py re-exports `main` and `version` from cli/core and that IS the package surface. Reword: `__init__.py` stays the package surface: only re-exports the public names (`main`, `version`); no logic there. Regenerate CATALOG.md if the summary changes.
+
 ## Steps
 - plan started 2026-10-28 20:57
 - plan done 2026-10-28 20:57
 - build started 2026-10-28 20:57
+- build done 2026-10-28 21:06
+- review started 2026-10-28 21:06
+- review failed 2026-10-28 21:11
+- build started 2026-10-28 21:11
 
 ## Reports
 2026-10-28 21:03 omi-agent-engineer (claude):
@@ -89,8 +95,19 @@ Next: Coordinator runs tests on Windows host, then commits
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-28 21:11 omi-agent-reviewer (claude):
+> ```
+> VERDICT: PASS
+> AC: omi-modules.md has the required frontmatter and covers every listed point ✓ The file has `id`, `summary` and `applies: src/omi/*.py`, and is ~175 tokens (CATALOG reports it). It states the `from . import x` rule, the layer order, no function-level imports, the ~600-line cap, new responsibility means new module, `__init__.py` as the package surface, and patching `omi.<module>.<name>`.
+> AC: CATALOG.md regenerated; task_rules picks the rule for src/omi/run.py and not for tests/test_omi.py ✓ I called `catalogs.task_rules` myself. `['src/omi/run.py']` returned `['omi-modules.md','python.md']`, and `['tests/test_omi.py']` returned `['python.md']`. Re-running `python -m omi rules` gives the same CATALOG content as the diff, with 6 rules including omi-modules.
+> AC: All tests pass on the Linux worker ✓ `python3 tests/test_omi.py` exited 0 and printed "ok".
+> AC: All tests pass on the Windows host HOST Windows host run, left to the Coordinator.
+> ```
+> 
+> The diff stays within scope. The only other file it touches is TASK-106.md, the task's own checkpoint file.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-haiku-5-5 | low | 18 | 2902 | 236724 | 333s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 1276 | 139557 | 263s | - | PASS 93ea4fe |
