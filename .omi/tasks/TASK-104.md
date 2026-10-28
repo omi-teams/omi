@@ -13,7 +13,7 @@ model: opus
 effort: high
 step_settings:
 workflow: omi-flow-refactor
-step: refactor
+step: review
 ---
 ## Goal
 `src/omi/__init__.py` is one 2640-line file. Every code task must put the whole file in `scope`, so scopes are coarse, parallel tasks always conflict and agents read more than they need. The PO asked (2026-10-28) for a clean, senior-grade structure before PLAN-004 adds detached mode. Behaviour stays identical; this is a move, not a rewrite.
@@ -23,10 +23,11 @@ Design rules: one module per responsibility (for example cli, config/paths, task
 ## Acceptance criteria
 - [ ] `src/omi/__init__.py` keeps only the package surface (re-exports, version); no module over ~600 lines; no import cycles (`python -c "import omi"` and each module imports on its own).
 - [ ] Behaviour unchanged: `python -m omi <cmd>` output and exit codes are the same for every command; the test suite passes with only mechanical test edits (import paths, monkeypatch targets), no assertion removed or weakened.
-- [ ] Nothing under `src/omi/template/**` changes; `template_shas.json` unchanged; the built package still ships the template (`pip install .` in a temp venv, then `python -m omi status` in a temp repo works).
+- [ ] Nothing under `src/omi/template/**` changes; `template_shas.json` unchanged; the built package still ships the template: on the host, `pip install .` in a temp venv, then `python -m omi status` in a temp repo works.
 - [ ] All tests pass on the Linux worker and on the Windows host.
 
 ## Checkpoint
+Review round 1 FAIL: only AC3 `pip install .` UNVERIFIED (no pip/venv in the container); PO 2026-10-28: AC3 is a host check, evidence in the Host: line below; no code change.
 Done (refactor, runs 1+2 in one go): `src/omi/__init__.py` (2651 lines) split by a scripted pure move into 13 flat modules, `__init__` = docstring + `from .cli import main`, `from .core import version`. Layers (no cycles): core <- tools, creds, scope, github(stdlib) <- catalogs <- workflows <- tasks, upgrade; docker <- core, creds; hooks <- docker, tasks; run <- all but cli/upgrade/github; cli on top. Lines: core 76, hooks 65, scope 103, workflows 120, creds 143, cli 155, github 174, tools 230, docker 276, upgrade 288, tasks 359, catalogs 371, run 408. Cross-module calls are always `module.name` (option A); names inside a module stay bare. No src/omi/template/** or template_shas.json change; pyproject.toml unchanged (`omi:main` still re-exported). No claude/codex adapter (option C left as follow-up).
 Proof of pure move: AST of all 211 top-level statements equals the original once `module.` prefixes are stripped; 110/110 comment lines kept; symtable check: no undefined global in any module.
 Tests (mechanical edits only): `omi.<name>` -> `omi.<module>.<name>`; `omi.<stdlib>` (os, sys, subprocess, shutil, contextlib, importlib, time, getpass, tomllib) -> the stdlib module, imported in the test; the version test patches `omi.core.__file__` (path ends `omi/core.py`). No assertion changed. `grep -nE "omi\.[A-Za-z_]+ *=[^=]" tests/test_omi.py` shows only omi.<module>.<name>.
@@ -40,6 +41,8 @@ Next: Coordinator host checks: `python tests/test_omi.py` on Windows; `pip insta
 - baseline started 2026-10-28 15:07
 - baseline done 2026-10-28 15:24
 - refactor started 2026-10-28 15:24
+- refactor done 2026-10-28 15:38
+- review started 2026-10-28 15:38
 
 ## Reports
 2026-10-28 15:06 omi-agent-architect (claude):
@@ -217,6 +220,15 @@ Next: Coordinator host checks: `python tests/test_omi.py` on Windows; `pip insta
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-28 15:43 omi-agent-reviewer (claude):
+> VERDICT: FAIL
+> - Task AC3: the `pip install .` check was not run. The container has no pip or setuptools, and `python3 -m venv` also fails there, so the built-package check is unverified. The worker's substitute (copying files plus fake metadata into a temp site dir) does not exercise setuptools packaging. `pyproject.toml` is unchanged and its package-data globs cover `template/**`, which makes a packaging failure unlikely. Run `pip install .` in a temp venv, then `python -m omi status` in a temp repo, on the host.
+> 
+> AC: `__init__.py` keeps only the package surface; no module over ~600 lines; no cycles ✓ `__init__.py` is 6 lines (docstring, `from .cli import main`, `from .core import version`). The largest module is `run.py` at 408 lines. All 13 modules import on their own under `python3 -I` with no error.
+> AC: Behaviour unchanged; tests need only mechanical edits ✓ `python3 tests/test_omi.py` exits 0 and prints `ok`, including `test_cli_characterization`. I normalised the test diff by stripping the `omi.<module>.` prefixes. Every removed line reappears as a rename to `omi.<module>.X` or a plain stdlib reference. The only other change is the `omi.__file__` fixture path (`__init__.py` to `core.py`). I found no removed or weakened assertion.
+> AC: Nothing under `template/**` changes, `template_shas.json` unchanged ✓ The diff touches no template path and no `template_shas.json`. `pyproject.toml` is untouched, and `omi:main` still resolves through the `__init__` re-export.
+> AC: The built package ships the template (`pip install .` in a temp venv, then `python -m omi status`) UNVERIFIED No pip, setuptools or venv in the container; see the finding above.
+> AC: All tests pass on the Linux worker ✓ and on the Windows host HOST The Linux run passed. The Windows host run is pending.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -225,3 +237,4 @@ Next: Coordinator host checks: `python tests/test_omi.py` on Windows; `pip insta
 | omi-agent-engineer | claude-opus-5-5 | high | 36 | 13739 | 755217 | 455s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-opus-5-5 | high | 14 | 2328 | 171687 | 164s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-opus-5-5 | high | 56 | 38827 | 3249598 | 618s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 14 | 2947 | 211432 | 247s | 1/1 omi-skill-simplify-review | FAIL d561067 |
