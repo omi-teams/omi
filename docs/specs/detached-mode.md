@@ -40,3 +40,45 @@ Pilot trên một bản clone sạch của `omi-pilot-splitbill`:
 - Một repo chung: mỗi máy chỉ cần clone một lần.
 - Hook SessionStart cấp user: Claude Code tự nạp, không cần file trong repo.
 - Nhận diện qua URL remote: ổn định giữa các máy, khác với đường dẫn local.
+
+
+## State root contract (TASK-097)
+
+The registry lives at `$OMI_STATE/projects/<name>/project.json`, defaulting to
+`~/.omi/state/projects/<name>/project.json`. Each manifest contains:
+
+```json
+{"remote": "https://github.com/owner/repo.git"}
+```
+
+`omi.state.resolve(cwd)` returns `Project(state, code, detached)`. The code root
+is the main checkout, including when invoked from a task worktree. Matching uses
+`origin`: HTTPS, SSH and scp URLs share `host/owner/repo` form, the host is
+lowercase, and a trailing `.git` or slash is ignored. Repository path case is
+preserved. A normalized remote string is also accepted. Invalid manifests and
+multiple matching projects fail explicitly; an unmatched or absent origin keeps
+in-repo mode. `OMI_STATE` is read on each resolution.
+
+The matched project directory owns `.omi/`, `docker/`, configuration, catalogs,
+workflow steps, hooks, reports and usage. Git operations and scope checks still
+use the code worktree (`../<repo>.wt/<TASK-ID>`); commands use the existing
+`task/<TASK-ID>` worktree registration. Detached scope is read from the state task
+file, never from a task copy in the code worktree. Step changes do not commit to
+the code repository. Registry creation and state synchronization belong to the
+separate attach/sync tasks.
+
+Workers mount the project directory at `/state:ro` alongside `/work`. Task,
+skill, rule and reference paths in both Claude and Codex prompts point to
+`/state`; hooks receive the same read-only mount and `OMI_PROJECT_STATE=/state`.
+The shipped post-run hook reads configuration from that root (defaulting to `.`
+when the variable is unset or empty) and keeps `/work` as the test cwd. Engineers report checkpoint
+updates in their final response. The host records reports and usage in the state
+task file; the engineer cannot edit state. Read roles also validate the state
+catalogs, while tests and diffs run against the code worktree. In-repo workers
+retain their `/work/.omi/` paths and existing task commit behavior.
+
+Validation: `python3 tests/test_omi.py` includes temporary registry resolution,
+a full real-git step cycle with clean code status, authoritative scope and guard
+checks, and Docker argv tests for both tools and hooks. Docker execution is
+mocked in these tests; Windows host execution must be recorded separately.
+

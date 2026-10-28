@@ -6,7 +6,7 @@ applies: src/omi/*.py
 # omi-modules
 
 - Call across modules as `from . import x`, then `x.name(...)`; never `from .x import name`.
-- Import only downward in the layer order: cli > run > hooks > docker > tasks/upgrade > workflows > catalogs > tools/creds/scope > core/github.
+- Import only downward in the layer order: cli > run > hooks > docker > tasks/upgrade > workflows > catalogs > tools/creds/scope > state > core/github.
 - No import inside a function to dodge a cycle; fix the layering instead.
 - Keep each module under ~600 lines; a new responsibility gets a new module.
 - `__init__.py` stays the package surface: only re-exports the public names (`main`, `version`); no logic there.

@@ -2,7 +2,7 @@
 # post-run hook: runs in the Docker worker (cwd = worktree, no network, no token). Non-zero exit blocks the move to review.
 need() { command -v "$1" >/dev/null 2>&1 || { echo "post-run: $1 not in the worker image; add it to docker/Dockerfile"; exit 1; }; }
 has_test_script() { while IFS= read -r l || [ -n "$l" ]; do case $l in *'"test"'*) return 0;; esac; done < package.json; return 1; }
-cfg_test() { [ -f .omi/config.json ] && python3 -c 'import json;print(json.load(open(".omi/config.json",encoding="utf-8")).get("test") or "")' 2>/dev/null; }
+cfg_test() { cfg="${OMI_PROJECT_STATE:-.}/.omi/config.json"; [ -f "$cfg" ] && python3 -c 'import json,sys;print(json.load(open(sys.argv[1],encoding="utf-8")).get("test") or "")' "$cfg" 2>/dev/null; }
 t=$(cfg_test)
 [ -n "$t" ] && exec sh -c "$t"
 found=

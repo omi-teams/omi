@@ -5,7 +5,7 @@ import re
 import sys
 from pathlib import Path
 
-from . import catalogs, core, workflows
+from . import catalogs, core, state, workflows
 
 
 STEP_LOG = re.compile(r"^- (\S+) (started|done|skipped|failed) ", re.M)
@@ -101,6 +101,8 @@ def commit_task_file(root, task, msg):
 
 def sync_scope(wt, task, tid):
     """Copy the `scope:` line of the task file on development into the worktree's task file when they differ."""
+    if state.resolve(wt).detached:
+        return
     dev = core.git(wt, "show", f"development:.omi/tasks/{tid}.md")
     if not dev or not task.exists():
         return
@@ -126,27 +128,26 @@ def step(root, tid, action, why=None, now=None):
     Gate steps cannot be skipped; a `po` gate needs the PO approval line."""
     if not re.fullmatch(r"[A-Za-z0-9_-]+", tid):
         sys.exit(f"invalid task id `{tid}`: use letters, digits, `-` and `_`. Nothing changed.")
-    task = Path(root) / ".omi" / "tasks" / f"{tid}.md"
-    wt_task = Path(core.task_worktrees(root).get(tid, root)) / ".omi" / "tasks" / f"{tid}.md"
-    if wt_task.exists():
-        task = wt_task  # step state lives on the task branch
+    project = state.resolve(root)
+    root = project.state
+    task = state.task_file(project, tid)
     if not task.exists():
         sys.exit(f"no task file {task}. Nothing changed.")
     m = core.meta(task)
     wid = m.get("workflow") or workflows.DEFAULT_WORKFLOW
     steps = workflows.get_workflow(root, wid)
     ids = [s["id"] for s in steps]
-    text, state, cur = m["_text"], step_states(m["_text"]), m.get("step") or ""
+    text, events, cur = m["_text"], step_states(m["_text"]), m.get("step") or ""
     if cur and cur not in ids:
         sys.exit(f"{tid}: step `{cur}` is not in workflow {wid} ({', '.join(ids)}). Nothing changed.")
     at = ids.index(cur) if cur else -1
-    open_steps = [s for s in ids[:max(at, 0)] if state.get(s) not in ("done", "skipped")]
+    open_steps = [s for s in ids[:max(at, 0)] if events.get(s) not in ("done", "skipped")]
     if open_steps:
         sys.exit(f"{tid}: at step {cur} but {', '.join(open_steps)} not done or skipped; steps cannot be jumped over. "
                  "Nothing changed.")
     stamp = (now or datetime.datetime.now()).strftime("%Y-%m-%d %H:%M")
     if action == "next":
-        if cur and state.get(cur) not in ("done", "skipped"):
+        if cur and events.get(cur) not in ("done", "skipped"):
             sys.exit(f"{tid}: step {cur} is not done; run `omi step {tid} done` or `skip --why`. Nothing changed.")
         if cur and steps[at]["gate"] == "po" and not po_approved(text, cur):
             sys.exit(f"{tid}: step {cur} is a po gate; add the line `PO approval {cur}: <PO's words>` under `## Steps` first. "
@@ -168,8 +169,8 @@ def step(root, tid, action, why=None, now=None):
                f"output {new['output']}; stop when {new['stop']}")
     elif not cur:
         sys.exit(f"{tid}: no step started; run `omi step {tid} next`. Nothing changed.")
-    elif state.get(cur) in ("done", "skipped"):
-        sys.exit(f"{tid}: step {cur} is already {state[cur]}; run `omi step {tid} next`. Nothing changed.")
+    elif events.get(cur) in ("done", "skipped"):
+        sys.exit(f"{tid}: step {cur} is already {events[cur]}; run `omi step {tid} next`. Nothing changed.")
     elif action == "back":
         if steps[at]["gate"] != "review":
             sys.exit(f"{tid}: step {cur} is not a review gate; `back` only fails a started review step. Nothing changed.")
@@ -207,16 +208,16 @@ def step(root, tid, action, why=None, now=None):
         sys.exit("usage: omi step <TASK-ID> next|done|back|skip --why <reason>")
     task.write_text(text, encoding="utf-8")
     print(msg)
-    if task == Path(root) / ".omi" / "tasks" / f"{tid}.md":  # the task branch's copy is committed with the branch
+    if not project.detached and task == Path(root) / ".omi" / "tasks" / f"{tid}.md":  # the task branch's copy is committed with the branch
         commit_task_file(Path(root), task, f"chore({tid}): step {core.parse(text).get('step')} {action}")
     return 0
 
 
 def tasks(root):
-    found = {f.stem: core.meta(f) for f in sorted((root / ".omi" / "tasks").glob("TASK-*.md"))}
-    # a task's live checkpoint is on its branch, in its worktree
-    for tid, wt in core.task_worktrees(root).items():
-        f = Path(wt) / ".omi" / "tasks" / f"{tid}.md"
+    project = state.resolve(root)
+    found = {f.stem: core.meta(f) for f in sorted((project.state / ".omi" / "tasks").glob("TASK-*.md"))}
+    for tid, wt in core.task_worktrees(project.code).items():
+        f = state.task_file(project, tid) if project.detached else Path(wt) / ".omi" / "tasks" / f"{tid}.md"
         if f.exists():
             found[tid] = core.meta(f) | {"worktree": wt}
     return dict(sorted(found.items()))
@@ -268,9 +269,11 @@ def drift(wt, tid):
     """One line: commits ahead of development, dirty flag, stale-checkpoint warning."""
     ahead = core.git(wt, "rev-list", "--count", "development..HEAD")
     dirty = bool(core.git(wt, "status", "--porcelain"))
+    line = f"ahead of development: {ahead if ahead is not None else '?'}, uncommitted: {'yes' if dirty else 'no'}"
+    if state.resolve(wt).detached:
+        return line  # Detached checkpoints are not part of code history.
     last = core.git(wt, "log", "-1", "--format=%H", "--", f".omi/tasks/{tid}.md")
     after = core.git(wt, "rev-list", "--count", f"{last}..HEAD") if last else ahead
-    line = f"ahead of development: {ahead if ahead is not None else '?'}, uncommitted: {'yes' if dirty else 'no'}"
     return line + (" - WARNING checkpoint stale" if after not in (None, "0") else "")
 
 

@@ -1,7 +1,7 @@
 ---
 id: TASK-097
 title: Detached state root: .omi state outside the code repo
-status: in-progress
+status: done
 depends: TASK-095, TASK-106
 plan: PLAN-004
 scope: src/omi/*.py, tests/test_omi.py, docs/specs/detached-mode.md, .omi/rules/omi-modules.md, .omi/rules/CATALOG.md, src/omi/template/dot-omi/hooks/post-run.sh
@@ -13,19 +13,244 @@ model: opus
 effort: high
 step_settings:
 workflow: omi-flow-feature-sensitive
-step:
+step: accept
 ---
 ## Goal
 Every omi command can read and write `.omi/`, `docker/` and hooks from a state dir that is not the code repo's git root, chosen by the code repo's remote URL; in-repo projects work as before.
 
 ## Acceptance criteria
-- [ ] A project is detached when `~/.omi/state/projects/<name>/project.json` names the code repo's `origin` URL (normalised: https/ssh, trailing `.git`); `OMI_STATE` overrides `~/.omi/state`. One function in a new `src/omi/state.py` resolves (state root, code root); every command uses it. Tested with temp dirs.
-- [ ] In a detached project, `status`, `step`, `plans`, `skills check`, `hook` and `run` read and write only the state dir; git branches, worktrees (`../<repo>.wt/<ID>`) and the scope check act on the code repo; the code repo's `git status` stays clean after a full `omi step` cycle. Tested with real git.
-- [ ] `omi run` gives the agent the task file and catalogs from the state dir inside the container (mounted read-only next to the worktree); the engineer never writes into the state dir. Tested.
-- [ ] All tests pass on the Linux worker and the Windows host; in-repo mode behaviour is unchanged (existing tests untouched or only extended).
+- [x] A project is detached when `~/.omi/state/projects/<name>/project.json` names the code repo's `origin` URL (normalised: https/ssh, trailing `.git`); `OMI_STATE` overrides `~/.omi/state`. One function in a new `src/omi/state.py` resolves (state root, code root); every command uses it. Tested with temp dirs.
+- [x] In a detached project, `status`, `step`, `plans`, `skills check`, `hook` and `run` read and write only the state dir; git branches, worktrees (`../<repo>.wt/<ID>`) and the scope check act on the code repo; the code repo's `git status` stays clean after a full `omi step` cycle. Tested with real git.
+- [x] `omi run` gives the agent the task file and catalogs from the state dir inside the container (mounted read-only next to the worktree); the engineer never writes into the state dir. Tested.
+- [x] All tests pass on the Linux worker and the Windows host; in-repo mode behaviour is unchanged (existing tests untouched or only extended).
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
-Next:
+Done: Retained the detached resolver, state-based command routing, code-repo git/scope operations, read-only /state mounts, and shipped hook configuration fix. Made the detached regression tests portable: compare the reported Git worktree as a Path, and pass forward-slash state paths to the shell hook. No production changes were necessary in this pass.
+Not done: The final acceptance criterion remains unchecked because this Linux worker cannot execute the suite on the Windows host. Live Docker validation is also unavailable; Docker calls are mocked by the suite.
+Tests: Coverage includes test_detached_resolution (temporary registries, URL normalization and OMI_STATE), test_detached_commands_and_steps/test_detached_project_commands (state routing and a real-git clean step cycle), test_detached_scope_and_guard (code scope), test_detached_run_and_hooks (both agents, catalogs and read-only mounts), test_detached_default_hook_config (actual shell hook, configuration precedence, spaces, code cwd and fallback), plus existing in-repo regressions. After the portability edits, python3 tests/test_omi.py completed all 70 test functions on Linux/Python 3.13.5 with final output ok and exit 0 (PYTHONDONTWRITEBYTECODE=1; TMPDIR under /work). No unavailable-test skip notices were emitted. Real Git fixtures and the shipped shell hook executed; Docker was mocked. Windows-only cmd execution did not run on Linux. The initial pre-edit full suite also completed with exit 0.
+Next: Coordinator reviews the scoped test changes and runs python3 tests/test_omi.py on Windows before closing the cross-platform criterion. No scope expansion is needed and no commit has been made.
+
+Host: python tests/test_omi.py (Windows host, commit test(state): make detached regressions portable) -> exit 0, ok
+
+## Steps
+- plan started 2026-10-28 21:26
+- plan done 2026-10-28 21:26
+- architect started 2026-10-28 21:26
+- architect done 2026-10-28 21:29
+- build started 2026-10-28 21:29
+- build done 2026-10-28 22:10
+- review started 2026-10-28 22:10
+- review failed 2026-10-28 22:10
+- build started 2026-10-28 22:10
+- build done 2026-10-28 22:26
+- review started 2026-10-28 22:26
+- review done 2026-10-28 22:32
+- security started 2026-10-28 22:32
+
+- PO approval accept: Accept, merge (ValueError on a bad project.json follows in TASK-098)
+- security done 2026-10-28 22:38
+- accept started 2026-10-28 22:38
+- accept done 2026-10-28 22:38
+
+## Reports
+2026-10-28 21:28 omi-agent-architect (claude):
+> RECOMMEND: B. Add a `state.Project(state, code, detached)` resolver and pass it into every command entry point; only two task helpers branch on mode. Every function then says which root it uses, and in-repo mode keeps its current paths and commits exactly.
+> OPTIONS: A, resolve state root and code root once in `cli` and replace `"."` with them: small diff, but the hidden mode differences stay scattered (where the live task file lives, whether scope is read via `git show development:`, `/work/` prompt paths, `commit_task_file`), so in-repo behaviour can drift. B, a `Project` value plus mode helpers: touches every command signature and needs a new module layer, but each mode difference lives in one place and can be tested. C, copy or symlink the state into the worktree and keep the code as it is: almost no code, but it breaks the clean `git status` criterion and the engineer could write into the state.
+> STRUCTURE: New `state.py` (imports `core` only; layer it as `tools/creds/scope > state > core/github`):
+> - `normalise_url(url)`: https, ssh and scp forms all become `host/owner/repo`, lowercase host, no `.git`.
+> - `state_home()`: `OMI_STATE` or `~/.omi/state`, read at call time, never cached.
+> - `resolve(cwd)`: code = `main_checkout` or toplevel; matches `projects/*/project.json` `{"remote": <normalised>}` (this format is the contract for TASK-098).
+> - `task_file(p, tid)`: in-repo, the worktree copy else the main copy; detached, `state/.omi/tasks`.
+> - `task_scope(p, wt, tid)`: in-repo, `git show development:`; detached, the state file.
+> - `catalog_root(p, wt)`: in-repo `wt`; detached `p.state`.
+> 
+> [... truncated ...]
+> - E2: `scope`/`hooks`/`docker`/`run` detached paths and the ro `/state` mount; real-git test of a full `omi step` cycle plus a run argv test asserting the code repo's `git status` stays clean. Scope: `src/omi/scope.py`, `hooks.py`, `docker.py`, `run.py`, `tools.py`, `tests/test_omi.py`, `docs/specs/detached-mode.md`.
+2026-10-28 21:53 omi-agent-engineer (codex):
+> NEEDS SCOPE: `src/omi/template/dot-omi/hooks/post-run.sh` — honor detached configuration via `OMI_PROJECT_STATE`.
+> 
+> - Changed: `src/omi/{state,cli,tasks,scope,hooks,run,docker,tools,upgrade}.py`; `tests/test_omi.py`.
+> - Also changed: detached-mode spec, module rule/catalog, TASK-097 checkpoint.
+> - Suggested commit: `feat(state): support detached project roots`
+> - Tests: `python3 tests/test_omi.py` — 69 functions completed; new default-hook regression failed.
+> - Open: hook template fix; Windows/live Docker unverified. No commit made.
+2026-10-28 21:56 hook post-run FAILED (exit 1):
+> OMI: outside.py is outside the scope of TASK-097. Stop and report NEEDS SCOPE to the Coordinator.
+> OMI: projects/sample/.omi/tasks/TASK-097.md is outside the task worktree.
+> OMI: .omi/tasks/TASK-097.md is outside the scope of TASK-097. Stop and report NEEDS SCOPE to the Coordinator.
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> [... truncated ...]
+> AssertionError: ('detached hook ignored state test command', 'post-run: no tests found, nothing to run\n', '')
+2026-10-28 22:07 omi-agent-engineer (codex):
+> DONE — detached hook configuration fixed; checkpoint updated.
+> Changed: `src/omi/template/dot-omi/hooks/post-run.sh`, `tests/test_omi.py`, `docs/specs/detached-mode.md`, `.omi/tasks/TASK-097.md`.
+> Suggested commit: `fix(hooks): honor detached project test configuration`
+> Tests: `python3 tests/test_omi.py` — all 70 functions completed successfully on Linux.
+> Open: Windows-host validation pending; Docker was mocked, not executed live.
+> No commit made.
+2026-10-28 22:09 hook post-run passed:
+> OMI: outside.py is outside the scope of TASK-097. Stop and report NEEDS SCOPE to the Coordinator.
+> OMI: projects/sample/.omi/tasks/TASK-097.md is outside the task worktree.
+> OMI: .omi/tasks/TASK-097.md is outside the scope of TASK-097. Stop and report NEEDS SCOPE to the Coordinator.
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> [... truncated ...]
+> ok
+2026-10-28 22:22 omi-agent-engineer (codex):
+> BLOCKED — Windows-host validation remains pending.
+> Changed: [tests/test_omi.py](/work/tests/test_omi.py) portability fixes; [TASK-097.md](/work/.omi/tasks/TASK-097.md) checkpoint updated.
+> Suggested commit: `test(state): make detached regressions portable`
+> Tests: `python3 tests/test_omi.py` — all 70 functions completed successfully on Linux, exit 0.
+> Open: Windows-only execution unverified; Docker mocked, not run live. No commit made.
+2026-10-28 22:25 hook post-run passed:
+> OMI: outside.py is outside the scope of TASK-097. Stop and report NEEDS SCOPE to the Coordinator.
+> OMI: projects/sample/.omi/tasks/TASK-097.md is outside the task worktree.
+> OMI: .omi/tasks/TASK-097.md is outside the scope of TASK-097. Stop and report NEEDS SCOPE to the Coordinator.
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> [... truncated ...]
+> ok
+2026-10-28 22:31 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> 
+> I found no defects in the diff. `python3 tests/test_omi.py` ran to completion on Linux and printed `ok` (exit 0). I read the diff and the passing run, but did not run the detached flow by hand.
+> 
+> - Existing tests were edited, not only extended: `test_download_cache_scope`, `test_worker` and `test_cli_correctness` have new mock branches for the extra `git rev-parse` and `remote` calls. They are needed because every command now resolves the project first, and I saw no weakened assertions.
+> - `cli.main` calls `state.resolve()` before dispatching `upgrade`, `skills`, `rules` and similar commands. A malformed or duplicate `project.json` therefore raises a bare `ValueError` traceback instead of a clean exit message. This is minor and the failure is explicit.
+> 
+> AC: A project is detached when `projects/<name>/project.json` names the origin URL (normalised); `OMI_STATE` overrides; one function in `src/omi/state.py` resolves; every command uses it. ✓ `state.resolve` and `state.normalise_url` are in the diff. `test_detached_resolution` passes and covers https, ssh and scp URLs, a `.git` suffix, the `OMI_STATE` override, the default home, duplicate manifests and an invalid manifest. Each of the `cli.py` commands I read resolves through `state`.
+> 
+> AC: In a detached project, the commands read and write only the state dir; git, worktrees and the scope check act on the code repo; the code repo's `git status` stays clean after a full `omi step` cycle. ✓ `test_detached_commands_and_steps` uses real git and asserts the code HEAD is unchanged. It also asserts empty `git status` in the code repo and the worktree, and no `.omi` directory in either. `test_detached_scope_and_guard` shows a counterfeit task file in the worktree cannot widen the scope.
+> 
+> [... truncated ...]
+> - HOST all tests pass on the Windows host: this cannot run in my container.
+2026-10-28 22:38 omi-agent-security-reviewer (claude):
+> VERDICT: PASS
+> - No defects found. `python3 tests/test_omi.py` ran to the end and printed `ok`. I read every hunk of the diff.
+> - Scope and trust: in detached mode the scope check reads the state task file and ignores the task copy in the worktree. `guard` and `out_of_scope` both flag a task file written into the worktree, and `test_detached_scope_and_guard` covers this.
+> - Mounts and hook config: `worker_argv` adds `:ro` to every extra mount, so `/state` is read-only. The post-run hook reads config only from `OMI_PROJECT_STATE`. That variable is set only for detached runs, so in-repo behaviour is unchanged.
+> - Rules: the layer order in `omi-modules.md` and the new imports agree, no import is hidden inside a function, and the largest module (`run.py`) is 423 lines.
+> - The nested same-quote f-strings in `tools.py` need Python 3.12 or later. The python rule requires 3.13, so that is fine.
+> UNVERIFIED: `cli.main` calls `state.resolve()` before dispatching, so a malformed or duplicate `project.json` raises a bare `ValueError` traceback, not a clean exit message. The earlier reviewer noted this as minor. I did not trigger it by hand.
+> UNVERIFIED: the final acceptance criterion needs a Windows host run, and Docker was mocked, so I could not test either here.
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read | verdict |
+|---|---|---|---|---|---|---|---|---|
+| omi-agent-architect | claude-opus-5-5 | high | 18 | 6400 | 354949 | 77s | - | n/a |
+| omi-agent-engineer | gpt-6-astra (codex) | high | 3219774 | 28128 | 3140608 | 1437s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-engineer | gpt-6-astra (codex) | high | 1498364 | 6368 | 1447680 | 615s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-engineer | gpt-6-astra (codex) | high | 1867816 | 5815 | 1807744 | 687s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 5101 | 186647 | 266s | - | PASS 5dbe2e1 |
+| omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 16 | 3814 | 465260 | 287s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS 5dbe2e1 |

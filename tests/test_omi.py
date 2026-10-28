@@ -787,6 +787,8 @@ def test_download_cache_scope():
     try:
         omi.scope.task_scope = lambda *args: ["src/**"]
         def run(argv, **kw):
+            if "rev-parse" in argv or "remote" in argv:
+                return subprocess.CompletedProcess(argv, 1, "")
             paths = ("?? .omi-cache/go-mod/example/file\0?? .omi-cache/npm/pkg/.github/config\0"
                      "?? .omi-cache/pip/pkg\0!! .omi-cache/npm/ignored\0 M .omi-cache/pip/tracked\0"
                      "?? .omi-cache-other/file\0?? src/ok.py\0?? outside.py\0")
@@ -1140,6 +1142,10 @@ def test_worker():
     def run(cmd, **kw):
         if "--git-common-dir" in cmd:
             return R(str(Path(cmd[2]) / "shared.git"))
+        if "--show-toplevel" in cmd:
+            return R(str(cmd[2]))
+        if "remote" in cmd:
+            return R(rc=1)
         calls.append((cmd, kw))
         if cmd[:3] == ["docker", "image", "inspect"] and st.get("build_fail"):
             return R(rc=1)
@@ -1234,7 +1240,7 @@ def test_worker():
             assert omi.scope.out_of_scope(wt, "TASK-001") == ["GIT~1/x", "src/GITATT~1", "a/gitmod~2", "GITIGN~1.TXT", "x/GITHUB~3"]
             status = R(" M src/.gitattributes\0 M src/ok.py\0")
             subprocess.run = lambda cmd, **kw: (R("---\nscope: src/.gitattributes, src/ok.py\n---\n") if "show" in cmd
-                                                    else status)
+                                                    else status if "status" in cmd else run0(cmd, **kw))
             assert omi.scope.out_of_scope(wt, "TASK-001") == []
             real_islink = os.path.islink
             os.path.islink = lambda p: str(p).endswith("ok.py")
@@ -1342,6 +1348,8 @@ def test_cli_correctness():
         calls = []
 
         def development_scope(cwd, *args):
+            if args[0] in ("rev-parse", "remote"):
+                return None
             assert args == ("show", "development:.omi/tasks/TASK-001.md")
             calls.append(args)
             return "---\nscope: src/**\n---\n"
@@ -4109,7 +4117,270 @@ def test_cli_characterization():
         assert rc == 0 and "[planned] TASK-001 T1\n" in out
 
 
+
+@contextlib.contextmanager
+def detached_project():
+    """A real code repo/worktree and a separate registry, never touching host state."""
+    from unittest.mock import patch
+    with tempfile.TemporaryDirectory() as d:
+        base = Path(d).resolve()
+        code, home = base / "code", base / "state"
+        project = home / "projects" / "sample"
+        code.mkdir()
+        git(code, "init", "-q", "-b", "development")
+        (code / "app.py").write_text("value = 1\n", encoding="utf-8")
+        git(code, "add", "app.py")
+        git(code, "commit", "-qm", "initial code")
+        git(code, "remote", "add", "origin", "git@EXAMPLE.org:team/sample.git")
+        with patch.dict(os.environ, {"OMI_STATE": str(home), "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")}):
+            with contextlib.redirect_stdout(io.StringIO()):
+                omi.upgrade.init(project, detached=True)
+            git(home, "init", "-q", "-b", "main")
+            (project / "project.json").write_text(json.dumps({"remote": "https://example.org/team/sample"}), encoding="utf-8")
+            cfg = project / ".omi" / "config.json"
+            data = json.loads(cfg.read_text(encoding="utf-8"))
+            data["test"] = "python3 -c 'print(123)'"
+            cfg.write_text(json.dumps(data), encoding="utf-8")
+            task = project / ".omi" / "tasks" / "TASK-097.md"
+            task.write_text("---\nid: TASK-097\ntitle: Detached test\nstatus: in-progress\n"
+                            "scope: app.py\nrole: omi-agent-engineer\nworkflow: omi-flow-feature\n"
+                            "skills: omi-skill-lean-implementation\nrefs: postgres-conventions\n---\n## Acceptance criteria\n- [x] test\n\n## Checkpoint\nDone:\n",
+                            encoding="utf-8")
+            wt = base / "code.wt" / "TASK-097"
+            git(code, "worktree", "add", "-qb", "task/TASK-097", str(wt))
+            yield code, project, wt, task
+
+
+def test_detached_resolution():
+    from unittest.mock import patch
+    for url in ("https://EXAMPLE.org/team/sample.git/", "ssh://git@example.org/team/sample.git",
+                "git@EXAMPLE.org:team/sample", "example.org/team/sample"):
+        assert omi.state.normalise_url(url) == "example.org/team/sample"
+    assert omi.state.normalise_url("https://example.org/Team/Sample.git") == "example.org/Team/Sample"
+    with detached_project() as (code, project, wt, task):
+        for cwd in (code, wt, wt / "subdir"):
+            cwd.mkdir(exist_ok=True)
+            found = omi.state.resolve(cwd)
+            assert found == omi.state.Project(project, code, True)
+            assert omi.state.resolve(found) is found
+            assert omi.state.task_file(found, task.stem) == task
+        with patch.dict(os.environ), patch.object(Path, "home", return_value=project.parent):
+            os.environ.pop("OMI_STATE", None)
+            default = project.parent / ".omi" / "state"
+            assert omi.state.state_home() == default
+            assert not omi.state.resolve(code).detached
+            registered = default / "projects" / "other-name"
+            registered.mkdir(parents=True)
+            shutil.copyfile(project / "project.json", registered / "project.json")
+            assert omi.state.resolve(wt) == omi.state.Project(registered, code, True)
+        with patch.dict(os.environ, {"OMI_STATE": str(project / "missing")}):
+            assert omi.state.resolve(wt) == omi.state.Project(wt, code)
+        manifest = project / "project.json"
+        manifest.write_text('{"remote":"https://example.org/elsewhere.git"}', encoding="utf-8")
+        assert not omi.state.resolve(code).detached
+        manifest.write_text('{"remote":"example.org/team/sample"}', encoding="utf-8")
+        duplicate = project.parent / "duplicate"
+        duplicate.mkdir()
+        shutil.copyfile(manifest, duplicate / "project.json")
+        try:
+            omi.state.resolve(code)
+        except ValueError as e:
+            assert "multiple detached projects" in str(e)
+        else:
+            raise AssertionError("ambiguous registry accepted")
+        (duplicate / "project.json").write_text("[]", encoding="utf-8")
+        try:
+            omi.state.resolve(code)
+        except ValueError as e:
+            assert "expected a remote string" in str(e)
+        else:
+            raise AssertionError("invalid registry accepted")
+
+
+def detached_cli(cwd, *args):
+    out = io.StringIO()
+    out.reconfigure = lambda **kw: None
+    with contextlib.chdir(cwd), contextlib.redirect_stdout(out):
+        try:
+            omi.cli.main(list(args))
+        except SystemExit as e:
+            assert e.code in (None, 0), (e, out.getvalue())
+    return out.getvalue()
+
+
+def test_detached_commands_and_steps():
+    from unittest.mock import patch
+    with detached_project() as (code, project, wt, task):
+        head = omi.core.git(code, "rev-parse", "HEAD")
+        with patch.object(omi.docker, "running_workers", return_value=[]), \
+                patch.object(omi.docker, "full_volumes", return_value=[]):
+            out = detached_cli(wt, "status")
+        assert "branch: task/TASK-097" in out and "Detached test" in out
+        reported_wt = next(line.strip().removeprefix("worktree: ") for line in out.splitlines()
+                           if line.strip().startswith("worktree: "))
+        assert Path(reported_wt) == wt  # Git uses forward slashes on Windows too.
+        assert "skills ok" in detached_cli(code, "skills", "check", ".omi/tasks/TASK-097.md")
+        for cmd in ("plans", "rules", "references", "skills", "agents", "workflows"):
+            assert str(project) in detached_cli(wt, cmd)
+        detached_cli(code, "skills", "--check")
+        detached_cli(code, "workflows", "--check")
+        for step in ("plan", "build", "review", "accept"):
+            detached_cli(wt, "step", task.stem, "next")
+            assert omi.core.meta(task)["step"] == step
+            if step == "accept":
+                omi.tasks.append_note(task, "Steps", "PO approval accept: approved in test")
+            detached_cli(code, "step", task.stem, "done")
+        assert "complete" in detached_cli(wt, "step", task.stem, "next")
+        assert omi.tasks.step_states(task.read_text(encoding="utf-8")) == dict.fromkeys(
+            ("plan", "build", "review", "accept"), "done")
+        assert omi.core.git(code, "rev-parse", "HEAD") == head
+        assert omi.core.git(code, "status", "--porcelain") == ""
+        assert omi.core.git(wt, "status", "--porcelain") == ""
+        assert not (code / ".omi").exists() and not (wt / ".omi").exists()
+
+
+
+def test_detached_project_commands():
+    from unittest.mock import patch
+    with detached_project() as (code, project, wt, task):
+        detached_cli(wt, "init")
+        assert not (project / ".git").exists()
+        assert omi.core.main_checkout(project) == project.parents[1]
+        detached_cli(code, "upgrade", "--apply")
+        assert (project / ".omi" / "version").read_text(encoding="utf-8").strip() == omi.core.version()
+        def github_call(po):
+            assert Path.cwd() == code and not po
+        with patch.object(omi.github, "github", side_effect=github_call) as github:
+            detached_cli(wt, "github")
+            github.assert_called_once_with(False)
+        # Both cleanup and status identify workers by the detached project, not its shared state repo.
+        real_run, calls = subprocess.run, []
+        def execute(argv, **kw):
+            if argv[0] != "docker":
+                return real_run(argv, **kw)
+            calls.append(argv)
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        with patch.object(subprocess, "run", side_effect=execute):
+            detached_cli(wt, "clean")
+            detached_cli(wt, "status")
+        assert any("label=omi-repo=sample" in argv for argv in calls if argv[:2] == ["docker", "ps"])
+        assert not any("label=omi-repo=state" in argv for argv in calls)
+        task2 = task.with_name("TASK-098.md")
+        task2.write_text("---\nid: TASK-098\nstatus: planned\nscope: other.py\n---\n", encoding="utf-8")
+        assert "parallel ok" in detached_cli(wt, "parallel", task.stem, task2.stem)
+        assert omi.core.git(code, "status", "--porcelain") == ""
+        assert omi.core.git(wt, "status", "--porcelain") == ""
+
+
+def test_detached_scope_and_guard():
+    with detached_project() as (code, project, wt, task):
+        assert omi.scope.task_scope(wt, task.stem) == ["app.py"]
+        (wt / "app.py").write_text("value = 2\n", encoding="utf-8")
+        (wt / "outside.py").write_text("bad\n", encoding="utf-8")
+        assert omi.scope.out_of_scope(wt, task.stem) == ["outside.py"]
+        git(wt, "add", "app.py", "outside.py")
+        git(wt, "commit", "-qm", "scope fixture")
+        assert omi.scope.out_of_scope(wt, task.stem, committed=True) == ["outside.py"]
+        assert omi.tasks.drift(wt, task.stem) == "ahead of development: 1, uncommitted: no"
+        def guard(path):
+            return omi.scope.guard(io.StringIO(json.dumps({"cwd": str(wt), "agent_type": "omi-agent-engineer",
+                                                          "tool_input": {"file_path": str(path)}})))
+        assert guard(wt / "app.py") == 0
+        assert guard(wt / "outside.py") == 2
+        assert guard(task) == 2
+        # A counterfeit task in the code worktree cannot widen detached scope.
+        fake = wt / ".omi" / "tasks" / task.name
+        fake.parent.mkdir(parents=True)
+        fake.write_text("---\nscope: **\n---\n", encoding="utf-8")
+        assert omi.scope.task_scope(wt, task.stem) == ["app.py"]
+        assert omi.scope.out_of_scope(wt, task.stem) == [".omi/tasks/TASK-097.md"]
+        assert guard(fake) == 2
+
+
+def test_detached_run_and_hooks():
+    from unittest.mock import patch
+    real_run = subprocess.run
+    with detached_project() as (code, project, wt, task):
+        calls = []
+        def execute(argv, **kw):
+            if argv[0] != "docker":
+                return real_run(argv, **kw)
+            calls.append((argv, kw))
+            if argv[:2] == ["docker", "run"]:
+                if argv[-2:] == ["sh", "-s"]:
+                    return subprocess.CompletedProcess(argv, 0, b"state hook\n", b"")
+                result = ({"result": "DONE detached", "usage": {}} if "claude" in argv else
+                          {"type": "item.completed", "item": {"type": "agent_message", "text": "DONE detached"}})
+                return subprocess.CompletedProcess(argv, 0, json.dumps(result), "")
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        with patch.object(subprocess, "run", side_effect=execute), \
+                patch.object(omi.docker, "need_docker"), \
+                patch.object(omi.creds, "claude_auth", return_value=(omi.creds.TOKEN_ENV, "fake", None)), \
+                patch.object(omi.creds, "tool_secret", return_value=(omi.creds.CODEX_ENV, "fake", None)):
+            for tool in ("claude", "codex"):
+                detached_cli(code, "run", "omi-agent-engineer", task.stem, "--tool", tool)
+                argv = next(a for a, _ in reversed(calls) if a[:2] == ["docker", "run"] and tool in a)
+                assert f"{project}:/state:ro" in argv and f"{wt}:/work" in argv
+                prompt = argv[argv.index("-p") + 1] if tool == "claude" else argv[-1]
+                assert "Task file: /state/.omi/tasks/TASK-097.md" in prompt
+                assert "/state/.omi/skills/" in prompt and "read-only" in prompt
+                assert "/state/.omi/rules/python.md" in prompt
+                assert "/state/.omi/references/postgres-conventions.md" in prompt
+                assert (project / ".omi" / "skills" / "CATALOG.md").is_file()
+                assert "Do not edit the task or catalogs" in prompt
+                system = argv[argv.index("--append-system-prompt") + 1] if tool == "claude" else prompt
+                assert "replace instructions to edit the task" in system
+                assert "Tests: python3 -c 'print(123)'" in prompt
+                assert str(project) not in prompt
+            detached_cli(wt, "hook", "post-run", task.stem)
+            argv, kwargs = next((a, k) for a, k in reversed(calls) if a[:2] == ["docker", "run"])
+            assert f"{project}:/state:ro" in argv and f"{wt}:/work:ro" in argv
+            assert "OMI_PROJECT_STATE=/state" in argv
+            assert kwargs["input"] == (project / ".omi" / "hooks" / "post-run.sh").read_bytes().replace(b"\r\n", b"\n")
+            report = task.read_text(encoding="utf-8")
+            assert "DONE detached" in report and "hook post-run passed" in report and "## Usage" in report
+            # Read roles validate the detached catalogs and code tests before launching.
+            with patch.object(omi.catalogs, "check_all_skills", wraps=omi.catalogs.check_all_skills) as check, \
+                    patch.object(omi.run, "test_command", return_value=[sys.executable, "-c", "print('code tests')"]):
+                detached_cli(wt, "run", "omi-agent-reviewer", task.stem)
+                check.assert_called_once_with(project)
+            argv = next(a for a, _ in reversed(calls) if a[:2] == ["docker", "run"] and "claude" in a)
+            assert f"{wt}:/work:ro" in argv and f"{project}:/state:ro" in argv
+        assert omi.core.git(code, "status", "--porcelain") == ""
+        assert omi.core.git(wt, "status", "--porcelain") == ""
+
+
+
+def test_detached_default_hook_config():
+    """The shipped hook must read detached config while running tests in the code worktree."""
+    with detached_project() as (code, project, wt, task):
+        hook = project / ".omi" / "hooks" / "post-run.sh"
+        local_cfg = wt / ".omi" / "config.json"
+        local_cfg.parent.mkdir()
+        local_cfg.write_text(json.dumps({"test": "exit 9"}), encoding="utf-8")
+        for root in (project, project / "state with spaces"):
+            cfg = root / ".omi" / "config.json"
+            cfg.parent.mkdir(parents=True, exist_ok=True)
+            cfg.write_text(json.dumps({"test": "test -f app.py && exit 7"}), encoding="utf-8")
+            result = subprocess.run([omi.run.host_bash() or "sh", str(hook)], cwd=wt,
+                                    env={**os.environ, "OMI_PROJECT_STATE": root.as_posix()},
+                                    capture_output=True, encoding="utf-8", errors="replace")
+            assert result.returncode == 7, ("detached hook ignored state config or code cwd", result.stdout, result.stderr)
+        for value in (None, ""):
+            env = {k: v for k, v in os.environ.items() if k != "OMI_PROJECT_STATE"}
+            if value is not None:
+                env["OMI_PROJECT_STATE"] = value
+            result = subprocess.run([omi.run.host_bash() or "sh", str(hook)], cwd=wt, env=env,
+                                    capture_output=True, encoding="utf-8", errors="replace")
+            assert result.returncode == 9, ("in-repo hook ignored local config", result.stdout, result.stderr)
+
+
 if __name__ == "__main__":
+    test_detached_resolution()
+    test_detached_commands_and_steps()
+    test_detached_project_commands()
+    test_detached_scope_and_guard()
+    test_detached_run_and_hooks()
     test_step_settings_format_and_docs()
     test_upgrade_gitattributes()
     test_model_catalog_and_task_start()
@@ -4174,4 +4445,5 @@ if __name__ == "__main__":
     test_github_private()
     test_task_flow_commit_scope_sync_warn()
     test_cli_characterization()
+    test_detached_default_hook_config()
     print("ok")
