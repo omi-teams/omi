@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature
-step: review
+step: accept
 ---
 ## Goal
 On the PO's Windows host `test_command` picked `%LOCALAPPDATA%\Microsoft\WindowsApps\bash.exe`, a WSL app alias like System32's, and every `omi run` pre-check failed with `execvpe(/bin/bash) failed` (no WSL distro). Git Bash at `C:\Program Files\Git\bin\bash.exe` was installed but `Git\bin` is not on PATH (only `Git\cmd`). Found 2026-10-28 while starting TASK-094.
@@ -31,6 +31,7 @@ Host: python tests/test_omi.py (Windows host, PATH as is, Git\cmd only) -> exit 
 Next: merge
 
 ## Steps
+PO approval accept: Accept, merge
 - plan started 2026-10-28 14:30
 - plan done 2026-10-28 14:30
 - build started 2026-10-28 14:30
@@ -40,6 +41,9 @@ Next: merge
 - build started 2026-10-28 14:41
 - build done 2026-10-28 14:48
 - review started 2026-10-28 14:48
+- review done 2026-10-28 14:53
+- accept started 2026-10-28 14:53
+- accept done 2026-10-28 14:56
 
 ## Reports
 2026-10-28 14:32 omi-agent-engineer (claude):
