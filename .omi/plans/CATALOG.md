@@ -4,3 +4,4 @@
 - PLAN-000 (done): Example plan
 - PLAN-001 (done): omi 0.3.0 - gaps from the first omi-board session, and omi upgrade
 - PLAN-002 (active): omi 0.3.1 - gaps from the second omi-board session
+- PLAN-003 (active): omi 0.3.2 - upgrade stamp gap and host-only review checks
