@@ -1,7 +1,7 @@
 ---
 id: TASK-095
 title: Bump omi to 0.3.2
-status: in-progress
+status: done
 depends: TASK-093, TASK-094, TASK-096
 plan: PLAN-003
 scope: pyproject.toml, README.md, tests/test_omi.py, .omi/version, src/omi/template_shas.json
@@ -13,25 +13,28 @@ model: haiku
 effort: low
 step_settings:
 workflow: omi-flow-feature
-step: build
+step: review
 ---
 ## Goal
 Release prep for PLAN-003: version 0.3.2 everywhere `omi --version` and the rc tag read it, as in TASK-092.
 
 ## Acceptance criteria
-- [ ] `omi --version` prints 0.3.2; `.omi/version` is 0.3.2; 0.3.2 template shas recorded.
-- [ ] All tests pass on the Linux worker and the Windows host.
+- [x] `omi --version` prints 0.3.2; `.omi/version` is 0.3.2; 0.3.2 template shas recorded.
+- [x] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
 Done: version 0.3.2 in pyproject.toml, .omi/version, README (install tag + --version), tests/test_omi.py version assertion; template_shas.json 0.3.2 entry recorded after all edits (62 files, equals omi.template_shas()); 0.3.1 entry untouched.
 Not done: Windows host run (Coordinator).
 Tests: `python3 tests/test_omi.py` exit 0 (Linux worker); `PYTHONPATH=src python3 -m omi --version` -> omi 0.3.2.
-Next: Coordinator commits; Windows host runs tests.
+Host: python tests/test_omi.py (Windows) -> exit 0, ok; 0.3.2 shas recomputed on host = recorded (62/62)
+Next: merge
 
 ## Steps
 - plan started 2026-10-28 16:52
 - plan done 2026-10-28 16:52
 - build started 2026-10-28 16:52
+- build done 2026-10-28 17:00
+- review started 2026-10-28 17:00
 
 ## Reports
 2026-10-28 16:57 omi-agent-engineer (claude):
@@ -88,8 +91,15 @@ Next: Coordinator commits; Windows host runs tests.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-28 17:05 omi-agent-reviewer (claude):
+> ```
+> VERDICT: PASS
+> AC: `omi --version` prints 0.3.2; `.omi/version` is 0.3.2; 0.3.2 template shas recorded. ✓ `PYTHONPATH=src python3 -m omi --version` printed "omi 0.3.2". `.omi/version` reads 0.3.2, and pyproject.toml and the README are bumped. The new 0.3.2 entry in template_shas.json has 62 files and equals `omi.upgrade.template_shas()` exactly.
+> AC: All tests pass on the Linux worker and the Windows host. ✓ for the Linux worker: `python3 tests/test_omi.py` exited 0. HOST for the Windows host part: it can't run in this container, so it does not block PASS.
+> ```
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-haiku-5-5 | low | 22 | 3410 | 373974 | 266s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 1338 | 129920 | 248s | - | PASS d61e676 |
