@@ -1,7 +1,7 @@
 ---
 id: TASK-094
 title: Host-only criteria are confirmed by the Coordinator, not marked by the reviewer
-status: in-progress
+status: done
 depends:
 plan: PLAN-003
 scope: .omi/agents/omi-agent-reviewer.md, src/omi/template/dot-omi/agents/omi-agent-reviewer.md, .claude/skills/omi-task/SKILL.md, src/omi/template/dot-claude/skills/omi-task/SKILL.md, .omi/agents/CATALOG.md, src/omi/template_shas.json, tests/test_omi.py
@@ -13,21 +13,22 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature-sensitive
-step: build
+step: review
 ---
 ## Goal
 On TASK-092 the reviewer gave PASS although "tests pass on the Windows host" could not run in its container, against its own UNVERIFIED rule. Host-only checks get one owner: the Coordinator, with evidence in the checkpoint.
 
 ## Acceptance criteria
-- [ ] Reviewer prompt (both copies): a criterion that can only run on the host (e.g. "on the Windows host") is reported `HOST <criterion>` and does not block PASS; every other skipped or unexecuted criterion stays `UNVERIFIED` and blocks PASS.
-- [ ] omi-task skill (both copies): before merge, the Coordinator runs the host checks and writes `Host: <command> -> <result>` in the task checkpoint; no merge without that line when the reviewer reported a `HOST` item.
-- [ ] Repo copies equal their template copies; agents catalog regenerated; `omi skills --check` passes; template shas updated if the tests require it. All tests pass on the Linux worker and the Windows host.
+- [x] Reviewer prompt (both copies): a criterion that can only run on the host (e.g. "on the Windows host") is reported `HOST <criterion>` and does not block PASS; every other skipped or unexecuted criterion stays `UNVERIFIED` and blocks PASS.
+- [x] omi-task skill (both copies): before merge, the Coordinator runs the host checks and writes `Host: <command> -> <result>` in the task checkpoint; no merge without that line when the reviewer reported a `HOST` item.
+- [x] Repo copies equal their template copies; agents catalog regenerated; `omi skills --check` passes; template shas updated if the tests require it. All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
 Done: reviewer HOST carve-out and omi-task `Host:` line in repo and template copies (identical); test_host_only_criteria added. CATALOG.md and template_shas.json unchanged (summary same, shas hold released versions only).
 Not done: Windows host test run (Coordinator).
 Tests: python3 tests/test_omi.py ok on Linux worker; `PYTHONPATH=src python3 -m omi skills --check` ok (19 checked).
-Next: Coordinator reviews diff and runs tests on the Windows host.
+Host: python tests/test_omi.py (Windows host, Git\bin prepended to PATH, see TASK-103) -> exit 0, ok
+Next: merge
 
 ## Steps
 - plan started 2026-10-28 14:05
@@ -35,6 +36,8 @@ Next: Coordinator reviews diff and runs tests on the Windows host.
 - architect started 2026-10-28 14:05
 - architect done 2026-10-28 14:08
 - build started 2026-10-28 14:08
+- build done 2026-10-28 14:15
+- review started 2026-10-28 14:15
 
 ## Reports
 2026-10-28 14:08 omi-agent-architect (claude):
@@ -104,9 +107,17 @@ Next: Coordinator reviews diff and runs tests on the Windows host.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-28 14:20 omi-agent-reviewer (claude):
+> ```
+> VERDICT: PASS
+> AC: Reviewer prompt (both copies): a host-only criterion is reported `HOST <criterion>` and does not block PASS; every other skipped or unexecuted criterion stays `UNVERIFIED` and blocks PASS ✓ Step 3 of both copies keeps the UNVERIFIED-blocks-PASS rule. It adds an exception for criteria that name the host, reported as `HOST <criterion>`, and splits mixed criteria. The output line is now `✓|✗|UNVERIFIED|HOST`. The two copies are byte-identical (diff clean).
+> AC: omi-task skill (both copies): before merge, the Coordinator runs the host checks and writes `Host: <command> -> <result>` in the task checkpoint; no merge without that line when the reviewer reported a `HOST` item ✓ Step 6 of both copies adds this. Each HOST item gets a check on the host, a `Host:` line under `## Checkpoint`, and a criterion tick only on a pass. A failed host check is a fix round, and the step says "no merge without one `Host:` line per `HOST` item". The copies are identical (diff clean).
+> AC: Repo copies equal their template copies; agents catalog regenerated; `omi skills --check` passes; template shas updated if the tests require it; all tests pass on the Linux worker and the Windows host ✓ for repo/template equality, `omi skills --check` (19 checked) and the Linux worker tests. The catalog and shas are unchanged and the tests pass, which fits an unchanged `summary:` and shas that hold released versions only. UNVERIFIED for the Windows host: the task file's own Checkpoint says that run has not been done. This is the host-only part of the criterion, so it is reported as HOST and doesn't block PASS. HOST: all tests pass on the Windows host (Coordinator must run `python3 tests/test_omi.py` there and write a `Host:` line).
+> ```
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-architect | claude-opus-5-5 | high | 14 | 3415 | 164639 | 50s | - | n/a |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 2947 | 187595 | 253s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1342 | 75098 | 239s | - | PASS fd067f7 |
