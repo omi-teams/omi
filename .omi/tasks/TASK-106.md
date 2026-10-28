@@ -29,6 +29,8 @@ Not done: Windows host test run (AC3 host part) - Coordinator to run
 Tests: `python3 tests/test_omi.py` exit 0 ("ok") on Linux worker. task_rules: src/omi/run.py -> omi-modules.md, python.md; tests/test_omi.py -> python.md only
 Next: Coordinator runs tests on Windows host, then commits
 
+Round 2 (review fix): omi-modules.md `__init__.py` line reworded to "only re-exports the public names (`main`, `version`); no logic there." CATALOG.md regenerated (~184 tokens). task_rules('/work', ['src/omi/run.py']) -> omi-modules.md, python.md; ['tests/test_omi.py'] -> python.md. `python3 tests/test_omi.py` exit 0 "ok".
+
 Review round 1 FAIL: (Coordinator) omi-modules.md says `__init__.py` must not re-export names, but src/omi/__init__.py re-exports `main` and `version` from cli/core and that IS the package surface. Reword: `__init__.py` stays the package surface: only re-exports the public names (`main`, `version`); no logic there. Regenerate CATALOG.md if the summary changes.
 
 ## Steps
@@ -105,9 +107,69 @@ Review round 1 FAIL: (Coordinator) omi-modules.md says `__init__.py` must not re
 > ```
 > 
 > The diff stays within scope. The only other file it touches is TASK-106.md, the task's own checkpoint file.
+2026-10-28 21:14 omi-agent-engineer (claude):
+> DONE (review round 2 fix; Windows host test run still open for the Coordinator, AC3)
+> 
+> Files changed:
+> - `.omi/rules/omi-modules.md`: `__init__.py` line now reads "only re-exports the public names (`main`, `version`); no logic there."
+> - `.omi/rules/CATALOG.md`: regenerated with `PYTHONPATH=src python3 -m omi rules` (6 rules, omi-modules ~184 tokens)
+> - `.omi/tasks/TASK-106.md`: checkpoint updated
+> 
+> Rule selection: `src/omi/run.py` → `omi-modules.md`, `python.md`; `tests/test_omi.py` → `python.md` only.
+> Tests: `python3 tests/test_omi.py` ran on the Linux worker, exit 0, printed "ok". Windows host not run.
+> Commit: `docs(rules): clarify omi-modules package surface rule`
+> Open issues: none. `task_rules` needs `(root, scope)` and root must be passed as `/work`.
+2026-10-28 21:17 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-haiku-5-5 | low | 18 | 2902 | 236724 | 333s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 1276 | 139557 | 263s | - | PASS 93ea4fe |
+| omi-agent-engineer | claude-haiku-5-5 | low | 16 | 2201 | 182907 | 187s | 1/1 omi-skill-lean-implementation | - |
