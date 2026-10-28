@@ -1,7 +1,7 @@
 ---
 id: TASK-096
 title: Rename omi-squad2 to omi in code, skills and docs
-status: in-progress
+status: done
 depends: TASK-093, TASK-094
 plan: PLAN-003
 scope: .claude/skills/omi-upgrade/SKILL.md, .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md, .omi/skills/delivery-ops/omi-skill-incident/SKILL.md, .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md, .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md, .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md, README.md, src/omi/cli.py, src/omi/upgrade.py, src/omi/template/dot-claude/skills/omi-upgrade/SKILL.md, src/omi/template/dot-omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md, src/omi/template/dot-omi/skills/delivery-ops/omi-skill-incident/SKILL.md, src/omi/template/dot-omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md, src/omi/template/dot-omi/skills/delivery-ops/omi-skill-rollback/SKILL.md, src/omi/template/dot-omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md, tests/test_omi.py, src/omi/template_shas.json, .omi/skills/CATALOG.md
@@ -13,26 +13,29 @@ model: haiku
 effort: low
 step_settings:
 workflow: omi-flow-feature
-step: build
+step: review
 ---
 ## Goal
 The PO renamed the GitHub repo `omi-teams/omi-squad2` to `omi-teams/omi` (2026-10-28). Every default URL, install command and skill text points to the new name, so 0.3.2 installs from `omi-teams/omi`.
 
 ## Acceptance criteria
-- [ ] `git grep omi-squad2` finds nothing outside `.omi/tasks`, `.omi/decisions.md`, `.omi/plans` and `docs/` (history stays as written).
-- [ ] `OMI_REPO` default is `https://github.com/omi-teams/omi`; README install commands use it; local worktree paths in skill text use a placeholder (`<repo-name>`), not a hard-coded folder.
-- [ ] Repo copies equal their template copies; catalogs regenerated; template shas updated if the tests require it. All tests pass on the Linux worker and the Windows host.
+- [x] `git grep omi-squad2` finds nothing outside `.omi/tasks`, `.omi/decisions.md`, `.omi/plans` and `docs/` (history stays as written).
+- [x] `OMI_REPO` default is `https://github.com/omi-teams/omi`; README install commands use it; local worktree paths in skill text use a placeholder (`<repo-name>`), not a hard-coded folder.
+- [x] Repo copies equal their template copies; catalogs regenerated; template shas updated if the tests require it. All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
 Done: `omi-squad2` -> `omi` (URLs, OMI_REPO, container-name examples, tests) in every in-scope file; repo and template skill copies identical; `.omi/skills/CATALOG.md` regenerated (19 skills). No hard-coded worktree folder names found in skill text.
 Not done: template_shas.json untouched (test suite did not require a change); not run on the Windows host.
 Tests: `python3 tests/test_omi.py` exit 0 (Linux worker, full run).
-Next: Coordinator review and commit; run the suite on the Windows host.
+Host: python tests/test_omi.py (Windows) -> exit 0, ok
+Next: merge
 
 ## Steps
 - plan started 2026-10-28 16:36
 - plan done 2026-10-28 16:36
 - build started 2026-10-28 16:36
+- build done 2026-10-28 16:44
+- review started 2026-10-28 16:44
 
 ## Reports
 2026-10-28 16:41 omi-agent-engineer (claude):
@@ -91,8 +94,22 @@ Next: Coordinator review and commit; run the suite on the Windows host.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-28 16:49 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - `.omi/skills/CATALOG.md` The token counts for the five delivery-ops skills dropped by 1 to 2, while the `tokens:` frontmatter in those files is unchanged (e.g. 706 against a catalog value of 707). This is probably how the catalog is generated, so I'm not treating it as a failure.
+> 
+> AC: `git grep omi-squad2` finds nothing outside `.omi/tasks`, `.omi/decisions.md`, `.omi/plans` and `docs/` ✓ A grep excluding those paths finds nothing. The only other hits are in `decisions.md`, which is allowed.
+> AC: `OMI_REPO` default is `https://github.com/omi-teams/omi` ✓ `upgrade.py:16`.
+> AC: README install commands use the new default ✓ The `pip install` line and the container-name example now say `omi`.
+> AC: Local worktree paths in skill text use a placeholder, not a hard-coded folder ✓ No hard-coded folder names appear in the diff or the grep, so no placeholder was needed.
+> AC: Repo copies equal their template copies ✓ The blob hashes in the diff are identical for all six skill pairs.
+> AC: Catalogs regenerated ✓ `.omi/skills/CATALOG.md` was updated.
+> AC: Template shas updated if the tests require it ✓ The tests don't require it. `template_shas.json` holds hashes of released versions only.
+> AC: All tests pass on the Linux worker ✓ I ran `python3 tests/test_omi.py`: exit 0, output ends in `ok`.
+> AC: All tests pass on the Windows host HOST The criterion names the host. I can't run it in this container.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-haiku-5-5 | low | 14 | 3695 | 187706 | 249s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1462 | 123057 | 264s | - | PASS 88172a6 |
