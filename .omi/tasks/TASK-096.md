@@ -13,7 +13,7 @@ model: haiku
 effort: low
 step_settings:
 workflow: omi-flow-feature
-step: review
+step: accept
 ---
 ## Goal
 The PO renamed the GitHub repo `omi-teams/omi-squad2` to `omi-teams/omi` (2026-10-28). Every default URL, install command and skill text points to the new name, so 0.3.2 installs from `omi-teams/omi`.
@@ -25,7 +25,7 @@ The PO renamed the GitHub repo `omi-teams/omi-squad2` to `omi-teams/omi` (2026-1
 
 ## Checkpoint
 Done: `omi-squad2` -> `omi` (URLs, OMI_REPO, container-name examples, tests) in every in-scope file; repo and template skill copies identical; `.omi/skills/CATALOG.md` regenerated (19 skills). No hard-coded worktree folder names found in skill text.
-Not done: template_shas.json untouched (test suite did not require a change); not run on the Windows host.
+Not done: - (template_shas.json untouched: tests did not require it)
 Tests: `python3 tests/test_omi.py` exit 0 (Linux worker, full run).
 Host: python tests/test_omi.py (Windows) -> exit 0, ok
 Next: merge
@@ -36,6 +36,8 @@ Next: merge
 - build started 2026-10-28 16:36
 - build done 2026-10-28 16:44
 - review started 2026-10-28 16:44
+- review done 2026-10-28 16:49
+- accept started 2026-10-28 16:49
 
 ## Reports
 2026-10-28 16:41 omi-agent-engineer (claude):
