@@ -2,7 +2,7 @@
 id: omi-skill-task-brief
 group: workflow
 description: Use when a task file must be complete enough for a fresh engineer agent with zero context, before `omi run`.
-tokens: 580
+tokens: 658
 tools: Read, Write, Edit
 source_repo: https://github.com/obra/superpowers
 source_ref: v6.3.0
