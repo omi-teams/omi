@@ -4,7 +4,7 @@ title: Detached state root: .omi state outside the code repo
 status: in-progress
 depends: TASK-095, TASK-106
 plan: PLAN-004
-scope: src/omi/*.py, tests/test_omi.py, docs/specs/detached-mode.md
+scope: src/omi/*.py, tests/test_omi.py, docs/specs/detached-mode.md, .omi/rules/omi-modules.md, .omi/rules/CATALOG.md
 role: omi-agent-engineer
 skills: []
 refs: []
