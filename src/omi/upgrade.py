@@ -101,7 +101,7 @@ def ensure_gitignore(target: Path) -> None:
             print(f"update .gitignore ({name}/)")
 
 
-def init(target="."):
+def init(target: str | Path = ".", *, detached: bool = False) -> None:
     target = Path(target).resolve()
     manifest_safe = upgrade_write_safe(target, ".omi/manifest.json")
     files = read_manifest(target) if manifest_safe else {}
@@ -128,7 +128,7 @@ def init(target="."):
     ensure_gitignore(target)
     for catalog in (catalogs.skills_catalog, catalogs.agents_catalog, workflows.workflows_catalog, catalogs.rules_catalog, catalogs.references_catalog, catalogs.plans_catalog):
         catalog(target)
-    if not (target / ".git").exists():
+    if not detached and not (target / ".git").exists():
         subprocess.run(["git", "init", "-q", "-b", "main", str(target)], check=True)
         print("git init (branch main)")
     print("tools: " + ", ".join(f"{t} {'ok' if shutil.which(t) else 'MISSING'}" for t in TOOLS))

@@ -11,7 +11,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import core, creds
+from . import core, creds, state
 
 
 DEFAULT_ALLOW = ["api.anthropic.com"]
@@ -211,7 +211,8 @@ def age(started):
 
 
 def print_workers(root):
-    rows = running_workers(core.main_checkout(root) or root)
+    project = state.resolve(root)
+    rows = running_workers(project.state if project.detached else project.code)
     if rows:
         print("running workers:")
         for task, role, model, effort, started in rows:
@@ -253,7 +254,7 @@ def ensure_image(main):
 
 def clean(cwd=".", all_images=False):
     """Remove this repo's worker containers and every worker image except the current one (all_images: that too)."""
-    main = core.main_checkout(cwd) or Path(cwd).resolve()
+    main = state.resolve(core.main_checkout(cwd) or Path(cwd).resolve()).state
     r = subprocess.run(["docker", "ps", "-a", "-q", "--filter", "label=omi-worker=1",
                         "--filter", f"label=omi-repo={repo_label(main)}"],
                        capture_output=True, encoding="utf-8", errors="replace")

@@ -1,10 +1,11 @@
 """Command line: usage text, omi status and argument dispatch."""
 
+import contextlib
 import json
 import sys
 from pathlib import Path
 
-from . import catalogs, core, creds, docker, github, hooks, run, scope, tasks, upgrade, workflows
+from . import catalogs, core, creds, docker, github, hooks, run, scope, state, tasks, upgrade, workflows
 
 
 STATUSES = ("in-progress", "review", "blocked", "planned")
@@ -33,8 +34,9 @@ USAGE = """usage: omi <command>
 
 
 def status(cwd="."):
-    root = Path(core.git(cwd, "rev-parse", "--show-toplevel") or cwd).resolve()
-    print(f"branch: {core.git(root, 'rev-parse', '--abbrev-ref', 'HEAD')}")
+    project = state.resolve(cwd)
+    root = project.state
+    print(f"branch: {core.git(cwd, 'rev-parse', '--abbrev-ref', 'HEAD')}")
     stamp_file = root / ".omi" / "version"
     stamp = stamp_file.read_text(encoding="utf-8").strip() if stamp_file.exists() else ""
     print(f"omi {core.version()} (project {stamp or 'none'})")
@@ -50,7 +52,7 @@ def status(cwd="."):
     if dockerfile.exists() and dockerfile.read_bytes().replace(b"\r\n", b"\n") != (core.TEMPLATE / "docker" / "Dockerfile").read_bytes().replace(b"\r\n", b"\n"):
         print(f"docker/Dockerfile differs from the omi {core.version()} template; review it (omi init never overwrites it)")
         print(f"  see the diff: git diff --no-index {core.TEMPLATE / 'docker' / 'Dockerfile'} docker/Dockerfile\n  merge by hand; omi init and upgrade never overwrite it")
-    for line in docker.full_volumes(core.main_checkout(root) or root):
+    for line in docker.full_volumes(root if project.detached else project.code):
         print(line)
     cfg = root / ".omi" / "config.json"
     try:
@@ -59,7 +61,7 @@ def status(cwd="."):
         missing_test = False
     if missing_test:
         print('no `test` command in .omi/config.json; set one, e.g. "test": "python3 -m pytest -q"')
-    ts = tasks.tasks(root)
+    ts = tasks.tasks(project)
     for pid, m in catalogs.load_plans(root, strict=False).items():
         if m["status"] == "active":
             members = [t for t in ts.values() if t.get("plan") == pid]
@@ -67,7 +69,7 @@ def status(cwd="."):
             print(f"{pid} {m['title']}: done {done_count}/{len(members)}")
     if not ts:
         print("no tasks yet - run omi-idea")
-        docker.print_workers(root)
+        docker.print_workers(project)
         return
     done = {k for k, m in ts.items() if m.get("status") == "done"}
     print(f"done: {len(done)}/{len(ts)}")
@@ -88,54 +90,64 @@ def status(cwd="."):
     nxt = next((k for k, m in ts.items()
                 if m.get("status", "planned") == "planned" and set(core.split(m.get("depends"))) <= done), None)
     print(f"next: {nxt or 'none ready'}")
-    docker.print_workers(root)
+    docker.print_workers(project)
 
 
 def main(argv=None):
     sys.stdout.reconfigure(encoding="utf-8")
     args = sys.argv[1:] if argv is None else argv
     cmd, rest = (args[0], args[1:]) if args else ("help", [])
+    if cmd in ("upgrade", "skills", "rules", "plans", "references", "agents", "workflows"):
+        root = state.catalog_root(state.resolve(), ".")
     if cmd in ("version", "--version"):
         print(f"omi {core.version()}\nlatest: python -m omi upgrade --check")
     elif cmd == "init":
-        upgrade.init(*rest[:1])
+        target = rest[0] if rest else "."
+        project = state.resolve(target)
+        upgrade.init(state.catalog_root(project, target), detached=project.detached)
     elif cmd == "upgrade":
-        sys.exit(upgrade.upgrade_cmd(rest))
+        sys.exit(upgrade.upgrade_cmd(rest, root))
     elif cmd == "template-shas" and len(rest) == 2:
         upgrade.template_shas_cmd(*rest)
     elif cmd == "status":
         status(*rest[:1])
     elif cmd == "github":
-        github.github("--po" in rest)
+        project = state.resolve()
+        with contextlib.chdir(project.code if project.detached else Path.cwd()):
+            github.github("--po" in rest)
     elif cmd == "clean":
         docker.clean(all_images="--all" in rest)
     elif cmd == "skills":
         if rest[:1] == ["--check"]:
-            catalogs.check_all_skills(".")
+            catalogs.check_all_skills(root)
         elif rest[:1] == ["check"] and len(rest) > 1:
-            catalogs.check_skills(".", catalogs.task_skill_ids(".", core.meta(Path(rest[1]))))
-            tasks.warn_sensitive(core.meta(Path(rest[1])))
+            project = state.resolve()
+            task = Path(rest[1])
+            if project.detached and not task.is_absolute():
+                task = project.state / task
+            catalogs.check_skills(project.state, catalogs.task_skill_ids(project.state, core.meta(task)))
+            tasks.warn_sensitive(core.meta(task))
             print("skills ok")
         else:
-            catalogs.skills_catalog(".")
+            catalogs.skills_catalog(root)
     elif cmd == "parallel" and len(rest) >= 2:
-        conflicts = tasks.parallel(core.main_checkout(".") or Path(".").resolve(), rest)
+        conflicts = tasks.parallel(state.resolve(core.main_checkout(".") or Path(".").resolve()), rest)
         if conflicts:
             sys.exit("\n".join(conflicts))
         print("parallel ok: " + " ".join(rest))
     elif cmd == "rules":
-        catalogs.rules_catalog(".")
+        catalogs.rules_catalog(root)
     elif cmd == "plans":
-        catalogs.plans_catalog(".")
+        catalogs.plans_catalog(root)
     elif cmd == "references":
-        catalogs.references_catalog(".")
+        catalogs.references_catalog(root)
     elif cmd == "agents":
-        catalogs.agents_catalog(".")
+        catalogs.agents_catalog(root)
     elif cmd == "workflows":
-        workflows.check_all_workflows(".") if rest[:1] == ["--check"] else workflows.workflows_catalog(".")
+        workflows.check_all_workflows(root) if rest[:1] == ["--check"] else workflows.workflows_catalog(root)
     elif cmd == "step" and len(rest) >= 2:
         why = " ".join(rest[rest.index("--why") + 1:]) if "--why" in rest else None
-        sys.exit(tasks.step(core.main_checkout(".") or Path(".").resolve(), rest[0], rest[1], why))
+        sys.exit(tasks.step(state.resolve(core.main_checkout(".") or Path(".").resolve()), rest[0], rest[1], why))
     elif cmd == "run" and len(rest) >= 2 and not rest[1].startswith("--"):
         sys.exit(run.run_cmd(rest[0], rest[1], rest))
     elif cmd == "hook" and len(rest) == 2:

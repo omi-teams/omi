@@ -69,7 +69,7 @@ def quota_hit(tool, out, rc):
 def engineer_cmd(agent_text, task_rel, model=None, effort=None, skills=""):
     m = core.parse(agent_text)
     body = agent_text.split("---", 2)[2].strip() if agent_text.startswith("---") else agent_text
-    return ["claude", "-p", f"Task file: /work/{task_rel}\nWorktree: /work{skills}",
+    return ["claude", "-p", f"Task file: {task_rel if task_rel.startswith("/") else "/work/" + task_rel}\nWorktree: /work{skills}",
             "--append-system-prompt", body,
             "--model", model or m.get("model", "sonnet"), "--effort", effort or m.get("effort", "medium"),
             # the container is the boundary, not prompts; project hooks (omi guard) cannot run in it
@@ -86,7 +86,7 @@ def codex_cmd(agent_text, task_rel, model, effort, skills=""):
     # project_doc_max_bytes=0: codex must not load the Coordinator's AGENTS.md; the role prompt is all it sees
     return ["codex", "exec", "-c", "project_doc_max_bytes=0", "-m", model,
             "-c", f"model_reasoning_effort={effort}",
-            "--dangerously-bypass-approvals-and-sandbox", "--json", f"{body}\n\nTask file: /work/{task_rel}\nWorktree: /work{skills}\n{CODEX_LIMITS}"]
+            "--dangerously-bypass-approvals-and-sandbox", "--json", f"{body}\n\nTask file: {task_rel if task_rel.startswith("/") else "/work/" + task_rel}\nWorktree: /work{skills}\n{CODEX_LIMITS}"]
 
 
 READERS = ("cat", "sed", "head", "tail", "less", "nl", "rg", "grep")

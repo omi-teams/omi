@@ -8,12 +8,12 @@ import sys
 from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
 
-from . import core
+from . import core, state
 
 
 def task_scope(wt, tid):
-    """Scope globs of a task, read from the task file on development; the worktree copy is agent-writable and ignored."""
-    return core.split(core.parse(core.git(wt, "show", f"development:.omi/tasks/{tid}.md") or "").get("scope"))
+    """Scope globs from detached state or development; the agent-writable worktree copy is ignored."""
+    return core.split(core.parse(state.task_text(state.resolve(wt), wt, tid) or "").get("scope"))
 
 
 GIT_HINT = ".git* paths need an exact scope entry (no globs), e.g. .github/workflows/ci.yml"
@@ -53,13 +53,14 @@ def guard(stdin=None):
             return 0  # not inside a project
     elif branch.startswith("task/"):
         tid = branch[5:]
-        # scope comes from development: the worktree copy is agent-writable, so it can't be trusted
-        shown = core.git(root, "show", f"development:.omi/tasks/{tid}.md")
-        task_file = root / ".omi" / "tasks" / f"{tid}.md"
+        # Scope comes from state or development, never the agent-writable task copy.
+        project = state.resolve(root)
+        shown = state.task_text(project, root, tid)
+        task_file = state.task_file(project, tid)
         if shown is None:
             reason = f"cannot be checked: {tid} is not on development yet. Stop and report to the Coordinator."
         elif rel and task_file.exists() and (
-                rel == PurePosixPath(f".omi/tasks/{tid}.md")
+                (not project.detached and rel == PurePosixPath(f".omi/tasks/{tid}.md"))
                 or any(rel.full_match(g) for g in core.split(core.parse(shown).get("scope")))):
             return 0
         else:
@@ -79,7 +80,8 @@ def guard(stdin=None):
 
 
 def out_of_scope(wt, tid, committed=False):
-    """Changed paths in wt that the task's scope (read from development) does not allow; committed: also the branch's commits."""
+    """Changed paths in wt that the authoritative task scope does not allow; committed: also the branch's commits."""
+    project = state.resolve(wt)
     globs = task_scope(wt, tid)
     r = subprocess.run(["git", "-C", str(wt), "status", "--porcelain", "-z", "-uall", "--no-renames"],
                        capture_output=True, encoding="utf-8", errors="replace")
@@ -91,7 +93,7 @@ def out_of_scope(wt, tid, committed=False):
                            capture_output=True, encoding="utf-8", errors="replace")
         paths += [p for p in d.stdout.split("\0") if p and p not in paths]
     def bad(p):
-        if p == f".omi/tasks/{tid}.md":
+        if not project.detached and p == f".omi/tasks/{tid}.md":
             return False
         if os.path.islink(Path(wt) / p):  # host tools could follow it out of the worktree
             return True

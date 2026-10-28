@@ -18,7 +18,7 @@ import time
 import types
 from pathlib import Path
 
-from . import catalogs, core, creds, docker, hooks, scope, tasks, tools, workflows
+from . import catalogs, core, creds, docker, hooks, scope, state, tasks, tools, workflows
 
 
 def skills_read(root, ids, opened):
@@ -108,18 +108,19 @@ def test_prompt_line(wt, main):
 
 def deterministic_checks(wt, main, tid):
     """Problems a script can find in the diff before a read role is started (empty = start the role)."""
+    catalog = state.catalog_root(state.resolve(wt), wt)
     problems = []
     bad = scope.out_of_scope(wt, tid, committed=True)
     if bad:
         problems.append("scope check: outside scope: " + ", ".join(bad) + (f"\n{scope.git_hint(bad)}" if scope.git_hint(bad) else ""))
     saved, sys.stdout = sys.stdout, io.StringIO()
     try:
-        catalogs.check_all_skills(wt)
+        catalogs.check_all_skills(catalog)
     except SystemExit as e:
         problems.append(f"skills --check: {e}")
     finally:
         sys.stdout = saved
-    if (Path(wt) / ".omi" / "workflows").is_dir():
+    if (catalog / ".omi" / "workflows").is_dir():
         r = subprocess.run([sys.executable, "-m", "omi", "workflows", "--check"], cwd=wt, capture_output=True, encoding="utf-8", errors="replace")
         if r.returncode:
             problems.append("workflows --check: " + (r.stdout + r.stderr).strip())
@@ -158,16 +159,19 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
     main = core.main_checkout(wt)
     if not main or not (wt / ".git").is_file():
         sys.exit(f"{wt} is not a git worktree. Nothing changed.")
+    project = state.resolve(wt)
+    main = project.state if project.detached else main
+    catalog = state.catalog_root(project, wt)
     task = Path(task_file).resolve()
     try:
-        task_rel = task.relative_to(wt).as_posix()
+        task_rel = task.relative_to(catalog).as_posix()
     except ValueError:
-        sys.exit(f"{task} is not inside {wt}. Nothing changed.")
+        sys.exit(f"{task} is not inside {catalog}. Nothing changed.")
     tm = core.meta(task) if task.exists() else {}
-    catalogs.check_task_plan(wt, tm)
+    catalogs.check_task_plan(catalog, tm)
     am = catalogs.get_role(main, role)
     catalogs.get_role(main, tm.get("role") or "omi-agent-engineer")  # unknown task role fails too
-    steps = workflows.get_workflow(wt, tm.get("workflow") or workflows.DEFAULT_WORKFLOW) \
+    steps = workflows.get_workflow(catalog, tm.get("workflow") or workflows.DEFAULT_WORKFLOW) \
         if tm.get("step") or tm.get("step_settings") else []
     settings = parse_step_settings(tm.get("step_settings", ""), [s["id"] for s in steps])
     cur = next((s for s in steps if s["id"] == tm.get("step")), None)
@@ -193,9 +197,9 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
     step_ids = catalogs.task_skills(cur) if cur and cur["role"] == role else []  # the current step's own skills
     own_ids = catalogs.task_skills(tm) if am["access"] == "write" else []  # task skills are for the implementer
     ids = list(dict.fromkeys([*catalogs.task_skills(am), *own_ids, *step_ids]))
-    declared = catalogs.check_skills(wt, ids)  # role defaults count against the budget
-    rule_files = catalogs.task_rules(wt, scope.task_scope(wt, task.stem))
-    ref_files = catalogs.task_references(wt, tm)
+    declared = catalogs.check_skills(catalog, ids)  # role defaults count against the budget
+    rule_files = catalogs.task_rules(catalog, scope.task_scope(wt, task.stem))
+    ref_files = catalogs.task_references(catalog, tm)
     want = effort or step_settings.get("effort") or (tm.get("effort") if task_settings else None) or am.get("effort")
     efforts = {tool: tools.resolve_effort(want, tool)}
     want_model = model or step_settings.get("model") or (tm.get("model") if task_settings else None) or am.get("model")
@@ -203,7 +207,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
 
     ensure_cache_excluded(wt)
     read = am["access"] == "read"
-    mounts = []
+    mounts = [f"{project.state}:/state"] if project.detached else []
     if read:
         problems = deterministic_checks(wt, main, task.stem)
         if problems:
@@ -214,9 +218,17 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
     if res and hooks.hook_note(task, "pre-run", res):
         print("pre-run hook failed; the agent was not started")
         return 6
-    prompt_skills = catalogs.skill_prompt(wt, declared) + catalogs.rule_prompt(wt, rule_files) + catalogs.reference_prompt(wt, ref_files)
+    prompt_skills = catalogs.skill_prompt(catalog, declared) + catalogs.rule_prompt(catalog, rule_files) + catalogs.reference_prompt(catalog, ref_files)
+    if project.detached:
+        task_rel = "/state/" + task_rel
+        prompt_skills = prompt_skills.replace("/work/", "/state/")
+        prompt_skills += ("\nDetached state: /state is read-only. Do not edit the task or catalogs. "
+                          "Include checkpoint updates in your final report; the Coordinator records them.")
     prompt_skills += "\nTests: " + test_prompt_line(wt, main)
     text = am["_text"]
+    if project.detached:
+        text += ("\nFor this detached run, replace instructions to edit the task or its Checkpoint "
+                 "with reporting those updates in your final response. /state is read-only.")
     tmp = tempfile.TemporaryDirectory() if read else None
 
     def attempt(t, secret, note=""):
@@ -267,7 +279,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
         else:
             sys.exit(f"container name in use again for {role} ({t}). Nothing changed.")
         result, *nums = tools.parse_usage(t, r.stdout)
-        done = skills_read(wt, ids, tools.opened_files(t, r.stdout))
+        done = skills_read(catalog, ids, tools.opened_files(t, r.stdout))
         verdict = (tools.verdict_of(result) or "n/a") if read else "-"
         head = core.git(wt, "rev-parse", "--short=7", "HEAD") if read and verdict != "n/a" else None
         if head:
@@ -292,7 +304,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
             rounds, sha, named = tasks.prior_review(task.read_text(encoding="utf-8") if task.exists() else "")
             patch, note = full, "\nDiff: /review/diff.patch (read-only; git does not work in this container)"
             if sha and rounds < 2:
-                inc = tree_diff(wt, sha, task_rel)
+                inc = tree_diff(wt, sha, None if project.detached else task_rel)
                 changed = set(re.findall(r"^diff --git a/.* b/(.*)$", inc, re.M))
                 if changed and changed <= named:
                     patch = inc
@@ -367,6 +379,8 @@ def worker(wt, task_file=None, model=None, effort=None, prove=False):
     main = core.main_checkout(wt)
     if not main or not (wt / ".git").is_file():
         sys.exit(f"{wt} is not a git worktree. Nothing changed.")
+    project = state.resolve(wt)
+    main = project.state if project.detached else main
     docker.need_docker()
     allow = docker.allow_for(main, *docker.TOOL_API_HOST)
     image = docker.ensure_image(main)
@@ -384,6 +398,7 @@ def worker(wt, task_file=None, model=None, effort=None, prove=False):
                 r = subprocess.run(docker.worker_argv(wt, image, ["sh", "-s"], name, docker.repo_label(main),
                                                {**docker.worker_labels("prove", None, None, None), **docker.compose_labels(name, "agent")},
                                                network=net, proxy=proxy,
+                                               mounts=[f"{project.state}:/state"] if project.detached else (),
                                                **docker.worker_sizes(main)), env=env,
                                    input=script.read_bytes().replace(b"\r\n", b"\n"), stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT)
@@ -400,9 +415,9 @@ def worker(wt, task_file=None, model=None, effort=None, prove=False):
 
 
 def run_cmd(role, tid, rest):
-    root = core.main_checkout(".") or Path(".").resolve()
-    wt = core.task_worktrees(root).get(tid)
+    project = state.resolve(core.main_checkout(".") or Path(".").resolve())
+    wt = core.task_worktrees(project.code).get(tid)
     if not wt:
         sys.exit(f"no worktree for {tid}: create it first (git worktree add). Nothing changed.")
-    return run_role(role, wt, Path(wt) / ".omi" / "tasks" / f"{tid}.md", core.flag(rest, "--model"), core.flag(rest, "--effort"),
+    return run_role(role, wt, state.task_file(project, tid), core.flag(rest, "--model"), core.flag(rest, "--effort"),
                     core.flag(rest, "--tool"))

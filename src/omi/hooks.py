@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import core, creds, docker, tasks
+from . import core, creds, docker, state, tasks
 
 
 HOOK_EVENTS = ("pre-run", "post-run", "pre-merge")
@@ -15,8 +15,11 @@ HOOK_RUNNERS = {".sh": ["sh", "-s"], ".py": ["python3", "-"]}
 
 
 def run_hook(wt, main, event, tid, image):
-    """Run .omi/hooks/<event>.sh|.py of the MAIN checkout (never the worktree's copy) in its own one-shot container:
+    """Run .omi/hooks/<event>.sh|.py from state or the main checkout in its own one-shot container:
     worktree ro as cwd, no network, no token. Returns (exit code, output), or None when there is no hook."""
+    project = state.resolve(wt)
+    if project.detached:
+        main = project.state
     script = next((p for e in HOOK_RUNNERS if (p := Path(main) / ".omi" / "hooks" / f"{event}{e}").is_file()), None)
     if not script:
         return None
@@ -26,7 +29,8 @@ def run_hook(wt, main, event, tid, image):
     env.pop(creds.TOKEN_ENV, None)
     name = docker.container_name(docker.repo_label(main), f"hook-{event}", tid)
     argv = docker.worker_argv(wt, image, HOOK_RUNNERS[script.suffix], name, docker.repo_label(main), docker.worker_labels(f"hook-{event}", tid, None, None),
-                       ro=True, env_names=(), offline=True,
+                       ro=True, env_names=("OMI_PROJECT_STATE=/state",) if project.detached else (), offline=True,
+                       mounts=[f"{project.state}:/state"] if project.detached else (),
                        **docker.worker_sizes(main))
     cfg = Path(main) / ".omi" / "config.json"
     limit = (json.loads(cfg.read_text(encoding="utf-8")) if cfg.exists() else {}).get("hook_timeout", 600)
@@ -50,16 +54,17 @@ def hook_note(task, event, res):
 
 
 def wt_task(wt, tid):
-    return Path(wt) / ".omi" / "tasks" / f"{tid}.md"
+    return state.task_file(state.resolve(wt), tid)
 
 
 def hook_cmd(event, tid):
-    root = core.main_checkout(".") or Path(".").resolve()
-    wt = core.task_worktrees(root).get(tid)
+    project = state.resolve(core.main_checkout(".") or Path(".").resolve())
+    root = project.state
+    wt = core.task_worktrees(project.code).get(tid)
     if event not in HOOK_EVENTS or not wt:
         sys.exit(f"usage: omi hook {'|'.join(HOOK_EVENTS)} <TASK-ID> (the task needs a worktree). Nothing changed.")
     res = run_hook(wt, root, event, tid, None)
     if res is None:
         print(f"no {event} hook")
         return 0
-    return hook_note(wt_task(wt, tid), event, res)
+    return hook_note(state.task_file(project, tid), event, res)
