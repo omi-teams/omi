@@ -1,7 +1,7 @@
 ---
 id: TASK-106
 title: Repo rule for the src/omi module structure
-status: in-progress
+status: done
 depends: TASK-104
 plan: PLAN-004
 scope: .omi/rules/omi-modules.md, .omi/rules/CATALOG.md
@@ -13,15 +13,15 @@ model: haiku
 effort: low
 step_settings:
 workflow: omi-flow-feature
-step: build
+step: review
 ---
 ## Goal
 The module rules chosen in TASK-104 (decisions.md 2026-10-28) live only in decisions.md, which agents do not read. A rule in `.omi/rules` reaches every task whose scope touches `src/omi/*.py` through `omi run`, so PLAN-004 code follows the split without restating it per task. Repo-only: the template (`src/omi/template/**`) is not changed, user projects do not get it.
 
 ## Acceptance criteria
-- [ ] `.omi/rules/omi-modules.md` with frontmatter `id`, `summary`, `applies: src/omi/*.py`, at most ~200 tokens, says: modules call each other as `from . import x` then `x.name(...)`, never `from .x import name`; imports only go down the layer order of the current graph, cli > run > hooks > docker > tasks/upgrade > workflows > catalogs > tools/creds/scope > core/github (no import inside a function to dodge a cycle); no module over ~600 lines; a new responsibility gets a new module; `__init__.py` stays the package surface; tests patch the defining module (`omi.<module>.<name>`).
-- [ ] `.omi/rules/CATALOG.md` regenerated with `python -m omi rules`; `omi.catalogs.task_rules` picks the rule for `src/omi/run.py` and not for `tests/test_omi.py` (shown by the command output in the report).
-- [ ] All tests pass on the Linux worker and on the Windows host.
+- [x] `.omi/rules/omi-modules.md` with frontmatter `id`, `summary`, `applies: src/omi/*.py`, at most ~200 tokens, says: modules call each other as `from . import x` then `x.name(...)`, never `from .x import name`; imports only go down the layer order of the current graph, cli > run > hooks > docker > tasks/upgrade > workflows > catalogs > tools/creds/scope > core/github (no import inside a function to dodge a cycle); no module over ~600 lines; a new responsibility gets a new module; `__init__.py` stays the package surface; tests patch the defining module (`omi.<module>.<name>`).
+- [x] `.omi/rules/CATALOG.md` regenerated with `python -m omi rules`; `omi.catalogs.task_rules` picks the rule for `src/omi/run.py` and not for `tests/test_omi.py` (shown by the command output in the report).
+- [x] All tests pass on the Linux worker and on the Windows host.
 
 ## Checkpoint
 Done: .omi/rules/omi-modules.md written (~175 tokens); CATALOG.md regenerated with `PYTHONPATH=src python3 -m omi rules` (6 rules, omi-modules listed)
@@ -33,6 +33,8 @@ Round 2 (review fix): omi-modules.md `__init__.py` line reworded to "only re-exp
 
 Review round 1 FAIL: (Coordinator) omi-modules.md says `__init__.py` must not re-export names, but src/omi/__init__.py re-exports `main` and `version` from cli/core and that IS the package surface. Reword: `__init__.py` stays the package surface: only re-exports the public names (`main`, `version`); no logic there. Regenerate CATALOG.md if the summary changes.
 
+Host: python tests/test_omi.py -> exit 0, ok
+
 ## Steps
 - plan started 2026-10-28 20:57
 - plan done 2026-10-28 20:57
@@ -41,6 +43,9 @@ Review round 1 FAIL: (Coordinator) omi-modules.md says `__init__.py` must not re
 - review started 2026-10-28 21:06
 - review failed 2026-10-28 21:11
 - build started 2026-10-28 21:11
+- build done 2026-10-28 21:17
+- review started 2026-10-28 21:17
+- review done 2026-10-28 21:23
 
 ## Reports
 2026-10-28 21:03 omi-agent-engineer (claude):
@@ -166,6 +171,14 @@ Review round 1 FAIL: (Coordinator) omi-modules.md says `__init__.py` must not re
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-28 21:22 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - No blocking findings. The diff also changes `.omi/tasks/TASK-106.md`, which is outside the listed scope, but it is only the task's own checkpoint and report file.
+> 
+> AC: `.omi/rules/omi-modules.md` has frontmatter `id`, `summary` and `applies: src/omi/*.py`, is at most ~200 tokens, and covers every listed point ✓ The file has all three frontmatter keys. The catalog reports ~184 tokens, and the file is 115 words. It states the `from . import x` rule, the layer order, no function-level imports, the ~600-line cap, a new module per new responsibility, `__init__.py` as the package surface, and patching `omi.<module>.<name>`. The layer order matches the imports in `src/omi`: cli > run > hooks > docker > tasks/upgrade > workflows > catalogs > tools/creds/scope > core. The largest module is 408 lines. `__init__.py` re-exports only `main` and `version`, as the rule says.
+> AC: `.omi/rules/CATALOG.md` is regenerated, and `task_rules` picks the rule for `src/omi/run.py` but not for `tests/test_omi.py` ✓ I ran `catalogs.task_rules('/work', ...)`. `['src/omi/run.py']` returned `omi-modules.md` and `python.md`. `['tests/test_omi.py']` returned `python.md` only. Re-running `python -m omi rules` produced the same `omi-modules` catalog line, `~184 tokens`, as the diff.
+> AC: All tests pass on the Linux worker ✓ `python3 tests/test_omi.py` exited 0 and printed `ok`.
+> AC: All tests pass on the Windows host HOST The Windows host run is left to the Coordinator.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -173,3 +186,4 @@ Review round 1 FAIL: (Coordinator) omi-modules.md says `__init__.py` must not re
 | omi-agent-engineer | claude-haiku-5-5 | low | 18 | 2902 | 236724 | 333s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 1276 | 139557 | 263s | - | PASS 93ea4fe |
 | omi-agent-engineer | claude-haiku-5-5 | low | 16 | 2201 | 182907 | 187s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1359 | 103064 | 237s | - | PASS eddfaac |
