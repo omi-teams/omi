@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature-sensitive
-step: security
+step: accept
 ---
 ## Goal
 On TASK-092 the reviewer gave PASS although "tests pass on the Windows host" could not run in its container, against its own UNVERIFIED rule. Host-only checks get one owner: the Coordinator, with evidence in the checkpoint.
@@ -31,6 +31,7 @@ Host: python tests/test_omi.py (Windows host, Git\bin prepended to PATH, see TAS
 Next: merge
 
 ## Steps
+PO approval accept: Accept, merge
 - plan started 2026-10-28 14:05
 - plan done 2026-10-28 14:05
 - architect started 2026-10-28 14:05
@@ -40,6 +41,8 @@ Next: merge
 - review started 2026-10-28 14:15
 - review done 2026-10-28 14:20
 - security started 2026-10-28 14:20
+- security done 2026-10-28 14:25
+- accept started 2026-10-28 14:25
 
 ## Reports
 2026-10-28 14:08 omi-agent-architect (claude):
