@@ -1391,7 +1391,7 @@ def test_windows_test_shell():
             assert omi.test_prompt_line(root, root) == "FOO=1 example"
 
             def missing(name, path=None):
-                assert name == "bash" and path == git_bin, path
+                assert name in ("bash", "git") and path == git_bin, path
                 return None
 
             omi.shutil.which = missing
@@ -1409,6 +1409,21 @@ def test_windows_test_shell():
             (root / ".omi" / "config.json").write_text('{"test": "FOO=1 example"}', encoding="utf-8")
             omi.os.get_exec_path = lambda: [system32]
             omi.shutil.which = lambda name, path=None: None if path == "" else system32 + "bash.exe"
+            assert omi.test_command(root, root) == 'cmd /d /s /c "FOO=1 example"'
+            # WindowsApps alias skipped; Git Bash found from git.exe in Git\cmd while Git\bin is not on PATH
+            (root / "Git" / "cmd").mkdir(parents=True)
+            (root / "Git" / "bin").mkdir()
+            (root / "Git" / "bin" / "bash.exe").write_text("", encoding="utf-8")
+            cmd_dir, apps = str(root / "Git" / "cmd"), r"C:\Users\u\AppData\Local\Microsoft\WindowsApps"
+            omi.os.get_exec_path = lambda: [apps, system32, cmd_dir]
+
+            def which_git(name, path=None):
+                assert path == cmd_dir, path
+                return str(root / "Git" / "cmd" / "git.exe") if name == "git" else None
+
+            omi.shutil.which = which_git
+            assert omi.test_command(root, root) == [str(root / "Git" / "bin" / "bash.exe"), "-c", "FOO=1 example"]
+            (root / "Git" / "bin" / "bash.exe").unlink()
             assert omi.test_command(root, root) == 'cmd /d /s /c "FOO=1 example"'
         finally:
             omi.WINDOWS, omi.shutil.which, omi.os.get_exec_path = real

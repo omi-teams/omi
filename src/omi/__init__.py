@@ -2239,10 +2239,13 @@ def test_command(wt, main):
     cmd = (json.loads(cfg.read_text(encoding="utf-8")) if cfg.exists() else {}).get("test")
     if cmd:  # through a shell, like in the containers, so `VAR=1 cmd` works
         if WINDOWS:
-            # System32's bash.exe launches WSL rather than the host's Git Bash.
-            path = os.pathsep.join(p for p in os.get_exec_path()
-                                   if posixpath.basename(p.replace("\\", "/").rstrip("/")).lower() != "system32")
+            # The bash.exe in System32 and WindowsApps are WSL aliases, not the host's Git Bash.
+            path = os.pathsep.join(p for p in os.get_exec_path() if posixpath.basename(
+                p.replace("\\", "/").rstrip("/")).lower() not in ("system32", "windowsapps"))
             bash = shutil.which("bash", path=path)
+            git = None if bash else shutil.which("git", path=path)  # Git\cmd on PATH, Git\bin not
+            if git and (git_bash := Path(git).parent.parent / "bin" / "bash.exe").is_file():
+                bash = str(git_bash)
             return [bash, "-c", cmd] if bash else f'cmd /d /s /c "{cmd}"'
         return ["bash", "-c", cmd] if shutil.which("bash") else ["sh", "-c", cmd]
     if (Path(wt) / "tests" / "test_omi.py").exists():
