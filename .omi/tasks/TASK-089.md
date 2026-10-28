@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature
-step: review
+step: accept
 ---
 ## Goal
 omi-board gaps #1, #2, #7, #8: when omi reports something, it says what happened and what to type next.
@@ -37,6 +37,7 @@ Round 1 fixes done: agent mock returns DONE (exit 6 asserted); hook FAILED last-
 Next: Coordinator reviews, runs Windows host, commits.
 
 ## Steps
+- PO approval accept: Nghiệm thu, merge
 - plan started 2026-10-28 09:42
 - plan done 2026-10-28 09:42
 - build started 2026-10-28 09:42
@@ -47,6 +48,8 @@ Next: Coordinator reviews, runs Windows host, commits.
 - build done 2026-10-28 10:05
 - review started 2026-10-28 10:05
 - review done 2026-10-28 10:09
+- accept started 2026-10-28 10:09
+- accept done 2026-10-28 10:09
 
 ## Reports
 2026-10-28 09:49 omi-agent-engineer (claude):
