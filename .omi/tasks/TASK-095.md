@@ -13,7 +13,7 @@ model: haiku
 effort: low
 step_settings:
 workflow: omi-flow-feature
-step: review
+step: accept
 ---
 ## Goal
 Release prep for PLAN-003: version 0.3.2 everywhere `omi --version` and the rc tag read it, as in TASK-092.
@@ -24,7 +24,7 @@ Release prep for PLAN-003: version 0.3.2 everywhere `omi --version` and the rc t
 
 ## Checkpoint
 Done: version 0.3.2 in pyproject.toml, .omi/version, README (install tag + --version), tests/test_omi.py version assertion; template_shas.json 0.3.2 entry recorded after all edits (62 files, equals omi.template_shas()); 0.3.1 entry untouched.
-Not done: Windows host run (Coordinator).
+Not done: -
 Tests: `python3 tests/test_omi.py` exit 0 (Linux worker); `PYTHONPATH=src python3 -m omi --version` -> omi 0.3.2.
 Host: python tests/test_omi.py (Windows) -> exit 0, ok; 0.3.2 shas recomputed on host = recorded (62/62)
 Next: merge
@@ -35,6 +35,8 @@ Next: merge
 - build started 2026-10-28 16:52
 - build done 2026-10-28 17:00
 - review started 2026-10-28 17:00
+- review done 2026-10-28 17:05
+- accept started 2026-10-28 17:05
 
 ## Reports
 2026-10-28 16:57 omi-agent-engineer (claude):
