@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature-sensitive
-step:
+step: architect
 ---
 ## Goal
 omi-board gaps #4, #10, #5: no manual commit after `omi step`, the engineer sees the scope the Coordinator widened on `development`, and a risky scope under a plain workflow is flagged.
@@ -31,3 +31,24 @@ Done:
 Not done:
 Tests:
 Next: start after TASK-089.
+
+## Steps
+- plan started 2026-10-28 10:13
+- plan done 2026-10-28 10:13
+- architect started 2026-10-28 10:13
+- architect done 2026-10-28 10:15
+
+## Reports
+2026-10-28 10:14 omi-agent-architect (claude):
+> I've read the task, `step()`, `run_role()`/`run_cmd()`, `task_scope`/`out_of_scope`, the skills CLI and the omi-task skill (both copies are identical). One design point affects correctness: scope sync has to run before `run_role` captures `before`. Otherwise `revert_front` undoes the synced scope after the run.
+> 
+> ```
+> RECOMMEND: A - change the existing step(), run_role() and skills-check code paths with three small helpers; no new module or command, and each fix stays where its behaviour lives.
+> OPTIONS: A (helpers called from step / run_role / main "skills check"): smallest diff, reuses git()/parse()/split(), but step() gets longer; B (a separate `omi sync`/`omi commit` command the Coordinator calls): no change to step() or run_role(), but it brings back the manual step this task removes (#4 and #10 stay open); C (scope sync in run_cmd, not run_role): only `omi run` is affected, but it must still happen before run_role reads `before`, so it needs the same reorder for no gain.
+> [... truncated ...]
+> ```
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read | verdict |
+|---|---|---|---|---|---|---|---|---|
+| omi-agent-architect | claude-opus-5-5 | high | 14 | 5057 | 223811 | 58s | - | n/a |
