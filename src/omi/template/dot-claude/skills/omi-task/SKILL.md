@@ -19,7 +19,7 @@ The main checkout stays on `development`. `<wt>` is `../<repo-name>.wt/<ID>`.
 5. Handle the engineer's result:
    - `DONE`: run `python -m omi run omi-agent-reviewer <ID>` (fresh instance in a read-only container; it first runs tests, scope and skills checks and, if one fails, reports it instead of starting: treat that as a fix round; skip it only by the path rule in AGENTS.md "Quota rules").
    - Review `FAIL`: run `python -m omi step <ID> back`, write the findings under `## Checkpoint` in `<wt>`'s task file after a line `Review round <N> FAIL:`, commit, and run step 3 again. After 2 failed fix rounds, ask the PO.
-   - `NEEDS SCOPE`: if it fits the task goal, widen `scope` in the task file on `development` only and commit it there (the worktree copy is ignored; `omi run` copies the new scope into it, `SCOPE SYNCED:`), and rerun. Otherwise ask the PO.
+   - `NEEDS SCOPE`: if it fits the task goal, widen `scope` in the task file on `development` and commit it there (`omi run` copies the new scope into the worktree copy, `SCOPE SYNCED:`), and rerun. Otherwise ask the PO.
 6. On PASS, tick (`- [x]`) each criterion the reviewer marked ✓, set `status: done` in `<wt>`'s task file and commit. Then run `python -m omi hook pre-merge <ID>` (no hook file: no-op); a non-zero exit blocks the merge: treat it as a fix round (step 5). Then:
    - With a GitHub remote: `git -C <wt> push -u origin task/<ID>`, `gh pr create --base development --head task/<ID> --fill`, then `gh pr checks --watch`. If CI fails, that counts as a fix round (step 5). When green, run `gh pr merge --squash --delete-branch`, then `git pull`.
    - Without a remote: `git merge --squash task/<ID>`, then commit `<type>: <title> (<ID>)`.

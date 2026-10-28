@@ -32,11 +32,11 @@ Review round 1 FAIL (reviewer + security, no security issue):
 - Scope sync: add a test through `run_role` (Docker stubbed) showing the synced scope survives `revert_front` / is in the task file the agent sees; or assert sync runs before `before` is read.
 - `warn_sensitive`: match path segments (split each glob on `/`; segment contains `migration`, equals/startswith `auth` or `secret`; glob starts with `.github`), so `src/authors/**`, `oauth` do not warn. Test both.
 - AC4: drop the 'worktree copy is ignored' / 'development only' caveat from both omi-task SKILL.md copies and update the `test_cli_correctness` strings that pin it.
-Coordinator: Windows host suite passed (ok).
-Done:
-Not done:
-Tests:
-Next: start after TASK-089.
+Coordinator: Windows host suite passed (ok), also after fix round 1.
+Done: round 1 fixes: tests for done/skip/no-op/#4 worktree case, run_role scope-sync test, segment-based warn_sensitive (+tests), caveat dropped from both SKILL.md copies and test_cli_correctness.
+Not done: Windows run.
+Tests: python3 tests/test_omi.py -> ok (Linux).
+Next: review round 2.
 
 ## Steps
 - plan started 2026-10-28 10:13
@@ -141,6 +141,62 @@ Next: start after TASK-089.
 > `python3 tests/test_omi.py` prints `ok` here on Linux. I did not check the Windows host.
 > I found no security issue. `sync_scope` copies only the trusted `development` scope line into the agent-writable worktree copy. `commit_task_file` uses `--only` on a single path, so other staged changes stay as they were.
 > UNVERIFIED: The Windows `Path` comparison in `step()` (`task == Path(root)/…`) was not run on the Windows host.
+2026-10-28 10:41 omi-agent-engineer (claude):
+> DONE
+> - Files: `src/omi/__init__.py`, `tests/test_omi.py`, both `omi-task/SKILL.md` copies, `.omi/tasks/TASK-090.md` (checkpoint).
+> - `warn_sensitive` now matches path segments. `src/authors/**` and `oauth` don't warn. `auth`, `auth-*`, `secret(s)`, `*migration*` and `.github` segments do.
+> - New tests cover step commits for `done` and `skip`, a no-op `commit_task_file` that makes no new commit, and the #4 case with a worktree (no commit on `development`). The no-worktree case is the existing `next` test. They also cover scope sync through `run_role` with Docker stubbed, and `warn_sensitive` hit and miss cases.
+> - Both `omi-task` SKILL.md copies dropped the "development only" and "worktree copy is ignored" caveat. `test_cli_correctness` now asserts they are gone.
+> - Tests: `python3 tests/test_omi.py` prints `ok` on Linux. I did not run it on the Windows host.
+> - Open issue: none.
+> - Suggested commit: `feat(task-flow): step auto-commits task file, run syncs scope, warn on sensitive scope`
+2026-10-28 10:43 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -149,3 +205,4 @@ Next: start after TASK-089.
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 38 | 10262 | 792499 | 535s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 3366 | 121219 | 257s | - | PASS a12b839 |
 | omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 12 | 2540 | 205977 | 249s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL a12b839 |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 26 | 6487 | 461856 | 279s | 1/1 omi-skill-lean-implementation | - |

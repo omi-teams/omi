@@ -1258,8 +1258,8 @@ def test_cli_correctness():
         assert omi.GIT_HINT in template and "edit only on development" in template
         skill = (base / f"{dot}claude/skills/omi-task/SKILL.md").read_text(encoding="utf-8")
         assert "push `development` right away (`git push`)" in skill
-        assert "widen `scope` in the task file on `development` only" in skill
-        assert "the worktree copy is ignored" in skill
+        assert "development only" not in skill and "the worktree copy is ignored" not in skill
+        assert "`omi run` copies the new scope into the worktree copy" in skill
     # #6 the configured test command runs through a shell
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
@@ -1762,6 +1762,10 @@ def test_run_read_role():
             assert omi.run_role("omi-agent-engineer", wt, task) == 0
             assert "omi-skill-zz" in prompt() and "\nTests: python3 " in prompt(), prompt()
             assert task.read_text().splitlines()[-1].endswith("| 0/1 | - |"), task.read_text()  # Usage `skills read` cell
+            # scope sync runs before `before` is read: the development scope (stub: src/**) is what the agent's task file keeps
+            task.write_text("---\nid: TASK-001\nscope: docs/**\nworkflow: omi-flow-zz\nstep: build\n---\n")
+            assert omi.run_role("omi-agent-engineer", wt, task) == 0
+            assert "scope: src/**" in task.read_text() and "SCOPE SYNCED: src/**" in out.getvalue()
             task.write_text("---\nid: TASK-001\nworkflow: omi-flow-zz\nstep: review\n---\n")  # step role differs
             calls.clear()
             omi.run_role("omi-agent-engineer", wt, task)
@@ -1827,6 +1831,24 @@ def test_task_flow_commit_scope_sync_warn():
         assert omi.git(main, "show", "--name-only", "--format=", "HEAD") == ".omi/tasks/TASK-001.md"
         assert "M  .omi/decisions.md" in omi.git(main, "status", "--porcelain")
         assert "?? other.txt" in omi.git(main, "status", "--porcelain")
+        for action, why in (("done", None), ("skip", "n/a")):
+            sys.stdout, saved = io.StringIO(), sys.stdout
+            try:
+                if action == "done":
+                    assert omi.step(main, "TASK-001", "done") == 0
+                else:
+                    assert omi.step(main, "TASK-001", "next") == 0
+                    assert omi.step(main, "TASK-001", "skip", why=why) == 0
+            finally:
+                sys.stdout = saved
+            cur = omi.parse(task.read_text(encoding="utf-8"))["step"]
+            assert omi.git(main, "log", "-1", "--format=%s") == f"chore(TASK-001): step {cur} {action}"
+            assert omi.git(main, "show", "--name-only", "--format=", "HEAD") == ".omi/tasks/TASK-001.md"
+        # nothing changed: no new commit
+        head = omi.git(main, "rev-parse", "HEAD")
+        omi.commit_task_file(main, task, "chore: noop")
+        assert omi.git(main, "rev-parse", "HEAD") == head
+        assert "M  .omi/decisions.md" in omi.git(main, "status", "--porcelain")
         # scope sync: widen on development only, the worktree copy follows
         wt = Path(d).resolve() / "wt"
         git(main, "worktree", "add", "-q", str(wt), "-b", "task/TASK-001", "development")
@@ -1846,6 +1868,16 @@ def test_task_flow_commit_scope_sync_warn():
         assert "SCOPE SYNCED: src/**, docs/**" in out and again == out
         synced = (wt / ".omi" / "tasks" / "TASK-001.md").read_text(encoding="utf-8")
         assert "scope: src/**, docs/**" in synced and "- local line" in synced
+        # #4: with a worktree the step lands in the worktree's task file, development gets no commit
+        head = omi.git(main, "rev-parse", "HEAD")
+        sys.stdout, saved = io.StringIO(), sys.stdout
+        try:
+            assert omi.step(main, "TASK-001", "next") == 0
+        finally:
+            sys.stdout = saved
+        assert omi.git(main, "rev-parse", "HEAD") == head
+        assert omi.parse((wt / ".omi" / "tasks" / "TASK-001.md").read_text(encoding="utf-8")).get("step") != \
+            omi.parse(task.read_text(encoding="utf-8")).get("step")
         # sensitive-scope warning
         m = {"scope": "db/migrations/**, src/**", "workflow": "omi-flow-feature"}
         sys.stdout, saved = io.StringIO(), sys.stdout
@@ -1858,6 +1890,14 @@ def test_task_flow_commit_scope_sync_warn():
         finally:
             sys.stdout = saved
         assert warned == "WARN: scope touches migrations - consider omi-flow-feature-sensitive\n" and not quiet
+        for glob, hit in (("src/authors/**", False), ("src/oauth/**", False), ("src/auth/**", True), ("app/secrets/*", True),
+                          (".github/workflows/**", True), ("src/**", False)):
+            sys.stdout, saved = io.StringIO(), sys.stdout
+            try:
+                omi.warn_sensitive({"scope": glob, "workflow": "omi-flow-feature"})
+                assert bool(sys.stdout.getvalue()) == hit, glob
+            finally:
+                sys.stdout = saved
 
 
 def test_clip_report():

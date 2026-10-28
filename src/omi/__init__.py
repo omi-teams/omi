@@ -632,16 +632,17 @@ def add_step_log(text, line):
     return f"{head}{sep}{body}{line}\n" + (f"\n## {tail}" if nxt else "")
 
 
-SENSITIVE_SCOPE = ("migrations", "auth", "secrets", ".github/")  # scope globs containing one of these want omi-flow-feature-sensitive
+SENSITIVE_SCOPE = (r".*migration.*", r"auth([-_.*].*)?", r"secrets?", r"\.github")  # scope path segments (regex, fullmatch) that want omi-flow-feature-sensitive
 
 
 def warn_sensitive(m):
     """Print a warning (never fail) when the task's scope touches a sensitive path under a non-sensitive workflow."""
     if m.get("workflow") == "omi-flow-feature-sensitive":
         return
-    for pat in SENSITIVE_SCOPE:
-        if any(pat in g.lower() for g in split(m.get("scope"))):
-            print(f"WARN: scope touches {pat} - consider omi-flow-feature-sensitive")
+    segs = dict.fromkeys(seg for g in split(m.get("scope")) for seg in g.lower().split("/"))
+    for seg in segs:
+        if any(re.fullmatch(p, seg) for p in SENSITIVE_SCOPE):
+            print(f"WARN: scope touches {seg} - consider omi-flow-feature-sensitive")
 
 
 def commit_task_file(root, task, msg):
