@@ -1,16 +1,16 @@
 ---
 id: TASK-106
 title: Repo rule for the src/omi module structure
-status: planned
+status: in-progress
 depends: TASK-104
 plan: PLAN-004
 scope: .omi/rules/omi-modules.md, .omi/rules/CATALOG.md
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: claude
+model: haiku
+effort: low
 step_settings:
 workflow: omi-flow-feature
 step:
