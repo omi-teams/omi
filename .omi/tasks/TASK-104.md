@@ -13,7 +13,7 @@ model: opus
 effort: high
 step_settings:
 workflow: omi-flow-refactor
-step:
+step: baseline
 ---
 ## Goal
 `src/omi/__init__.py` is one 2640-line file. Every code task must put the whole file in `scope`, so scopes are coarse, parallel tasks always conflict and agents read more than they need. The PO asked (2026-10-28) for a clean, senior-grade structure before PLAN-004 adds detached mode. Behaviour stays identical; this is a move, not a rewrite.
@@ -30,4 +30,21 @@ Design rules: one module per responsibility (for example cli, config/paths, task
 Done:
 Not done:
 Tests:
-Next:
+Next: PO approved option A from the architect report below (decisions.md 2026-10-28). Baseline run: confirm tests green before any change; add characterization tests in tests/test_omi.py (the only place that survives between runs) so every USAGE command's exit code and key output is pinned; no src change. Refactor run 1: extract core, catalogs, workflows, upgrade, tasks, github. Refactor run 2: extract creds, tools, docker, hooks, run, cli; reduce __init__ to the package surface; `grep -nE "omi\.[A-Za-z_]+ *=[^=]" tests/test_omi.py` shows only omi.<module>.<name>; `python -c "import omi.<m>"` per module; `pip install .` in a temp venv + `python -m omi status` in a temp repo.
+## Steps
+- plan started 2026-10-28 15:04
+- plan done 2026-10-28 15:07
+- baseline started 2026-10-28 15:07
+
+## Reports
+2026-10-28 15:06 omi-agent-architect (claude):
+> ```
+> RECOMMEND: A - flat sibling modules where code always calls other modules through the module name (`from . import core` then `core.git(...)`, never `from .core import git`), so each test patch has one target (the module that defines the name) and still reaches every caller after the move.
+> OPTIONS: A: flat modules, module-qualified calls, tests patch the defining module (e.g. `omi.core.WINDOWS`) / pro: behaviour is a pure move, test edits are mechanical, no cycles if layered / con: every reference in moved code and in the patch lines (about 25 names) needs a prefix; B: `from .x import name` plus re-exporting everything from `__init__` / pro: smallest diff / con: `omi.WINDOWS=`, `omi.git=`, `omi.egress=` and similar patches silently stop working (each module has its own copy of the name), so tests could pass while testing nothing; C: subpackages plus a claude/codex adapter class / pro: removes the 19 scattered `tool==` branches / con: that is a rewrite (the AC asks for a move), more risk; do it as a follow-up after PLAN-004 if the branches keep growing.
+> [... truncated ...]
+> ```
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read | verdict |
+|---|---|---|---|---|---|---|---|---|
+| omi-agent-architect | claude-opus-5-5 | high | 16 | 7738 | 242377 | 85s | - | n/a |
