@@ -3990,6 +3990,110 @@ def test_host_only_criteria():
             assert "Host: <command> -> <result>" in text and "no merge without one `Host:` line" in text
 
 
+def test_cli_characterization():
+    """Pins exit code and key output of every USAGE command through `python -m omi` (no internals, no gh/docker on PATH)."""
+    src = str(Path(__file__).resolve().parents[1] / "src")
+    want = omi.tomllib.loads(Path(src).parent.joinpath("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+    env = {**omi.os.environ, "PYTHONPATH": src, "PATH": str(Path(shutil.which("git")).parent)}
+
+    def cli(cwd, *args, stdin=""):
+        r = subprocess.run([sys.executable, "-m", "omi", *args], cwd=cwd, env=env, input=stdin, capture_output=True,
+                           encoding="utf-8", errors="replace")
+        return r.returncode, r.stdout, r.stderr
+
+    def task(root, tid, extra):
+        (root / ".omi" / "tasks" / f"{tid}.md").write_text(f"---\nid: {tid}\ntitle: T{tid[-1]}\nstatus: planned\n{extra}---\n"
+                                                          "## Goal\nx\n## Checkpoint\nDone: nothing\n", encoding="utf-8")
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve() / "r"
+        root.mkdir()
+        rc, usage, err = cli(root)
+        assert rc == 0 and usage.startswith("usage: omi <command>\n") and not err
+        assert [l.split()[0] for l in usage.splitlines()[1:]] == [
+            "init", "upgrade", "version", "status", "guard", "github", "clean", "skills", "skills", "token", "plans",
+            "references", "rules", "agents", "workflows", "step", "run", "hook", "parallel", "worker", "worker"]
+        # unknown commands and incomplete arguments fall through to the usage text
+        for args in (["help"], ["bogus"], ["step", "TASK-001"], ["run", "omi-agent-engineer", "--model"], ["parallel", "X"],
+                     ["hook", "pre-run"], ["token"], ["worker"]):
+            assert cli(root, *args) == (0, usage, ""), args
+        for args in (["version"], ["--version"]):
+            assert cli(root, *args) == (0, f"omi {want}\nlatest: python -m omi upgrade --check\n", ""), args
+        rc, out, err = cli(root, "init", ".")
+        assert rc == 0 and "create AGENTS.md\n" in out and f"stamp  .omi/version ({want})\n" in out, (out, err)
+        assert "\ntools: git ok, gh MISSING, docker MISSING" in out and out.endswith("next: open Claude Code or Codex here and type omi-idea\n")
+        rc, out, _ = cli(root, "init", ".")
+        assert rc == 0 and "skip   AGENTS.md (exists)\n" in out and "create " not in out
+        rc, out, _ = cli(root, "status")
+        assert rc == 0 and f"\nomi {want} (project {want})\n" in out and "upgrade --apply" not in out
+        assert out.endswith("no tasks yet - run omi-idea\n"), out
+        rc, out, _ = cli(root, "upgrade", "--apply")
+        assert rc == 0 and out.endswith(f"upgrade {want}: 0 created, 0 updated, 0 kept (see *.omi-new)\n"), out
+        assert cli(root, "upgrade", "--to", "bogus") == (1, "", "usage: omi upgrade [--check | --to vX.Y.Z]\n")
+        for args in (["skills"], ["rules"], ["plans"], ["references"], ["agents"], ["workflows"]):
+            rc, out, err = cli(root, *args)
+            assert rc == 0 and not err and re.fullmatch(rf"wrote \.omi/{args[0]}/CATALOG\.md \(\d+ \w+\)\n", out), (args, out)
+        for args, name in ((["skills", "--check"], "skills"), (["workflows", "--check"], "workflows")):
+            rc, out, err = cli(root, *args)
+            assert rc == 0 and not err and re.fullmatch(rf"{name} ok \(\d+ checked\)\n", out), (args, out, err)
+        gh = (1, "", "gh is not installed (https://cli.github.com); omi github needs it.\n")
+        assert cli(root, "github") == gh and cli(root, "github", "--po") == gh
+        assert cli(root, "token", "set", "--tool", "x") == (1, "", "usage: omi token set [--tool claude|codex]\n")
+        if sys.platform != "win32":  # Windows prompts for the secret
+            assert cli(root, "token", "set") == (0, "no credential store support here; export CLAUDE_CODE_OAUTH_TOKEN in the shell that runs omi.\n", "")
+            assert cli(root, "token", "set", "--tool", "codex")[1] == "no credential store support here; export OPENAI_API_KEY in the shell that runs omi.\n"
+        hook = (1, "", "usage: omi hook pre-run|post-run|pre-merge <TASK-ID> (the task needs a worktree). Nothing changed.\n")
+        assert cli(root, "hook", "pre-run", "TASK-001") == hook and cli(root, "hook", "bogus", "TASK-001") == hook
+        assert cli(root, "run", "omi-agent-engineer", "TASK-001") == (
+            1, "", "no worktree for TASK-001: create it first (git worktree add). Nothing changed.\n")
+        assert cli(root, "worker", "x") == (1, "", "usage: omi worker <wt> <task-file> [--model M] [--effort E]\n")
+        rc, out, err = cli(root, "worker", "x", "--prove")
+        assert rc == 1 and not out and err.endswith(" is not a git worktree. Nothing changed.\n"), err
+        # guard: exit 0 allows, 2 blocks with the reason on stderr
+        assert cli(root, "guard", stdin="{}") == (0, "", "")
+        payload = lambda p, **kw: json.dumps({"tool_input": {"file_path": str(p)}, **kw})
+        rc, out, err = cli(root, "guard", stdin=payload(root / ".claude" / "settings.json"))
+        assert rc == 2 and err.endswith("settings.json is Claude Code config; only a task whose scope names it may change it.\n"), err
+        outside = Path(d).resolve() / "elsewhere" / "x.py"
+        assert cli(root, "guard", stdin=payload(outside)) == (0, "", "")
+        rc, out, err = cli(root, "guard", stdin=payload(outside, agent_type="omi-agent-engineer"))
+        assert rc == 2 and err.startswith("OMI: ") and err.endswith("x.py is outside the task worktree.\n"), err
+        # tasks: status, parallel, skills check, step
+        assert cli(root, "step", "bad!", "next") == (1, "", "invalid task id `bad!`: use letters, digits, `-` and `_`. Nothing changed.\n")
+        rc, out, err = cli(root, "step", "TASK-001", "next")
+        assert rc == 1 and err.startswith("no task file ") and err.endswith("TASK-001.md. Nothing changed.\n"), err
+        assert cli(root, "parallel", "TASK-001", "TASK-002") == (1, "", "TASK-001: no task file\nTASK-002: no task file\n")
+        task(root, "TASK-001", "scope: a/**\nrole: omi-agent-engineer\nskills: []\n")
+        task(root, "TASK-002", "depends: TASK-001\nscope: b/**\n")
+        task(root, "TASK-003", "scope: a/x.py\n")
+        rc, out, _ = cli(root, "status")
+        assert rc == 0 and out.endswith("done: 0/3\n[planned] TASK-001 T1\n[planned] TASK-002 T2\n[planned] TASK-003 T3\nnext: TASK-001\n"), out
+        assert cli(root, "parallel", "TASK-001", "TASK-002") == (1, "", "TASK-002 depends on TASK-001\n")
+        assert cli(root, "parallel", "TASK-001", "TASK-003") == (1, "", "TASK-001 and TASK-003 scopes overlap: a/** vs a/x.py\n")
+        assert cli(root, "parallel", "TASK-001", "TASK-001") == (1, "", "TASK-001: duplicate id\n")
+        assert cli(root, "parallel", "TASK-003", "TASK-002") == (0, "parallel ok: TASK-003 TASK-002\n", "")
+        assert cli(root, "skills", "check", str(Path(".omi") / "tasks" / "TASK-001.md")) == (0, "skills ok\n", "")
+        steps = (
+            (["next"], 0, "TASK-001: step plan (coordinator, gate none): input PO idea; output task file with scope and acceptance criteria; "
+                          "stop when task file complete and PO picked it\n"),
+            (["next"], 1, "TASK-001: step plan is not done; run `omi step TASK-001 done` or `skip --why`. Nothing changed.\n"),
+            (["done"], 0, "TASK-001: step plan done\n"),
+            (["skip", "--why", "x"], 1, "TASK-001: step plan is already done; run `omi step TASK-001 next`. Nothing changed.\n"),
+            (["next"], 0, "TASK-001: step build (omi-agent-engineer, gate none): input task file, worktree; output diff, tests passing, "
+                          "Checkpoint updated; stop when every criterion has a passing test\n"),
+            (["skip", "--why", "baseline"], 0, "TASK-001: step build skipped\n"),
+            (["next"], 0, "TASK-001: step review (omi-agent-reviewer, gate review): input task file, diff; output VERDICT PASS or FAIL; "
+                          "stop when VERDICT PASS\n"),
+            (["bogus"], 1, "usage: omi step <TASK-ID> next|done|back|skip --why <reason>\n"),
+            (["back"], 0, "TASK-001: step review failed; back to build (omi-agent-engineer), then `omi step TASK-001 done` and `next`\n"))
+        for args, code, msg in steps:
+            rc, out, err = cli(root, "step", "TASK-001", *args)
+            assert (rc, out if code == 0 else err) == (code, msg) and not (err if code == 0 else out), (args, rc, out, err)
+        text = (root / ".omi" / "tasks" / "TASK-001.md").read_text(encoding="utf-8")
+        assert "\nstep: build\n" in text and re.search(r"\n## Steps\n- plan started [\d-]+ [\d:]+\n- plan done ", text), text
+        rc, out, _ = cli(root, "status")
+        assert rc == 0 and "[planned] TASK-001 T1\n" in out
+
+
 if __name__ == "__main__":
     test_step_settings_format_and_docs()
     test_upgrade_gitattributes()
@@ -4054,4 +4158,5 @@ if __name__ == "__main__":
     test_github_po()
     test_github_private()
     test_task_flow_commit_scope_sync_warn()
+    test_cli_characterization()
     print("ok")
