@@ -100,7 +100,6 @@ def test_version_stamp_package_hook():
             assert f"omi {want} (project 0.1.0)" in out and f"run `python -m omi upgrade --apply` to bring the project files to omi {want}" in out
             omi.upgrade_apply(root)
             assert (root / ".omi" / "version").read_text().strip() == want
-            (root / ".omi" / "version").write_text("0.1.0\n")
             (root / ".omi" / "version").unlink()
             assert "upgrade --apply" in st()
     finally:

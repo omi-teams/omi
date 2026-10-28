@@ -24,6 +24,8 @@ omi-board had omi 0.3.1 installed but 0.3.0 project files, and `/omi-upgrade` st
 - [ ] Repo copy equals its template copy; template shas updated if the tests require it. All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
+Host: `python tests/test_omi.py` on the Windows host after fix round 1 -> ok (Coordinator, 2026-10-28)
+Round 2: removed the no-op write_text before unlink in tests/test_omi.py; the test already starts from a stale 0.1.0 stamp and asserts upgrade_apply stamps the installed version. Linux `python3 tests/test_omi.py` -> ok. Windows host run still for the Coordinator.
 Review round 1 FAIL:
 - tests/test_omi.py:103 `write_text("0.1.0
 ")` right before `unlink()` has no effect: delete it.
@@ -108,9 +110,65 @@ Next: Coordinator review/commit
 > AC: Skill step 1 (both copies) applies when `up to date` but the stamp is older or missing, then continues with steps 4-5; stops only when both are current. ✓ The wording is in both copies (`cmp` shows the two files are identical). The test asserts "older than", "upgrade --apply" and "steps 4-5".
 > AC: `omi status` hint names the command that stamps, and a test proves it updates `.omi/version`. ✓ The hint is now `python -m omi upgrade --apply`. `upgrade_apply` writes `.omi/version` (src/omi/__init__.py:~986), and the test asserts the stamp equals the installed version after calling it.
 > AC: Repo copy equals template copy; shas updated if needed; tests pass on Linux and on the Windows host. UNVERIFIED. The copies are identical and `python3 tests/test_omi.py` exits 0 and prints `ok` on Linux. The Windows run was not done. I did not check whether `template_shas.json` needed changes, though the tests pass without any.
+2026-10-28 13:44 omi-agent-engineer (claude):
+> DONE
+> - I deleted the no-op `write_text("0.1.0\n")` that came right before `unlink()` in `tests/test_omi.py`.
+> - The test already starts from a stale project: it stamps 0.1.0, runs `upgrade_apply`, and asserts the stamp equals the installed version. I made no other change.
+> - I updated `## Checkpoint` in `.omi/tasks/TASK-093.md`.
+> - Files changed: `tests/test_omi.py`, `.omi/tasks/TASK-093.md`.
+> - Tests: `python3 tests/test_omi.py` ran on Linux and printed `ok`. I did not run the Windows host check, so it is still open.
+> - Suggested commit: `fix(upgrade): apply project files when .omi/version is behind the installed omi`
+2026-10-28 13:47 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 3041 | 198334 | 249s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1620 | 96196 | 199s | - | FAIL 8cbcc8f |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 12 | 1258 | 132668 | 237s | 1/1 omi-skill-lean-implementation | - |
