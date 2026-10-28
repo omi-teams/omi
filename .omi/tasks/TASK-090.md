@@ -1,22 +1,23 @@
 ---
 id: TASK-090
 title: Task-file flow: step auto-commits, run syncs scope, sensitive-workflow warning
-status: planned
+status: in-progress
 depends: TASK-089
 plan: PLAN-002
 scope: src/omi/__init__.py, tests/test_omi.py, .claude/skills/omi-task/SKILL.md, src/omi/template/dot-claude/skills/omi-task/SKILL.md
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: claude
+model: sonnet
+effort: medium
 step_settings:
 workflow: omi-flow-feature-sensitive
 step:
 ---
 ## Goal
 omi-board gaps #4, #10, #5: no manual commit after `omi step`, the engineer sees the scope the Coordinator widened on `development`, and a risky scope under a plain workflow is flagged.
+Note (Coordinator, after TASK-089): in this repo `omi step` wrote to the worktree's task file once the worktree existed, so `development` stayed clean. First reproduce #4 in a test (likely: `omi step` before the worktree exists writes the task file on `development`); fix only the case the test shows.
 
 ## Acceptance criteria
 - [ ] `omi step <ID> next|done|back|skip` commits only the task file it changed on `development` (message `chore(<ID>): step <step> <action>`), leaving any other staged or unstaged change untouched; no commit when nothing changed. Tested with real git.
