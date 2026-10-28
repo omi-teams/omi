@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature-sensitive
-step: review
+step: security
 ---
 ## Goal
 On TASK-092 the reviewer gave PASS although "tests pass on the Windows host" could not run in its container, against its own UNVERIFIED rule. Host-only checks get one owner: the Coordinator, with evidence in the checkpoint.
@@ -25,7 +25,7 @@ On TASK-092 the reviewer gave PASS although "tests pass on the Windows host" cou
 
 ## Checkpoint
 Done: reviewer HOST carve-out and omi-task `Host:` line in repo and template copies (identical); test_host_only_criteria added. CATALOG.md and template_shas.json unchanged (summary same, shas hold released versions only).
-Not done: Windows host test run (Coordinator).
+Not done: -
 Tests: python3 tests/test_omi.py ok on Linux worker; `PYTHONPATH=src python3 -m omi skills --check` ok (19 checked).
 Host: python tests/test_omi.py (Windows host, Git\bin prepended to PATH, see TASK-103) -> exit 0, ok
 Next: merge
@@ -38,6 +38,8 @@ Next: merge
 - build started 2026-10-28 14:08
 - build done 2026-10-28 14:15
 - review started 2026-10-28 14:15
+- review done 2026-10-28 14:20
+- security started 2026-10-28 14:20
 
 ## Reports
 2026-10-28 14:08 omi-agent-architect (claude):
@@ -114,6 +116,18 @@ Next: merge
 > AC: omi-task skill (both copies): before merge, the Coordinator runs the host checks and writes `Host: <command> -> <result>` in the task checkpoint; no merge without that line when the reviewer reported a `HOST` item ✓ Step 6 of both copies adds this. Each HOST item gets a check on the host, a `Host:` line under `## Checkpoint`, and a criterion tick only on a pass. A failed host check is a fix round, and the step says "no merge without one `Host:` line per `HOST` item". The copies are identical (diff clean).
 > AC: Repo copies equal their template copies; agents catalog regenerated; `omi skills --check` passes; template shas updated if the tests require it; all tests pass on the Linux worker and the Windows host ✓ for repo/template equality, `omi skills --check` (19 checked) and the Linux worker tests. The catalog and shas are unchanged and the tests pass, which fits an unchanged `summary:` and shas that hold released versions only. UNVERIFIED for the Windows host: the task file's own Checkpoint says that run has not been done. This is the host-only part of the criterion, so it is reported as HOST and doesn't block PASS. HOST: all tests pass on the Windows host (Coordinator must run `python3 tests/test_omi.py` there and write a `Host:` line).
 > ```
+2026-10-28 14:25 omi-agent-security-reviewer (claude):
+> ```
+> VERDICT: PASS
+> - .omi/tasks/TASK-094.md:30 the `Host:` line (Windows run, exit 0) is already written, but the Checkpoint's "Not done:" line still says the Windows host run is outstanding | why: stale, contradictory evidence | verified: read the task file -> drop or update the "Not done" line before merge.
+> UNVERIFIED: the Windows host test result in the `Host:` line. It cannot run in this container; the Coordinator would have to re-run `python tests/test_omi.py` on the host.
+> ```
+> 
+> I checked the following:
+> - `python3 tests/test_omi.py` ends with "ok" and exit 0 on Linux.
+> - The reviewer prompt and the omi-task skill are byte-identical to their template copies.
+> - The new `HOST` rule and the `Host:` line are in both copies.
+> - All changed files are in scope. There is no secret exposure or injection surface, since the change is prompt text, a test and task bookkeeping.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -121,3 +135,4 @@ Next: merge
 | omi-agent-architect | claude-opus-5-5 | high | 14 | 3415 | 164639 | 50s | - | n/a |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 2947 | 187595 | 253s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1342 | 75098 | 239s | - | PASS fd067f7 |
+| omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 8 | 1294 | 117711 | 240s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS 4674cda |
