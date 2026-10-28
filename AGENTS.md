@@ -49,6 +49,7 @@ Mark exactly one option Recommended and give a task-specific reason; put it firs
 ## Quota rules
 - One task at a time unless the PO asks for parallel work.
 - Parallel work: check `python -m omi parallel <IDs>` first; each task keeps its own worktree.
+- Planning leaves `tool`, `model`, `effort` empty; set them only at task start from the PO's pick.
 - The Coordinator sets `model`/`effort` (and `tool`) per task in the task file from these rules; they apply to the write role, `omi run --model/--effort/--tool` override them.
 - Mechanical (rename, config, docs): `haiku`, effort `low`.
 - Default: `sonnet`, effort `medium`.

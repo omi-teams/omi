@@ -19,4 +19,4 @@
 - omi-skill-brainstorm-ac (workflow): Use when a requirement or feature request is vague and must become testable acceptance criteria before a task file is written. [~621 tokens]
 - omi-skill-change-request (workflow): Use when requirements, scope or an approved decision change after a task started, or an engineer reports NEEDS SCOPE. [~528 tokens]
 - omi-skill-lean-implementation (workflow): Use when writing or fixing code and tempted to add abstractions, dependencies or config; keeps the diff minimal (YAGNI, stdlib first). [~576 tokens]
-- omi-skill-task-brief (workflow): Use when a task file must be complete enough for a fresh engineer agent with zero context, before `omi run`. [~607 tokens]
+- omi-skill-task-brief (workflow): Use when a task file must be complete enough for a fresh engineer agent with zero context, before `omi run`. [~658 tokens]
