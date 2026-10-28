@@ -1,16 +1,16 @@
 ---
 id: TASK-104
 title: Split src/omi/__init__.py into modules by responsibility
-status: planned
+status: in-progress
 depends: TASK-103
 plan: PLAN-003
 scope: src/omi/*.py, src/omi/*/*.py, tests/test_omi.py, pyproject.toml, .omi/skills/CATALOG.md, .omi/agents/CATALOG.md, .omi/rules/CATALOG.md
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: claude
+model: opus
+effort: high
 step_settings:
 workflow: omi-flow-refactor
 step:
