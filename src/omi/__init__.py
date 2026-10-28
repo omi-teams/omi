@@ -32,7 +32,7 @@ STATUSES = ("in-progress", "review", "blocked", "planned")
 USAGE = """usage: omi <command>
   init [dir]   install the squad into a project (never overwrites)
   upgrade [--check | --to vX.Y.Z]   install a newer omi and update the project's unmodified template files (modified ones get <path>.omi-new)
-  version      print the omi version (also --version)
+  version      print the omi version and how to check for a newer one (also --version)
   status       show tasks, checkpoints and the next suggested task
   guard        Claude Code PreToolUse hook: block writes outside task scope
   github       set up branches and rulesets: squad merges to development, only the PO to staging/main
@@ -1098,6 +1098,7 @@ def status(cwd="."):
     dockerfile = root / "docker" / "Dockerfile"
     if dockerfile.exists() and dockerfile.read_bytes().replace(b"\r\n", b"\n") != (TEMPLATE / "docker" / "Dockerfile").read_bytes().replace(b"\r\n", b"\n"):
         print(f"docker/Dockerfile differs from the omi {version()} template; review it (omi init never overwrites it)")
+        print(f"  see the diff: git diff --no-index {TEMPLATE / 'docker' / 'Dockerfile'} docker/Dockerfile\n  merge by hand; omi init and upgrade never overwrite it")
     for line in full_volumes(main_checkout(root) or root):
         print(line)
     cfg = root / ".omi" / "config.json"
@@ -1776,6 +1777,7 @@ def hook_note(task, event, res):
     """Print a hook's output and record the outcome under `## Reports` (step done reads the last post-run line)."""
     rc, out = res
     print(out, end="")
+    print(f"hook {event} " + ("passed" if rc == 0 else f"FAILED (exit {rc})"))
     line = f"{datetime.datetime.now():%Y-%m-%d %H:%M} hook {event} " + ("passed" if rc == 0 else f"FAILED (exit {rc})") + ":"
     append_note(task, "Reports", line + "\n" + "\n".join("> " + l for l in clip_report(out or "(no output)")))
     return rc
@@ -2533,7 +2535,7 @@ def main(argv=None):
     args = sys.argv[1:] if argv is None else argv
     cmd, rest = (args[0], args[1:]) if args else ("help", [])
     if cmd in ("version", "--version"):
-        print(f"omi {version()}")
+        print(f"omi {version()}\nlatest: python -m omi upgrade --check")
     elif cmd == "init":
         init(*rest[:1])
     elif cmd == "upgrade":
