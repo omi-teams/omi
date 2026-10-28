@@ -1,16 +1,16 @@
 ---
 id: TASK-096
 title: Rename omi-squad2 to omi in code, skills and docs
-status: planned
+status: in-progress
 depends: TASK-093, TASK-094
 plan: PLAN-003
-scope: .claude/skills/omi-upgrade/SKILL.md, .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md, .omi/skills/delivery-ops/omi-skill-incident/SKILL.md, .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md, .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md, .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md, README.md, src/omi/__init__.py, src/omi/template/dot-claude/skills/omi-upgrade/SKILL.md, src/omi/template/dot-omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md, src/omi/template/dot-omi/skills/delivery-ops/omi-skill-incident/SKILL.md, src/omi/template/dot-omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md, src/omi/template/dot-omi/skills/delivery-ops/omi-skill-rollback/SKILL.md, src/omi/template/dot-omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md, tests/test_omi.py, src/omi/template_shas.json, .omi/skills/CATALOG.md
+scope: .claude/skills/omi-upgrade/SKILL.md, .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md, .omi/skills/delivery-ops/omi-skill-incident/SKILL.md, .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md, .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md, .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md, README.md, src/omi/cli.py, src/omi/upgrade.py, src/omi/template/dot-claude/skills/omi-upgrade/SKILL.md, src/omi/template/dot-omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md, src/omi/template/dot-omi/skills/delivery-ops/omi-skill-incident/SKILL.md, src/omi/template/dot-omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md, src/omi/template/dot-omi/skills/delivery-ops/omi-skill-rollback/SKILL.md, src/omi/template/dot-omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md, tests/test_omi.py, src/omi/template_shas.json, .omi/skills/CATALOG.md
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: claude
+model: haiku
+effort: low
 step_settings:
 workflow: omi-flow-feature
 step:
