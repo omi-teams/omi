@@ -13,7 +13,7 @@ model: opus
 effort: high
 step_settings:
 workflow: omi-flow-feature-sensitive
-step: build
+step: security
 ---
 ## Goal
 Every omi command can read and write `.omi/`, `docker/` and hooks from a state dir that is not the code repo's git root, chosen by the code repo's remote URL; in-repo projects work as before.
@@ -22,13 +22,15 @@ Every omi command can read and write `.omi/`, `docker/` and hooks from a state d
 - [x] A project is detached when `~/.omi/state/projects/<name>/project.json` names the code repo's `origin` URL (normalised: https/ssh, trailing `.git`); `OMI_STATE` overrides `~/.omi/state`. One function in a new `src/omi/state.py` resolves (state root, code root); every command uses it. Tested with temp dirs.
 - [x] In a detached project, `status`, `step`, `plans`, `skills check`, `hook` and `run` read and write only the state dir; git branches, worktrees (`../<repo>.wt/<ID>`) and the scope check act on the code repo; the code repo's `git status` stays clean after a full `omi step` cycle. Tested with real git.
 - [x] `omi run` gives the agent the task file and catalogs from the state dir inside the container (mounted read-only next to the worktree); the engineer never writes into the state dir. Tested.
-- [ ] All tests pass on the Linux worker and the Windows host; in-repo mode behaviour is unchanged (existing tests untouched or only extended).
+- [x] All tests pass on the Linux worker and the Windows host; in-repo mode behaviour is unchanged (existing tests untouched or only extended).
 
 ## Checkpoint
 Done: Retained the detached resolver, state-based command routing, code-repo git/scope operations, read-only /state mounts, and shipped hook configuration fix. Made the detached regression tests portable: compare the reported Git worktree as a Path, and pass forward-slash state paths to the shell hook. No production changes were necessary in this pass.
 Not done: The final acceptance criterion remains unchecked because this Linux worker cannot execute the suite on the Windows host. Live Docker validation is also unavailable; Docker calls are mocked by the suite.
 Tests: Coverage includes test_detached_resolution (temporary registries, URL normalization and OMI_STATE), test_detached_commands_and_steps/test_detached_project_commands (state routing and a real-git clean step cycle), test_detached_scope_and_guard (code scope), test_detached_run_and_hooks (both agents, catalogs and read-only mounts), test_detached_default_hook_config (actual shell hook, configuration precedence, spaces, code cwd and fallback), plus existing in-repo regressions. After the portability edits, python3 tests/test_omi.py completed all 70 test functions on Linux/Python 3.13.5 with final output ok and exit 0 (PYTHONDONTWRITEBYTECODE=1; TMPDIR under /work). No unavailable-test skip notices were emitted. Real Git fixtures and the shipped shell hook executed; Docker was mocked. Windows-only cmd execution did not run on Linux. The initial pre-edit full suite also completed with exit 0.
 Next: Coordinator reviews the scoped test changes and runs python3 tests/test_omi.py on Windows before closing the cross-platform criterion. No scope expansion is needed and no commit has been made.
+
+Host: python tests/test_omi.py (Windows host, commit test(state): make detached regressions portable) -> exit 0, ok
 
 ## Steps
 - plan started 2026-10-28 21:26
@@ -40,6 +42,10 @@ Next: Coordinator reviews the scoped test changes and runs python3 tests/test_om
 - review started 2026-10-28 22:10
 - review failed 2026-10-28 22:10
 - build started 2026-10-28 22:10
+- build done 2026-10-28 22:26
+- review started 2026-10-28 22:26
+- review done 2026-10-28 22:32
+- security started 2026-10-28 22:32
 
 ## Reports
 2026-10-28 21:28 omi-agent-architect (claude):
@@ -210,6 +216,29 @@ Next: Coordinator reviews the scoped test changes and runs python3 tests/test_om
 > create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-28 22:31 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> 
+> I found no defects in the diff. `python3 tests/test_omi.py` ran to completion on Linux and printed `ok` (exit 0). I read the diff and the passing run, but did not run the detached flow by hand.
+> 
+> - Existing tests were edited, not only extended: `test_download_cache_scope`, `test_worker` and `test_cli_correctness` have new mock branches for the extra `git rev-parse` and `remote` calls. They are needed because every command now resolves the project first, and I saw no weakened assertions.
+> - `cli.main` calls `state.resolve()` before dispatching `upgrade`, `skills`, `rules` and similar commands. A malformed or duplicate `project.json` therefore raises a bare `ValueError` traceback instead of a clean exit message. This is minor and the failure is explicit.
+> 
+> AC: A project is detached when `projects/<name>/project.json` names the origin URL (normalised); `OMI_STATE` overrides; one function in `src/omi/state.py` resolves; every command uses it. ✓ `state.resolve` and `state.normalise_url` are in the diff. `test_detached_resolution` passes and covers https, ssh and scp URLs, a `.git` suffix, the `OMI_STATE` override, the default home, duplicate manifests and an invalid manifest. Each of the `cli.py` commands I read resolves through `state`.
+> 
+> AC: In a detached project, the commands read and write only the state dir; git, worktrees and the scope check act on the code repo; the code repo's `git status` stays clean after a full `omi step` cycle. ✓ `test_detached_commands_and_steps` uses real git and asserts the code HEAD is unchanged. It also asserts empty `git status` in the code repo and the worktree, and no `.omi` directory in either. `test_detached_scope_and_guard` shows a counterfeit task file in the worktree cannot widen the scope.
+> 
+> [... truncated ...]
+> - HOST all tests pass on the Windows host: this cannot run in my container.
+2026-10-28 22:38 omi-agent-security-reviewer (claude):
+> VERDICT: PASS
+> - No defects found. `python3 tests/test_omi.py` ran to the end and printed `ok`. I read every hunk of the diff.
+> - Scope and trust: in detached mode the scope check reads the state task file and ignores the task copy in the worktree. `guard` and `out_of_scope` both flag a task file written into the worktree, and `test_detached_scope_and_guard` covers this.
+> - Mounts and hook config: `worker_argv` adds `:ro` to every extra mount, so `/state` is read-only. The post-run hook reads config only from `OMI_PROJECT_STATE`. That variable is set only for detached runs, so in-repo behaviour is unchanged.
+> - Rules: the layer order in `omi-modules.md` and the new imports agree, no import is hidden inside a function, and the largest module (`run.py`) is 423 lines.
+> - The nested same-quote f-strings in `tools.py` need Python 3.12 or later. The python rule requires 3.13, so that is fine.
+> UNVERIFIED: `cli.main` calls `state.resolve()` before dispatching, so a malformed or duplicate `project.json` raises a bare `ValueError` traceback, not a clean exit message. The earlier reviewer noted this as minor. I did not trigger it by hand.
+> UNVERIFIED: the final acceptance criterion needs a Windows host run, and Docker was mocked, so I could not test either here.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -218,3 +247,5 @@ Next: Coordinator reviews the scoped test changes and runs python3 tests/test_om
 | omi-agent-engineer | gpt-6-astra (codex) | high | 3219774 | 28128 | 3140608 | 1437s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | gpt-6-astra (codex) | high | 1498364 | 6368 | 1447680 | 615s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | gpt-6-astra (codex) | high | 1867816 | 5815 | 1807744 | 687s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 5101 | 186647 | 266s | - | PASS 5dbe2e1 |
+| omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 16 | 3814 | 465260 | 287s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS 5dbe2e1 |
