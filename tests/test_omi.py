@@ -137,7 +137,7 @@ def test_version_stamp_package_hook():
         c = json.loads(cfg.read_text())
         c["test"] = "exit 7"
         cfg.write_text(json.dumps(c))
-        assert subprocess.run(["sh", hook], cwd=d).returncode == 7
+        assert subprocess.run([omi.host_bash() or "sh", hook], cwd=d).returncode == 7
 
 
 def test_upgrade():
@@ -3557,7 +3557,7 @@ assert 'OMI_CODEX_AUTH' not in os.environ
 print('ok')
 """
         child = "import subprocess, sys; subprocess.run([sys.executable, '-c', sys.argv[1]], check=True)"
-        result = subprocess.run(["sh", "-c", omi.CODEX_AUTH_BOOT, "sh", sys.executable, "-c", child, probe],
+        result = subprocess.run([omi.host_bash() or "sh", "-c", omi.CODEX_AUTH_BOOT, "sh", sys.executable, "-c", child, probe],
                                 env={"PATH": omi.os.environ["PATH"], "HOME": str(home), omi.CODEX_AUTH_ENV: auth},
                                 capture_output=True, encoding="utf-8", check=True)
         assert result.stdout == "ok\n" and result.stderr == ""
