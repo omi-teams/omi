@@ -13,7 +13,7 @@ model: opus
 effort: high
 step_settings:
 workflow: omi-flow-feature-sensitive
-step: security
+step: accept
 ---
 ## Goal
 Every omi command can read and write `.omi/`, `docker/` and hooks from a state dir that is not the code repo's git root, chosen by the code repo's remote URL; in-repo projects work as before.
@@ -49,6 +49,8 @@ Host: python tests/test_omi.py (Windows host, commit test(state): make detached 
 
 - PO approval accept: Accept, merge (ValueError on a bad project.json follows in TASK-098)
 - security done 2026-10-28 22:38
+- accept started 2026-10-28 22:38
+- accept done 2026-10-28 22:38
 
 ## Reports
 2026-10-28 21:28 omi-agent-architect (claude):
