@@ -28,6 +28,8 @@ Design rules: one module per responsibility (for example cli, config/paths, task
 
 ## Checkpoint
 Host check baseline FAIL (Coordinator, Windows): tests/test_omi.py:4034 test_cli_characterization: AssertionError (['skills'], 'wrote .omi\\skills\\CATALOG.md (18 skills)\n'); omi prints OS path separators. Make every path match in test_cli_characterization separator-agnostic (e.g. normalise `\\` to `/` in out/err before matching), not by changing src; check the other path assertions in that test the same way.
+Host: python tests/test_omi.py (Windows, baseline round 2) -> exit 0, ok
+Fix (baseline round 2): `cli()` in test_cli_characterization now replaces `\\` with `/` in stdout and stderr, so every path match in the test (CATALOG lines, `stamp  .omi/version`, guard/step/worker path endings, init/skip lines) is separator-agnostic. No src message prints a literal backslash (grep), so nothing else is masked. No src change. `python3 tests/test_omi.py` -> ok (exit 0) on Linux; Windows host re-check pending.
 Done: baseline - suite green before any change; added `test_cli_characterization` (tests/test_omi.py, registered in `__main__`): runs `python -m omi` as a subprocess (PYTHONPATH=src, PATH = git's dir only, so gh/docker are absent on both OSes) and pins exit code + stdout/stderr of help/unknown/incomplete-arg fallthrough, version, init (twice), status (empty and with tasks), upgrade --apply/--to bogus, skills/rules/plans/references/agents/workflows (+ --check), skills check, github (+ --po), token set (usage; non-Windows message), hook, run, worker (+ --prove), guard (allow/block cases), parallel (all conflict kinds + ok), step (next/done/skip/back/bogus/invalid id/missing task). It uses no omi internals, so it should need no edits during the refactor. No src change.
 Not done: refactor run 1 and run 2. Not pinned via CLI (need docker/network/a real worktree): `clean`, `upgrade --check` and real installs, `run`/`hook`/`worker` happy paths, `token set` on Windows, hidden `template-shas`; the existing in-process tests cover these.
 Tests: `python3 tests/test_omi.py` -> ok (exit 0) on Linux, with the new test included; Windows host not run.
@@ -100,9 +102,65 @@ Next: PO approved option A from the architect report below (decisions.md 2026-10
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-28 15:21 omi-agent-engineer (claude):
+> DONE (baseline round 2: fixed the Windows host failure)
+> - **Files changed:** `tests/test_omi.py` and the Checkpoint in `.omi/tasks/TASK-104.md`. No `src/` changes.
+> - **The fix:** the `cli()` helper in `test_cli_characterization` now turns `\` into `/` in stdout and stderr before any assertion runs. That makes every path check in the test work with either separator: the CATALOG lines (where Windows failed), `stamp  .omi/version`, the init create/skip lines, and the path endings in the guard, step and worker messages.
+> - **Why it hides nothing:** a grep of `src/omi/__init__.py` found no printed message that contains a literal backslash.
+> - **Suggested commit:** `test(cli): normalise path separators in CLI characterization output`
+> - **Tests:** `python3 tests/test_omi.py` passed on Linux (exit 0, `ok`). Windows has not been re-run yet; it needs the host check.
+> - **Open issues:** none.
+2026-10-28 15:23 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-architect | claude-opus-5-5 | high | 16 | 7738 | 242377 | 85s | - | n/a |
 | omi-agent-engineer | claude-opus-5-5 | high | 36 | 13739 | 755217 | 455s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-engineer | claude-opus-5-5 | high | 14 | 2328 | 171687 | 164s | 1/1 omi-skill-lean-implementation | - |

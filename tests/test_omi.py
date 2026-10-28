@@ -3999,7 +3999,8 @@ def test_cli_characterization():
     def cli(cwd, *args, stdin=""):
         r = subprocess.run([sys.executable, "-m", "omi", *args], cwd=cwd, env=env, input=stdin, capture_output=True,
                            encoding="utf-8", errors="replace")
-        return r.returncode, r.stdout, r.stderr
+        # omi prints OS path separators; normalise so every path match below holds on Windows too
+        return r.returncode, r.stdout.replace("\\", "/"), r.stderr.replace("\\", "/")
 
     def task(root, tid, extra):
         (root / ".omi" / "tasks" / f"{tid}.md").write_text(f"---\nid: {tid}\ntitle: T{tid[-1]}\nstatus: planned\n{extra}---\n"
