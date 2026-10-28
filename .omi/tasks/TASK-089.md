@@ -26,6 +26,10 @@ omi-board gaps #1, #2, #7, #8: when omi reports something, it says what happened
 - [ ] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
+Coordinator: Windows host suite passed (ok) on 6139e5e.
+Review round 1 FAIL:
+- tests/test_omi.py ~1500: make the agent mock return a `DONE` report in that `omi run` case, then assert `go() == 6`; keep the comment only if the test shows it.
+- Also assert the `omi hook` FAILED path prints `hook post-run FAILED (exit 3)` as its last stdout line.
 Done: all 4 code criteria; run exit was already 6 (regression assert added, no code change).
 Not done: Windows host run.
 Tests: python3 tests/test_omi.py ok (Linux).
@@ -35,6 +39,10 @@ Next: Coordinator reviews and commits.
 - plan started 2026-10-28 09:42
 - plan done 2026-10-28 09:42
 - build started 2026-10-28 09:42
+- build done 2026-10-28 09:51
+- review started 2026-10-28 09:51
+- review failed 2026-10-28 09:56
+- build started 2026-10-28 09:56
 
 ## Reports
 2026-10-28 09:49 omi-agent-engineer (claude):
@@ -93,8 +101,19 @@ Next: Coordinator reviews and commits.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-28 09:56 omi-agent-reviewer (claude):
+> VERDICT: FAIL
+> - tests/test_omi.py:1500 The exit-6 regression test never shows the "`DONE` report does not change the exit" half of the criterion. The engineer's report admits they didn't check how the agent mock reports `DONE`. The new assert only checks that the stdout line `hook post-run FAILED (exit 3)` appears, which says nothing about `DONE`. -> Make the agent mock emit a `DONE` report, then assert `go() == 6`. Drop the misleading "despite DONE" comment unless that is shown.
+> - .omi/tasks/TASK-089.md:21 The Windows host run is unverified, so the last criterion is open. The checkpoint says "Not done: Windows host run." -> Run `tests/test_omi.py` on the Windows host before passing.
+> - src/omi/__init__.py:2461 In `omi run`, the `hook post-run FAILED` line isn't final. `hook_note` prints it, then "post-run hook failed: the task cannot move to review" follows. This is fine for `omi hook`, where `hook_note` is the last output, which is what the criterion requires. -> No change needed; this is only a note.
+> 
+> AC: Dockerfile diff hint in `omi status` ✓ `src/omi/__init__.py:1101` prints `git diff --no-index <template> docker/Dockerfile` and "merge by hand; omi init and upgrade never overwrite it". The test at `tests/test_omi.py:3750` asserts both.
+> AC: `version`/`--version` prints the hint line and `usage` mentions it ✓ `src/omi/__init__.py:2538` prints `latest: python -m omi upgrade --check`, and the usage text for `version` now says "how to check for a newer one". The test at `tests/test_omi.py:82-83` asserts both.
+> [... truncated ...]
+> AC: All tests pass on Linux and Windows ✗ `python3 tests/test_omi.py` exits 0 on Linux (I ran it). The Windows host run was not done.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 24 | 3825 | 324092 | 397s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1774 | 66509 | 239s | - | FAIL 6139e5e |
