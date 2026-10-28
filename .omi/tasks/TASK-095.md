@@ -30,6 +30,7 @@ Host: python tests/test_omi.py (Windows) -> exit 0, ok; 0.3.2 shas recomputed on
 Next: merge
 
 ## Steps
+PO approval accept: Accept, merge
 - plan started 2026-10-28 16:52
 - plan done 2026-10-28 16:52
 - build started 2026-10-28 16:52
@@ -37,6 +38,7 @@ Next: merge
 - review started 2026-10-28 17:00
 - review done 2026-10-28 17:05
 - accept started 2026-10-28 17:05
+- accept done 2026-10-28 17:05
 
 ## Reports
 2026-10-28 16:57 omi-agent-engineer (claude):
