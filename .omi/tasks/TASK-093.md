@@ -1,16 +1,16 @@
 ---
 id: TASK-093
 title: /omi-upgrade applies project files when they are behind the installed omi
-status: planned
+status: in-progress
 depends:
 plan: PLAN-003
 scope: .claude/skills/omi-upgrade/SKILL.md, src/omi/template/dot-claude/skills/omi-upgrade/SKILL.md, src/omi/__init__.py, tests/test_omi.py, src/omi/template_shas.json
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: claude
+model: sonnet
+effort: medium
 step_settings:
 workflow: omi-flow-feature
 step:
