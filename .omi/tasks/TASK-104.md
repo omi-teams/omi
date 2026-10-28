@@ -13,7 +13,7 @@ model: opus
 effort: high
 step_settings:
 workflow: omi-flow-refactor
-step: review
+step: accept
 ---
 ## Goal
 `src/omi/__init__.py` is one 2640-line file. Every code task must put the whole file in `scope`, so scopes are coarse, parallel tasks always conflict and agents read more than they need. The PO asked (2026-10-28) for a clean, senior-grade structure before PLAN-004 adds detached mode. Behaviour stays identical; this is a move, not a rewrite.
@@ -43,6 +43,8 @@ Next: Coordinator host checks: `python tests/test_omi.py` on Windows; `pip insta
 - refactor started 2026-10-28 15:24
 - refactor done 2026-10-28 15:38
 - review started 2026-10-28 15:38
+- review done 2026-10-28 16:15
+- accept started 2026-10-28 16:15
 
 ## Reports
 2026-10-28 15:06 omi-agent-architect (claude):
