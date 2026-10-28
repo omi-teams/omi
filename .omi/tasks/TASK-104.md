@@ -23,7 +23,7 @@ Design rules: one module per responsibility (for example cli, config/paths, task
 ## Acceptance criteria
 - [ ] `src/omi/__init__.py` keeps only the package surface (re-exports, version); no module over ~600 lines; no import cycles (`python -c "import omi"` and each module imports on its own).
 - [ ] Behaviour unchanged: `python -m omi <cmd>` output and exit codes are the same for every command; the test suite passes with only mechanical test edits (import paths, monkeypatch targets), no assertion removed or weakened.
-- [ ] Nothing under `src/omi/template/**` changes; `template_shas.json` unchanged; the built package still ships the template (`pip install .` in a temp venv, then `python -m omi status` in a temp repo works).
+- [ ] Nothing under `src/omi/template/**` changes; `template_shas.json` unchanged; the built package still ships the template: on the host, `pip install .` in a temp venv, then `python -m omi status` in a temp repo works.
 - [ ] All tests pass on the Linux worker and on the Windows host.
 
 ## Checkpoint
