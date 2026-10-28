@@ -13,7 +13,7 @@ model: opus
 effort: high
 step_settings:
 workflow: omi-flow-refactor
-step: baseline
+step: refactor
 ---
 ## Goal
 `src/omi/__init__.py` is one 2640-line file. Every code task must put the whole file in `scope`, so scopes are coarse, parallel tasks always conflict and agents read more than they need. The PO asked (2026-10-28) for a clean, senior-grade structure before PLAN-004 adds detached mode. Behaviour stays identical; this is a move, not a rewrite.
@@ -27,17 +27,19 @@ Design rules: one module per responsibility (for example cli, config/paths, task
 - [ ] All tests pass on the Linux worker and on the Windows host.
 
 ## Checkpoint
-Host check baseline FAIL (Coordinator, Windows): tests/test_omi.py:4034 test_cli_characterization: AssertionError (['skills'], 'wrote .omi\\skills\\CATALOG.md (18 skills)\n'); omi prints OS path separators. Make every path match in test_cli_characterization separator-agnostic (e.g. normalise `\\` to `/` in out/err before matching), not by changing src; check the other path assertions in that test the same way.
-Host: python tests/test_omi.py (Windows, baseline round 2) -> exit 0, ok
-Fix (baseline round 2): `cli()` in test_cli_characterization now replaces `\\` with `/` in stdout and stderr, so every path match in the test (CATALOG lines, `stamp  .omi/version`, guard/step/worker path endings, init/skip lines) is separator-agnostic. No src message prints a literal backslash (grep), so nothing else is masked. No src change. `python3 tests/test_omi.py` -> ok (exit 0) on Linux; Windows host re-check pending.
-Done: baseline - suite green before any change; added `test_cli_characterization` (tests/test_omi.py, registered in `__main__`): runs `python -m omi` as a subprocess (PYTHONPATH=src, PATH = git's dir only, so gh/docker are absent on both OSes) and pins exit code + stdout/stderr of help/unknown/incomplete-arg fallthrough, version, init (twice), status (empty and with tasks), upgrade --apply/--to bogus, skills/rules/plans/references/agents/workflows (+ --check), skills check, github (+ --po), token set (usage; non-Windows message), hook, run, worker (+ --prove), guard (allow/block cases), parallel (all conflict kinds + ok), step (next/done/skip/back/bogus/invalid id/missing task). It uses no omi internals, so it should need no edits during the refactor. No src change.
-Not done: refactor run 1 and run 2. Not pinned via CLI (need docker/network/a real worktree): `clean`, `upgrade --check` and real installs, `run`/`hook`/`worker` happy paths, `token set` on Windows, hidden `template-shas`; the existing in-process tests cover these.
-Tests: `python3 tests/test_omi.py` -> ok (exit 0) on Linux, with the new test included; Windows host not run.
-Next: PO approved option A from the architect report below (decisions.md 2026-10-28). Baseline run: confirm tests green before any change; add characterization tests in tests/test_omi.py (the only place that survives between runs) so every USAGE command's exit code and key output is pinned; no src change. Refactor run 1: extract core, catalogs, workflows, upgrade, tasks, github. Refactor run 2: extract creds, tools, docker, hooks, run, cli; reduce __init__ to the package surface; `grep -nE "omi\.[A-Za-z_]+ *=[^=]" tests/test_omi.py` shows only omi.<module>.<name>; `python -c "import omi.<m>"` per module; `pip install .` in a temp venv + `python -m omi status` in a temp repo.
+Done (refactor, runs 1+2 in one go): `src/omi/__init__.py` (2651 lines) split by a scripted pure move into 13 flat modules, `__init__` = docstring + `from .cli import main`, `from .core import version`. Layers (no cycles): core <- tools, creds, scope, github(stdlib) <- catalogs <- workflows <- tasks, upgrade; docker <- core, creds; hooks <- docker, tasks; run <- all but cli/upgrade/github; cli on top. Lines: core 76, hooks 65, scope 103, workflows 120, creds 143, cli 155, github 174, tools 230, docker 276, upgrade 288, tasks 359, catalogs 371, run 408. Cross-module calls are always `module.name` (option A); names inside a module stay bare. No src/omi/template/** or template_shas.json change; pyproject.toml unchanged (`omi:main` still re-exported). No claude/codex adapter (option C left as follow-up).
+Proof of pure move: AST of all 211 top-level statements equals the original once `module.` prefixes are stripped; 110/110 comment lines kept; symtable check: no undefined global in any module.
+Tests (mechanical edits only): `omi.<name>` -> `omi.<module>.<name>`; `omi.<stdlib>` (os, sys, subprocess, shutil, contextlib, importlib, time, getpass, tomllib) -> the stdlib module, imported in the test; the version test patches `omi.core.__file__` (path ends `omi/core.py`). No assertion changed. `grep -nE "omi\.[A-Za-z_]+ *=[^=]" tests/test_omi.py` shows only omi.<module>.<name>.
+Tests: `python3 tests/test_omi.py` -> ok (exit 0) on Linux, incl. test_cli_characterization. `python -c "import omi.<m>"` ok for all 13; each module imported without `__init__` loads only its own layer.
+Not run here: `pip install .` in a temp venv (container has no pip/venv/setuptools). Substitute: package files + template + a dist-info copied to a temp site dir, then `python -m omi init` and `python -m omi status` in a temp git repo -> exit 0, version 0.3.1 from metadata. Windows host run pending.
+Next: Coordinator host checks: `python tests/test_omi.py` on Windows; `pip install .` in a temp venv + `python -m omi status` in a temp repo.
+
 ## Steps
 - plan started 2026-10-28 15:04
 - plan done 2026-10-28 15:07
 - baseline started 2026-10-28 15:07
+- baseline done 2026-10-28 15:24
+- refactor started 2026-10-28 15:24
 
 ## Reports
 2026-10-28 15:06 omi-agent-architect (claude):
@@ -157,6 +159,64 @@ Next: PO approved option A from the architect report below (decisions.md 2026-10
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-28 15:34 omi-agent-engineer (claude):
+> DONE. I split `src/omi/__init__.py` into 13 modules and kept the behaviour the same. I did both planned refactor runs in this one pass.
+> - **Files changed:** `src/omi/__init__.py` now only re-exports `main` and `version`. The new modules are `core`, `tools`, `creds`, `github`, `catalogs`, `workflows`, `tasks`, `scope`, `upgrade`, `docker`, `hooks`, `run` and `cli`. Also changed: `tests/test_omi.py` and the Checkpoint in `.omi/tasks/TASK-104.md`. Nothing changed in the template, `template_shas.json` or `pyproject.toml`.
+> - **Structure:** the largest module is `run.py` at 408 lines. Imports form a layered graph with no cycles. Code always calls another module through its name (`core.git(...)`), so each test patch has one target.
+> - **Evidence it's a pure move:** all 211 top-level statements match the original once the module prefixes are stripped, and all 110 comment lines are kept.
+> - **Test edits:** only renames. `omi.X` became `omi.<module>.X`, `omi.os` and the other standard-library references became plain imports, and the version test now patches `omi.core.__file__`. No assertion was removed or weakened.
+> - **Tests:** `python3 tests/test_omi.py` passed on Linux (exit 0, `ok`), including `test_cli_characterization`. `python -c "import omi.<m>"` works for all 13 modules.
+> - **Not run:** `pip install .`, because the container has no pip, venv or setuptools. As a substitute I copied the package files plus fake package metadata into a temp folder; `python -m omi init` and `python -m omi status` worked there (exit 0, version 0.3.1).
+> - **Open:** the Windows test run and a real `pip install .` in a temp venv still need a host check.
+> 
+> Suggested commit: `refactor(omi): split __init__.py into modules by responsibility`
+2026-10-28 15:37 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -164,3 +224,4 @@ Next: PO approved option A from the architect report below (decisions.md 2026-10
 | omi-agent-architect | claude-opus-5-5 | high | 16 | 7738 | 242377 | 85s | - | n/a |
 | omi-agent-engineer | claude-opus-5-5 | high | 36 | 13739 | 755217 | 455s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-opus-5-5 | high | 14 | 2328 | 171687 | 164s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-engineer | claude-opus-5-5 | high | 56 | 38827 | 3249598 | 618s | 1/1 omi-skill-lean-implementation | - |
