@@ -33,7 +33,7 @@ Proof of pure move: AST of all 211 top-level statements equals the original once
 Tests (mechanical edits only): `omi.<name>` -> `omi.<module>.<name>`; `omi.<stdlib>` (os, sys, subprocess, shutil, contextlib, importlib, time, getpass, tomllib) -> the stdlib module, imported in the test; the version test patches `omi.core.__file__` (path ends `omi/core.py`). No assertion changed. `grep -nE "omi\.[A-Za-z_]+ *=[^=]" tests/test_omi.py` shows only omi.<module>.<name>.
 Tests: `python3 tests/test_omi.py` -> ok (exit 0) on Linux, incl. test_cli_characterization. `python -c "import omi.<m>"` ok for all 13; each module imported without `__init__` loads only its own layer.
 Not run here: `pip install .` in a temp venv (container has no pip/venv/setuptools). Substitute: package files + template + a dist-info copied to a temp site dir, then `python -m omi init` and `python -m omi status` in a temp git repo -> exit 0, version 0.3.1 from metadata. Windows host run pending.
-Next: Coordinator host checks: `python tests/test_omi.py` on Windows; `pip install .` in a temp venv + `python -m omi status` in a temp repo.
+Next: merge (host checks done, see Host: lines)
 
 ## Steps
 - plan started 2026-10-28 15:04
