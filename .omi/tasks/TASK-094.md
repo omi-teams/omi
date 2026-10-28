@@ -1,16 +1,16 @@
 ---
 id: TASK-094
 title: Host-only criteria are confirmed by the Coordinator, not marked by the reviewer
-status: planned
+status: in-progress
 depends:
 plan: PLAN-003
 scope: .omi/agents/omi-agent-reviewer.md, src/omi/template/dot-omi/agents/omi-agent-reviewer.md, .claude/skills/omi-task/SKILL.md, src/omi/template/dot-claude/skills/omi-task/SKILL.md, .omi/agents/CATALOG.md, src/omi/template_shas.json, tests/test_omi.py
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: claude
+model: sonnet
+effort: medium
 step_settings:
 workflow: omi-flow-feature-sensitive
 step:
