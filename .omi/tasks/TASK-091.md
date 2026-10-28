@@ -1,16 +1,16 @@
 ---
 id: TASK-091
 title: Agent prompts: honest test claims, scope-first, real-data criteria, no tool preset at planning
-status: planned
+status: in-progress
 depends: 
 plan: PLAN-002
 scope: AGENTS.md, src/omi/template/AGENTS.md, .omi/agents/omi-agent-engineer.md, .omi/agents/omi-agent-reviewer.md, src/omi/template/dot-omi/agents/omi-agent-engineer.md, src/omi/template/dot-omi/agents/omi-agent-reviewer.md, .omi/skills/workflow/omi-skill-task-brief/SKILL.md, src/omi/template/dot-omi/skills/workflow/omi-skill-task-brief/SKILL.md, .claude/skills/omi-idea/SKILL.md, src/omi/template/dot-claude/skills/omi-idea/SKILL.md, .omi/agents/CATALOG.md, .omi/skills/CATALOG.md, src/omi/template_shas.json, tests/test_omi.py
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: claude
+model: sonnet
+effort: medium
 step_settings:
 workflow: omi-flow-feature-sensitive
 step:
