@@ -1,7 +1,7 @@
 ---
 id: TASK-089
 title: Clearer CLI feedback: Dockerfile diff hint, version check hint, hook result line
-status: in-progress
+status: done
 depends: 
 plan: PLAN-002
 scope: src/omi/__init__.py, tests/test_omi.py
@@ -13,17 +13,17 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature
-step: build
+step: review
 ---
 ## Goal
 omi-board gaps #1, #2, #7, #8: when omi reports something, it says what happened and what to type next.
 
 ## Acceptance criteria
-- [ ] When `docker/Dockerfile` differs from the template, `omi status` also prints one runnable command that shows the diff against the installed template file (e.g. `git diff --no-index <template path> docker/Dockerfile`) and says to merge by hand, since `omi init`/`upgrade` never overwrite it. Tested.
-- [ ] `omi version` (and `--version`) prints the installed version plus a hint line `latest: python -m omi upgrade --check`; the `usage` text for `version` mentions it. Tested.
-- [ ] `omi hook <event> <ID>` always prints a final line `hook <event> passed` or `hook <event> FAILED (exit N)`, also when the hook printed nothing. Tested.
-- [ ] Regression test: `omi run` (write role) returns exit 6 when the post-run hook fails and the agent exited 0, and the engineer's `DONE` report does not change that. If the test shows the exit is already 6, no code change for this criterion.
-- [ ] All tests pass on the Linux worker and the Windows host.
+- [x] When `docker/Dockerfile` differs from the template, `omi status` also prints one runnable command that shows the diff against the installed template file (e.g. `git diff --no-index <template path> docker/Dockerfile`) and says to merge by hand, since `omi init`/`upgrade` never overwrite it. Tested.
+- [x] `omi version` (and `--version`) prints the installed version plus a hint line `latest: python -m omi upgrade --check`; the `usage` text for `version` mentions it. Tested.
+- [x] `omi hook <event> <ID>` always prints a final line `hook <event> passed` or `hook <event> FAILED (exit N)`, also when the hook printed nothing. Tested.
+- [x] Regression test: `omi run` (write role) returns exit 6 when the post-run hook fails and the agent exited 0, and the engineer's `DONE` report does not change that. If the test shows the exit is already 6, no code change for this criterion.
+- [x] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
 Coordinator: Windows host suite passed (ok) on 6139e5e.
@@ -44,6 +44,9 @@ Next: Coordinator reviews, runs Windows host, commits.
 - review started 2026-10-28 09:51
 - review failed 2026-10-28 09:56
 - build started 2026-10-28 09:56
+- build done 2026-10-28 10:05
+- review started 2026-10-28 10:05
+- review done 2026-10-28 10:09
 
 ## Reports
 2026-10-28 09:49 omi-agent-engineer (claude):
@@ -166,6 +169,15 @@ Next: Coordinator reviews, runs Windows host, commits.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-28 10:09 omi-agent-reviewer (claude):
+> ```
+> VERDICT: PASS
+> AC: Dockerfile diff hint in `omi status` ✓ Passed round 1 (`src/omi/__init__.py:1101`). This round's diff doesn't touch it, and the full suite passes.
+> AC: `omi version` / `--version` hint line, and `usage` text for `version` ✓ Passed round 1. This round's diff doesn't touch it, and the full suite passes.
+> AC: `omi hook` prints a final `hook <event> passed` or `FAILED (exit N)` line ✓ tests/test_omi.py:1522-1525 now truncates stdout, calls `hook_cmd` with `hook_rc=3`, and asserts stdout ends with `hook post-run FAILED (exit 3)\n`.
+> AC: `omi run` returns exit 6 when the post-run hook fails, even with a `DONE` report ✓ tests/test_omi.py:1499-1501 makes the agent mock return `DONE: all criteria met`, then asserts `go() == 6` and one agent call. No code change was needed. The mock branch is placed after the hook branch, so hook calls are not intercepted. The misleading comment is removed.
+> AC: All tests pass on Linux and Windows ✓/? `python3 tests/test_omi.py` exits 0 on Linux (I ran it). The Windows host run is not something I can check here. The checkpoint says the Coordinator ran it on 6139e5e and again after fix round 1, and I have not verified that.
+> ```
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -173,3 +185,4 @@ Next: Coordinator reviews, runs Windows host, commits.
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 24 | 3825 | 324092 | 397s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1774 | 66509 | 239s | - | FAIL 6139e5e |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 20 | 2606 | 253908 | 347s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1003 | 63356 | 234s | - | PASS 571d12a |
