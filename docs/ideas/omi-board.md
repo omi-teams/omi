@@ -1,6 +1,6 @@
 # omi-board (idea, parked)
 
-Status: parked. Build it in a separate repo, using omi-squad, after the current omi-squad improvements are done. Then connect the two.
+Status: merged into omi (PO 2026-10-28). It becomes `omi board`, a read-only local dashboard over the shared omi-state repo, in the plan after PLAN-004 (docs/specs/detached-mode.md). The Supabase design below is kept for history only.
 
 ## Why
 GitHub Projects on the free plan fails often. The PO wants a task manager with a detailed hierarchy and a dashboard.
