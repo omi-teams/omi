@@ -2,7 +2,7 @@
 id: omi-skill-task-brief
 group: workflow
 description: Use when a task file must be complete enough for a fresh engineer agent with zero context, before `omi run`.
-tokens: 580
+tokens: 658
 tools: Read, Write, Edit
 source_repo: https://github.com/obra/superpowers
 source_ref: v6.3.0
@@ -31,9 +31,9 @@ Serves the Coordinator step before `omi run omi-agent-engineer <ID>` (`omi-task`
 2. Goal: one or two sentences saying what exists afterwards, not how.
 3. Under Goal add `### Brief` (at most 15 lines): files to create or change (exact paths), names and signatures it must keep or produce, how to run the tests, and the one pattern in the repo to copy.
 4. Give constraints verbatim from the spec (versions, naming, limits) instead of paraphrasing.
-5. Each acceptance criterion is a check the engineer can run or point to a test for.
+5. Each acceptance criterion is a check the engineer can run or point to a test for; a task that reads an existing format gets the criterion "runs on the real data in this repo".
 6. No placeholders: "TBD", "handle edge cases", "similar to TASK-n" are failures; write the content.
-7. Self-review: every spec requirement of this task maps to a criterion, and names match across tasks. Put the existing tests the change affects in `scope`. Set `scope` globs to the minimum, pick `role` and `skills` within the token budget.
+7. Self-review: every spec requirement of this task maps to a criterion, and names match across tasks. Put the existing tests the change affects in `scope`. Set `scope` globs to the minimum, plus manifests (`go.mod`/`go.sum`, `package.json`/lockfile, `pyproject.toml`) when the task may add a library, pick `role` and `skills` within the token budget.
 
 ## Outputs and evidence
 - An updated task file with Goal, Brief, criteria, scope, role, skills; `python -m omi skills check <task-file>` passes.
