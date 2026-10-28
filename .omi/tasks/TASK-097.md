@@ -1,7 +1,7 @@
 ---
 id: TASK-097
 title: Detached state root: .omi state outside the code repo
-status: in-progress
+status: done
 depends: TASK-095, TASK-106
 plan: PLAN-004
 scope: src/omi/*.py, tests/test_omi.py, docs/specs/detached-mode.md, .omi/rules/omi-modules.md, .omi/rules/CATALOG.md, src/omi/template/dot-omi/hooks/post-run.sh
@@ -46,6 +46,9 @@ Host: python tests/test_omi.py (Windows host, commit test(state): make detached 
 - review started 2026-10-28 22:26
 - review done 2026-10-28 22:32
 - security started 2026-10-28 22:32
+
+- PO approval accept: Accept, merge (ValueError on a bad project.json follows in TASK-098)
+- security done 2026-10-28 22:38
 
 ## Reports
 2026-10-28 21:28 omi-agent-architect (claude):
