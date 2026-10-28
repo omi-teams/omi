@@ -24,6 +24,11 @@ omi-board had omi 0.3.1 installed but 0.3.0 project files, and `/omi-upgrade` st
 - [ ] Repo copy equals its template copy; template shas updated if the tests require it. All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
+Review round 1 FAIL:
+- tests/test_omi.py:103 `write_text("0.1.0
+")` right before `unlink()` has no effect: delete it.
+- Optional: make the test start from a stale project (stamp 0.1.0, run `upgrade_apply`, assert the stamp equals the installed version) so it covers the `up to date` + older-stamp path.
+- Host: `python tests/test_omi.py` on the Windows host -> ok (Coordinator, 2026-10-28, before the fix; rerun after).
 Done: both skill copies (step 1 applies when stamp is older/missing), status hint now `python -m omi upgrade --apply`, tests (hint, apply stamps .omi/version, skill text)
 Not done: Windows host run; template_shas.json untouched (0.3.1 is a released entry)
 Tests: python3 tests/test_omi.py passed on Linux
@@ -33,6 +38,10 @@ Next: Coordinator review/commit
 - plan started 2026-10-28 13:27
 - plan done 2026-10-28 13:27
 - build started 2026-10-28 13:27
+- build done 2026-10-28 13:35
+- review started 2026-10-28 13:35
+- review failed 2026-10-28 13:40
+- build started 2026-10-28 13:40
 
 ## Reports
 2026-10-28 13:31 omi-agent-engineer (claude):
@@ -90,8 +99,18 @@ Next: Coordinator review/commit
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-28 13:39 omi-agent-reviewer (claude):
+> VERDICT: FAIL
+> - `.omi/tasks/TASK-093.md:27` The Windows host run was not done, so the last acceptance criterion is unproven. -> Run `python3 tests/test_omi.py` on the Windows host and record the result.
+> - `tests/test_omi.py:103` `(root/".omi"/"version").write_text("0.1.0\n")` is immediately followed by `unlink()`, so it has no effect. -> Delete the write_text line.
+> - `tests/test_omi.py:100` The `omi status` hint is only tested after `omi.init` has already stamped the version. The test calls `upgrade_apply` on a project that `omi.init` created, not on a stale one, and it doesn't cover the `up to date` + older-stamp path. The code behind that path (`upgrade_apply` writing `.omi/version`) does work. -> Optional: stamp 0.1.0 first, run `upgrade_apply`, and assert the stamp equals the installed version. The current test partly does this.
+> 
+> AC: Skill step 1 (both copies) applies when `up to date` but the stamp is older or missing, then continues with steps 4-5; stops only when both are current. ✓ The wording is in both copies (`cmp` shows the two files are identical). The test asserts "older than", "upgrade --apply" and "steps 4-5".
+> AC: `omi status` hint names the command that stamps, and a test proves it updates `.omi/version`. ✓ The hint is now `python -m omi upgrade --apply`. `upgrade_apply` writes `.omi/version` (src/omi/__init__.py:~986), and the test asserts the stamp equals the installed version after calling it.
+> AC: Repo copy equals template copy; shas updated if needed; tests pass on Linux and on the Windows host. UNVERIFIED. The copies are identical and `python3 tests/test_omi.py` exits 0 and prints `ok` on Linux. The Windows run was not done. I did not check whether `template_shas.json` needed changes, though the tests pass without any.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 3041 | 198334 | 249s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1620 | 96196 | 199s | - | FAIL 8cbcc8f |
