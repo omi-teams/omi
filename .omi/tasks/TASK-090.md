@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature-sensitive
-step: security
+step: accept
 ---
 ## Goal
 omi-board gaps #4, #10, #5: no manual commit after `omi step`, the engineer sees the scope the Coordinator widened on `development`, and a risky scope under a plain workflow is flagged.
@@ -39,6 +39,7 @@ Tests: python3 tests/test_omi.py -> ok (Linux).
 Next: review round 2.
 
 ## Steps
+- PO approval accept: Nghiệm thu, merge
 - plan started 2026-10-28 10:13
 - plan done 2026-10-28 10:13
 - architect started 2026-10-28 10:13
@@ -55,6 +56,8 @@ Next: review round 2.
 - review done 2026-10-28 10:48
 - security started 2026-10-28 10:48
 - security done 2026-10-28 10:53
+- accept started 2026-10-28 10:53
+- accept done 2026-10-28 10:53
 
 ## Reports
 2026-10-28 10:14 omi-agent-architect (claude):
