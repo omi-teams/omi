@@ -1,16 +1,16 @@
 ---
 id: TASK-097
 title: Detached state root: .omi state outside the code repo
-status: planned
+status: in-progress
 depends: TASK-095, TASK-106
 plan: PLAN-004
 scope: src/omi/*.py, tests/test_omi.py, docs/specs/detached-mode.md
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: codex
+model: opus
+effort: high
 step_settings:
 workflow: omi-flow-feature-sensitive
 step:
