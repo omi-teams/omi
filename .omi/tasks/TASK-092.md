@@ -1,7 +1,7 @@
 ---
 id: TASK-092
 title: Bump omi to 0.3.1
-status: in-progress
+status: done
 depends: TASK-089, TASK-090, TASK-091
 plan: PLAN-002
 scope: pyproject.toml, README.md, tests/test_omi.py, .omi/version, src/omi/template_shas.json, AGENTS.md, src/omi/template/AGENTS.md, .omi/skills/workflow/omi-skill-task-brief/SKILL.md, src/omi/template/dot-omi/skills/workflow/omi-skill-task-brief/SKILL.md, .omi/skills/CATALOG.md
@@ -13,15 +13,15 @@ model: haiku
 effort: low
 step_settings:
 workflow: omi-flow-feature
-step: build
+step: accept
 ---
 ## Goal
 Release prep for PLAN-002: version 0.3.1 everywhere `omi --version` and the rc tag read it, as in TASK-088.
 
 ## Acceptance criteria
-- [ ] `omi --version` prints 0.3.1; `.omi/version` is 0.3.1; 0.3.1 template shas recorded (after the follow-up edits below, so they match).
-- [ ] TASK-091 follow-ups: `tokens:` in both omi-skill-task-brief copies equals the real count (`omi skills` catalog value); AGENTS.md (both copies) quota line reads "The Coordinator sets `model`/`effort` (and `tool`) per task in the task file at task start ...".
-- [ ] All tests pass on the Linux worker and the Windows host.
+- [x] `omi --version` prints 0.3.1; `.omi/version` is 0.3.1; 0.3.1 template shas recorded (after the follow-up edits below, so they match).
+- [x] TASK-091 follow-ups: `tokens:` in both omi-skill-task-brief copies equals the real count (`omi skills` catalog value); AGENTS.md (both copies) quota line reads "The Coordinator sets `model`/`effort` (and `tool`) per task in the task file at task start ...".
+- [x] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
 Coordinator: Windows host suite passed (ok); skills --check ok; copies identical; 0.3.0 sha entry unchanged (no removed lines).
@@ -31,9 +31,15 @@ Tests: python3 tests/test_omi.py -> exit 0 (Linux worker); `python3 -m omi --ver
 Next: after merge: omi-release (rc), PO merges staging, then promote + tag v0.3.1; then `/omi-upgrade` in omi-board.
 
 ## Steps
+- PO approval accept: Nghiệm thu, merge; ghi gap mới
 - plan started 2026-10-28 11:19
 - plan done 2026-10-28 11:19
 - build started 2026-10-28 11:19
+- build done 2026-10-28 11:27
+- review started 2026-10-28 11:27
+- review done 2026-10-28 13:03
+- accept started 2026-10-28 13:03
+- accept done 2026-10-28 13:03
 
 ## Reports
 2026-10-28 11:24 omi-agent-engineer (claude):
@@ -90,8 +96,18 @@ Next: after merge: omi-release (rc), PO merges staging, then promote + tag v0.3.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-28 11:31 omi-agent-reviewer (claude):
+> ```
+> VERDICT: PASS
+> AC: `omi --version` prints 0.3.1; `.omi/version` is 0.3.1; 0.3.1 template shas recorded ✓ `python3 -m omi --version` printed "omi 0.3.1". The diff changes `.omi/version`, `pyproject.toml`, the README and the test assertion to 0.3.1. `template_shas.json["0.3.1"] == omi.template_shas()` returned True with 62 files. The 0.3.0 entry is untouched: the diff only appends and adds a comma after it.
+> AC: TASK-091 follow-ups: `tokens:` equals the real count in both task-brief copies; AGENTS.md quota line says "at task start" ✓ Both SKILL.md copies read `tokens: 658`, and `.omi/skills/CATALOG.md` lists `[~658 tokens]`. `omi skills --check` printed "skills ok (19 checked)". The diff shows the "at task start" wording in both AGENTS.md copies, and `diff AGENTS.md src/omi/template/AGENTS.md` shows no difference. The `diff -r` of the two skills trees differs only in `CATALOG.md` and `authoring`, which exist only under `.omi/skills`, so the task-brief copies are identical.
+> AC: All tests pass on the Linux worker and the Windows host UNVERIFIED Linux: `python3 tests/test_omi.py` exited 0 and ended with "ok". I could not run the Windows host suite. The only evidence is the Coordinator's line in the checkpoint, "Windows host suite passed (ok)", so I'm treating this criterion as unverified. Re-run it on Windows before merge if you want it confirmed.
+> ```
+> 
+> I found no problems in the diff. The only file changed outside `scope` is `.omi/tasks/TASK-092.md`, the task's own checkpoint and report.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-haiku-5-5 | low | 26 | 5856 | 404816 | 286s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1452 | 108954 | 199s | - | PASS f9379de |
