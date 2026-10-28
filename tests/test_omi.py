@@ -79,7 +79,8 @@ def test_version_stamp_package_hook():
         with omi.contextlib.redirect_stdout(buf):
             omi.main(["--version"])
             omi.main(["version"])
-        assert buf.getvalue() == f"omi {want}\n" * 2
+        assert buf.getvalue() == f"omi {want}\nlatest: python -m omi upgrade --check\n" * 2
+        assert "how to check for a newer one" in omi.USAGE
         with tempfile.TemporaryDirectory() as d:
             root = Path(d).resolve()
             omi.init(root)
@@ -1496,6 +1497,7 @@ def test_hooks():
             assert go() == 6 and len(agents()) == 1 and hooks()[0][0][-2:] == ["python3", "-"]
             assert "hook post-run FAILED (exit 3)" in task.read_text()
             assert "post-run hook failed: the task cannot move to review" in sys.stdout.getvalue()
+            assert "hook post-run FAILED (exit 3)" in sys.stdout.getvalue()  # final result line; exit stays 6 despite DONE
             real_tw = omi.task_worktrees
             omi.task_worktrees = lambda _: {"TASK-001": str(wt)}
             task.write_text(task.read_text().replace("status: in-progress", "workflow: omi-flow-feature\nstep: plan")
@@ -1516,7 +1518,9 @@ def test_hooks():
                 assert omi.hook_cmd("post-run", "TASK-001") == 3
                 assert "hook post-run FAILED (exit 3)" in task.read_text()
                 st["hook_rc"] = 0
+                sys.stdout.truncate(0)
                 assert omi.hook_cmd("post-run", "TASK-001") == 0 and "hook post-run passed" in task.read_text()
+                assert sys.stdout.getvalue().endswith("hook post-run passed\n")
             finally:
                 omi.main_checkout = real_mc
             assert omi.step(main, "TASK-001", "done") == 0
@@ -3743,6 +3747,7 @@ def test_status_drift_hints():
         assert "docker/Dockerfile differs" not in status_text(root), "CRLF is not a difference"
         df.write_bytes(crlf + b"RUN true\r\n")
         assert f"docker/Dockerfile differs from the omi {omi.version()} template; review it (omi init never overwrites it)" in status_text(root)
+        assert f"git diff --no-index {omi.TEMPLATE / 'docker' / 'Dockerfile'} docker/Dockerfile" in status_text(root) and "merge by hand" in status_text(root)
         df.unlink()
         assert "docker/Dockerfile differs" not in status_text(root)
         real = omi.main_checkout, omi.full_volumes
