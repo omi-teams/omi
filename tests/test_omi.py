@@ -3962,6 +3962,19 @@ def test_model_catalog_and_task_start():
         assert omi.resolve_effort("ultra", "codex") == "ultra"
 
 
+def test_host_only_criteria():
+    root = Path(__file__).parents[1]
+    pairs = [(".omi/agents/omi-agent-reviewer.md", "src/omi/template/dot-omi/agents/omi-agent-reviewer.md"),
+             (".claude/skills/omi-task/SKILL.md", "src/omi/template/dot-claude/skills/omi-task/SKILL.md")]
+    for repo_copy, template_copy in pairs:
+        text = (root / repo_copy).read_text(encoding="utf-8")
+        assert text == (root / template_copy).read_text(encoding="utf-8")
+        if "reviewer" in repo_copy:
+            assert "`HOST <criterion>`" in text and "UNVERIFIED|HOST" in text and "is `UNVERIFIED`" in text
+        else:
+            assert "Host: <command> -> <result>" in text and "no merge without one `Host:` line" in text
+
+
 if __name__ == "__main__":
     test_step_settings_format_and_docs()
     test_upgrade_gitattributes()
@@ -3988,6 +4001,7 @@ if __name__ == "__main__":
     test_worker()
     test_roles()
     test_cli_correctness()
+    test_host_only_criteria()
     test_windows_test_shell()
     test_hooks()
     test_run_read_role()
