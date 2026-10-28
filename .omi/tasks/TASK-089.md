@@ -1,16 +1,16 @@
 ---
 id: TASK-089
 title: Clearer CLI feedback: Dockerfile diff hint, version check hint, hook result line
-status: planned
+status: in-progress
 depends: 
 plan: PLAN-002
 scope: src/omi/__init__.py, tests/test_omi.py
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: claude
+model: sonnet
+effort: medium
 step_settings:
 workflow: omi-flow-feature
 step:
