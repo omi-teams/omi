@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-bugfix
-step: review
+step: accept
 ---
 ## Goal
 CI on development is red since PR #100 (TASK-104), run 40663242734: `test_cli_characterization` (tests/test_omi.py:4004) sets PATH to git's folder and expects `tools: git ok, gh MISSING, docker MISSING` (line 4031). On the GitHub runner git lives in `/usr/bin`, next to gh and docker, so the line differs. The Linux worker and the Windows host keep git alone, which hid it. Test-only defect; src is fine.
@@ -33,6 +33,7 @@ CI: PR #101 run 40664931981 (ubuntu-latest) -> success
 Next: merge
 
 ## Steps
+PO approval accept: Accept, merge
 - plan started 2026-10-28 16:20
 - plan done 2026-10-28 16:20
 - reproduce started 2026-10-28 16:20
@@ -40,6 +41,9 @@ Next: merge
 - fix started 2026-10-28 16:26
 - fix done 2026-10-28 16:26
 - review started 2026-10-28 16:26
+- review done 2026-10-28 16:32
+- accept started 2026-10-28 16:32
+- accept done 2026-10-28 16:33
 
 ## Reports
 2026-10-28 16:23 omi-agent-engineer (claude):
