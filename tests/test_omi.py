@@ -4001,7 +4001,14 @@ def test_cli_characterization():
     """Pins exit code and key output of every USAGE command through `python -m omi` (no internals, no gh/docker on PATH)."""
     src = str(Path(__file__).resolve().parents[1] / "src")
     want = tomllib.loads(Path(src).parent.joinpath("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
-    env = {**os.environ, "PYTHONPATH": src, "PATH": str(Path(shutil.which("git")).parent)}
+    git = Path(shutil.which("git"))
+    gitbin = tempfile.TemporaryDirectory()  # PATH holds only git: on CI gh and docker share git's folder
+    try:
+        (Path(gitbin.name) / git.name).symlink_to(git)
+        path = gitbin.name
+    except OSError:  # Windows without symlink rights: git's own folder holds git alone there
+        path = str(git.parent)
+    env = {**os.environ, "PYTHONPATH": src, "PATH": path}
 
     def cli(cwd, *args, stdin=""):
         r = subprocess.run([sys.executable, "-m", "omi", *args], cwd=cwd, env=env, input=stdin, capture_output=True,
