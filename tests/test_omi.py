@@ -4215,7 +4215,10 @@ def test_detached_commands_and_steps():
         with patch.object(omi.docker, "running_workers", return_value=[]), \
                 patch.object(omi.docker, "full_volumes", return_value=[]):
             out = detached_cli(wt, "status")
-        assert "branch: task/TASK-097" in out and "Detached test" in out and str(wt) in out
+        assert "branch: task/TASK-097" in out and "Detached test" in out
+        reported_wt = next(line.strip().removeprefix("worktree: ") for line in out.splitlines()
+                           if line.strip().startswith("worktree: "))
+        assert Path(reported_wt) == wt  # Git uses forward slashes on Windows too.
         assert "skills ok" in detached_cli(code, "skills", "check", ".omi/tasks/TASK-097.md")
         for cmd in ("plans", "rules", "references", "skills", "agents", "workflows"):
             assert str(project) in detached_cli(wt, cmd)
@@ -4360,7 +4363,7 @@ def test_detached_default_hook_config():
             cfg.parent.mkdir(parents=True, exist_ok=True)
             cfg.write_text(json.dumps({"test": "test -f app.py && exit 7"}), encoding="utf-8")
             result = subprocess.run([omi.run.host_bash() or "sh", str(hook)], cwd=wt,
-                                    env={**os.environ, "OMI_PROJECT_STATE": str(root)},
+                                    env={**os.environ, "OMI_PROJECT_STATE": root.as_posix()},
                                     capture_output=True, encoding="utf-8", errors="replace")
             assert result.returncode == 7, ("detached hook ignored state config or code cwd", result.stdout, result.stderr)
         for value in (None, ""):
