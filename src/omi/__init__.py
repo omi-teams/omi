@@ -632,6 +632,46 @@ def add_step_log(text, line):
     return f"{head}{sep}{body}{line}\n" + (f"\n## {tail}" if nxt else "")
 
 
+SENSITIVE_SCOPE = ("migrations", "auth", "secrets", ".github/")  # scope globs containing one of these want omi-flow-feature-sensitive
+
+
+def warn_sensitive(m):
+    """Print a warning (never fail) when the task's scope touches a sensitive path under a non-sensitive workflow."""
+    if m.get("workflow") == "omi-flow-feature-sensitive":
+        return
+    for pat in SENSITIVE_SCOPE:
+        if any(pat in g.lower() for g in split(m.get("scope"))):
+            print(f"WARN: scope touches {pat} - consider omi-flow-feature-sensitive")
+
+
+def commit_task_file(root, task, msg):
+    """Commit only the task file on the development checkout; other staged or unstaged changes stay as they are."""
+    rel = task.relative_to(root).as_posix()
+    if git(root, "add", "--", rel) is not None:
+        git(root, "commit", "-m", msg, "--only", "--", rel)
+
+
+def sync_scope(wt, task, tid):
+    """Copy the `scope:` line of the task file on development into the worktree's task file when they differ."""
+    dev = git(wt, "show", f"development:.omi/tasks/{tid}.md")
+    if not dev or not task.exists():
+        return
+    line = next((ln for ln in (front_of(dev) or "").split("\n") if ln.partition(":")[0].strip() == "scope"), None)
+    text = task.read_text(encoding="utf-8")
+    if line is None or split(parse(dev).get("scope")) == split(parse(text).get("scope")):
+        return
+    head, front, rest = text.split("---", 2)
+    lines = front.split("\n")
+    for i, ln in enumerate(lines):
+        if ln.partition(":")[0].strip() == "scope":
+            lines[i] = line
+            break
+    else:
+        lines.insert(len(lines) - 1, line)
+    task.write_text(f"{head}---{chr(10).join(lines)}---{rest}", encoding="utf-8")
+    print(f"SCOPE SYNCED: {parse(dev).get('scope')}")
+
+
 def step(root, tid, action, why=None, now=None):
     """Record a workflow step in the task file: `next` starts the following step, `done` closes the current one,
     `skip` closes it with a reason, `back` fails a started review gate and restarts the nearest earlier write step.
@@ -673,6 +713,8 @@ def step(root, tid, action, why=None, now=None):
         if new["role"] != COORDINATOR:
             get_role(root, m.get("role") or "omi-agent-engineer")  # unknown task role fails too
         check_skills(root, step_skill_ids(root, new, m))
+        if cur == "plan":
+            warn_sensitive(m)
         text = add_step_log(set_front(text, "step", new["id"]), f"- {new['id']} started {stamp}")
         msg = (f"{tid}: step {new['id']} ({new['role']}, gate {new['gate']}): input {new['input']}; "
                f"output {new['output']}; stop when {new['stop']}")
@@ -717,6 +759,8 @@ def step(root, tid, action, why=None, now=None):
         sys.exit("usage: omi step <TASK-ID> next|done|back|skip --why <reason>")
     task.write_text(text, encoding="utf-8")
     print(msg)
+    if task == Path(root) / ".omi" / "tasks" / f"{tid}.md":  # the task branch's copy is committed with the branch
+        commit_task_file(Path(root), task, f"chore({tid}): step {parse(text).get('step')} {action}")
     return 0
 
 
@@ -2284,7 +2328,6 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
         sys.exit(f"{task} is not inside {wt}. Nothing changed.")
     tm = meta(task) if task.exists() else {}
     check_task_plan(wt, tm)
-    before = task.read_text(encoding="utf-8") if task.exists() else ""
     am = get_role(main, role)
     get_role(main, tm.get("role") or "omi-agent-engineer")  # unknown task role fails too
     steps = get_workflow(wt, tm.get("workflow") or DEFAULT_WORKFLOW) \
@@ -2305,6 +2348,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
                      f"or use your ChatGPT login ({secret[2]}). Nothing changed.")
         sys.exit(f"no token: run `omi token set` (Windows), set {TOKEN_ENV}, or log in to Claude Code on the host"
                  f"{f' ({secret[2]})' if secret[2] else ''}. Nothing changed.")
+    sync_scope(wt, task, task.stem)  # before `before`, so revert_front keeps the synced scope
+    before = task.read_text(encoding="utf-8") if task.exists() else ""
     if cur and cur["role"] != role:
         print(f"WARNING: step {cur['id']} of {task.stem} is for {cur['role']}, not {role}; "
               f"if that step is finished run `omi step {task.stem} done` / `next` first")
@@ -2553,6 +2598,7 @@ def main(argv=None):
             check_all_skills(".")
         elif rest[:1] == ["check"] and len(rest) > 1:
             check_skills(".", task_skill_ids(".", meta(Path(rest[1]))))
+            warn_sensitive(meta(Path(rest[1])))
             print("skills ok")
         else:
             skills_catalog(".")
