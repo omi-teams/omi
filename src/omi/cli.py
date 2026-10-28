@@ -41,7 +41,7 @@ def status(cwd="."):
     try:
         old = not stamp or core.semver(stamp) < core.semver(core.version())
         if stamp and core.semver(stamp) > core.semver(core.version()):
-            print(f'this project needs omi {stamp}; install it: python -m pip install --user "git+https://github.com/omi-teams/omi-squad2@v{stamp}"')
+            print(f'this project needs omi {stamp}; install it: python -m pip install --user "git+https://github.com/omi-teams/omi@v{stamp}"')
     except ValueError:
         old = True
     if old:

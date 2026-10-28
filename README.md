@@ -7,7 +7,7 @@
 Phiên bản (SemVer 0.x) chỉ ghi ở `pyproject.toml`; `omi init` ghi nó vào `.omi/version`, `omi status` báo khi dự án cũ hơn omi đang cài.
 
 ```sh
-python -m pip install --user "git+https://github.com/omi-teams/omi-squad2@v0.3.1"     # cài từ tag
+python -m pip install --user "git+https://github.com/omi-teams/omi@v0.3.1"     # cài từ tag
 python -m omi upgrade [--check|--to vX.Y.Z]   # nâng cấp omi rồi cập nhật file khung chưa bị sửa (file đã sửa: giữ nguyên, bản mới ở <file>.omi-new); trong Claude Code: /omi-upgrade
 omi --version             # omi 0.3.1
 # Mỗi Python trên máy có một omi (hook và AGENTS.md gọi `python -m omi`); người phát triển omi dùng `pip install -e .` thay cho lệnh trên.
@@ -15,7 +15,7 @@ mkdir my-app && cd my-app
 omi init                  # cài khung squad, không ghi đè file sẵn có
 omi github [--po]         # (PO, quyền admin; --po: đăng nhập PO trên browser, xong tự logout + quay lại tài khoản squad) tạo staging + ruleset: squad chỉ merge vào development
 # Coordinator mặc định chạy model sonnet ("model" trong .claude/settings.json); đổi: sửa key đó hoặc /model trong phiên
-# Worker: alias haiku/sonnet/opus đổi thành model ID đầy đủ qua "models" trong .omi/config.json (PO sửa được); tên container <repo>-<task>-<role>-<tool>-<model>-<effort>-<HHMMSS> (vd. omi-squad2-TASK-055-reviewer-claude-sonnet-5.5-medium-143205), agent và proxy cùng một nhóm compose (com.docker.compose.project) để Docker Desktop gom lại, label omi-role/task/model/effort/started; omi status liệt kê worker đang chạy
+# Worker: alias haiku/sonnet/opus đổi thành model ID đầy đủ qua "models" trong .omi/config.json (PO sửa được); tên container <repo>-<task>-<role>-<tool>-<model>-<effort>-<HHMMSS> (vd. omi-TASK-055-reviewer-claude-sonnet-5.5-medium-143205), agent và proxy cùng một nhóm compose (com.docker.compose.project) để Docker Desktop gom lại, label omi-role/task/model/effort/started; omi status liệt kê worker đang chạy
 claude                    # rồi gõ /omi-idea, /omi-task TASK-001, /omi-status
 ```
 
