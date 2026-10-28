@@ -4,5 +4,6 @@
 - docker: Dockerfile and compose: image size, user, secrets, pinning (applies: **/Dockerfile*, docker/**, **/compose*.yml) [~146 tokens]
 - go: Go code: errors, formatting, tests, concurrency (applies: **/*.go, go.mod) [~135 tokens]
 - nextjs: Next.js App Router: components, data, caching, env (applies: app/**, **/*.tsx, next.config.*) [~171 tokens]
+- omi-modules: src/omi module structure: imports, layer order, size, package surface, test patches (applies: src/omi/*.py) [~184 tokens]
 - postgres: PostgreSQL: migrations, queries, indexes, safety (applies: **/*.sql, **/migrations/**) [~160 tokens]
 - python: Python code: typing, errors, tests, packaging (applies: **/*.py, pyproject.toml) [~133 tokens]
