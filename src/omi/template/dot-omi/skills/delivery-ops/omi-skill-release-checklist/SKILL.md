@@ -4,7 +4,7 @@ group: delivery-ops
 description: Use when preparing, promoting or tagging a release (rc tag, development -> staging -> main PRs, v* tag) or checking a release PR before the PO tests it.
 tokens: 653
 tools: Read, Bash
-source_repo: https://github.com/omi-teams/omi-squad2
+source_repo: https://github.com/omi-teams/omi
 source_ref: a35ba0957a0a8e7e431fbbaba2b3df1f3588a79d
 source_file: .claude/skills/omi-release/SKILL.md, .omi/tasks/TASK-018.md, docs/pilot.md
 source_license: internal (no LICENSE file yet)

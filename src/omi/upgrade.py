@@ -13,7 +13,7 @@ from . import catalogs, core, workflows
 
 TOOLS = ("git", "gh", "docker", "claude", "codex")
 SHAS = Path(__file__).parent / "template_shas.json"
-OMI_REPO = "https://github.com/omi-teams/omi-squad2"
+OMI_REPO = "https://github.com/omi-teams/omi"
 UPGRADE_SKIP = (".omi/decisions.md", ".omi/config.json")
 
 

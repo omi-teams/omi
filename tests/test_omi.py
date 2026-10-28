@@ -505,7 +505,7 @@ def test_upgrade_symlink_parents():
 
 
 def test_omi_repo_validation():
-    for ok in (omi.upgrade.OMI_REPO, "ssh://git@host/x/y.git", "git@github.com:omi-teams/omi-squad2.git"):
+    for ok in (omi.upgrade.OMI_REPO, "ssh://git@host/x/y.git", "git@github.com:omi-teams/omi.git"):
         assert omi.upgrade.valid_repo(ok), ok
     bad = ("--upload-pack=touch /tmp/x", "-oProxyCommand=x", "ssh://-oProxyCommand=x/y", "https://x/ y",
            "file:///tmp/repo", "/tmp/repo", "git@-oProxy:x", "ext::sh -c x", "", 7, None)
@@ -1937,18 +1937,18 @@ def test_clip_report():
 def test_container_names():
     import datetime
     t = datetime.datetime(2026, 1, 1, 14, 32, 5)
-    assert omi.docker.container_name("omi-squad2", "omi-agent-reviewer", "TASK-055", "claude", "claude-sonnet-5-5", "medium", t) == \
-        "omi-squad2-TASK-055-reviewer-claude-sonnet-5.5-medium-143205"
-    assert omi.docker.container_name("omi-squad2", "omi-agent-engineer", "TASK-018", "codex", "gpt-5.1-codex", "high", t) == \
-        "omi-squad2-TASK-018-engineer-codex-gpt-5.1-codex-high-143205"
-    assert omi.docker.container_name("omi-squad2", "omi-agent-engineer", "TASK-018", "codex", "gpt-6.1-sol", "high", t) == \
-        "omi-squad2-TASK-018-engineer-codex-gpt-6.1-sol-high-143205"
-    assert omi.docker.container_name("omi-squad2", "my role", "prove", now=t) == "omi-squad2-prove-my-role-claude-none-none-143205"
-    assert omi.docker.container_name("omi-squad2", "omi-agent-engineer", "TASK-018", "codex", "gpt-6.1-sol", "high", t, salt="a3") == \
-        "omi-squad2-TASK-018-engineer-codex-gpt-6.1-sol-high-143205a3"
+    assert omi.docker.container_name("omi", "omi-agent-reviewer", "TASK-055", "claude", "claude-sonnet-5-5", "medium", t) == \
+        "omi-TASK-055-reviewer-claude-sonnet-5.5-medium-143205"
+    assert omi.docker.container_name("omi", "omi-agent-engineer", "TASK-018", "codex", "gpt-5.1-codex", "high", t) == \
+        "omi-TASK-018-engineer-codex-gpt-5.1-codex-high-143205"
+    assert omi.docker.container_name("omi", "omi-agent-engineer", "TASK-018", "codex", "gpt-6.1-sol", "high", t) == \
+        "omi-TASK-018-engineer-codex-gpt-6.1-sol-high-143205"
+    assert omi.docker.container_name("omi", "my role", "prove", now=t) == "omi-prove-my-role-claude-none-none-143205"
+    assert omi.docker.container_name("omi", "omi-agent-engineer", "TASK-018", "codex", "gpt-6.1-sol", "high", t, salt="a3") == \
+        "omi-TASK-018-engineer-codex-gpt-6.1-sol-high-143205a3"
     # compose project: lowercased run name, chars outside [a-z0-9_-] become '-'
-    assert omi.docker.compose_labels("omi-squad2-TASK-055-reviewer-claude-sonnet-5.5-medium-143205", "agent") == {
-        "com.docker.compose.project": "omi-squad2-task-055-reviewer-claude-sonnet-5-5-medium-143205",
+    assert omi.docker.compose_labels("omi-TASK-055-reviewer-claude-sonnet-5.5-medium-143205", "agent") == {
+        "com.docker.compose.project": "omi-task-055-reviewer-claude-sonnet-5-5-medium-143205",
         "com.docker.compose.service": "agent"}
     with tempfile.TemporaryDirectory() as d:
         assert omi.tools.resolve_model(d, "opus") == "claude-opus-5-5" and omi.tools.resolve_model(d, "claude-x-1") == "claude-x-1"
@@ -3870,7 +3870,7 @@ def test_status_drift_hints():
         text = status_text(root)
         assert "needs omi" not in text and "docker/Dockerfile differs" not in text, text
         (root / ".omi" / "version").write_text("99.0.0\n", encoding="utf-8")
-        assert 'this project needs omi 99.0.0; install it: python -m pip install --user "git+https://github.com/omi-teams/omi-squad2@v99.0.0"' in status_text(root)
+        assert 'this project needs omi 99.0.0; install it: python -m pip install --user "git+https://github.com/omi-teams/omi@v99.0.0"' in status_text(root)
         df = root / "docker" / "Dockerfile"
         crlf = df.read_bytes().replace(b"\n", b"\r\n")
         df.write_bytes(crlf)

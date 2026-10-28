@@ -4,7 +4,7 @@ group: delivery-ops
 description: Use when running omi, git, gh, docker or shell scripts on Windows PowerShell or Git Bash, or when a command works on Linux but fails on the PO's Windows machine.
 tokens: 554
 tools: Read, Bash
-source_repo: https://github.com/omi-teams/omi-squad2
+source_repo: https://github.com/omi-teams/omi
 source_ref: a35ba0957a0a8e7e431fbbaba2b3df1f3588a79d
 source_file: docs/spikes/docker.md, docs/verification.md, .omi/tasks/TASK-006.md, .omi/tasks/TASK-015.md
 source_license: internal (no LICENSE file yet)
