@@ -94,12 +94,15 @@ def test_version_stamp_package_hook():
                     omi.status(root)
                 return b.getvalue()
             out = st()
-            assert f"omi {want} (project {want})" in out and "run `omi init`" not in out
+            assert f"omi {want} (project {want})" in out and "upgrade --apply" not in out
             (root / ".omi" / "version").write_text("0.1.0\n")
             out = st()
-            assert f"omi {want} (project 0.1.0)" in out and f"run `omi init` to add the files of omi {want}" in out
+            assert f"omi {want} (project 0.1.0)" in out and f"run `python -m omi upgrade --apply` to bring the project files to omi {want}" in out
+            omi.upgrade_apply(root)
+            assert (root / ".omi" / "version").read_text().strip() == want
+            (root / ".omi" / "version").write_text("0.1.0\n")
             (root / ".omi" / "version").unlink()
-            assert "run `omi init`" in st()
+            assert "upgrade --apply" in st()
     finally:
         omi.importlib.metadata.version = real
     assert omi.semver("0.10.0") > omi.semver("0.9.5")
@@ -648,6 +651,7 @@ def test_upgrade_skill_repo_confirmation():
     assert "confirm" in skill and "non-default" in skill and "--repo <url>" in skill
     assert "--check" in skill and "--to <tag>" in skill and ".omi-new" in skill
     assert "development" in skill and "tests" in skill
+    assert "older than" in skill and "python -m omi upgrade --apply" in skill and "steps 4-5" in skill
 
 
 def test_init_fresh_project():

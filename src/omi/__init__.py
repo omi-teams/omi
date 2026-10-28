@@ -1139,7 +1139,7 @@ def status(cwd="."):
     except ValueError:
         old = True
     if old:
-        print(f"run `omi init` to add the files of omi {version()}")
+        print(f"run `python -m omi upgrade --apply` to bring the project files to omi {version()}")
     dockerfile = root / "docker" / "Dockerfile"
     if dockerfile.exists() and dockerfile.read_bytes().replace(b"\r\n", b"\n") != (TEMPLATE / "docker" / "Dockerfile").read_bytes().replace(b"\r\n", b"\n"):
         print(f"docker/Dockerfile differs from the omi {version()} template; review it (omi init never overwrites it)")
