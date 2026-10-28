@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature
-step: build
+step: review
 ---
 ## Goal
 On the PO's Windows host `test_command` picked `%LOCALAPPDATA%\Microsoft\WindowsApps\bash.exe`, a WSL app alias like System32's, and every `omi run` pre-check failed with `execvpe(/bin/bash) failed` (no WSL distro). Git Bash at `C:\Program Files\Git\bin\bash.exe` was installed but `Git\bin` is not on PATH (only `Git\cmd`). Found 2026-10-28 while starting TASK-094.
@@ -24,6 +24,7 @@ On the PO's Windows host `test_command` picked `%LOCALAPPDATA%\Microsoft\Windows
 - [ ] All tests pass on the Linux worker and on the Windows host with the PATH as it is (no `Git\bin` added).
 
 ## Checkpoint
+Review round 1 FAIL (host check by Coordinator): `python tests/test_omi.py` on the Windows host with PATH as is (Git\cmd only) -> FileNotFoundError at tests/test_omi.py:140 `subprocess.run(["sh", hook])`: sh.exe is in Git\bin, not on PATH. Same pattern at tests/test_omi.py:3560 (`["sh", "-c", ...]`). Fix: the tests must run host shell scripts through the same Git Bash lookup as `test_command` (e.g. factor the lookup into one helper in src/omi and reuse it in both), not a bare `sh`. Lines 1447/1458/3503 only match docker argv, leave them.
 Done: test_command skips System32 and WindowsApps, finds Git Bash via git.exe's parent\bin\bash.exe, else cmd; test extended.
 Not done: run on the real Windows host.
 Tests: python3 tests/test_omi.py passed on Linux (exit 0).
@@ -33,6 +34,8 @@ Next: Coordinator verifies on Windows.
 - plan started 2026-10-28 14:30
 - plan done 2026-10-28 14:30
 - build started 2026-10-28 14:30
+- build done 2026-10-28 14:35
+- review started 2026-10-28 14:35
 
 ## Reports
 2026-10-28 14:32 omi-agent-engineer (claude):
@@ -91,8 +94,16 @@ Next: Coordinator verifies on Windows.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-28 14:40 omi-agent-reviewer (claude):
+> ```
+> VERDICT: PASS
+> AC: On Windows, test_command never picks a WSL alias bash (System32 or WindowsApps), finds Git Bash via git.exe's parent\bin\bash.exe when only Git\cmd is on PATH, else falls back to cmd ✓ src/omi/__init__.py:2242-2249 filters both alias dirs from PATH and looks up git on the filtered PATH. It uses bin\bash.exe only if the file exists, otherwise it returns the cmd string. The test exercises each branch.
+> AC: A test covers the WindowsApps skip and the Git Bash lookup without needing Windows ✓ tests/test_omi.py:1413-1427 (test_windows_test_shell) runs on Linux with mocked WINDOWS, which and get_exec_path, against a temp dir. It covers the WindowsApps skip, the Git\cmd-only lookup, and the cmd fallback after bash.exe is removed.
+> AC: All tests pass on the Linux worker and on the Windows host with the PATH as it is (no Git\bin added) ✓ for Linux (python3 tests/test_omi.py exited 0). HOST for the Windows run, which cannot be done in this container.
+> ```
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 3078 | 178488 | 157s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1002 | 64892 | 242s | - | PASS 09db1a0 |
