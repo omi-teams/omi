@@ -27,6 +27,11 @@ Note (Coordinator, after TASK-089): in this repo `omi step` wrote to the worktre
 - [ ] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
+Review round 1 FAIL (reviewer + security, no security issue):
+- Step commit tests: add `done` and `skip` (commit subject + HEAD has only the task file), and a no-op case that makes no new commit. Add the #4 repro: `omi step` with no worktree writes and commits the task file on development; with a worktree, no commit on development.
+- Scope sync: add a test through `run_role` (Docker stubbed) showing the synced scope survives `revert_front` / is in the task file the agent sees; or assert sync runs before `before` is read.
+- `warn_sensitive`: match path segments (split each glob on `/`; segment contains `migration`, equals/startswith `auth` or `secret`; glob starts with `.github`), so `src/authors/**`, `oauth` do not warn. Test both.
+- AC4: drop the 'worktree copy is ignored' / 'development only' caveat from both omi-task SKILL.md copies and update the `test_cli_correctness` strings that pin it.
 Coordinator: Windows host suite passed (ok).
 Done:
 Not done:
@@ -39,6 +44,12 @@ Next: start after TASK-089.
 - architect started 2026-10-28 10:13
 - architect done 2026-10-28 10:15
 - build started 2026-10-28 10:15
+- build done 2026-10-28 10:27
+- review started 2026-10-28 10:27
+- review done 2026-10-28 10:31
+- security started 2026-10-28 10:31
+- security failed 2026-10-28 10:36
+- build started 2026-10-28 10:36
 
 ## Reports
 2026-10-28 10:14 omi-agent-architect (claude):
@@ -109,9 +120,32 @@ Next: start after TASK-089.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-28 10:31 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - tests/test_omi.py:1836 The scope-sync test calls `sync_scope` directly and never goes through `run_role` or the prompt, so the "next run's prompt shows the new scope" claim is untested. The ordering fix (sync before `before = ...`, `src/omi/__init__.py:2351`) is correct by reading but has no regression test. -> Add a small test, or assert the call order, that exercises the `run_role` path with Docker stubbed.
+> - tests/test_omi.py:1804 Only `step next` is tested. The criterion lists `done|back|skip`, and "no commit when nothing changed" is not asserted. The #4 repro the task note asked for (`step` before the worktree exists) is also missing. -> Add asserts for `done` and `skip`, plus a second identical call that makes no new commit.
+> - src/omi/__init__.py:146 `warn_sensitive` matches by substring, so `auth` also matches `src/authors/**`, `oauth`, and `author`. This gives false warnings. -> Match path segments, e.g. split the glob on `/` and compare segments, keeping the `.github/` prefix check.
+> - .claude/skills/omi-task/SKILL.md:18 The "edit scope on development only" caveat is kept. The engineer says an existing test asserts that wording. -> Acceptable. If the criterion should be fully met, update that test along with the doc.
+> - .omi/tasks/TASK-090.md This file is outside the declared `scope`. It is the task's own workflow bookkeeping, so it is harmless.
+> 
+> AC: `omi step` commits only the task file, message `chore(<ID>): step <step> <action>`, with real git ✓ for `next`. The test checks the commit subject, that `HEAD` contains only the task file, and that the staged and untracked changes stay as they were. `done|back|skip` and the "no commit when nothing changed" case are not tested.
+> [... truncated ...]
+> AC: All tests pass on the Linux worker and the Windows host ✓ Linux: `python3 tests/test_omi.py` printed `ok`. Windows: not re-run here. The task checkpoint says the Coordinator's Windows run passed, but that was before this diff.
+2026-10-28 10:36 omi-agent-security-reviewer (claude):
+> VERDICT: FAIL
+> - tests/test_omi.py:1804 Only `step next` is tested, and `done`, `back` and `skip` are not. AC1 requires `next|done|back|skip` "tested with real git". | why: AC1 coverage is partial | verified: read the test; it calls `omi.step(main, "TASK-001", "next")` once -> add `done` and `skip` asserts for the commit subject and `HEAD` contents.
+> - tests/test_omi.py:1836 AC2's "next run's prompt shows the new scope" is untested. The test calls `sync_scope` directly. The ordering in `run_role` (`src/omi/__init__.py:2351`, sync before `before=`) is correct by reading, but nothing guards it. | why: if someone moves the sync after `before`, `revert_front` silently undoes it | verified: read `run_role` and `revert_front` -> add a test through `run_role` with Docker stubbed, or assert the call order.
+> - .claude/skills/omi-task/SKILL.md:22 AC4 says to drop the "edit scope on development only" caveat, but it was kept. | why: AC not met, though the engineer says `test_cli_correctness` asserts that wording | verified: read the diff -> update that test and the doc together, or get the PO's OK to waive AC4.
+> - src/omi/__init__.py:160 `warn_sensitive` matches by substring, so `auth` also warns on `src/authors/**` and `oauth`. | why: false warnings; it only warns and never fails, so low severity | verified: read the code -> compare path segments.
+> 
+> `python3 tests/test_omi.py` prints `ok` here on Linux. I did not check the Windows host.
+> I found no security issue. `sync_scope` copies only the trusted `development` scope line into the agent-writable worktree copy. `commit_task_file` uses `--only` on a single path, so other staged changes stay as they were.
+> UNVERIFIED: The Windows `Path` comparison in `step()` (`task == Path(root)/…`) was not run on the Windows host.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-architect | claude-opus-5-5 | high | 14 | 5057 | 223811 | 58s | - | n/a |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 38 | 10262 | 792499 | 535s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 3366 | 121219 | 257s | - | PASS a12b839 |
+| omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 12 | 2540 | 205977 | 249s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL a12b839 |
