@@ -137,6 +137,16 @@ def init(target: str | Path = ".", *, detached: bool = False) -> None:
     print("next: open Claude Code or Codex here and type omi-idea")
 
 
+def warn_in_repo_files(code: Path) -> None:
+    """Report tracked local omi files ignored by detached state, without changing them."""
+    tracked = (core.git(code, "ls-files", "-z", "--", ".omi", "AGENTS.md", ".claude") or "").split("\0")
+    roots = {name.split("/", 1)[0] for name in tracked}
+    paths = [path for path in (".omi/", "AGENTS.md", ".claude/")
+             if path.rstrip("/") in roots]
+    if paths:
+        print("WARN: in-repo omi files ignored (detached): " + ", ".join(paths))
+
+
 def attach(rest: list[str]) -> None:
     """Register a checkout using portable origin identity; write only to the state repo."""
     args = list(rest)
@@ -185,6 +195,7 @@ def attach(rest: list[str]) -> None:
 
     if identity in projects:
         print(f"already attached: {projects[identity]}")
+        warn_in_repo_files(code)
         prepare_development()
         return
     if project.exists() or project.is_symlink():
@@ -208,6 +219,7 @@ def attach(rest: list[str]) -> None:
     projects = state.registry()
     if identity in projects:
         print(f"already attached: {projects[identity]}")
+        warn_in_repo_files(code)
         prepare_development()
         return
     if project.exists() or project.is_symlink():
@@ -227,6 +239,7 @@ def attach(rest: list[str]) -> None:
             shutil.rmtree(project)
         raise
     print(f"attached: {project}")
+    warn_in_repo_files(code)
     if core.git(home, "remote"):
         state_sync.push(state.Project(project, code, True))
     else:
