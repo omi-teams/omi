@@ -35,6 +35,30 @@ def state_home() -> Path:
     return Path(os.environ.get("OMI_STATE", str(Path.home() / ".omi" / "state"))).expanduser().resolve()
 
 
+class StateError(ValueError):
+    """Invalid detached state or an attach operation that cannot proceed."""
+
+
+def registry() -> dict[str, Path]:
+    """Validate every manifest, including entries unrelated to the current checkout."""
+    found = {}
+    for manifest in sorted((state_home() / "projects").glob("*/project.json")):
+        try:
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise StateError(f"invalid project manifest {manifest}: {exc}") from exc
+        if not isinstance(data, dict) or not isinstance(data.get("remote"), str) or not data["remote"].strip():
+            raise StateError(f"invalid project manifest {manifest}: expected a remote string")
+        try:
+            remote = normalise_url(data["remote"])
+        except ValueError as exc:
+            raise StateError(f"invalid project manifest {manifest}: {exc}") from exc
+        if remote in found:
+            raise StateError(f"multiple detached projects: {found[remote] / 'project.json'} and {manifest}")
+        found[remote] = manifest.parent.resolve()
+    return found
+
+
 def resolve(cwd: str | Path | Project = ".") -> Project:
     """One root resolver for commands; ordinary checkouts keep their local state."""
     if isinstance(cwd, Project):
@@ -42,20 +66,9 @@ def resolve(cwd: str | Path | Project = ".") -> Project:
     top = Path(core.git(cwd, "rev-parse", "--show-toplevel") or cwd).resolve()
     code = core.main_checkout(top) or top
     remote = core.git(code, "remote", "get-url", "origin")
-    matches = []
-    if remote:
-        for manifest in sorted((state_home() / "projects").glob("*/project.json")):
-            try:
-                data = json.loads(manifest.read_text(encoding="utf-8"))
-            except (OSError, ValueError) as exc:
-                raise ValueError(f"invalid project manifest {manifest}: {exc}") from exc
-            if not isinstance(data, dict) or not isinstance(data.get("remote"), str):
-                raise ValueError(f"invalid project manifest {manifest}: expected a remote string")
-            if normalise_url(data["remote"]) == normalise_url(remote):
-                matches.append(manifest.parent.resolve())
-    if len(matches) > 1:
-        raise ValueError(f"multiple detached projects match origin {remote}: {matches}")
-    return Project(matches[0], code, True) if matches else Project(top, code)
+    projects = registry()
+    match = projects.get(normalise_url(remote)) if remote else None
+    return Project(match, code, True) if match else Project(top, code)
 
 
 def task_file(project: Project, tid: str) -> Path:
