@@ -1,7 +1,7 @@
 ---
 id: TASK-099
 title: State sync: auto pull/commit/push and omi sync
-status: in-progress
+status: done
 depends: TASK-098
 plan: PLAN-004
 scope: src/omi/*.py, tests/test_omi.py, README.md
@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature
-step: review
+step: accept
 ---
 ## Goal
 Several machines share one omi-state repo without the PO running git by hand.
@@ -39,6 +39,9 @@ Host: python tests/test_omi.py (Windows host, commit feat(state): automatically 
 - build started 2026-10-29 10:10
 - build done 2026-10-29 10:23
 - review started 2026-10-29 10:23
+- review done 2026-10-29 10:29
+- accept started 2026-10-29 10:29
+- PO approval accept: Accept, merge ngay (minor review notes go to decisions for TASK-101)
 
 ## Reports
 2026-10-29 10:18 omi-agent-engineer (codex):
