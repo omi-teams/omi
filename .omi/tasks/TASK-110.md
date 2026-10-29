@@ -1,7 +1,7 @@
 ---
 id: TASK-110
 title: Document Windows PATH, test command and worker hosts for detached mode
-status: in-progress
+status: done
 depends: TASK-108, TASK-109
 plan: PLAN-005
 scope: README.md, .omi/tasks/TASK-110.md
@@ -13,14 +13,14 @@ model: haiku
 effort: low
 step_settings:
 workflow: omi-flow-feature
-step: build
+step: accept
 ---
 ## Goal
 Pilot gaps G1 and G7: README tells a new user what the pilot had to find out.
 
 ## Acceptance criteria
-- [ ] README says how to put the Python `Scripts` dir on PATH on Windows (or use `python -m omi`), that an attached project needs `test` set in its state `.omi/config.json`, and that the worker adds the selected tool's API host (and chatgpt.com for a ChatGPT login) besides `network_allow`; it also documents the TASK-108 in-repo files warning and `omi step <ID> approve|reopen --why`; the `cli.py` usage line is left to TASK-111.
-- [ ] At most 12 added lines, Vietnamese, matching README style.
+- [x] README says how to put the Python `Scripts` dir on PATH on Windows (or use `python -m omi`), that an attached project needs `test` set in its state `.omi/config.json`, and that the worker adds the selected tool's API host (and chatgpt.com for a ChatGPT login) besides `network_allow`; it also documents the TASK-108 in-repo files warning and `omi step <ID> approve|reopen --why`; the `cli.py` usage line is left to TASK-111.
+- [x] At most 12 added lines, Vietnamese, matching README style.
 
 ## Checkpoint
 Done: Updated the Windows `Scripts` lookup to use `sysconfig.get_path('scripts', 'nt_user')` for `pip install --user`, and explained to omit `'nt_user'` for installs without `--user`; kept `python -m omi` fallback and all other README guidance unchanged.
@@ -29,6 +29,7 @@ Tests: `python3 tests/test_omi.py` exited 0 and ended with `ok`.
 Next: Coordinator review.
 
 ## Steps
+PO approval accept: Chấp nhận, merge
 - plan started 2026-10-29 16:47
 - plan done 2026-10-29 16:47
 - build started 2026-10-29 16:47
@@ -40,6 +41,11 @@ Next: Coordinator review.
 - review started 2026-10-29 17:09
 - review failed 2026-10-29 17:16
 - build started 2026-10-29 17:16
+- build done 2026-10-29 17:25
+- review started 2026-10-29 17:25
+- review done 2026-10-29 17:36
+- accept started 2026-10-29 17:37
+- accept done 2026-10-29 17:37
 
 ## Reports
 2026-10-29 16:52 omi-agent-engineer (codex):
@@ -210,6 +216,10 @@ Next: Coordinator review.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-29 17:30 omi-agent-reviewer (codex):
+> VERDICT: PASS
+> AC: Document Windows PATH/module invocation, state test configuration, worker hosts, in-repo warning, and approve/reopen commands; leave cli.py unchanged ✓ README.md:30–32 covers all requirements and matches implementation; cli.py absent from diff. `python3 tests/test_omi.py` exited 0, ending `ok`.
+> AC: At most 12 added README lines, Vietnamese, matching README style ✓ Supplied diff adds four lines, including one blank, using Vietnamese prose and inline commands.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -219,3 +229,4 @@ Next: Coordinator review.
 | omi-agent-engineer | gpt-6-luna (codex) | low | 164907 | 1628 | 138112 | 95s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 1175428 | 3627 | 1139072 | 359s | - | FAIL e2bf8df |
 | omi-agent-engineer | gpt-6-luna (codex) | low | 339896 | 1755 | 315904 | 238s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 706684 | 1766 | 639232 | 221s | - | PASS 17bc8f5 |
