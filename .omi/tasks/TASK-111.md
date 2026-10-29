@@ -13,7 +13,7 @@ model: haiku
 effort: low
 step_settings:
 workflow: omi-flow-feature
-step: review
+step: accept
 ---
 ## Goal
 Release prep for PLAN-005, as in TASK-102.
@@ -31,11 +31,14 @@ Tests: `python3 tests/test_omi.py` completed with `ok` on Linux (exit 0).
 Next: Coordinator runs `python3 tests/test_omi.py` on the Windows host.
 
 ## Steps
+PO approval accept: Chấp nhận (Recommended)
 - plan started 2026-10-29 21:21
 - plan done 2026-10-29 21:21
 - build started 2026-10-29 21:21
 - build done 2026-10-29 21:37
 - review started 2026-10-29 21:37
+- review done 2026-10-29 21:45
+- accept started 2026-10-29 21:45
 
 ## Reports
 2026-10-29 21:22 omi-agent-engineer (codex):
