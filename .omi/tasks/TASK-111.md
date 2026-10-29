@@ -4,7 +4,7 @@ title: Bump omi to 0.4.1
 status: in-progress
 depends: TASK-110, TASK-112
 plan: PLAN-005
-scope: pyproject.toml, README.md, tests/test_upgrade.py, tests/test_cli.py, .omi/version, src/omi/template_shas.json, src/omi/app/cli.py, .omi/tasks/TASK-111.md
+scope: pyproject.toml, README.md, tests/test_upgrade.py, tests/test_cli.py, .omi/version, src/omi/template_shas.json, src/omi/app/cli.py, .omi/tasks/TASK-111.md, src/omi/project/tasks.py
 role: omi-agent-engineer
 skills: []
 refs: []
