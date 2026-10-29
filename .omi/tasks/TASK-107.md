@@ -1,7 +1,7 @@
 ---
 id: TASK-107
 title: attach pushes state and prepares development
-status: in-progress
+status: done
 depends: 
 plan: PLAN-005
 scope: src/omi/upgrade.py, src/omi/state_sync.py, tests/test_omi.py, README.md
@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature
-step: build
+step: accept
 ---
 ## Goal
 Pilot gaps G2 and G3: after `omi attach` the state is on its remote and the code clone has a local `development` branch, with no manual step.
@@ -24,15 +24,22 @@ Pilot gaps G2 and G3: after `omi attach` the state is on its remote and the code
 - [x] Unit tests cover push success, push failure, empty remote, branch created and branch already present; all tests pass.
 
 ## Checkpoint
+Host: python tests/test_omi.py (Windows host, worktree) -> ok, exit 0
 Done: Attach reuses state push with upstream setup and failure recovery; prepares a missing development branch tracking origin without checkout or code files/commits; README updated; all acceptance behaviors covered by tests.
 Not done: None.
 Tests: python3 tests/test_omi.py passed (exit 0, final output ok); five focused attach tests also passed after final test cleanup. No acceptance tests skipped.
 Next: Coordinator review and host commit; no worker commit made.
 
 ## Steps
+PO approval accept: Chấp nhận, merge
 - plan started 2026-10-29 14:15
 - plan done 2026-10-29 14:15
 - build started 2026-10-29 14:15
+- build done 2026-10-29 14:24
+- review started 2026-10-29 14:24
+- review done 2026-10-29 14:34
+- accept started 2026-10-29 14:34
+- accept done 2026-10-29 14:34
 
 ## Reports
 2026-10-29 14:20 omi-agent-engineer (codex):
@@ -86,8 +93,17 @@ Next: Coordinator review and host commit; no worker commit made.
 > create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-29 14:33 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - tests/test_omi.py:4253 `test_attach_development_present` leaves the code repo's own `development` branch with no upstream, so the "untouched" check is weak in the other direction. The test does set `branch.development.merge`, which gives it coverage. No fix needed.
+> - `.omi/tasks/TASK-107.md` is outside `scope` (task-file bookkeeping only). The post-run hook output pasted into its Reports section is noise and can be trimmed.
+> 
+> AC: With a state remote, `omi attach` pushes its commit (sets upstream on an empty remote); a push failure keeps the commit and prints `STATE NOT PUSHED: run omi sync` ✓ `attach` now calls `state_sync.push`, which uses `--set-upstream <remote> HEAD` when no upstream exists. `test_attach_push_success` and the updated `test_attach_clone_portability` check the remote head and upstream. `test_attach_push_failure` checks the message appears once, the commit is kept, and a later `omi sync` pushes it.
+> AC: If `origin/development` exists and no local `development` does, attach creates it tracking origin and prints one line; an existing local branch is untouched; the code repo gets no commit and no file ✓ `prepare_development` runs `git branch --track`, so there is no checkout, commit or file. It runs on both the new-attach and "already attached" paths. `test_attach_development_created` checks the tracking upstream, HEAD, file contents and that the line prints once. `test_attach_development_present` checks the existing branch is unchanged.
+> AC: Unit tests cover push success, push failure, empty remote, branch created and branch already present; all tests pass ✓ `python3 tests/test_omi.py` exited 0 and printed `ok`. The new tests are registered in `__main__`. Empty remote is covered by `test_attach_clone_portability` and the push-success test, where the state remote has no upstream yet.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1149418 | 6176 | 1094912 | 297s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 1790 | 138282 | 481s | - | PASS 09763d7 |
