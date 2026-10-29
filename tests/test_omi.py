@@ -4194,6 +4194,73 @@ def test_attach_registration():
             assert "unrelated" not in omi.core.git(home, "ls-tree", "--name-only", "HEAD")
 
 
+def test_attach_push_success():
+    with detached_project() as (code, project, wt, task):
+        home, remote, other = state_remote(project)
+        previous = omi.core.git(home, "rev-parse", "HEAD")
+        git(code, "remote", "set-url", "origin", "https://example.org/team/second.git")
+        output = detached_cli(code, "attach")
+        head = omi.core.git(home, "rev-parse", "HEAD")
+        assert head != previous and "STATE NOT PUSHED" not in output
+        assert omi.core.git(remote, "rev-parse", "refs/heads/main") == head
+        assert omi.core.git(home, "status", "--porcelain") == ""
+
+
+def test_attach_push_failure():
+    with detached_project() as (code, project, wt, task):
+        home, remote, other = state_remote(project)
+        previous = omi.core.git(home, "rev-parse", "HEAD")
+        git(home, "remote", "set-url", "origin", str(home.parent / "missing.git"))
+        git(code, "remote", "set-url", "origin", "https://example.org/team/second.git")
+        output = detached_cli(code, "attach")
+        assert output.count("STATE NOT PUSHED: run omi sync") == 1
+        assert omi.core.git(home, "rev-parse", "HEAD^") == previous
+        assert omi.core.git(home, "log", "-1", "--format=%s") == "omi: attach second"
+        assert (home / "projects/second/project.json").is_file()
+        assert omi.core.git(home, "status", "--porcelain") == ""
+        assert omi.core.git(remote, "rev-parse", "refs/heads/main") == previous
+        git(home, "remote", "set-url", "origin", str(remote))
+        assert "state synced" in detached_cli(code, "sync")
+        assert omi.core.git(remote, "rev-parse", "refs/heads/main") == omi.core.git(home, "rev-parse", "HEAD")
+
+
+def test_attach_development_created():
+    for registered in (False, True):
+        with detached_project() as (code, project, wt, task):
+            git(code, "branch", "-m", "development", "main")
+            git(code, "update-ref", "refs/remotes/origin/development", "HEAD")
+            if not registered:
+                git(code, "remote", "set-url", "origin", "https://example.org/team/second.git")
+            head = omi.core.git(code, "rev-parse", "HEAD")
+            before = {p.relative_to(code): p.read_bytes() for p in code.rglob("*")
+                      if p.is_file() and ".git" not in p.relative_to(code).parts}
+            output = detached_cli(code, "attach")
+            assert output.splitlines().count("created development tracking origin/development") == 1
+            assert omi.core.git(code, "rev-parse", "development") == head
+            assert omi.core.git(code, "for-each-ref", "--format=%(upstream:short)", "refs/heads/development") == "origin/development"
+            assert omi.core.git(code, "symbolic-ref", "--short", "HEAD") == "main"
+            assert omi.core.git(code, "rev-parse", "HEAD") == head
+            assert before == {p.relative_to(code): p.read_bytes() for p in code.rglob("*")
+                              if p.is_file() and ".git" not in p.relative_to(code).parts}
+            assert "created development" not in detached_cli(code, "attach")
+
+
+def test_attach_development_present():
+    with detached_project() as (code, project, wt, task):
+        head = omi.core.git(code, "rev-parse", "HEAD")
+        git(code, "checkout", "-qb", "main")
+        git(code, "commit", "--allow-empty", "-qm", "remote development")
+        git(code, "update-ref", "refs/remotes/origin/development", "HEAD")
+        git(code, "config", "branch.development.remote", "origin")
+        git(code, "config", "branch.development.merge", "refs/heads/main")
+        git(code, "remote", "set-url", "origin", "https://example.org/team/second.git")
+        before = {p.relative_to(code): p.read_bytes() for p in code.rglob("*") if p.is_file()}
+        assert "created development" not in detached_cli(code, "attach")
+        assert omi.core.git(code, "rev-parse", "development") == head
+        assert omi.core.git(code, "config", "branch.development.merge") == "refs/heads/main"
+        assert before == {p.relative_to(code): p.read_bytes() for p in code.rglob("*") if p.is_file()}
+
+
 def test_attach_commit_failure_cleanup():
     from unittest.mock import patch
     for existing_commit in (False, True):
@@ -4286,7 +4353,8 @@ def test_attach_clone_portability():
         with patch.dict(os.environ, env):
             assert "attached:" in detached_cli(code, "attach", "--state", str(remote))
             assert omi.core.git(home, "remote", "get-url", "origin") == str(remote)
-            git(home, "push", "-qu", "origin", "main")
+            assert omi.core.git(home, "rev-parse", "--abbrev-ref", "@{upstream}") == "origin/main"
+            assert omi.core.git(remote, "rev-parse", "refs/heads/main") == omi.core.git(home, "rev-parse", "HEAD")
             second_home, fresh = base / "second-state", base / "fresh-code"
             git(base, "clone", "-q", str(remote), str(second_home))
             git(base, "clone", "-q", str(code), str(fresh))
@@ -4972,6 +5040,10 @@ if __name__ == "__main__":
     test_state_sync()
     test_state_sync_conflict()
     test_attach_registration()
+    test_attach_push_success()
+    test_attach_push_failure()
+    test_attach_development_created()
+    test_attach_development_present()
     test_attach_commit_failure_cleanup()
     test_attach_init_failure_cleanup()
     test_malformed_origin_cli()

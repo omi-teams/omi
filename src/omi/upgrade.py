@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path, PurePosixPath
 
-from . import catalogs, core, state, workflows
+from . import catalogs, core, state, state_sync, workflows
 
 
 TOOLS = ("git", "gh", "docker", "claude", "codex")
@@ -171,16 +171,24 @@ def attach(rest: list[str]) -> None:
     project = home / "projects" / name
     if not project.resolve().is_relative_to(home):
         raise state.StateError(f"project directory escapes state repo: {project}")
-    if identity in projects:
-        print(f"already attached: {projects[identity]}")
-        return
-    if project.exists() or project.is_symlink():
-        raise state.StateError(f"project already exists: {project}; origin differs or project.json is missing")
 
     def checked_git(*args: str) -> None:
         result = subprocess.run(["git", *args], capture_output=True, encoding="utf-8", errors="replace")
         if result.returncode:
             raise state.StateError(f"git {args[0]} failed: {result.stderr.strip()}")
+
+    def prepare_development() -> None:
+        if (not core.git(code, "show-ref", "--verify", "refs/heads/development")
+                and core.git(code, "show-ref", "--verify", "refs/remotes/origin/development")):
+            checked_git("-C", str(code), "branch", "--track", "development", "origin/development")
+            print("created development tracking origin/development")
+
+    if identity in projects:
+        print(f"already attached: {projects[identity]}")
+        prepare_development()
+        return
+    if project.exists() or project.is_symlink():
+        raise state.StateError(f"project already exists: {project}; origin differs or project.json is missing")
 
     if not home.exists():
         home.parent.mkdir(parents=True, exist_ok=True)
@@ -200,6 +208,7 @@ def attach(rest: list[str]) -> None:
     projects = state.registry()
     if identity in projects:
         print(f"already attached: {projects[identity]}")
+        prepare_development()
         return
     if project.exists() or project.is_symlink():
         raise state.StateError(f"project already exists: {project}; origin differs or project.json is missing")
@@ -218,8 +227,11 @@ def attach(rest: list[str]) -> None:
             shutil.rmtree(project)
         raise
     print(f"attached: {project}")
-    if not core.git(home, "remote", "get-url", "origin"):
+    if core.git(home, "remote"):
+        state_sync.push(state.Project(project, code, True))
+    else:
         print(f'private remote: git -C "{home}" remote add origin <private-git-url>')
+    prepare_development()
 
 
 def merge_keys(old: dict, new: dict) -> dict:
