@@ -23,6 +23,8 @@ Pilot gaps G1 and G7: README tells a new user what the pilot had to find out.
 - [ ] At most 12 added lines, Vietnamese, matching README style.
 
 ## Checkpoint
+Review round 2 FAIL:
+- README.md:30 the Scripts lookup must match the install: with `pip install --user` (README line 10) it is `python -c "import sysconfig; print(sysconfig.get_path('scripts', 'nt_user'))"`; without `--user` (e.g. `pip install -e .`) drop the `'nt_user'` argument. Say both in one sentence; keep `python -m omi` as the fallback. No other change.
 Done: Replaced the fixed Windows Scripts path with the `sysconfig` discovery command; documented the attached project's test command in the state config location, including `OMI_STATE`; clarified the `--why` approve text is the PO's words. The existing three-line README addition stays within the 12 added line limit and leaves the cli.py usage line untouched.
 Not done: None.
 Tests: `python3 tests/test_omi.py` was run, but remained active beyond the execution window; no exit status or completion result was confirmed.
@@ -36,6 +38,10 @@ Next: Coordinator should confirm completion/result of `python3 tests/test_omi.py
 - review started 2026-10-29 16:57
 - review failed 2026-10-29 17:03
 - build started 2026-10-29 17:03
+- build done 2026-10-29 17:09
+- review started 2026-10-29 17:09
+- review failed 2026-10-29 17:16
+- build started 2026-10-29 17:16
 
 ## Reports
 2026-10-29 16:52 omi-agent-engineer (codex):
@@ -146,6 +152,13 @@ Next: Coordinator should confirm completion/result of `python3 tests/test_omi.py
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-29 17:16 omi-agent-reviewer (codex):
+> VERDICT: FAIL
+> - README.md:30 The Scripts lookup returns the default installation directory, but README.md:10 installs with `pip --user`; adding that directory can leave `omi` unavailable -> Use `sysconfig.get_path('scripts', scheme='nt_user')` for the documented Windows installation.
+> 
+> AC: Windows PATH or module invocation ✗ `python -m omi` is documented, but the PATH command targets the wrong installation scheme.
+> AC: State test configuration, worker API hosts, ChatGPT host, network_allow, in-repo warning, approve/reopen commands, and unchanged cli.py ✓ README.md:30–32 match the implementation; supplied diff leaves cli.py unchanged. `python3 tests/test_omi.py` exited 0, ending `ok`.
+> AC: At most 12 added README lines, Vietnamese, matching README style ✓ Four added lines including one blank; Vietnamese prose with inline commands.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -153,3 +166,4 @@ Next: Coordinator should confirm completion/result of `python3 tests/test_omi.py
 | omi-agent-engineer | gpt-6-luna (codex) | low | 1541816 | 3328 | 1501824 | 277s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 721866 | 1876 | 666880 | 276s | - | PASS 22599c0 |
 | omi-agent-engineer | gpt-6-luna (codex) | low | 164907 | 1628 | 138112 | 95s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 1175428 | 3627 | 1139072 | 359s | - | FAIL e2bf8df |
