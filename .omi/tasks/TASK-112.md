@@ -1,16 +1,16 @@
 ---
 id: TASK-112
 title: Group src/omi into subpackages without behaviour change
-status: planned
+status: in-progress
 depends: TASK-109
 plan: PLAN-006
 scope: src/omi/**, tests/**, .omi/rules/omi-modules.md, .omi/rules/CATALOG.md, pyproject.toml, .omi/tasks/TASK-112.md
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: codex
+model: opus
+effort: high
 step_settings:
 workflow: omi-flow-refactor
 step:

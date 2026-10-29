@@ -1,16 +1,16 @@
 ---
 id: TASK-110
 title: Document Windows PATH, test command and worker hosts for detached mode
-status: planned
+status: in-progress
 depends: TASK-108, TASK-109
 plan: PLAN-005
 scope: README.md, .omi/tasks/TASK-110.md
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: codex
+model: haiku
+effort: low
 step_settings:
 workflow: omi-flow-feature
 step:
