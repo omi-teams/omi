@@ -1,7 +1,7 @@
 ---
 id: TASK-098
 title: omi attach: register a code repo in the omi-state repo
-status: in-progress
+status: done
 depends: TASK-097
 plan: PLAN-004
 scope: src/omi/state.py, src/omi/upgrade.py, src/omi/cli.py, tests/test_omi.py, README.md
@@ -40,7 +40,7 @@ Next: Coordinator reviews the test-only diff and runs python tests/test_omi.py o
 - review started 2026-10-29 09:30
 - review done 2026-10-29 09:35
 - accept started 2026-10-29 09:35
-- PO at accept: fix the two reviewer findings in one round, then merge
+- PO approval accept: Sửa 1 vòng rồi merge (fix round done, review PASS 2026-10-29 10:07)
 
 ## Reports
 2026-10-29 09:26 omi-agent-engineer (codex):
@@ -210,6 +210,16 @@ Next: Coordinator reviews the test-only diff and runs python tests/test_omi.py o
 > create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-29 10:07 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - No blocking problems found. `python3 tests/test_omi.py` exits 0 and prints `ok`, with no skipped tests. The only change outside `scope` is `.omi/tasks/TASK-098.md`, which is task bookkeeping.
+> 
+> AC: `omi attach` creates `projects/<name>/` from the `omi init` template, writes `project.json`, commits it in the state repo and never writes in the code repo; an existing name is refused unless it is the same URL ✓ `test_attach_registration` passed. It checks that there is no `AGENTS.md` or `.claude`, that the code-repo bytes are unchanged, the commit subject, the name collision, that an SSH and an HTTPS URL for the same repo count as the same, and that a pre-staged unrelated file stays out of the commit. `test_attach_commit_failure_cleanup` and `test_attach_init_failure_cleanup` also passed and show a failed attach leaves nothing behind.
+> AC: `--state <url>` clones, no URL runs `git init` and prints the private-remote hint, and both `OMI_STATE` and the default `~/.omi/state` work ✓ `test_attach_clone_portability` passed, using a local bare repo as remote and a patched home.
+> AC: a second state clone resolves the same project for a fresh code clone ✓ the same test passed (`state.resolve` returns the project, and a second `attach` prints "already attached").
+> AC: a malformed or duplicate `project.json` gives a one-line `OMI:` message naming the file, with no traceback ✓ `test_invalid_registry_cli` passed. It runs 24 commands against 6 bad inputs and checks the message and stderr for a traceback. `test_malformed_origin_cli` also passed.
+> AC: `omi attach` is in USAGE and pinned in `test_cli_characterization` ✓ the test checks the usage order, the no-origin error, the usage error and the attached and already-attached output.
+> AC: all tests pass on the Linux worker ✓ and the Windows host HOST. In-repo behaviour is unchanged ✓ because the existing tests only gained extra asserts.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -218,3 +228,4 @@ Next: Coordinator reviews the test-only diff and runs python tests/test_omi.py o
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 2049 | 86308 | 242s | - | PASS ecdfb0b |
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 2212253 | 8200 | 2132608 | 575s | - | - |
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1587614 | 4527 | 1496064 | 505s | - | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1833 | 106024 | 240s | - | PASS a081e61 |
