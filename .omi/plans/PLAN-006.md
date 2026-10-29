@@ -1,7 +1,7 @@
 ---
 id: PLAN-006
 title: omi 0.5.0 - omi board (read-only web view of omi-state)
-status: planned
+status: active
 ---
 ## Goal
 Build v1 of `docs/specs/omi-board.md` after PLAN-005: first group `src/omi` into subpackages without changing behaviour, then the board backend, server, frontend, a pilot on real state, and release 0.5.0.
