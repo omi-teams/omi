@@ -25,6 +25,9 @@ The flat 18-module `src/omi` becomes a few subpackages by responsibility (for ex
 - [ ] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
+Review round 1 FAIL: only `pip install .` UNVERIFIED (no pip in the read-only container); no code finding. Verified on the host instead, no code change:
+Host: python -m venv <tmp> && <tmp>/Scripts/python -m pip install . -> installed; `omi --version` -> omi 0.4.0; installed package dirs app, common, project, setup, state, template, worker; template/AGENTS.md present, 111 template entries; `omi init` in a new git repo -> `tools: git ok, gh ok, docker ok, claude ok, codex ok`.
+Host: python tests/test_omi.py (Windows host, worktree) -> ok, exit 0; same 97 test names as development.
 Baseline (Coordinator, development 08e0bf1): `python tests/test_omi.py` -> ok on the Windows host and CI; 97 `def test_` functions across tests/test_*.py. Tests may change only import paths and patch targets (`omi.<new.module>.<name>`).
 Done: Moved 16 implementation modules into app/common/state/project/worker/setup and extracted setup.attach. Root main/version exports and the unchanged module entry remain. Adjusted template/hash/version resource paths; updated module rules and regenerated the catalog with `PYTHONPATH=src python3 -m omi rules`. All 97 existing tests retained with only module-reference/patch-target edits; suite runner unchanged. Temporary verification files removed; no commit made.
 Not done: Post-change Windows host suite and real pip build/install verification require the Coordinator's environment. No implementation issue remains known.
@@ -38,6 +41,10 @@ Next: Coordinator reviews the diff, runs `python tests/test_omi.py` on Windows a
 - baseline started 2026-10-29 16:47
 - baseline skipped 2026-10-29 16:47: baseline green: python tests/test_omi.py ok on host and CI at 08e0bf1; test count recorded in Checkpoint
 - refactor started 2026-10-29 16:47
+- refactor done 2026-10-29 17:19
+- review started 2026-10-29 17:19
+- review failed 2026-10-29 17:30
+- refactor started 2026-10-29 17:30
 
 ## Reports
 2026-10-29 17:08 omi-agent-engineer (codex):
@@ -95,8 +102,18 @@ Next: Coordinator reviews the diff, runs `python tests/test_omi.py` on Windows a
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-29 17:25 omi-agent-reviewer (codex):
+> VERDICT: FAIL
+> AC: Modules grouped by responsibility; attach extracted; package surface retained ✓ Implementation diff and import checks confirm all three.
+> AC: Layout and layer order documented; rules catalog regenerates ✓ Generated content matches CATALOG.md with writes intercepted.
+> AC: Same suite before and after; only import/patch edits ✓ Recorded baseline passed; current suite exits 0 with `ok`; all 97 test functions retained with reference-only edits.
+> AC: Templates and template_shas.json unchanged ✓ Neither appears in the diff.
+> AC: pip install . ships the template UNVERIFIED Installation could not execute: `No module named pip`.
+> AC: All tests pass on Linux worker ✓ `python3 tests/test_omi.py` exits 0 with `ok`.
+> AC: All tests pass on Windows host HOST Requires execution on the Windows host.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | gpt-6-astra (codex) | high | 3876813 | 18658 | 3806720 | 1230s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 1501907 | 4181 | 1445504 | 300s | 1/1 omi-skill-simplify-review | FAIL e843e0e |
