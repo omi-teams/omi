@@ -23,6 +23,10 @@ Pilot gaps G1 and G7: README tells a new user what the pilot had to find out.
 - [ ] At most 12 added lines, Vietnamese, matching README style.
 
 ## Checkpoint
+Review round 1 FAIL (Coordinator check of facts, reviewer said PASS):
+- The `test` command of an attached project goes in the state copy: `~/.omi/state/projects/<tên>/.omi/config.json` (or under `OMI_STATE`), not the code repo; say so.
+- The Windows `Scripts` dir is not fixed (the pilot had `...\pythoncore-3.14-64\Scripts`); give `python -c "import sysconfig; print(sysconfig.get_path('scripts'))"` to find it instead of `%APPDATA%\Python\PythonXY\Scripts`.
+- `omi step <ID> approve --why "<lời PO>"` takes the PO's words, not a reason.
 Done: Added four Vietnamese README lines covering Windows Python invocation, attached-project test config, worker API hosts and network_allow, detached in-repo file warning, and step approve/reopen commands. Left cli.py usage line untouched.
 Not done: None.
 Tests: Manually checked every README criterion and the four-line addition against the 12-line limit. `python3 tests/test_omi.py` exited 0 and ended with `ok`.
@@ -32,6 +36,10 @@ Next: Coordinator review.
 - plan started 2026-10-29 16:47
 - plan done 2026-10-29 16:47
 - build started 2026-10-29 16:47
+- build done 2026-10-29 16:57
+- review started 2026-10-29 16:57
+- review failed 2026-10-29 17:03
+- build started 2026-10-29 17:03
 
 ## Reports
 2026-10-29 16:52 omi-agent-engineer (codex):
@@ -89,8 +97,13 @@ Next: Coordinator review.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-29 17:03 omi-agent-reviewer (codex):
+> VERDICT: PASS
+> AC: README documents Windows PATH/python invocation, attached-project test configuration, worker API hosts and network_allow, in-repo warning, and approve/reopen commands; cli.py unchanged ✓ README.md:26–32 and supplied diff; `python3 tests/test_omi.py` exited 0, ending `ok`.
+> AC: At most 12 added README lines, Vietnamese, matching existing style ✓ Four added lines, including one blank; Vietnamese prose with inline commands.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | gpt-6-luna (codex) | low | 1541816 | 3328 | 1501824 | 277s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 721866 | 1876 | 666880 | 276s | - | PASS 22599c0 |
