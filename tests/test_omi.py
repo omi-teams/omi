@@ -4183,6 +4183,74 @@ def test_attach_registration():
             assert "unrelated" not in omi.core.git(home, "ls-tree", "--name-only", "HEAD")
 
 
+def test_attach_commit_failure_cleanup():
+    from unittest.mock import patch
+    for existing_commit in (False, True):
+        with detached_project() as (code, project, wt, task):
+            home = project.parent.parent
+            if existing_commit:
+                git(home, "add", ".")
+                git(home, "commit", "-qm", "existing state")
+            (home / "unrelated").write_text("keep staged\n", encoding="utf-8")
+            git(home, "add", "unrelated")
+            staged = omi.core.git(home, "diff", "--cached", "--name-only")
+            git(code, "remote", "set-url", "origin", "https://example.org/team/second.git")
+            before = {p.relative_to(code): p.read_bytes() for p in code.rglob("*") if p.is_file()}
+            with patch.dict(os.environ, {"GIT_AUTHOR_NAME": "", "GIT_AUTHOR_EMAIL": "t@t",
+                                         "GIT_COMMITTER_NAME": "", "GIT_COMMITTER_EMAIL": "t@t"}):
+                result = subprocess.run([sys.executable, "-m", "omi", "attach"], cwd=code,
+                                        capture_output=True, encoding="utf-8", errors="replace")
+            assert result.returncode == 1 and "OMI: git" in result.stderr, result
+            assert "empty ident name" in result.stderr and "Traceback" not in result.stderr, result.stderr
+            assert not (home / "projects/second").exists()
+            assert omi.core.git(home, "diff", "--cached", "--name-only") == staged
+            with patch.dict(os.environ, {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                                         "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}):
+                assert "attached:" in detached_cli(code, "attach")
+            assert omi.core.git(home, "diff", "--cached", "--name-only") == staged
+            assert before == {p.relative_to(code): p.read_bytes() for p in code.rglob("*") if p.is_file()}
+
+
+def test_attach_init_failure_cleanup():
+    from unittest.mock import patch
+    with detached_project() as (code, project, wt, task):
+        home = project.parent.parent
+        git(code, "remote", "set-url", "origin", "https://example.org/team/second.git")
+        real_init = omi.upgrade.init
+
+        def failing_init(target, *, detached=False):
+            real_init(target, detached=detached)
+            raise OSError("template initialization failed")
+
+        with patch.object(omi.upgrade, "init", side_effect=failing_init), contextlib.redirect_stdout(io.StringIO()):
+            try:
+                omi.upgrade.attach([str(code)])
+            except OSError as exc:
+                assert str(exc) == "template initialization failed"
+            else:
+                raise AssertionError("init failure ignored")
+        assert not (home / "projects/second").exists()
+        assert omi.core.git(home, "diff", "--cached", "--name-only") == ""
+        with patch.dict(os.environ, {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                                     "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}):
+            assert "attached:" in detached_cli(code, "attach")
+
+
+def test_malformed_origin_cli():
+    with detached_project() as (code, project, wt, task):
+        remote = "https://[invalid"
+        git(code, "remote", "set-url", "origin", remote)
+        before = {p.relative_to(code): p.read_bytes() for p in code.rglob("*") if p.is_file()}
+        for args in (["status"], ["attach"], ["attach", str(code)]):
+            result = subprocess.run([sys.executable, "-m", "omi", *args], cwd=code,
+                                    capture_output=True, encoding="utf-8", errors="replace")
+            assert result.returncode == 1 and not result.stdout, result
+            assert len(result.stderr.splitlines()) == 1 and result.stderr.startswith("OMI: "), result.stderr
+            assert "invalid origin" in result.stderr and str(code) in result.stderr and remote in result.stderr, result.stderr
+            assert "Traceback" not in result.stderr, result.stderr
+        assert before == {p.relative_to(code): p.read_bytes() for p in code.rglob("*") if p.is_file()}
+
+
 def test_attach_clone_portability():
     from unittest.mock import patch
     with tempfile.TemporaryDirectory() as d:
@@ -4510,6 +4578,9 @@ def test_detached_default_hook_config():
 
 if __name__ == "__main__":
     test_attach_registration()
+    test_attach_commit_failure_cleanup()
+    test_attach_init_failure_cleanup()
+    test_malformed_origin_cli()
     test_attach_clone_portability()
     test_invalid_registry_cli()
     test_detached_resolution()

@@ -161,7 +161,10 @@ def attach(rest: list[str]) -> None:
     if home.is_relative_to(Path(top).resolve()) or home.is_relative_to(code.resolve()):
         raise state.StateError(f"state directory {home} must be outside the code repo")
     projects = state.registry()
-    identity = state.normalise_url(remote)
+    try:
+        identity = state.normalise_url(remote)
+    except ValueError as exc:
+        raise state.StateError(f"invalid origin in {code}: {remote}: {exc}") from exc
     name = identity.rsplit("/", 1)[-1]
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name):
         raise state.StateError(f"invalid project name from origin {remote}")
@@ -202,11 +205,18 @@ def attach(rest: list[str]) -> None:
         raise state.StateError(f"project already exists: {project}; origin differs or project.json is missing")
     if not project.resolve().is_relative_to(home):
         raise state.StateError(f"project directory escapes state repo: {project}")
-    init(project, detached=True)
-    (project / "project.json").write_text(json.dumps({"remote": remote}, indent=2) + "\n", encoding="utf-8")
     rel = project.relative_to(home).as_posix()
-    checked_git("-C", str(home), "add", "--", rel)
-    checked_git("-C", str(home), "commit", "--only", "-m", f"omi: attach {name}", "--", rel)
+    try:
+        init(project, detached=True)
+        (project / "project.json").write_text(json.dumps({"remote": remote}, indent=2) + "\n", encoding="utf-8")
+        checked_git("-C", str(home), "add", "--", rel)
+        checked_git("-C", str(home), "commit", "--only", "-m", f"omi: attach {name}", "--", rel)
+    except Exception:
+        subprocess.run(["git", "-C", str(home), "rm", "--cached", "-r", "-f", "--ignore-unmatch", "--", rel],
+                       capture_output=True)
+        if project.exists():
+            shutil.rmtree(project)
+        raise
     print(f"attached: {project}")
     if not core.git(home, "remote", "get-url", "origin"):
         print(f'private remote: git -C "{home}" remote add origin <private-git-url>')

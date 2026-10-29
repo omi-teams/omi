@@ -67,7 +67,10 @@ def resolve(cwd: str | Path | Project = ".") -> Project:
     code = core.main_checkout(top) or top
     remote = core.git(code, "remote", "get-url", "origin")
     projects = registry()
-    match = projects.get(normalise_url(remote)) if remote else None
+    try:
+        match = projects.get(normalise_url(remote)) if remote else None
+    except ValueError as exc:
+        raise StateError(f"invalid origin in {code}: {remote}: {exc}") from exc
     return Project(match, code, True) if match else Project(top, code)
 
 

@@ -27,15 +27,11 @@ step: accept
 - [x] All tests pass on the Linux worker and the Windows host; in-repo mode behaviour is unchanged (existing tests untouched or only extended).
 
 ## Checkpoint
-Fix round 1 (PO at accept, reviewer PASS findings):
-- src/omi/upgrade.py attach: if the state commit (or init) fails, remove the new projects/<name> dir and unstage it, so a rerun of omi attach works; test with a state repo whose commit fails (e.g. no git user.name).
-- src/omi/state.py resolve (and upgrade.py attach): a malformed code-repo origin URL must exit with a one-line OMI: message (StateError), not a ValueError traceback; test via the CLI.
-Done: Implemented omi attach, portable origin registry, state clone/init and isolated project commits; detached init/upgrade exclude AGENTS.md and .claude; README, USAGE and acceptance tests updated.
-Not done: Windows host validation (not available in this Linux container).
-Tests: TMPDIR=/work/.tmp-task-098 python3 -u tests/test_omi.py -> exit 0, final output ok; no explicit test skips. Covers registration/template/code bytes unchanged, URL identity/collision, unrelated staged files, local bare state clone, fresh-clone resolution, default state home, every CLI command rejecting malformed/duplicate registries, and CLI characterization; existing regression suite also ran.
-Next: Coordinator reviews the diff and runs python3 tests/test_omi.py on the Windows host before committing.
-
-Host: python tests/test_omi.py (Windows host, worktree at commit feat: add detached project attachment) -> exit 0, ok
+Done: Fix round 1 implemented. Attachment failures remove the newly generated project and unstage only its paths, preserving unrelated staged work. Malformed code origin URLs in both resolve and attach now raise StateError for a one-line OMI: CLI error. Added regression tests for failed commits with unborn/existing HEAD, retry success, partial init failure cleanup, code bytes unchanged, and malformed-origin CLI handling.
+Not done: Windows validation of this fix round is unavailable in this Linux container.
+Tests: TMPDIR=/work python3 -u tests/test_omi.py -> exit 0, final output ok; full Linux suite executed, including all three new regression tests and existing acceptance/characterization tests; no test skips reported. An earlier run stopped at a regression fixture assertion because Git reported missing email before missing name; the fixture now supplies email explicitly.
+Next: Coordinator reviews the diff and validates this fix round on the Windows host before committing. No worktree commit made.
+Previous implementation: Linux and Windows host runs passed before fix round 1 (host: python tests/test_omi.py -> exit 0, ok).
 
 ## Steps
 - plan started 2026-10-29 09:15
@@ -111,9 +107,62 @@ Host: python tests/test_omi.py (Windows host, worktree at commit feat: add detac
 > AC: `omi attach` is in USAGE and pinned in `test_cli_characterization` ✓ the test checks the usage list, the no-origin error, the usage error and the already-attached output.
 > [... truncated ...]
 > AC: all tests pass on the Windows host HOST the task text names the Windows host, which this container cannot run.
+2026-10-29 09:46 omi-agent-engineer (codex):
+> DONE
+> Files changed: `src/omi/state.py`, `src/omi/upgrade.py`, `tests/test_omi.py`, `.omi/tasks/TASK-098.md`.
+> Fixed attachment rollback and malformed-origin errors; checkpoint updated.
+> Suggested commit: `fix: clean up failed attachments and handle invalid origins`
+> Tests: `TMPDIR=/work python3 -u tests/test_omi.py` → exit 0, `ok`; no skips reported.
+> Open: Windows validation of this fix round remains for Coordinator. No commit made.
+2026-10-29 09:48 hook post-run passed:
+> OMI: outside.py is outside the scope of TASK-097. Stop and report NEEDS SCOPE to the Coordinator.
+> OMI: projects/sample/.omi/tasks/TASK-097.md is outside the task worktree.
+> OMI: .omi/tasks/TASK-097.md is outside the scope of TASK-097. Stop and report NEEDS SCOPE to the Coordinator.
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1878945 | 17940 | 1831552 | 672s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 2049 | 86308 | 242s | - | PASS ecdfb0b |
+| omi-agent-engineer | gpt-6.1-sol (codex) | medium | 2212253 | 8200 | 2132608 | 575s | - | - |
