@@ -2,7 +2,7 @@
 id: TASK-108
 title: Warn when an attached repo still has in-repo omi files
 status: planned
-depends: TASK-107
+depends: TASK-118
 plan: PLAN-005
 scope: src/omi/upgrade.py, src/omi/cli.py, tests/test_omi.py, README.md
 role: omi-agent-engineer
