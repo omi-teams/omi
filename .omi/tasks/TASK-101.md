@@ -1,16 +1,16 @@
 ---
 id: TASK-101
 title: Pilot detached mode on omi-pilot-splitbill
-status: planned
+status: in-progress
 depends: TASK-099, TASK-100
 plan: PLAN-004
 scope: docs/pilot-detached.md
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: codex
+model: sonnet
+effort: medium
 step_settings:
 workflow: omi-flow-docs-only
 step:
