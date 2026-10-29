@@ -99,3 +99,4 @@
 - 2026-10-29 | G9 (reopen a completed workflow after red CI) added to TASK-109 | TASK-107 CI failed after accept; Coordinator reopened build by hand with a log line | TASK-107
 - 2026-10-29 | TASK-108 and TASK-109 run in parallel: per-area test files, README moved to TASK-110, TASK-109 reuses --why so cli.py stays with TASK-108 | PO asked for parallel work, Codex quota preferred | TASK-118
 - 2026-10-29 | TASK-110 README-only and TASK-112 refactor run in parallel; cli usage line moves to TASK-111 (bump after both) | keep parallel lanes free of shared files | TASK-110
+- 2026-10-29 | follow-up G10: parallel workers can collide (container name / port 8080 seen in TASK-118, test runs hanging in TASK-110 while TASK-112 ran); plan a fix before more parallel batches | engineer reports during parallel runs | TASK-110
