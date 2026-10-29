@@ -27,6 +27,7 @@ Backend half of the board: pure functions that read `$OMI_STATE` into dicts for 
 - [x] Tests in tests/test_board.py (run by tests/test_omi.py) on a temporary state repo cover each function and the path refusal; all tests pass.
 
 ## Checkpoint
+Review round 1 FAIL: tests fail on the Windows host: tests/test_board.py:98/101/106 `symlink_to` raises OSError [WinError 1314] (no symlink privilege). Follow tests/test_init.py:47-53: wrap only the symlink cases in `try: ... except OSError: print("skip board symlink refusal: symlink creation unavailable"); return` (or skip just those cases), keep the invalid name/id refusal checks running unconditionally. Rerun python3 tests/test_omi.py.
 Done: Implemented board projects/project/task views, state path validation, waiting items, plans, kanban, activity, decisions, usage, sync, module layer rule and regression tests.
 Not done: None.
 Tests: python3 tests/test_board.py passed (3 test functions; none skipped), including the final dotted-name/path validation changes. python3 tests/test_omi.py passed (exit 0, final output ok), including test_board.main(). No tests intentionally skipped.
@@ -36,6 +37,10 @@ Next: Coordinator reviews the scoped diff and commits on the host.
 - plan started 2026-10-29 22:05
 - plan done 2026-10-29 22:05
 - build started 2026-10-29 22:05
+- build done 2026-10-29 22:18
+- review started 2026-10-29 22:18
+- review failed 2026-10-29 22:20
+- build started 2026-10-29 22:20
 
 ## Reports
 2026-10-29 22:11 omi-agent-engineer (codex):
