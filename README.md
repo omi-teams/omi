@@ -27,9 +27,9 @@ Chạy `omi install-user` một lần trên mỗi máy để cài skills vào `~
 
 Trong detached mode, `omi status` tự pull repo state bằng `git pull --rebase`; offline hoặc chưa có remote thì in một dòng và vẫn hiển thị state local. Các lệnh thay đổi state (step, catalogs, run reports/usage, hooks) tự commit đúng các file chúng sửa với message `chore(<project>): <what>` rồi push. Push lỗi giữ commit local và in `STATE NOT PUSHED: run omi sync`. Chạy `omi sync` để pull, commit các thay đổi còn lại (task start/done, decisions, plans sửa bằng tay) và push toàn bộ repo state. Nếu rebase conflict, omi liệt kê file và dừng; giải quyết bằng git rồi chạy lại `omi sync`. In-repo mode giữ nguyên.
 
-Trên Windows, thêm thư mục Python `Scripts` (thường là `%APPDATA%\Python\PythonXY\Scripts`) vào `PATH`, hoặc gọi `python -m omi`. Dự án đã attach cần khai lệnh kiểm thử trong `.omi/config.json`, ví dụ `"test": "python tests/test_omi.py"`.
-Worker tự cho phép API host của tool được chọn (Claude: `api.anthropic.com`, Codex: `api.openai.com`); đăng nhập Codex bằng ChatGPT cũng thêm `chatgpt.com`. Khai các host bổ sung trong `network_allow` của `.omi/config.json`.
-Nếu repo code có `.omi/`, `AGENTS.md` hoặc `.claude/` được Git theo dõi, `omi attach`/`omi status` báo `WARN: in-repo omi files ignored (detached): <paths>`; omi không tự di chuyển các file này. Duyệt bước PO bằng `omi step <ID> approve --why "<lý do>"`; mở lại workflow đã hoàn tất bằng `omi step <ID> reopen --why "<lý do>"`.
+Trên Windows, tìm thư mục Python `Scripts` bằng `python -c "import sysconfig; print(sysconfig.get_path('scripts'))"` rồi thêm vào `PATH`, hoặc gọi `python -m omi`. Dự án đã attach cần đặt lệnh kiểm thử `"test": "python tests/test_omi.py"` trong `.omi/config.json` của bản state (`~/.omi/state/projects/<tên>/.omi/config.json`, hoặc dưới `OMI_STATE`), không phải repo code.
+Worker tự cho phép API host của tool được chọn (Claude: `api.anthropic.com`, Codex: `api.openai.com`); đăng nhập Codex bằng ChatGPT cũng thêm `chatgpt.com`. Khai host bổ sung trong `network_allow` của `.omi/config.json`.
+Nếu repo code có `.omi/`, `AGENTS.md` hoặc `.claude/` được Git theo dõi, `omi attach`/`omi status` báo `WARN: in-repo omi files ignored (detached): <paths>`; omi không tự di chuyển các file này. PO duyệt bước bằng `omi step <ID> approve --why "<lời PO>"`; mở lại workflow đã hoàn tất bằng `omi step <ID> reopen --why "<lý do>"`.
 
 
 `omi init` tạo các file sau trong dự án:
