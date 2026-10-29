@@ -93,3 +93,5 @@
 - 2026-10-29 | TASK-100 design B (install.py + manifest, hidden omi session-start), scope widened to the module rule | architect recommendation, PO picked B + scope | TASK-100
 - 2026-10-29 | TASK-101 pilot run by Coordinator on host; docs-writer only writes the evidence doc | Docker worker cannot run install-user, attach, gh or Windows host tests | TASK-101
 - 2026-10-29 | PLAN-005 (0.4.1) for pilot gaps G1-G7; G8 left to omi-pilot-splitbill; omi board planned next | PO picked all gap groups and asked for a board plan | docs/pilot-detached.md
+- 2026-10-29 | Approve docs/specs/omi-board.md: read-only local web board, Python stdlib backend (JSON API) + static frontend in src/omi/board/, no DB; refactor src/omi into subpackages first (TASK-112) | PO answers in chat; state files stay the only source of truth | PLAN-006
+- 2026-10-29 | PO will delete omi-teams/omi-board after omi board 0.5.0 ships (PO action, not the squad) | PO choice | PLAN-006
