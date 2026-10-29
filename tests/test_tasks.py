@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 from helpers import omi, git
 
 
@@ -147,6 +148,125 @@ def test_task_flow_commit_scope_sync_warn():
                 assert bool(sys.stdout.getvalue()) == hit, glob
             finally:
                 sys.stdout = saved
+
+
+def test_step_approve_reopen():
+    # Exercise the same authoritative-task routing for local and detached state.
+    for detached in (False, True):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d).resolve()
+            with patch("sys.stdout", io.StringIO()):
+                omi.upgrade.init(root)
+            code = root / "code" if detached else root
+            project = omi.state.Project(root, code, detached)
+            task = root / ".omi" / "tasks" / "TASK-109.md"
+            commits = []
+            with patch("omi.tasks.commit_task_file", side_effect=lambda *args: commits.append(args)), \
+                    patch("omi.core.task_worktrees", return_value={}), patch("sys.stdout", io.StringIO()):
+                def go(action, why=None):
+                    return omi.tasks.step(project, "TASK-109", action, why=why)
+
+                def refuses(action, why, message):
+                    before, count = task.read_text(encoding="utf-8"), len(commits)
+                    try:
+                        go(action, why)
+                    except SystemExit as exc:
+                        assert message in str(exc), str(exc)
+                    else:
+                        raise AssertionError(f"{action} should fail")
+                    assert task.read_text(encoding="utf-8") == before and len(commits) == count
+
+                task.write_text("---\nid: TASK-109\nworkflow: omi-flow-feature\nstatus: in-progress\n---\n"
+                                "## Acceptance criteria\n- [x] tested\n\n## Steps\n\n## Checkpoint\nDone:\n",
+                                encoding="utf-8")
+                refuses("approve", "yes", "no step started")
+                refuses("reopen", "CI failed", "not complete")
+                go("next")
+                refuses("approve", "yes", "not a po gate")
+                refuses("reopen", "CI failed", "running")
+                go("done")
+                refuses("reopen", "CI failed", "not complete")
+                go("next"), go("done"), go("next"), go("done"), go("next")
+                refuses("approve", None, "--why")
+                refuses("approve", " \n ", "--why")
+                # Verify the existing CLI --why parser reaches the new action unchanged.
+                with patch("omi.state.resolve", return_value=project), patch("omi.core.main_checkout", return_value=root), \
+                        patch("sys.stdout.reconfigure", create=True):
+                    try:
+                        omi.cli.dispatch(["step", "TASK-109", "approve", "--why", "Ship it!\nReviewed all criteria."])
+                    except SystemExit as exc:
+                        assert exc.code == 0
+                    else:
+                        raise AssertionError("CLI did not execute approve")
+                text = task.read_text(encoding="utf-8")
+                assert "PO approval accept: Ship it! Reviewed all criteria.\n\n## Checkpoint" in text
+                assert omi.tasks.po_approved(text, "accept")
+                if detached:
+                    assert not commits and not code.exists()
+                else:
+                    assert commits[-1] == (root, task, "chore(TASK-109): step accept approve")
+                go("done")
+                task.write_text(omi.tasks.set_front(task.read_text(encoding="utf-8"), "status", "done"), encoding="utf-8")
+                refuses("reopen", " ", "--why")
+                go("reopen", "CI red\nfix required")
+                text = task.read_text(encoding="utf-8")
+                assert omi.core.parse(text)["step"] == "build"
+                assert omi.core.parse(text)["status"] == "in-progress"
+                assert re.search(r"^- workflow reopened .*: CI red fix required$", text, re.M)
+                assert "PO approval accept: Ship it!" in text  # Preserve the audit trail.
+                assert not omi.tasks.po_approved(text, "accept")
+                assert omi.tasks.step_states(text) == {"plan": "done", "build": "started", "review": "failed", "accept": "failed"}
+                if detached:
+                    assert not commits
+                else:
+                    assert commits[-1] == (root, task, "chore(TASK-109): step build reopen")
+                refuses("reopen", "again", "running")
+                go("done"), go("next"), go("done"), go("next")
+                refuses("done", None, "po gate")
+                go("approve", "Approved after the CI fix"), go("done"), go("next")
+                assert omi.tasks.po_approved(task.read_text(encoding="utf-8"), "accept")
+
+
+def test_reopen_last_write_step():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        task = root / ".omi/tasks/TASK-109.md"
+        task.parent.mkdir(parents=True)
+        steps = [{"id": sid, "role": role} for sid, role in (
+            ("build", "omi-agent-engineer"), ("fix", "omi-agent-engineer"),
+            ("review", "omi-agent-reviewer"), ("accept", "coordinator"))]
+        text = "---\nid: TASK-109\nstep: accept\n---\n## Steps\n" + "".join(
+            f"- {s['id']} done 2026-10-29 10:00\n" for s in steps)
+        task.write_text(text, encoding="utf-8")
+        project = omi.state.Project(root, root, True)
+        with patch("omi.workflows.get_workflow", return_value=steps), \
+                patch("omi.catalogs.get_role", side_effect=lambda root, role: {"access": "write" if role == "omi-agent-engineer" else "read"}), \
+                patch("sys.stdout", io.StringIO()):
+            omi.tasks.step(project, "TASK-109", "reopen", why="CI failed")
+            assert omi.core.meta(task)["step"] == "fix"
+            assert omi.tasks.step_states(task.read_text(encoding="utf-8"))["build"] == "done"
+            task.write_text(text, encoding="utf-8")
+            for s in steps[:2]:
+                s["role"] = "coordinator"
+            try:
+                omi.tasks.step(project, "TASK-109", "reopen", why="CI failed")
+            except SystemExit as exc:
+                assert "no write step" in str(exc)
+            else:
+                raise AssertionError("reopened workflow with no write step")
+            assert task.read_text(encoding="utf-8") == text
+
+
+def test_task_skill_step_commands():
+    repo = Path(__file__).resolve().parents[1]
+    template = omi.core.TEMPLATE / "dot-claude/skills/omi-task/SKILL.md"
+    text = template.read_text(encoding="utf-8")
+    assert text == (repo / ".claude/skills/omi-task/SKILL.md").read_text(encoding="utf-8")
+    assert 'step <ID> approve --why "<PO\'s words>"' in text
+    assert 'gh pr create --base development --head task/<ID> --title "<type>: <title> (<ID>)"' in text
+    assert "--fill" not in text
+    assert 'step <ID> reopen --why "<CI failure reason>"' in text
+    assert "fresh PO approval" in text
 
 
 def test_workflows():
@@ -388,6 +508,9 @@ def test_parallel():
 
 
 def main():
+    test_step_approve_reopen()
+    test_reopen_last_write_step()
+    test_task_skill_step_commands()
     test_parallel()
     test_workflows()
     test_roles()
