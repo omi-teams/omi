@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature
-step: review
+step: accept
 ---
 ## Goal
 Backend half of the board: pure functions that read `$OMI_STATE` into dicts for the home page, a project dashboard and a task detail, reusing omi's task, plan and usage parsers.
@@ -34,6 +34,7 @@ Tests: python3 tests/test_board.py passed (3 test functions, no skips). python3 
 Next: Coordinator reviews the scoped diff and commits on the host. Native Windows rerun remains for the Coordinator; privilege failure was simulated in this container.
 
 ## Steps
+PO approval accept: Chấp nhận (Recommended)
 - plan started 2026-10-29 22:05
 - plan done 2026-10-29 22:05
 - build started 2026-10-29 22:05
@@ -43,6 +44,9 @@ Next: Coordinator reviews the scoped diff and commits on the host. Native Window
 - build started 2026-10-29 22:20
 - build done 2026-10-29 22:31
 - review started 2026-10-29 22:31
+- review done 2026-10-29 22:39
+- accept started 2026-10-29 22:39
+- accept done 2026-10-29 22:39
 
 ## Reports
 2026-10-29 22:11 omi-agent-engineer (codex):
