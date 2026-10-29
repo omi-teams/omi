@@ -1,7 +1,7 @@
 ---
 id: TASK-101
 title: Pilot detached mode on omi-pilot-splitbill
-status: in-progress
+status: done
 depends: TASK-099, TASK-100
 plan: PLAN-004
 scope: docs/pilot-detached.md
@@ -13,16 +13,16 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-docs-only
-step: write
+step: accept
 ---
 ## Goal
 Prove the spec's success criteria on real runs and write the evidence down; gaps found become decisions for a later plan.
 
 ## Acceptance criteria
-- [ ] On a fresh clone of omi-pilot-splitbill: `omi install-user`, `omi attach`, one real task from start to merge. Evidence: `git log` and `git status` of the code repo show only the task's code commit and no omi file.
-- [ ] A second clone of omi-state in another dir (`OMI_STATE`) gives the same `omi status`.
-- [ ] `docs/pilot-detached.md` (Vietnamese) lists each criterion with the command run and its output, and every gap found.
-- [ ] In-repo mode: the full test suite passes on the Linux worker and the Windows host.
+- [x] On a fresh clone of omi-pilot-splitbill: `omi install-user`, `omi attach`, one real task from start to merge. Evidence: `git log` and `git status` of the code repo show only the task's code commit and no omi file.
+- [x] A second clone of omi-state in another dir (`OMI_STATE`) gives the same `omi status`.
+- [x] `docs/pilot-detached.md` (Vietnamese) lists each criterion with the command run and its output, and every gap found.
+- [x] In-repo mode: the full test suite passes on the Linux worker and the Windows host.
 
 ## Checkpoint
 Pilot run by the Coordinator on the Windows host, 2026-10-29, omi 0.3.2 (development 181b31c, `pip install -e .`).
@@ -50,9 +50,13 @@ Not done: Linux in-repo full-suite result is not available. No tests run by docs
 Next: Coordinator reviews the diff, records the Linux CI command/output and result, and closes the remaining acceptance criterion when verified. G1–G8 remain decisions/follow-ups for a later plan.
 
 ## Steps
+PO approval accept: Chấp nhận, merge
 - plan started 2026-10-29 13:18
 - plan done 2026-10-29 13:18
 - write started 2026-10-29 13:18
+- write done 2026-10-29 13:35
+- accept started 2026-10-29 13:35
+- accept done 2026-10-29 13:36
 
 ## Reports
 2026-10-29 13:32 omi-agent-docs-writer (codex):
