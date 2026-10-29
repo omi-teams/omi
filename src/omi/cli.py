@@ -5,12 +5,13 @@ import json
 import sys
 from pathlib import Path
 
-from . import catalogs, core, creds, docker, github, hooks, run, scope, state, state_sync, tasks, upgrade, workflows
+from . import catalogs, core, creds, docker, github, hooks, install, run, scope, state, state_sync, tasks, upgrade, workflows
 
 
 STATUSES = ("in-progress", "review", "blocked", "planned")
 USAGE = """usage: omi <command>
   attach [<repo path>] [--state <git url>]   register a code repo in detached omi state
+  install-user [--remove]   install or remove user skills and Coordinator startup integration
   init [dir]   install the squad into a project (never overwrites)
   upgrade [--check | --to vX.Y.Z]   install a newer omi and update the project's unmodified template files (modified ones get <path>.omi-new)
   version      print the omi version and how to check for a newer one (also --version)
@@ -133,6 +134,19 @@ def dispatch(argv: list[str] | None = None) -> None:
         print(f"omi {core.version()}\nlatest: python -m omi upgrade --check")
     elif cmd == "attach":
         upgrade.attach(rest)
+    elif cmd == "install-user":
+        if rest not in ([], ["--remove"]):
+            raise state.StateError("usage: omi install-user [--remove]")
+        try:
+            install.install_user(remove=bool(rest))
+        except (OSError, UnicodeError) as exc:
+            raise state.StateError(f"cannot install/remove user integration: {exc}") from exc
+    elif cmd == "session-start":
+        project = state.resolve()
+        if project.detached:
+            print(install.coordinator_rules())
+            print(f"omi state: {project.state}")
+            status()
     elif cmd == "init":
         target = rest[0] if rest else "."
         project = state.resolve(target)
