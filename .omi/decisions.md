@@ -90,3 +90,4 @@
 - 2026-10-28 | TASK-097 uses architect option B (state.Project resolver, mode helpers in state.py), one task, scope widened to .omi/rules/omi-modules.md + CATALOG | each mode difference lives in one place; fewer runs than splitting E1/E2 | TASK-097
 - 2026-10-28 | follow-up: bad/duplicate project.json raises a bare ValueError traceback; give a clean exit message in TASK-098 | noted by review + security on TASK-097, PO accepted | TASK-097
 - 2026-10-29 | follow-up: state sync minor notes (pull failure hides git stderr; auto-commit error in finally can mask the command error; generic '<cmd> state' commit message; README extra blank line) | TASK-099 review PASS notes, PO accepted merge | TASK-099
+- 2026-10-29 | TASK-100 design B (install.py + manifest, hidden omi session-start), scope widened to the module rule | architect recommendation, PO picked B + scope | TASK-100
