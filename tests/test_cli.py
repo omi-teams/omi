@@ -239,7 +239,7 @@ def test_cli_characterization():
             (["skip", "--why", "baseline"], 0, "TASK-001: step build skipped\n"),
             (["next"], 0, "TASK-001: step review (omi-agent-reviewer, gate review): input task file, diff; output VERDICT PASS or FAIL; "
                           "stop when VERDICT PASS\n"),
-            (["bogus"], 1, "usage: omi step <TASK-ID> next|done|back|skip --why <reason>\n"),
+            (["bogus"], 1, "usage: omi step <TASK-ID> next|done|back|skip|approve|reopen --why <reason>\n"),
             (["back"], 0, "TASK-001: step review failed; back to build (omi-agent-engineer), then `omi step TASK-001 done` and `next`\n"))
         for args, code, msg in steps:
             rc, out, err = cli(root, "step", "TASK-001", *args)
