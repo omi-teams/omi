@@ -1,16 +1,16 @@
 ---
 id: TASK-113
 title: Board data layer: state to JSON-ready dicts
-status: planned
+status: in-progress
 depends: TASK-112
 plan: PLAN-006
 scope: src/omi/board/__init__.py, src/omi/board/data.py, tests/test_board.py, tests/test_omi.py, .omi/rules/omi-modules.md, .omi/rules/CATALOG.md, .omi/tasks/TASK-113.md
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: codex
+model: sonnet
+effort: medium
 step_settings:
 workflow: omi-flow-feature
 step:
