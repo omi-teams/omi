@@ -1,10 +1,10 @@
 ---
 id: TASK-118
 title: Split tests/test_omi.py into test files by area
-status: in-progress
+status: done
 depends: TASK-107
 plan: PLAN-005
-scope: tests/**
+scope: tests/**, .omi/tasks/TASK-118.md
 role: omi-agent-engineer
 skills: []
 refs: []
@@ -13,18 +13,19 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-refactor
-step: refactor
+step: accept
 ---
 ## Goal
 The 5050-line `tests/test_omi.py` becomes several `tests/test_<area>.py` files (for example upgrade, install, attach/detached, init, github, worker, tasks, cli) with shared fakes in `tests/helpers.py`, so later tasks touch separate test files and can run in parallel. No product code changes.
 
 ## Acceptance criteria
-- [ ] Each test file covers one area and stays under ~800 lines; shared fakes and fixtures (FakePopen, temp repos) live in `tests/helpers.py` and are imported, not copied.
-- [ ] `python tests/test_omi.py` still runs every test and prints `ok` (CI and the post-run hook stay unchanged); each area file also runs on its own.
-- [ ] The same 91 baseline tests exist before and after, by name; no test body changes beyond imports and helper references.
-- [ ] All tests pass on the Linux worker and the Windows host.
+- [x] Each test file covers one area and stays under ~800 lines; shared fakes and fixtures (FakePopen, temp repos) live in `tests/helpers.py` and are imported, not copied.
+- [x] `python tests/test_omi.py` still runs every test and prints `ok` (CI and the post-run hook stay unchanged); each area file also runs on its own.
+- [x] The same 91 baseline tests exist before and after, by name; no test body changes beyond imports and helper references.
+- [x] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
+Host: python tests/test_omi.py (Windows host, worktree) -> ok, exit 0; python tests/test_attach.py and tests/test_worker.py alone -> exit 0
 Baseline (Coordinator, development a426da4+): `python tests/test_omi.py` -> ok on the Windows host and in CI; 91 top-level `def test_` functions in tests/test_omi.py (`grep -c "^def test_" tests/test_omi.py`). Keep that set of names identical after the split.
 Done: split into tests/helpers.py + 13 area files (attach, cli, content, creds, detached, github, hooks, init, install, tasks, tools, upgrade, worker), all <=614 lines; test_omi.py now imports and runs every area `main()` then prints ok. Same 91 `def test_` names (diff checked).
 Not done: Windows host run.
@@ -32,11 +33,21 @@ Tests: Linux: python3 tests/test_omi.py -> ok; each tests/test_<area>.py exits 0
 Next: Coordinator verifies on the Windows host.
 
 ## Steps
+PO approval accept: xong tasks này thì merged
 - plan started 2026-10-29 14:54
 - plan done 2026-10-29 14:54
 - baseline started 2026-10-29 14:54
 - baseline skipped 2026-10-29 14:54: baseline green: python tests/test_omi.py ok on host and CI after TASK-107 merge; test count recorded in Checkpoint
 - refactor started 2026-10-29 14:54
+- refactor done 2026-10-29 15:09
+- review started 2026-10-29 15:09
+- review failed 2026-10-29 15:18
+- refactor started 2026-10-29 15:18
+- refactor done 2026-10-29 15:18
+- review started 2026-10-29 15:18
+- review done 2026-10-29 15:26
+- accept started 2026-10-29 15:26
+- accept done 2026-10-29 15:26
 
 ## Reports
 2026-10-29 15:05 omi-agent-engineer (claude):
@@ -94,8 +105,25 @@ Next: Coordinator verifies on the Windows host.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-29 15:18 omi-agent-reviewer (codex):
+> VERDICT: FAIL
+> - .omi/tasks/TASK-118.md:16 Task metadata, acceptance criteria, and reports changed outside `scope: tests/**` -> Revert these changes or explicitly expand the authorized scope.
+> AC: Each file covers one area, under ~800 lines, with shared helpers ✓ 13 area files, 239–614 lines; shared helpers centralized and imported.
+> AC: Aggregate runner prints `ok`; each area runs independently; CI/hooks unchanged ✓ Aggregate exited 0 with `ok`; all 13 standalone runs exited 0; CI/hooks absent from diff.
+> AC: Same 91 tests; bodies unchanged ✓ Baseline and resulting names match; AST comparison found no test or helper body changes.
+> AC: All tests pass on Linux worker ✓ Aggregate and all standalone runs passed.
+> AC: All tests pass on Windows host HOST Requires Windows host execution.
+2026-10-29 15:26 omi-agent-reviewer (codex):
+> VERDICT: PASS
+> AC: Each file covers one area, under ~800 lines; shared fixtures centralized ✓ 13 area files, 239–614 lines; shared helpers imported from tests/helpers.py.
+> AC: Aggregate runs every test and prints `ok`; areas run independently; CI/hooks unchanged ✓ Aggregate exited 0 with `ok`; all 13 standalone runs exited 0; runner covers all 91 tests; CI/hooks absent from diff.
+> AC: Same 91 baseline tests; bodies unchanged ✓ Names match exactly; AST comparison found no test or helper body changes.
+> AC: All tests pass on Linux worker ✓ Aggregate and all standalone runs passed.
+> AC: All tests pass on Windows host HOST Requires Windows host execution.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 30 | 9597 | 480506 | 673s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 1417601 | 4632 | 1365248 | 437s | 1/1 omi-skill-simplify-review | FAIL 0e8d470 |
+| omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 933801 | 3458 | 894464 | 402s | 1/1 omi-skill-simplify-review | PASS 0e8d470 |
