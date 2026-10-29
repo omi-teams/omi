@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-docs-only
-step:
+step: write
 ---
 ## Goal
 Prove the spec's success criteria on real runs and write the evidence down; gaps found become decisions for a later plan.
@@ -29,3 +29,8 @@ Done:
 Not done:
 Tests:
 Next:
+
+## Steps
+- plan started 2026-10-29 13:18
+- plan done 2026-10-29 13:18
+- write started 2026-10-29 13:18
