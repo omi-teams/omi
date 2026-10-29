@@ -1,16 +1,16 @@
 ---
 id: TASK-099
 title: State sync: auto pull/commit/push and omi sync
-status: planned
+status: in-progress
 depends: TASK-098
 plan: PLAN-004
 scope: src/omi/*.py, tests/test_omi.py, README.md
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: codex
+model: sonnet
+effort: medium
 step_settings:
 workflow: omi-flow-feature
 step:
