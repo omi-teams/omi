@@ -95,15 +95,27 @@ def test_path_refusal():
             target = root / relative
             if target.exists():
                 target.unlink()
-            target.symlink_to(outside / "missing", target_is_directory=directory_link)
+            try:
+                target.symlink_to(outside / "missing", target_is_directory=directory_link)
+            except OSError:
+                print("skip board symlink refusal: symlink creation unavailable")
+                return
             refuses(lambda: data.project("sample"))
             target.unlink()
-        (home / "projects/escape").symlink_to(outside, target_is_directory=True)
+        try:
+            (home / "projects/escape").symlink_to(outside, target_is_directory=True)
+        except OSError:
+            print("skip board symlink refusal: symlink creation unavailable")
+            return
         refuses(data.projects)
         refuses(lambda: data.project("escape"))
         (home / "projects/escape").unlink()
         (root / ".omi/tasks").rename(root / ".omi/saved")
-        (root / ".omi/tasks").symlink_to(outside, target_is_directory=True)
+        try:
+            (root / ".omi/tasks").symlink_to(outside, target_is_directory=True)
+        except OSError:
+            print("skip board symlink refusal: symlink creation unavailable")
+            return
         refuses(lambda: data.project("sample"))
 
 
