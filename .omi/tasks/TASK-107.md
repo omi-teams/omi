@@ -1,16 +1,16 @@
 ---
 id: TASK-107
 title: attach pushes state and prepares development
-status: planned
+status: in-progress
 depends: 
 plan: PLAN-005
 scope: src/omi/upgrade.py, src/omi/state_sync.py, tests/test_omi.py, README.md
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: codex
+model: sonnet
+effort: medium
 step_settings:
 workflow: omi-flow-feature
 step:
