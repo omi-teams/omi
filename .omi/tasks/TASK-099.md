@@ -42,6 +42,7 @@ Host: python tests/test_omi.py (Windows host, commit feat(state): automatically 
 - review done 2026-10-29 10:29
 - accept started 2026-10-29 10:29
 - PO approval accept: Accept, merge ngay (minor review notes go to decisions for TASK-101)
+- accept done 2026-10-29 10:29
 
 ## Reports
 2026-10-29 10:18 omi-agent-engineer (codex):
