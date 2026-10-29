@@ -20,7 +20,8 @@ def step_states(text):
 def po_approved(text, sid):
     """The Coordinator records the PO's words as a line `PO approval <step>: <text>` inside `## Steps`."""
     _, sep, rest = text.partition("\n## Steps\n")
-    return bool(sep) and re.search(rf"^(?:- )?PO approval {re.escape(sid)}: *\S", rest.split("\n## ", 1)[0], re.M) is not None
+    current = re.split(r"^- workflow reopened .*", rest.split("\n## ", 1)[0], flags=re.M)[-1]
+    return bool(sep) and re.search(rf"^(?:- )?PO approval {re.escape(sid)}: *\S", current, re.M) is not None
 
 
 def unticked(text):
@@ -125,6 +126,7 @@ def sync_scope(wt, task, tid):
 def step(root, tid, action, why=None, now=None):
     """Record a workflow step in the task file: `next` starts the following step, `done` closes the current one,
     `skip` closes it with a reason, `back` fails a started review gate and restarts the nearest earlier write step.
+    `approve` records PO words; `reopen` restarts the last write step of a completed workflow.
     Gate steps cannot be skipped; a `po` gate needs the PO approval line."""
     if not re.fullmatch(r"[A-Za-z0-9_-]+", tid):
         sys.exit(f"invalid task id `{tid}`: use letters, digits, `-` and `_`. Nothing changed.")
@@ -146,7 +148,24 @@ def step(root, tid, action, why=None, now=None):
         sys.exit(f"{tid}: at step {cur} but {', '.join(open_steps)} not done or skipped; steps cannot be jumped over. "
                  "Nothing changed.")
     stamp = (now or datetime.datetime.now()).strftime("%Y-%m-%d %H:%M")
-    if action == "next":
+    if action == "reopen":
+        if any(events.get(s) == "started" for s in ids):
+            sys.exit(f"{tid}: a step is running; cannot reopen. Nothing changed.")
+        if at != len(ids) - 1 or any(events.get(s) not in ("done", "skipped") for s in ids):
+            sys.exit(f"{tid}: workflow {wid} is not complete; cannot reopen. Nothing changed.")
+        if not (why or "").strip():
+            sys.exit(f"usage: omi step {tid} reopen --why <reason>. Nothing changed.")
+        prev = next((s for s in reversed(steps)
+                     if s["role"] != workflows.COORDINATOR and catalogs.get_role(root, s["role"])["access"] == "write"), None)
+        if not prev:
+            sys.exit(f"{tid}: no write step to reopen. Nothing changed.")
+        text = add_step_log(text, f"- workflow reopened {stamp}: {' '.join(why.split())}")
+        for s in steps[ids.index(prev["id"]) + 1:]:
+            text = add_step_log(text, f"- {s['id']} failed {stamp}")
+        text = set_front(set_front(text, "step", prev["id"]), "status", "in-progress")
+        text = add_step_log(text, f"- {prev['id']} started {stamp}")
+        msg = f"{tid}: workflow reopened; back to {prev['id']} ({prev['role']})"
+    elif action == "next":
         if cur and events.get(cur) not in ("done", "skipped"):
             sys.exit(f"{tid}: step {cur} is not done; run `omi step {tid} done` or `skip --why`. Nothing changed.")
         if cur and steps[at]["gate"] == "po" and not po_approved(text, cur):
@@ -171,6 +190,13 @@ def step(root, tid, action, why=None, now=None):
         sys.exit(f"{tid}: no step started; run `omi step {tid} next`. Nothing changed.")
     elif events.get(cur) in ("done", "skipped"):
         sys.exit(f"{tid}: step {cur} is already {events[cur]}; run `omi step {tid} next`. Nothing changed.")
+    elif action == "approve":
+        if steps[at]["gate"] != "po":
+            sys.exit(f"{tid}: step {cur} is not a po gate; cannot approve. Nothing changed.")
+        if not (why or "").strip():
+            sys.exit(f"usage: omi step {tid} approve --why <PO words>. Nothing changed.")
+        text = add_step_log(text, f"PO approval {cur}: {' '.join(why.split())}")
+        msg = f"{tid}: step {cur} PO approval recorded"
     elif action == "back":
         if steps[at]["gate"] != "review":
             sys.exit(f"{tid}: step {cur} is not a review gate; `back` only fails a started review step. Nothing changed.")
