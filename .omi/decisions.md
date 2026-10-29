@@ -92,3 +92,4 @@
 - 2026-10-29 | follow-up: state sync minor notes (pull failure hides git stderr; auto-commit error in finally can mask the command error; generic '<cmd> state' commit message; README extra blank line) | TASK-099 review PASS notes, PO accepted merge | TASK-099
 - 2026-10-29 | TASK-100 design B (install.py + manifest, hidden omi session-start), scope widened to the module rule | architect recommendation, PO picked B + scope | TASK-100
 - 2026-10-29 | TASK-101 pilot run by Coordinator on host; docs-writer only writes the evidence doc | Docker worker cannot run install-user, attach, gh or Windows host tests | TASK-101
+- 2026-10-29 | PLAN-005 (0.4.1) for pilot gaps G1-G7; G8 left to omi-pilot-splitbill; omi board planned next | PO picked all gap groups and asked for a board plan | docs/pilot-detached.md
