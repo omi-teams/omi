@@ -1,16 +1,16 @@
 ---
 id: TASK-111
 title: Bump omi to 0.4.1
-status: planned
+status: in-progress
 depends: TASK-110, TASK-112
 plan: PLAN-005
 scope: pyproject.toml, README.md, tests/test_upgrade.py, tests/test_cli.py, .omi/version, src/omi/template_shas.json, src/omi/app/cli.py, .omi/tasks/TASK-111.md
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: codex
+model: haiku
+effort: low
 step_settings:
 workflow: omi-flow-feature
 step:
