@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature-sensitive
-step: security
+step: accept
 ---
 ## Goal
 After one `omi install-user` per machine, opening Claude Code or Codex in an attached repo gives the Coordinator role and omi skills, with no file in the repo.
@@ -26,6 +26,11 @@ After one `omi install-user` per machine, opening Claude Code or Codex in an att
 - [x] All tests pass on the Linux worker and the Windows host; in-repo mode behaviour is unchanged (existing tests untouched or only extended).
 
 ## Checkpoint
+Fix round 1 (PO at accept, review + security PASS findings):
+- install.py hook command: record the installing interpreter (sys.executable, quoted for spaces) instead of bare `python -m omi session-start`; --remove and idempotent rerun must still find the hook the manifest recorded. Test it.
+- install.py: write the manifest before the skill files (or roll back on failure), so an OSError partway through never leaves omi skills that a later install records as the user own "before" content. Test with an injected write failure.
+- install.py manifest validation: a corrupt base64 `settings_before` / skill `before` / anything else malformed in ~/.omi/install-user.json must give a one-line OMI: error (StateError), not a binascii.Error traceback. Test via the CLI.
+- Optional while there: split install_user into validate/remove/install helpers if it stays readable.
 Done: Implemented user skills installation, tracked reversible settings/AGENTS integration, SessionStart command, USAGE/README and acceptance tests.
 Not done: Windows host execution (not available in Linux worker).
 Tests: Six focused install/startup/CLI tests passed. Final-code python3 tests/test_omi.py passed on Linux (83 test functions, exit 0, ok); Windows host not run.
@@ -43,6 +48,9 @@ Host: python tests/test_omi.py (Windows host, commit feat: add user-level omi Co
 - review started 2026-10-29 10:49
 - review done 2026-10-29 10:54
 - security started 2026-10-29 10:54
+- security done 2026-10-29 11:00
+- accept started 2026-10-29 11:00
+- PO at accept: fix findings (1)-(3) in one round, then merge
 
 ## Reports
 2026-10-29 10:36 omi-agent-architect (claude):
