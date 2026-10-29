@@ -1,7 +1,7 @@
 ---
 id: TASK-108
 title: Warn when an attached repo still has in-repo omi files
-status: in-progress
+status: done
 depends: TASK-118
 plan: PLAN-005
 scope: src/omi/upgrade.py, src/omi/cli.py, tests/test_attach.py, .omi/tasks/TASK-108.md
@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature
-step: build
+step: accept
 ---
 ## Goal
 Pilot gap G4: the PO sees that in-repo `.omi/`, `AGENTS.md` or `.claude/` in an attached code repo are ignored.
@@ -24,15 +24,22 @@ Pilot gap G4: the PO sees that in-repo `.omi/`, `AGENTS.md` or `.claude/` in an 
 - [x] Tests in tests/test_attach.py cover warn and no-warn cases; README is left to TASK-110; all tests pass.
 
 ## Checkpoint
+Host: python tests/test_omi.py (Windows host, worktree) -> ok, exit 0
 Done: Shared tracked-path warning for attach (new/existing registration) and detached status; warn/no-warn, no-migration and in-repo output tests added. README unchanged.
 Not done: None within scope.
 Tests: python3 tests/test_attach.py passed (exit 0); python3 tests/test_omi.py passed (exit 0, final output ok). Both commands executed tests; no task tests skipped.
 Next: Coordinator reviews the diff and commits on the host.
 
 ## Steps
+PO approval accept: Chấp nhận, merge
 - plan started 2026-10-29 16:07
 - plan done 2026-10-29 16:07
 - build started 2026-10-29 16:07
+- build done 2026-10-29 16:17
+- review started 2026-10-29 16:17
+- review done 2026-10-29 16:23
+- accept started 2026-10-29 16:23
+- accept done 2026-10-29 16:23
 
 ## Reports
 2026-10-29 16:12 omi-agent-engineer (codex):
@@ -89,8 +96,14 @@ Next: Coordinator reviews the diff and commits on the host.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-29 16:23 omi-agent-reviewer (codex):
+> VERDICT: PASS
+> AC: Detached attach/status print exactly one warning for tracked omi paths, otherwise none; no migration ✓ Real-Git warn/no-warn tests passed; file contents and staged changes preserved.
+> AC: In-repo mode output unchanged ✓ test_in_repo_status_unchanged passed.
+> AC: tests/test_attach.py covers warn/no-warn; README unchanged; all tests pass ✓ Both python3 tests/test_attach.py and python3 tests/test_omi.py exited 0; full suite ended with “ok”; README absent from diff.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1060930 | 4605 | 1012352 | 337s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 676060 | 2164 | 642304 | 267s | - | PASS b70058e |
