@@ -4196,12 +4196,18 @@ def test_attach_commit_failure_cleanup():
             staged = omi.core.git(home, "diff", "--cached", "--name-only")
             git(code, "remote", "set-url", "origin", "https://example.org/team/second.git")
             before = {p.relative_to(code): p.read_bytes() for p in code.rglob("*") if p.is_file()}
-            with patch.dict(os.environ, {"GIT_AUTHOR_NAME": "", "GIT_AUTHOR_EMAIL": "t@t",
-                                         "GIT_COMMITTER_NAME": "", "GIT_COMMITTER_EMAIL": "t@t"}):
-                result = subprocess.run([sys.executable, "-m", "omi", "attach"], cwd=code,
-                                        capture_output=True, encoding="utf-8", errors="replace")
+            empty_config = home.parent / "empty.gitconfig"
+            empty_config.write_text("", encoding="utf-8")
+            # Windows drops empty env values, so remove identities and disable host config.
+            failure_env = {key: value for key, value in os.environ.items()
+                           if not key.startswith(("GIT_AUTHOR_", "GIT_COMMITTER_", "GIT_CONFIG_"))}
+            failure_env.update({"GIT_CONFIG_GLOBAL": str(empty_config), "GIT_CONFIG_NOSYSTEM": "1",
+                                "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "user.useConfigOnly",
+                                "GIT_CONFIG_VALUE_0": "true"})
+            result = subprocess.run([sys.executable, "-m", "omi", "attach"], cwd=code, env=failure_env,
+                                    capture_output=True, encoding="utf-8", errors="replace")
             assert result.returncode == 1 and "OMI: git" in result.stderr, result
-            assert "empty ident name" in result.stderr and "Traceback" not in result.stderr, result.stderr
+            assert "identity" in result.stderr.lower() and "Traceback" not in result.stderr, result.stderr
             assert not (home / "projects/second").exists()
             assert omi.core.git(home, "diff", "--cached", "--name-only") == staged
             with patch.dict(os.environ, {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",

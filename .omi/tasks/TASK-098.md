@@ -27,12 +27,10 @@ step: accept
 - [x] All tests pass on the Linux worker and the Windows host; in-repo mode behaviour is unchanged (existing tests untouched or only extended).
 
 ## Checkpoint
-Host round FAIL (Windows, python tests/test_omi.py): test_attach_commit_failure_cleanup expects the state commit to fail, but on Windows an env var set to "" is removed, so git falls back to the global ~/.gitconfig user.name and the commit succeeds (returncode 0, "attached:"). Make the commit failure portable without relying on empty env values: e.g. run the subprocess with GIT_CONFIG_GLOBAL pointing at an empty temp file, GIT_CONFIG_NOSYSTEM=1, user.useConfigOnly=true (GIT_CONFIG_COUNT/KEY_0/VALUE_0) and no GIT_AUTHOR_*/GIT_COMMITTER_* vars; assert on a git identity error, not the exact Linux wording. Test-only change expected.
-Done: Fix round 1 implemented. Attachment failures remove the newly generated project and unstage only its paths, preserving unrelated staged work. Malformed code origin URLs in both resolve and attach now raise StateError for a one-line OMI: CLI error. Added regression tests for failed commits with unborn/existing HEAD, retry success, partial init failure cleanup, code bytes unchanged, and malformed-origin CLI handling.
-Not done: Windows validation of this fix round is unavailable in this Linux container.
-Tests: TMPDIR=/work python3 -u tests/test_omi.py -> exit 0, final output ok; full Linux suite executed, including all three new regression tests and existing acceptance/characterization tests; no test skips reported. An earlier run stopped at a regression fixture assertion because Git reported missing email before missing name; the fixture now supplies email explicitly.
-Next: Coordinator reviews the diff and validates this fix round on the Windows host before committing. No worktree commit made.
-Previous implementation: Linux and Windows host runs passed before fix round 1 (host: python tests/test_omi.py -> exit 0, ok).
+Done: Fix round 2 changes only test_attach_commit_failure_cleanup. The failing subprocess now removes inherited GIT_AUTHOR_*, GIT_COMMITTER_*, and GIT_CONFIG_* variables, uses an empty temporary global config with system config disabled, and sets user.useConfigOnly=true. It asserts a Git identity error without depending on the Linux-specific "empty ident name" wording. Existing rollback, staged-work preservation, retry, and code-byte checks remain intact for unborn and existing HEAD.
+Not done: Windows host validation is unavailable in this Linux container.
+Tests: Focused regression executed successfully (exit 0) with inherited author and committer identities supplied, covering both HEAD states. Full Linux suite executed: TMPDIR=/work PYTHONDONTWRITEBYTECODE=1 python3 -u tests/test_omi.py -> exit 0, final output ok; no test skips reported. Existing acceptance and characterization coverage ran unchanged.
+Next: Coordinator reviews the test-only diff and runs python tests/test_omi.py on Windows before committing. No worktree commit made.
 
 ## Steps
 - plan started 2026-10-29 09:15
@@ -160,6 +158,58 @@ Previous implementation: Linux and Windows host runs passed before fix round 1 (
 > create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-29 09:58 omi-agent-engineer (codex):
+> DONE
+> Files changed: `tests/test_omi.py`, `.omi/tasks/TASK-098.md`.
+> Made the commit-failure fixture portable; checkpoint updated.
+> Suggested commit: `test: make attach commit failure portable`
+> Tests: full `python3 -u tests/test_omi.py` exited 0 (`ok`); focused regression passed; no test skips reported.
+> Open: Windows host validation pending. No commit made.
+2026-10-29 10:01 hook post-run passed:
+> OMI: outside.py is outside the scope of TASK-097. Stop and report NEEDS SCOPE to the Coordinator.
+> OMI: projects/sample/.omi/tasks/TASK-097.md is outside the task worktree.
+> OMI: .omi/tasks/TASK-097.md is outside the scope of TASK-097. Stop and report NEEDS SCOPE to the Coordinator.
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -167,3 +217,4 @@ Previous implementation: Linux and Windows host runs passed before fix round 1 (
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1878945 | 17940 | 1831552 | 672s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 2049 | 86308 | 242s | - | PASS ecdfb0b |
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 2212253 | 8200 | 2132608 | 575s | - | - |
+| omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1587614 | 4527 | 1496064 | 505s | - | - |
