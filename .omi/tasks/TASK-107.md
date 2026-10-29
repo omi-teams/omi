@@ -1,7 +1,7 @@
 ---
 id: TASK-107
 title: attach pushes state and prepares development
-status: in-progress
+status: done
 depends: 
 plan: PLAN-005
 scope: src/omi/upgrade.py, src/omi/state_sync.py, tests/test_omi.py, README.md
@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature
-step: build
+step: accept
 ---
 ## Goal
 Pilot gaps G2 and G3: after `omi attach` the state is on its remote and the code clone has a local `development` branch, with no manual step.
@@ -31,6 +31,7 @@ Next step: Coordinator review and host CI/commit. Product code unchanged for thi
 
 ## Steps
 PO approval accept: Chấp nhận, merge
+PO approval accept (round 2, after CI fix): Chấp nhận, merge
 - plan started 2026-10-29 14:15
 - plan done 2026-10-29 14:15
 - build started 2026-10-29 14:15
@@ -41,6 +42,12 @@ PO approval accept: Chấp nhận, merge
 - accept done 2026-10-29 14:34
 
 - build started 2026-10-29 14:40 (reopened by Coordinator: CI failed after accept; `omi step back` cannot reopen a completed workflow)
+- build done 2026-10-29 14:43
+- review started 2026-10-29 14:43
+- review done 2026-10-29 14:50
+- accept started 2026-10-29 14:50
+- accept done 2026-10-29 14:50
+
 ## Reports
 2026-10-29 14:20 omi-agent-engineer (codex):
 > DONE
@@ -153,6 +160,15 @@ PO approval accept: Chấp nhận, merge
 > create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-29 14:49 omi-agent-reviewer (claude):
+> ```
+> VERDICT: PASS
+> - .omi/tasks/TASK-107.md:48-159 Task file edits fall outside `scope` (bookkeeping only), and the post-run hook output pasted into Reports is noise -> trim it.
+> - src/omi/upgrade.py:230 `state_sync` is not named in the omi-modules layer order. The import is downward only (state_sync imports core and state), so it is not a violation -> no fix.
+> AC: With a state remote, `omi attach` pushes its commit (sets upstream on an empty remote); a push failure keeps the commit and prints `STATE NOT PUSHED: run omi sync` ✓ `attach` calls `state_sync.push` when a remote exists. `push` uses `--set-upstream <remote> HEAD` when there is no upstream and prints the message on failure. I did not rerun them individually. The full test run passed. The tests that cover this are `test_attach_push_success`, `test_attach_push_failure` (commit kept, message printed once, later `omi sync` pushes it) and `test_attach_clone_portability` (upstream set, remote head equals the state head).
+> AC: If `origin/development` exists and no local `development` does, attach creates it tracking origin and prints one line; an existing local branch is untouched; the code repo gets no commit and no file ✓ `prepare_development` uses `git branch --track`, so there is no checkout, commit or file. It runs on both the new-attach and already-attached paths. `test_attach_development_created` checks the tracking upstream, HEAD, file contents and that the line prints once. `test_attach_development_present` checks the existing branch is unchanged.
+> AC: Unit tests cover push success, push failure, empty remote, branch created and branch already present; all tests pass ✓ `python3 tests/test_omi.py` exited 0 and printed `ok`. The new tests are registered in `__main__`. The empty remote case is covered by `test_attach_clone_portability`, where the state remote starts empty and `attach` sets the upstream.
+> ```
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -160,3 +176,4 @@ PO approval accept: Chấp nhận, merge
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1149418 | 6176 | 1094912 | 297s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 1790 | 138282 | 481s | - | PASS 09763d7 |
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 559284 | 2256 | 529536 | 258s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1440 | 116972 | 239s | - | PASS 789a45b |
