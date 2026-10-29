@@ -1,7 +1,7 @@
 ---
 id: TASK-100
 title: omi install-user: user-level skills, SessionStart hook, Codex AGENTS
-status: in-progress
+status: done
 depends: TASK-097
 plan: PLAN-004
 scope: src/omi/install.py, src/omi/cli.py, tests/test_omi.py, README.md, src/omi/template/**, .omi/rules/omi-modules.md, .omi/rules/CATALOG.md
@@ -32,6 +32,9 @@ Not done: Windows host execution of this fix round (not available in Linux worke
 Tests: Eight focused install-user tests passed (exit 0). Full python3 tests/test_omi.py passed on Linux (87 test functions, exit 0, final output ok). Windows host tests were not run in this worker; mocked Windows hook quoting passed.
 Next: Coordinator reviews the diff and runs python tests/test_omi.py on the Windows host before committing. No commit created; no additional scope needed.
 
+Host: python tests/test_omi.py (Windows host, commit fix: harden user integration installation and manifest validation) -> exit 0, ok
+Host: temp USERPROFILE: omi install-user, run the recorded hook via cmd.exe in a non-repo dir and in a repo, omi install-user --remove -> hook ran (exit 0, quoted python path), HOME left empty
+
 ## Steps
 - plan started 2026-10-29 10:33
 - plan done 2026-10-29 10:33
@@ -44,7 +47,7 @@ Next: Coordinator reviews the diff and runs python tests/test_omi.py on the Wind
 - security started 2026-10-29 10:54
 - security done 2026-10-29 11:00
 - accept started 2026-10-29 11:00
-- PO at accept: fix findings (1)-(3) in one round, then merge
+- PO approval accept: Sửa 1 vòng rồi merge (fix round done, review + security PASS 2026-10-29 11:30)
 
 ## Reports
 2026-10-29 10:36 omi-agent-architect (claude):
@@ -173,6 +176,22 @@ Next: Coordinator reviews the diff and runs python tests/test_omi.py on the Wind
 > create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
 > [... truncated ...]
 > ok
+2026-10-29 11:25 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - No blocking findings. `python3 tests/test_omi.py` exited 0 and printed `ok`. The diff touches only files in `scope`, and I found no injection or path-escape problem.
+> 
+> AC: `install-user` copies the skills to `~/.claude/skills/` and merges one SessionStart hook (keeps other keys, idempotent, backup on first change). The hook prints rules plus status only in an attached repo. ✓ `test_install_user` and `test_install_user_existing_integration` run on a temp HOME and check other-key preservation, a byte-identical snapshot on rerun, and backup bytes equal to the original. `test_user_session_start` covers attached and non-attached repos, and the `detached_project` case prints the rules, `omi state:` and status.
+> AC: Codex rules go in `~/.codex/AGENTS.md` inside an `<!-- omi -->` block that is replaced on rerun, never duplicated, other content kept. ✓ `test_install_user` checks one block and the user's text kept. `test_install_user_existing_integration` checks the block is replaced in place. `test_install_user_invalid_input` rejects a malformed block.
+> AC: `--remove` takes out exactly what it added. ✓ `test_install_user` and the fresh-install case in `test_install_user_removal_preserves_edits` restore the original bytes or leave an empty HOME. Edited skills and user additions are kept. The write-failure, recorded-interpreter and legacy-manifest tests also remove cleanly.
+> [... truncated ...]
+> AC: All tests pass on the Linux worker and the Windows host; in-repo mode is unchanged. ✓ Linux: the full suite passes. HOST Windows host run: it can't run in this container, and the code is only checked through mocked `win32` quoting. In-repo behaviour: existing tests were only extended, and `session-start` prints nothing when the repo is not attached.
+2026-10-29 11:30 omi-agent-security-reviewer (claude):
+> VERDICT: PASS
+> - No blocking findings. `python3 tests/test_omi.py` exited 0 and printed `ok`.
+> - src/omi/install.py:407 `install_user` is about 100 lines, mixing validate, remove and install in one function | why: hard to maintain, but all paths are tested and it stays well under the 600-line module limit | verified: code read -> optionally split into helpers later.
+> - A probe on a temp HOME (preexisting empty `SessionStart`) installed then removed and left `settings.json` byte-identical. A non-UTF-8 `AGENTS.md` raises `UnicodeDecodeError`, which `cli.py` catches as `UnicodeError` and reports as an `OMI:` error.
+> - The diff stays within the task scope, and the layer-order rule and CATALOG edits match the scope list.
+> UNVERIFIED: Windows host run (AC5) and `list2cmdline` quoting of `sys.executable` in the hook. Only a mocked `win32` check ran here. Running `python tests/test_omi.py` and a real SessionStart hook on the Windows host would confirm it.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -182,3 +201,5 @@ Next: Coordinator reviews the diff and runs python tests/test_omi.py on the Wind
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 2599 | 90356 | 248s | - | PASS dc1c949 |
 | omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 12 | 3126 | 223149 | 252s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS dc1c949 |
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 748767 | 5968 | 716032 | 276s | - | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 3104 | 111045 | 252s | - | PASS 051e55a |
+| omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 10 | 1982 | 209297 | 244s | - | PASS 051e55a |
