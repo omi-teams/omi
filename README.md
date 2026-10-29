@@ -23,6 +23,9 @@ claude                    # rồi gõ /omi-idea, /omi-task TASK-001, /omi-status
 
 Lần đầu dùng `omi attach --state <git url>` để clone repo state riêng tư; không có URL thì omi khởi tạo repo state và in lệnh thêm private remote. Git cần có `user.name` và `user.email` để commit. Push repo state lên remote; trên máy khác clone nó vào `OMI_STATE` rồi clone repo code: omi nhận diện dự án theo URL origin, không phụ thuộc đường dẫn checkout. Manifest lỗi hoặc URL trùng trong registry khiến mọi lệnh dừng với thông báo `OMI:` nêu file cần sửa.
 
+Trong detached mode, `omi status` tự pull repo state bằng `git pull --rebase`; offline hoặc chưa có remote thì in một dòng và vẫn hiển thị state local. Các lệnh thay đổi state (step, catalogs, run reports/usage, hooks) tự commit đúng các file chúng sửa với message `chore(<project>): <what>` rồi push. Push lỗi giữ commit local và in `STATE NOT PUSHED: run omi sync`. Chạy `omi sync` để pull, commit các thay đổi còn lại (task start/done, decisions, plans sửa bằng tay) và push toàn bộ repo state. Nếu rebase conflict, omi liệt kê file và dừng; giải quyết bằng git rồi chạy lại `omi sync`. In-repo mode giữ nguyên.
+
+
 `omi init` tạo các file sau trong dự án:
 
 | File | Vai trò |
