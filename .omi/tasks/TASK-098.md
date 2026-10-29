@@ -1,7 +1,7 @@
 ---
 id: TASK-098
 title: omi attach: register a code repo in the omi-state repo
-status: done
+status: in-progress
 depends: TASK-097
 plan: PLAN-004
 scope: src/omi/state.py, src/omi/upgrade.py, src/omi/cli.py, tests/test_omi.py, README.md
@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature
-step: review
+step: accept
 ---
 ## Goal
 `omi attach [<repo path>]` turns any git repo into a detached omi project without touching it.
@@ -27,6 +27,9 @@ step: review
 - [x] All tests pass on the Linux worker and the Windows host; in-repo mode behaviour is unchanged (existing tests untouched or only extended).
 
 ## Checkpoint
+Fix round 1 (PO at accept, reviewer PASS findings):
+- src/omi/upgrade.py attach: if the state commit (or init) fails, remove the new projects/<name> dir and unstage it, so a rerun of omi attach works; test with a state repo whose commit fails (e.g. no git user.name).
+- src/omi/state.py resolve (and upgrade.py attach): a malformed code-repo origin URL must exit with a one-line OMI: message (StateError), not a ValueError traceback; test via the CLI.
 Done: Implemented omi attach, portable origin registry, state clone/init and isolated project commits; detached init/upgrade exclude AGENTS.md and .claude; README, USAGE and acceptance tests updated.
 Not done: Windows host validation (not available in this Linux container).
 Tests: TMPDIR=/work/.tmp-task-098 python3 -u tests/test_omi.py -> exit 0, final output ok; no explicit test skips. Covers registration/template/code bytes unchanged, URL identity/collision, unrelated staged files, local bare state clone, fresh-clone resolution, default state home, every CLI command rejecting malformed/duplicate registries, and CLI characterization; existing regression suite also ran.
@@ -40,6 +43,9 @@ Host: python tests/test_omi.py (Windows host, worktree at commit feat: add detac
 - build started 2026-10-29 09:15
 - build done 2026-10-29 09:30
 - review started 2026-10-29 09:30
+- review done 2026-10-29 09:35
+- accept started 2026-10-29 09:35
+- PO at accept: fix the two reviewer findings in one round, then merge
 
 ## Reports
 2026-10-29 09:26 omi-agent-engineer (codex):
