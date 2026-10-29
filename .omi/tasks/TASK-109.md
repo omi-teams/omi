@@ -26,6 +26,8 @@ Pilot gaps G5, G6 and G9 (found in TASK-107: CI fails after accept and `omi step
 - [ ] Tests in tests/test_tasks.py cover approve in in-repo and detached mode and the refusal; all tests pass.
 
 ## Checkpoint
+Review round 1 FAIL:
+- .claude/skills/omi-task/SKILL.md:24 and the template copy: `gh pr create ... --title "<type>: <title> (<ID>)"` has no body, so non-interactive gh refuses or prompts. Add `--body "<one-paragraph summary of the change>"` to the command in both copies (keep them identical). No other change.
 Done: Implemented approve for PO gates and reopen for completed workflows, using the existing --why parser and authoritative task routing. Reopen restarts the last write step, restores in-progress status, logs the reason, invalidates downstream gates and requires approval after the restart while preserving earlier approval history. Updated both omi-task skills for approve, task IDs in PR titles and reopening after red CI. Added tests for local/detached approval, CLI parsing, commit routing, refusals, reopen/reapproval, last-write selection, no-write refusal and skill parity/content. CLI and README unchanged.
 Not done: No implementation work remains; Coordinator review and host commit are pending. No commit made in the worker.
 Tests: python3 tests/test_tasks.py passed (all 7 test functions in main); python3 tests/test_omi.py passed (ok, exit 0; no test skips reported). An initial run exposed a new test stdout fixture missing reconfigure; corrected and both commands rerun successfully.
@@ -35,6 +37,10 @@ Next: Coordinator reviews the scoped diff and commits; suggested message: feat(t
 - plan started 2026-10-29 16:07
 - plan done 2026-10-29 16:07
 - build started 2026-10-29 16:07
+- build done 2026-10-29 16:21
+- review started 2026-10-29 16:21
+- review failed 2026-10-29 16:27
+- build started 2026-10-29 16:27
 
 ## Reports
 2026-10-29 16:16 omi-agent-engineer (codex):
@@ -90,8 +96,17 @@ Next: Coordinator reviews the scoped diff and commits; suggested message: feat(t
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-29 16:27 omi-agent-reviewer (codex):
+> VERDICT: FAIL
+> - .claude/skills/omi-task/SKILL.md:24 (also template copy) Removing `--fill` leaves PR creation without a body, prompting for input and blocking unattended execution ([CLI documentation](https://cli.github.com/manual/gh_pr_create)) -> Add `--body-file` to both commands.
+> AC: approve records words in authoritative state, refuses non-PO gates, and commits like other changes ✓ Routing, refusal, CLI parsing, and commit-routing tests passed.
+> AC: reopen restarts the last write step, logs the reason, requires fresh approval, and refuses running steps ✓ Tests passed; approval invalidation also checked against five existing task logs.
+> AC: both skill copies use approve, task-bearing PR titles, and reopen after red CI ✗ Required text is present, but PR creation needs the body fix above.
+> AC: reuse --why; leave cli.py and README untouched ✓ Existing parser exercised; neither file appears in the diff.
+> AC: approval tests cover in-repo/detached modes and refusal; all tests pass ✓ Task tests passed; `python3 tests/test_omi.py` exited 0 with `ok`.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1821973 | 11921 | 1762304 | 565s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 1306369 | 3432 | 1240192 | 258s | - | FAIL 37100f6 |
