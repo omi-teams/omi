@@ -97,3 +97,4 @@
 - 2026-10-29 | PO will delete omi-teams/omi-board after omi board 0.5.0 ships (PO action, not the squad) | PO choice | PLAN-006
 - 2026-10-29 | TASK-118 splits tests/test_omi.py by area after TASK-107, before TASK-108 | 5050-line shared test file blocks parallel tasks | TASK-118
 - 2026-10-29 | G9 (reopen a completed workflow after red CI) added to TASK-109 | TASK-107 CI failed after accept; Coordinator reopened build by hand with a log line | TASK-107
+- 2026-10-29 | TASK-108 and TASK-109 run in parallel: per-area test files, README moved to TASK-110, TASK-109 reuses --why so cli.py stays with TASK-108 | PO asked for parallel work, Codex quota preferred | TASK-118

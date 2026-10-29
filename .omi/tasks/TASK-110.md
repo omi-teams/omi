@@ -2,9 +2,9 @@
 id: TASK-110
 title: Document Windows PATH, test command and worker hosts for detached mode
 status: planned
-depends: TASK-109
+depends: TASK-108, TASK-109
 plan: PLAN-005
-scope: README.md
+scope: README.md, src/omi/cli.py, .omi/tasks/TASK-110.md
 role: omi-agent-engineer
 skills: []
 refs: []
@@ -19,8 +19,8 @@ step:
 Pilot gaps G1 and G7: README tells a new user what the pilot had to find out.
 
 ## Acceptance criteria
-- [ ] README says how to put the Python `Scripts` dir on PATH on Windows (or use `python -m omi`), that an attached project needs `test` set in its state `.omi/config.json`, and that the worker adds the selected tool's API host (and chatgpt.com for a ChatGPT login) besides `network_allow`.
-- [ ] At most 8 added lines, Vietnamese, matching README style.
+- [ ] README says how to put the Python `Scripts` dir on PATH on Windows (or use `python -m omi`), that an attached project needs `test` set in its state `.omi/config.json`, and that the worker adds the selected tool's API host (and chatgpt.com for a ChatGPT login) besides `network_allow`; it also documents the TASK-108 in-repo files warning and `omi step <ID> approve|reopen --why`, and the `cli.py` usage line lists `approve|reopen`.
+- [ ] At most 12 added lines, Vietnamese, matching README style.
 
 ## Checkpoint
 Done:
