@@ -1,7 +1,7 @@
 ---
 id: TASK-111
 title: Bump omi to 0.4.1
-status: in-progress
+status: done
 depends: TASK-110, TASK-112
 plan: PLAN-005
 scope: pyproject.toml, README.md, tests/test_upgrade.py, tests/test_cli.py, .omi/version, src/omi/template_shas.json, src/omi/app/cli.py, .omi/tasks/TASK-111.md, src/omi/project/tasks.py
@@ -13,17 +13,18 @@ model: haiku
 effort: low
 step_settings:
 workflow: omi-flow-feature
-step: build
+step: review
 ---
 ## Goal
 Release prep for PLAN-005, as in TASK-102.
 
 ## Acceptance criteria
-- [ ] `omi --version` prints 0.4.1; `.omi/version` is 0.4.1; 0.4.1 template shas recorded.
-- [ ] The CLI usage line for `step` lists `next|done|back|skip|approve|reopen` (wherever cli.py lives after TASK-112).
-- [ ] All tests pass on the Linux worker and the Windows host.
+- [x] `omi --version` prints 0.4.1; `.omi/version` is 0.4.1; 0.4.1 template shas recorded.
+- [x] The CLI usage line for `step` lists `next|done|back|skip|approve|reopen` (wherever cli.py lives after TASK-112).
+- [x] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
+Host: python tests/test_omi.py -> ok (exit 0, Windows)
 Done: Bumped package/project version to 0.4.1, recorded current template hashes, updated README, expanded CLI step usage and its test expectation, and corrected the invalid-action usage message in `src/omi/project/tasks.py`.
 Not done: Windows host test run.
 Tests: `python3 tests/test_omi.py` completed with `ok` on Linux (exit 0).
@@ -33,6 +34,8 @@ Next: Coordinator runs `python3 tests/test_omi.py` on the Windows host.
 - plan started 2026-10-29 21:21
 - plan done 2026-10-29 21:21
 - build started 2026-10-29 21:21
+- build done 2026-10-29 21:37
+- review started 2026-10-29 21:37
 
 ## Reports
 2026-10-29 21:22 omi-agent-engineer (codex):
@@ -140,9 +143,22 @@ Next: Coordinator runs `python3 tests/test_omi.py` on the Windows host.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-29 21:45 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> 
+> I found no problems. `python3 tests/test_omi.py` printed `ok` with exit code 0. I ran it twice, and the first run finished in the background.
+> 
+> All changes are inside the task's `scope`, which the diff extends to include `src/omi/project/tasks.py`. The `tasks.py` change is only the usage message, and `approve` and `reopen` are real actions in that file.
+> 
+> AC: `omi --version` prints 0.4.1; `.omi/version` is 0.4.1; 0.4.1 template shas recorded. ✓ `pyproject.toml` and `.omi/version` are both 0.4.1. The test asserting the `pyproject.toml` version passes, and `omi.common.core.version()` equals that value. `template_shas.json` has a `0.4.1` entry that differs from `0.4.0` only in `.claude/skills/omi-task/SKILL.md`.
+> 
+> AC: The CLI usage line for `step` lists `next|done|back|skip|approve|reopen`. ✓ `src/omi/app/cli.py:35` has the new usage line. The `tasks.py` error message and the expectation in `tests/test_cli.py` were updated to match, and that test passes.
+> 
+> AC: All tests pass on the Linux worker and the Windows host. ✓ on Linux (`ok`, exit code 0). HOST for the Windows run, which I can't do from this container; the task's own checkpoint also lists it as not done.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | gpt-6-luna (codex) | low | 388130 | 1838 | 355328 | 70s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | gpt-6-luna (codex) | low | 358585 | 1704 | 302976 | 240s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 1319 | 150289 | 359s | - | PASS ccd447c |
