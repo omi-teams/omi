@@ -1,7 +1,7 @@
 ---
 id: TASK-107
 title: attach pushes state and prepares development
-status: done
+status: in-progress
 depends: 
 plan: PLAN-005
 scope: src/omi/upgrade.py, src/omi/state_sync.py, tests/test_omi.py, README.md
@@ -24,6 +24,9 @@ Pilot gaps G2 and G3: after `omi attach` the state is on its remote and the code
 - [x] Unit tests cover push success, push failure, empty remote, branch created and branch already present; all tests pass.
 
 ## Checkpoint
+Review round 1 FAIL (CI, ubuntu, run 40836347944):
+- test_attach_push_success (tests/test_omi.py:4198) fails in TemporaryDirectory cleanup from detached_project (line 4410): `OSError: [Errno 39] Directory not empty: '/tmp/.../remote.git/objects/pack'`. Passes on the Windows host and the worker; likely a background `git gc --auto` started by receive-pack after the push still writing the bare remote while rmtree runs.
+- Fix in tests only: make the bare remotes created by the attach tests deterministic (e.g. `git -C remote.git config receive.autogc false` and `gc.auto 0`, or the same via the test git environment for all temp repos). Do not change product code for this. Run the attach tests several times in a loop to check.
 Host: python tests/test_omi.py (Windows host, worktree) -> ok, exit 0
 Done: Attach reuses state push with upstream setup and failure recovery; prepares a missing development branch tracking origin without checkout or code files/commits; README updated; all acceptance behaviors covered by tests.
 Not done: None.
