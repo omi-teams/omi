@@ -23,12 +23,10 @@ Pilot gaps G1 and G7: README tells a new user what the pilot had to find out.
 - [ ] At most 12 added lines, Vietnamese, matching README style.
 
 ## Checkpoint
-Review round 2 FAIL:
-- README.md:30 the Scripts lookup must match the install: with `pip install --user` (README line 10) it is `python -c "import sysconfig; print(sysconfig.get_path('scripts', 'nt_user'))"`; without `--user` (e.g. `pip install -e .`) drop the `'nt_user'` argument. Say both in one sentence; keep `python -m omi` as the fallback. No other change.
-Done: Replaced the fixed Windows Scripts path with the `sysconfig` discovery command; documented the attached project's test command in the state config location, including `OMI_STATE`; clarified the `--why` approve text is the PO's words. The existing three-line README addition stays within the 12 added line limit and leaves the cli.py usage line untouched.
+Done: Updated the Windows `Scripts` lookup to use `sysconfig.get_path('scripts', 'nt_user')` for `pip install --user`, and explained to omit `'nt_user'` for installs without `--user`; kept `python -m omi` fallback and all other README guidance unchanged.
 Not done: None.
-Tests: `python3 tests/test_omi.py` was run, but remained active beyond the execution window; no exit status or completion result was confirmed.
-Next: Coordinator should confirm completion/result of `python3 tests/test_omi.py`.
+Tests: `python3 tests/test_omi.py` exited 0 and ended with `ok`.
+Next: Coordinator review.
 
 ## Steps
 - plan started 2026-10-29 16:47
@@ -159,6 +157,59 @@ Next: Coordinator should confirm completion/result of `python3 tests/test_omi.py
 > AC: Windows PATH or module invocation ✗ `python -m omi` is documented, but the PATH command targets the wrong installation scheme.
 > AC: State test configuration, worker API hosts, ChatGPT host, network_allow, in-repo warning, approve/reopen commands, and unchanged cli.py ✓ README.md:30–32 match the implementation; supplied diff leaves cli.py unchanged. `python3 tests/test_omi.py` exited 0, ending `ok`.
 > AC: At most 12 added README lines, Vietnamese, matching README style ✓ Four added lines including one blank; Vietnamese prose with inline commands.
+2026-10-29 17:20 omi-agent-engineer (codex):
+> DONE | Updated Windows `Scripts` PATH guidance for `pip install --user` and other installs; kept the `python -m omi` fallback.
+> Files changed: `README.md`, `.omi/tasks/TASK-110.md`.
+> Suggested commit: `docs: clarify Windows Scripts path setup`
+> Tests: `python3 tests/test_omi.py` exited 0 and ended with `ok`.
+> Open issues: none.
+2026-10-29 17:25 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -167,3 +218,4 @@ Next: Coordinator should confirm completion/result of `python3 tests/test_omi.py
 | omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 721866 | 1876 | 666880 | 276s | - | PASS 22599c0 |
 | omi-agent-engineer | gpt-6-luna (codex) | low | 164907 | 1628 | 138112 | 95s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 1175428 | 3627 | 1139072 | 359s | - | FAIL e2bf8df |
+| omi-agent-engineer | gpt-6-luna (codex) | low | 339896 | 1755 | 315904 | 238s | 1/1 omi-skill-lean-implementation | - |
