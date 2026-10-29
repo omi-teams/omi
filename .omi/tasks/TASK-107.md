@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature
-step: accept
+step: build
 ---
 ## Goal
 Pilot gaps G2 and G3: after `omi attach` the state is on its remote and the code clone has a local `development` branch, with no manual step.
@@ -44,6 +44,7 @@ PO approval accept: Chấp nhận, merge
 - accept started 2026-10-29 14:34
 - accept done 2026-10-29 14:34
 
+- build started 2026-10-29 14:40 (reopened by Coordinator: CI failed after accept; `omi step back` cannot reopen a completed workflow)
 ## Reports
 2026-10-29 14:20 omi-agent-engineer (codex):
 > DONE
