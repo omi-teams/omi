@@ -1,16 +1,16 @@
 ---
 id: TASK-100
 title: omi install-user: user-level skills, SessionStart hook, Codex AGENTS
-status: planned
+status: in-progress
 depends: TASK-097
 plan: PLAN-004
 scope: src/omi/install.py, src/omi/cli.py, tests/test_omi.py, README.md, src/omi/template/**
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: codex
+model: sonnet
+effort: medium
 step_settings:
 workflow: omi-flow-feature-sensitive
 step:
