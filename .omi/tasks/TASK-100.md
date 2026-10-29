@@ -26,17 +26,11 @@ After one `omi install-user` per machine, opening Claude Code or Codex in an att
 - [x] All tests pass on the Linux worker and the Windows host; in-repo mode behaviour is unchanged (existing tests untouched or only extended).
 
 ## Checkpoint
-Fix round 1 (PO at accept, review + security PASS findings):
-- install.py hook command: record the installing interpreter (sys.executable, quoted for spaces) instead of bare `python -m omi session-start`; --remove and idempotent rerun must still find the hook the manifest recorded. Test it.
-- install.py: write the manifest before the skill files (or roll back on failure), so an OSError partway through never leaves omi skills that a later install records as the user own "before" content. Test with an injected write failure.
-- install.py manifest validation: a corrupt base64 `settings_before` / skill `before` / anything else malformed in ~/.omi/install-user.json must give a one-line OMI: error (StateError), not a binascii.Error traceback. Test via the CLI.
-- Optional while there: split install_user into validate/remove/install helpers if it stays readable.
-Done: Implemented user skills installation, tracked reversible settings/AGENTS integration, SessionStart command, USAGE/README and acceptance tests.
-Not done: Windows host execution (not available in Linux worker).
-Tests: Six focused install/startup/CLI tests passed. Final-code python3 tests/test_omi.py passed on Linux (83 test functions, exit 0, ok); Windows host not run.
-Next: Coordinator reviews the diff and runs python3 tests/test_omi.py on the Windows host before committing.
-
-Host: python tests/test_omi.py (Windows host, commit feat: add user-level omi Coordinator installation) -> exit 0, ok
+Done: Fix round 1 implemented: SessionStart records the installing sys.executable with platform-appropriate quoting; rerun/removal use the recorded hook, with legacy manifest support. The manifest is saved before any skill write. Manifest fields, paths, hashes, base64 backups and settings JSON are validated before mutation; malformed input raises StateError for a one-line OMI CLI error.
+Done: Added four regression tests covering interpreter paths with spaces on POSIX/Windows command generation, recorded/legacy hook idempotency and removal, injected manifest/skill write failures with retry/removal, and malformed manifests through both CLI modes. Existing acceptance tests remain intact.
+Not done: Windows host execution of this fix round (not available in Linux worker).
+Tests: Eight focused install-user tests passed (exit 0). Full python3 tests/test_omi.py passed on Linux (87 test functions, exit 0, final output ok). Windows host tests were not run in this worker; mocked Windows hook quoting passed.
+Next: Coordinator reviews the diff and runs python tests/test_omi.py on the Windows host before committing. No commit created; no additional scope needed.
 
 ## Steps
 - plan started 2026-10-29 10:33
@@ -127,6 +121,58 @@ Host: python tests/test_omi.py (Windows host, commit feat: add user-level omi Co
 > UNVERIFIED: Windows host run (AC5) was not possible in this container; the Coordinator needs to run it.
 > ```
 > `python3 tests/test_omi.py` passed on Linux: it exited 0 and printed ok. I found no secret exposure, path escape or injection. Manifest paths are confined to `.claude/skills` and to the `.claude`, `.codex` and `.omi` directories. The change stays within the task scope.
+2026-10-29 11:14 omi-agent-engineer (codex):
+> DONE — implemented all three checkpoint fixes.
+> Files changed: `src/omi/install.py`, `tests/test_omi.py`, `.omi/tasks/TASK-100.md`.
+> Suggested commit: `fix: harden user integration installation and manifest validation`
+> Tests: eight focused tests passed; `python3 tests/test_omi.py` passed on Linux (exit 0, `ok`).
+> Open issue: Windows host execution pending; mocked Windows quoting passed.
+> Checkpoint updated. No commit created.
+2026-10-29 11:18 hook post-run passed:
+> OMI: outside.py is outside the scope of TASK-097. Stop and report NEEDS SCOPE to the Coordinator.
+> OMI: projects/sample/.omi/tasks/TASK-097.md is outside the task worktree.
+> OMI: .omi/tasks/TASK-097.md is outside the scope of TASK-097. Stop and report NEEDS SCOPE to the Coordinator.
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -135,3 +181,4 @@ Host: python tests/test_omi.py (Windows host, commit feat: add user-level omi Co
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1683090 | 11845 | 1606912 | 415s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 2599 | 90356 | 248s | - | PASS dc1c949 |
 | omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 12 | 3126 | 223149 | 252s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS dc1c949 |
+| omi-agent-engineer | gpt-6.1-sol (codex) | medium | 748767 | 5968 | 716032 | 276s | - | - |

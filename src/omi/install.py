@@ -3,12 +3,22 @@
 import base64
 import hashlib
 import json
+import shlex
+import subprocess
+import sys
 from pathlib import Path
 
 from . import core, state
 
 
-HOOK = {"hooks": [{"type": "command", "command": "python -m omi session-start"}]}
+def _hook() -> dict:
+    executable = (subprocess.list2cmdline([sys.executable]) if sys.platform == "win32"
+                  else shlex.quote(sys.executable))
+    return {"hooks": [{"type": "command", "command": executable + " -m omi session-start"}]}
+
+
+HOOK = _hook()
+LEGACY_HOOK = {"hooks": [{"type": "command", "command": "python -m omi session-start"}]}
 START, END = "<!-- omi -->", "<!-- /omi -->"
 
 
@@ -55,6 +65,56 @@ def _block(text: str) -> str:
     return text[begin:end + len(END)]
 
 
+def _validate_manifest(record: dict, manifest: Path) -> None:
+    """Validate all undo data before install or removal changes any file."""
+    try:
+        fields = {"skills": dict, "directories": list, "settings_created": bool,
+                  "agents_created": bool, "hooks_created": bool, "session_created": bool,
+                  "hook_added": bool, "block_before": str, "prefix": str, "backup_created": bool}
+        if any(not isinstance(record.get(key), kind) for key, kind in fields.items()):
+            raise ValueError("invalid fields")
+        original = record["settings_before"]
+        if original is not None:
+            if not isinstance(original, str):
+                raise ValueError("invalid settings backup")
+            config = json.loads(base64.b64decode(original, validate=True))
+            if not isinstance(config, dict):
+                raise ValueError("invalid settings backup object")
+        for rel, item in record["skills"].items():
+            path = Path(rel)
+            if (path.is_absolute() or ".." in path.parts or len(path.parts) < 3
+                    or path.parts[:2] != (".claude", "skills") or not isinstance(item, dict)):
+                raise ValueError("invalid skill path")
+            digest = item["sha256"]
+            if (not isinstance(digest, str) or len(digest) != 64
+                    or any(c not in "0123456789abcdef" for c in digest)):
+                raise ValueError("invalid skill hash")
+            before = item["before"]
+            if before is not None:
+                if not isinstance(before, str):
+                    raise ValueError("invalid skill backup")
+                base64.b64decode(before, validate=True)
+        for rel in record["directories"]:
+            if not isinstance(rel, str):
+                raise ValueError("invalid directory")
+            path = Path(rel)
+            if (path.is_absolute() or ".." in path.parts or not path.parts
+                    or path.parts[0] not in (".claude", ".codex", ".omi")):
+                raise ValueError("invalid directory path")
+        if "hook" in record:
+            hook = record["hook"]
+            if (not isinstance(hook, dict) or set(hook) != {"hooks"}
+                    or not isinstance(hook["hooks"], list) or len(hook["hooks"]) != 1):
+                raise ValueError("invalid hook")
+            command = hook["hooks"][0]
+            if (not isinstance(command, dict) or set(command) != {"type", "command"}
+                    or command["type"] != "command" or not isinstance(command["command"], str)
+                    or not command["command"]):
+                raise ValueError("invalid hook command")
+    except (ValueError, TypeError, KeyError) as exc:
+        raise state.StateError(f"invalid install manifest {manifest}") from exc
+
+
 def install_user(remove: bool = False) -> None:
     """Install or remove only tracked user integration, preserving unrelated content."""
     home = Path.home()
@@ -62,21 +122,9 @@ def install_user(remove: bool = False) -> None:
     record = _object(manifest)
     settings = home / ".claude" / "settings.json"
     agents = home / ".codex" / "AGENTS.md"
-    if record:
-        fields = {"skills": dict, "directories": list, "settings_created": bool,
-                  "agents_created": bool, "hooks_created": bool, "session_created": bool,
-                  "hook_added": bool, "block_before": str, "prefix": str, "backup_created": bool}
-        if any(not isinstance(record.get(key), kind) for key, kind in fields.items()) or "settings_before" not in record:
-            raise state.StateError(f"invalid install manifest {manifest}")
-        for rel, item in record["skills"].items():
-            path = Path(rel)
-            if (path.is_absolute() or ".." in path.parts or path.parts[:2] != (".claude", "skills")
-                    or not isinstance(item, dict) or not isinstance(item.get("sha256"), str) or "before" not in item):
-                raise state.StateError(f"invalid install manifest {manifest}")
-        for rel in record["directories"]:
-            path = Path(rel)
-            if path.is_absolute() or ".." in path.parts or not path.parts or path.parts[0] not in (".claude", ".codex", ".omi"):
-                raise state.StateError(f"invalid install manifest {manifest}")
+    if manifest.exists():
+        _validate_manifest(record, manifest)
+    hook = record.get("hook", LEGACY_HOOK) if record else _hook()
     config = _object(settings)
     hooks = config.get("hooks", {})
     if not isinstance(hooks, dict) or not isinstance(hooks.get("SessionStart", []), list):
@@ -96,8 +144,8 @@ def install_user(remove: bool = False) -> None:
                     path.write_bytes(base64.b64decode(item["before"]))
             elif path.exists():
                 print(f"keep modified: {path}")
-        if record["hook_added"] and HOOK in hooks.get("SessionStart", []):
-            hooks["SessionStart"].remove(HOOK)
+        if record["hook_added"] and hook in hooks.get("SessionStart", []):
+            hooks["SessionStart"].remove(hook)
         if record["session_created"] and not hooks.get("SessionStart"):
             hooks.pop("SessionStart", None)
         if record["hooks_created"] and not hooks:
@@ -135,10 +183,10 @@ def install_user(remove: bool = False) -> None:
     if not record:
         record = {"skills": {}, "settings_created": not settings.exists(), "agents_created": not agents.exists(),
                   "hooks_created": "hooks" not in config, "session_created": "SessionStart" not in hooks,
-                  "hook_added": HOOK not in hooks.get("SessionStart", []), "block_before": old_block,
+                  "hook": hook, "hook_added": hook not in hooks.get("SessionStart", []), "block_before": old_block,
                   "prefix": "" if old_block or not text else "\n\n", "directories": [],
                   "settings_before": base64.b64encode(settings.read_bytes()).decode("ascii") if settings.exists() else None,
-                  "backup_created": settings.exists() and not settings.with_name("settings.json.omi-bak").exists() and HOOK not in hooks.get("SessionStart", [])}
+                  "backup_created": settings.exists() and not settings.with_name("settings.json.omi-bak").exists() and hook not in hooks.get("SessionStart", [])}
     # Read all originals before writing anything, including on an upgrade.
     for rel, data in payloads.items():
         path = home / rel
@@ -156,11 +204,12 @@ def install_user(remove: bool = False) -> None:
             if not parent.exists() and rel not in record["directories"]:
                 record["directories"].append(rel)
     record["directories"].sort(key=lambda p: len(Path(p).parts), reverse=True)
+    _json(manifest, record)  # Persist undo data before the first integration write.
     for rel, data in payloads.items():
         _write(home / rel, data)
     updated = {**config, "hooks": {**hooks, "SessionStart": [*hooks.get("SessionStart", [])]}}
-    if HOOK not in updated["hooks"]["SessionStart"]:
-        updated["hooks"]["SessionStart"].append(HOOK)
+    if hook not in updated["hooks"]["SessionStart"]:
+        updated["hooks"]["SessionStart"].append(hook)
     if updated != config:
         backup = settings.with_name("settings.json.omi-bak")
         if settings.exists() and not backup.exists():
@@ -169,5 +218,4 @@ def install_user(remove: bool = False) -> None:
     block = START + "\n" + coordinator_rules().rstrip() + "\n" + END
     text = text.replace(old_block, block, 1) if old_block else text + record["prefix"] + block
     _write(agents, text.encode("utf-8"))
-    _json(manifest, record)
     print("installed omi user integration")
