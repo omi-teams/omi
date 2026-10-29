@@ -10,6 +10,7 @@ from . import catalogs, core, creds, docker, github, hooks, run, scope, state, t
 
 STATUSES = ("in-progress", "review", "blocked", "planned")
 USAGE = """usage: omi <command>
+  attach [<repo path>] [--state <git url>]   register a code repo in detached omi state
   init [dir]   install the squad into a project (never overwrites)
   upgrade [--check | --to vX.Y.Z]   install a newer omi and update the project's unmodified template files (modified ones get <path>.omi-new)
   version      print the omi version and how to check for a newer one (also --version)
@@ -93,20 +94,31 @@ def status(cwd="."):
     docker.print_workers(project)
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> None:
+    try:
+        state.registry()
+        return dispatch(argv)
+    except state.StateError as exc:
+        sys.exit("OMI: " + " ".join(str(exc).splitlines()))
+
+
+def dispatch(argv: list[str] | None = None) -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     args = sys.argv[1:] if argv is None else argv
     cmd, rest = (args[0], args[1:]) if args else ("help", [])
     if cmd in ("upgrade", "skills", "rules", "plans", "references", "agents", "workflows"):
-        root = state.catalog_root(state.resolve(), ".")
+        project = state.resolve()
+        root = state.catalog_root(project, ".")
     if cmd in ("version", "--version"):
         print(f"omi {core.version()}\nlatest: python -m omi upgrade --check")
+    elif cmd == "attach":
+        upgrade.attach(rest)
     elif cmd == "init":
         target = rest[0] if rest else "."
         project = state.resolve(target)
         upgrade.init(state.catalog_root(project, target), detached=project.detached)
     elif cmd == "upgrade":
-        sys.exit(upgrade.upgrade_cmd(rest, root))
+        sys.exit(upgrade.upgrade_cmd(rest, root, detached=project.detached))
     elif cmd == "template-shas" and len(rest) == 2:
         upgrade.template_shas_cmd(*rest)
     elif cmd == "status":

@@ -19,6 +19,10 @@ omi github [--po]         # (PO, quyền admin; --po: đăng nhập PO trên bro
 claude                    # rồi gõ /omi-idea, /omi-task TASK-001, /omi-status
 ```
 
+Để giữ repo code nguyên vẹn, dùng `omi attach [<repo path>]` (mặc định: thư mục hiện tại, cần remote `origin`). Lệnh tạo và commit `projects/<tên-repo>/project.json`, `.omi/`, `docker/` và hooks trong repo state `~/.omi/state` (đổi bằng `OMI_STATE`), không tạo `AGENTS.md` hay `.claude` ở đó. Tên đã tồn tại bị từ chối trừ khi cùng URL origin; HTTPS và SSH của cùng repo được nhận diện như nhau.
+
+Lần đầu dùng `omi attach --state <git url>` để clone repo state riêng tư; không có URL thì omi khởi tạo repo state và in lệnh thêm private remote. Git cần có `user.name` và `user.email` để commit. Push repo state lên remote; trên máy khác clone nó vào `OMI_STATE` rồi clone repo code: omi nhận diện dự án theo URL origin, không phụ thuộc đường dẫn checkout. Manifest lỗi hoặc URL trùng trong registry khiến mọi lệnh dừng với thông báo `OMI:` nêu file cần sửa.
+
 `omi init` tạo các file sau trong dự án:
 
 | File | Vai trò |

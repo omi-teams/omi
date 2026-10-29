@@ -4016,7 +4016,8 @@ def test_cli_characterization():
         path = gitbin.name
     except OSError:  # Windows without symlink rights: git's own folder holds git alone there
         path = str(git.parent)
-    env = {**os.environ, "PYTHONPATH": src, "PATH": path}
+    env = {**os.environ, "PYTHONPATH": src, "PATH": path, "OMI_STATE": str(Path(gitbin.name) / "state"),
+           "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
 
     def cli(cwd, *args, stdin=""):
         r = subprocess.run([sys.executable, "-m", "omi", *args], cwd=cwd, env=env, input=stdin, capture_output=True,
@@ -4033,7 +4034,7 @@ def test_cli_characterization():
         rc, usage, err = cli(root)
         assert rc == 0 and usage.startswith("usage: omi <command>\n") and not err
         assert [l.split()[0] for l in usage.splitlines()[1:]] == [
-            "init", "upgrade", "version", "status", "guard", "github", "clean", "skills", "skills", "token", "plans",
+            "attach", "init", "upgrade", "version", "status", "guard", "github", "clean", "skills", "skills", "token", "plans",
             "references", "rules", "agents", "workflows", "step", "run", "hook", "parallel", "worker", "worker"]
         # unknown commands and incomplete arguments fall through to the usage text
         for args in (["help"], ["bogus"], ["step", "TASK-001"], ["run", "omi-agent-engineer", "--model"], ["parallel", "X"],
@@ -4115,6 +4116,211 @@ def test_cli_characterization():
         assert "\nstep: build\n" in text and re.search(r"\n## Steps\n- plan started [\d-]+ [\d:]+\n- plan done ", text), text
         rc, out, _ = cli(root, "status")
         assert rc == 0 and "[planned] TASK-001 T1\n" in out
+        assert cli(root, "attach") == (1, "", f"OMI: {root.as_posix()} has no origin remote\n")
+        rc, out, err = cli(root, "attach", "--state")
+        assert (rc, out, err) == (1, "", "OMI: usage: omi attach [<repo path>] [--state <git url>]\n")
+        subprocess.run([str(git), "-C", str(root), "remote", "add", "origin", "https://example.org/team/r.git"], check=True)
+        rc, out, err = cli(root, "attach")
+        assert rc == 0 and "attached: " in out and "private remote: git -C " in out and not err, (rc, out, err)
+        rc, out, err = cli(root, "attach", ".")
+        assert rc == 0 and out.startswith("already attached: ") and not err, (rc, out, err)
+
+
+
+def test_attach_registration():
+    from unittest.mock import patch
+    with tempfile.TemporaryDirectory() as d:
+        base = Path(d).resolve()
+        code, home = base / "code", base / "state"
+        code.mkdir()
+        git(code, "init", "-q", "-b", "main")
+        (code / "app.py").write_text("value = 1\n", encoding="utf-8")
+        git(code, "add", ".")
+        git(code, "commit", "-qm", "initial")
+        git(code, "remote", "add", "origin", "git@EXAMPLE.org:team/sample.git")
+        env = {"OMI_STATE": str(home), "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        before = {p.relative_to(code): p.read_bytes() for p in code.rglob("*") if p.is_file()}
+        with patch.dict(os.environ, env):
+            output = detached_cli(code, "attach")
+            assert "private remote: git -C " in output
+            project = home / "projects" / "sample"
+            assert json.loads((project / "project.json").read_text(encoding="utf-8")) == {"remote": "git@EXAMPLE.org:team/sample.git"}
+            assert not (project / "AGENTS.md").exists() and not (project / ".claude").exists()
+            assert not (project / ".git").exists()
+            wanted = {rel for rel in omi.upgrade.template_map() if rel != "AGENTS.md" and not rel.startswith(".claude/")}
+            assert wanted <= {p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file()}
+            assert (project / ".omi/hooks/post-run.sh").is_file() and (project / "docker/Dockerfile").is_file()
+            assert omi.core.git(home, "status", "--porcelain") == ""
+            assert omi.core.git(home, "log", "-1", "--format=%s") == "omi: attach sample"
+            head = omi.core.git(home, "rev-parse", "HEAD")
+            git(code, "remote", "set-url", "origin", "https://example.org/team/sample")
+            assert "already attached:" in detached_cli(code, "attach", str(code))
+            assert omi.core.git(home, "rev-parse", "HEAD") == head
+            git(code, "remote", "set-url", "origin", "https://other.org/team/sample")
+            try:
+                detached_cli(code, "attach")
+            except AssertionError as exc:
+                assert "project already exists" in str(exc)
+            else:
+                raise AssertionError("project name collision accepted")
+            git(code, "remote", "set-url", "origin", "git@EXAMPLE.org:team/sample.git")
+        assert before == {p.relative_to(code): p.read_bytes() for p in code.rglob("*") if p.is_file()}
+        with patch.dict(os.environ, env):
+            with patch.dict(os.environ, {"OMI_STATE": str(code / "state")}):
+                try:
+                    omi.upgrade.attach([] if Path.cwd() == code else [str(code)])
+                except omi.state.StateError as exc:
+                    assert "outside the code repo" in str(exc)
+                else:
+                    raise AssertionError("state inside code accepted")
+            # Existing staged work in state must not enter the attach commit.
+            (home / "unrelated").write_text("keep staged\n", encoding="utf-8")
+            git(home, "add", "unrelated")
+            git(code, "remote", "set-url", "origin", "https://example.org/team/second.git")
+            detached_cli(code, "attach")
+            assert omi.core.git(home, "diff", "--cached", "--name-only") == "unrelated"
+            assert "unrelated" not in omi.core.git(home, "ls-tree", "--name-only", "HEAD")
+
+
+def test_attach_commit_failure_cleanup():
+    from unittest.mock import patch
+    for existing_commit in (False, True):
+        with detached_project() as (code, project, wt, task):
+            home = project.parent.parent
+            if existing_commit:
+                git(home, "add", ".")
+                git(home, "commit", "-qm", "existing state")
+            (home / "unrelated").write_text("keep staged\n", encoding="utf-8")
+            git(home, "add", "unrelated")
+            staged = omi.core.git(home, "diff", "--cached", "--name-only")
+            git(code, "remote", "set-url", "origin", "https://example.org/team/second.git")
+            before = {p.relative_to(code): p.read_bytes() for p in code.rglob("*") if p.is_file()}
+            empty_config = home.parent / "empty.gitconfig"
+            empty_config.write_text("", encoding="utf-8")
+            # Windows drops empty env values, so remove identities and disable host config.
+            failure_env = {key: value for key, value in os.environ.items()
+                           if not key.startswith(("GIT_AUTHOR_", "GIT_COMMITTER_", "GIT_CONFIG_"))}
+            failure_env.update({"GIT_CONFIG_GLOBAL": str(empty_config), "GIT_CONFIG_NOSYSTEM": "1",
+                                "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "user.useConfigOnly",
+                                "GIT_CONFIG_VALUE_0": "true"})
+            result = subprocess.run([sys.executable, "-m", "omi", "attach"], cwd=code, env=failure_env,
+                                    capture_output=True, encoding="utf-8", errors="replace")
+            assert result.returncode == 1 and "OMI: git" in result.stderr, result
+            assert "identity" in result.stderr.lower() and "Traceback" not in result.stderr, result.stderr
+            assert not (home / "projects/second").exists()
+            assert omi.core.git(home, "diff", "--cached", "--name-only") == staged
+            with patch.dict(os.environ, {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                                         "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}):
+                assert "attached:" in detached_cli(code, "attach")
+            assert omi.core.git(home, "diff", "--cached", "--name-only") == staged
+            assert before == {p.relative_to(code): p.read_bytes() for p in code.rglob("*") if p.is_file()}
+
+
+def test_attach_init_failure_cleanup():
+    from unittest.mock import patch
+    with detached_project() as (code, project, wt, task):
+        home = project.parent.parent
+        git(code, "remote", "set-url", "origin", "https://example.org/team/second.git")
+        real_init = omi.upgrade.init
+
+        def failing_init(target, *, detached=False):
+            real_init(target, detached=detached)
+            raise OSError("template initialization failed")
+
+        with patch.object(omi.upgrade, "init", side_effect=failing_init), contextlib.redirect_stdout(io.StringIO()):
+            try:
+                omi.upgrade.attach([str(code)])
+            except OSError as exc:
+                assert str(exc) == "template initialization failed"
+            else:
+                raise AssertionError("init failure ignored")
+        assert not (home / "projects/second").exists()
+        assert omi.core.git(home, "diff", "--cached", "--name-only") == ""
+        with patch.dict(os.environ, {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                                     "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}):
+            assert "attached:" in detached_cli(code, "attach")
+
+
+def test_malformed_origin_cli():
+    with detached_project() as (code, project, wt, task):
+        remote = "https://[invalid"
+        git(code, "remote", "set-url", "origin", remote)
+        before = {p.relative_to(code): p.read_bytes() for p in code.rglob("*") if p.is_file()}
+        for args in (["status"], ["attach"], ["attach", str(code)]):
+            result = subprocess.run([sys.executable, "-m", "omi", *args], cwd=code,
+                                    capture_output=True, encoding="utf-8", errors="replace")
+            assert result.returncode == 1 and not result.stdout, result
+            assert len(result.stderr.splitlines()) == 1 and result.stderr.startswith("OMI: "), result.stderr
+            assert "invalid origin" in result.stderr and str(code) in result.stderr and remote in result.stderr, result.stderr
+            assert "Traceback" not in result.stderr, result.stderr
+        assert before == {p.relative_to(code): p.read_bytes() for p in code.rglob("*") if p.is_file()}
+
+
+def test_attach_clone_portability():
+    from unittest.mock import patch
+    with tempfile.TemporaryDirectory() as d:
+        base = Path(d).resolve()
+        remote, code, home = base / "private.git", base / "code", base / "state"
+        remote.mkdir()
+        git(remote, "init", "--bare", "-q", "-b", "main")
+        code.mkdir()
+        git(code, "init", "-q", "-b", "main")
+        (code / "app.py").write_text("value = 1\n", encoding="utf-8")
+        git(code, "add", ".")
+        git(code, "commit", "-qm", "initial")
+        git(code, "remote", "add", "origin", "https://example.org/team/sample.git")
+        env = {"OMI_STATE": str(home), "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        with patch.dict(os.environ, env):
+            assert "attached:" in detached_cli(code, "attach", "--state", str(remote))
+            assert omi.core.git(home, "remote", "get-url", "origin") == str(remote)
+            git(home, "push", "-qu", "origin", "main")
+            second_home, fresh = base / "second-state", base / "fresh-code"
+            git(base, "clone", "-q", str(remote), str(second_home))
+            git(base, "clone", "-q", str(code), str(fresh))
+            git(fresh, "remote", "set-url", "origin", "git@EXAMPLE.org:team/sample.git")
+            with patch.dict(os.environ, {"OMI_STATE": str(second_home)}):
+                assert omi.state.resolve(fresh) == omi.state.Project(second_home / "projects/sample", fresh, True)
+                assert "already attached:" in detached_cli(fresh, "attach")
+            # With no override, initialization uses ~/.omi/state.
+            with patch.dict(os.environ), patch.object(Path, "home", return_value=base / "user"):
+                os.environ.pop("OMI_STATE", None)
+                assert "private remote:" in detached_cli(code, "attach")
+                assert (base / "user/.omi/state/projects/sample/project.json").is_file()
+
+
+def test_invalid_registry_cli():
+    with detached_project() as (code, project, wt, task):
+        manifest = project / "project.json"
+        commands = [[], ["help"], ["version"], ["--version"], ["init"], ["attach"], ["upgrade", "--apply"],
+                    ["status"], ["guard"], ["github"], ["clean"], ["skills"], ["rules"], ["plans"], ["references"],
+                    ["agents"], ["workflows"], ["step", "TASK-097", "next"], ["run", "omi-agent-engineer", "TASK-097"],
+                    ["hook", "post-run", "TASK-097"], ["parallel", "A", "B"], ["worker", "x"], ["token", "set"],
+                    ["template-shas", "x", "v1.0.0"]]
+        duplicate = project.parent / "duplicate/project.json"
+        duplicate.parent.mkdir()
+        for data in (b"{", b"[]", b'{"remote":""}', b'{"remote":"https://[invalid"}', b'\xff', b'{"remote":"https://example.org/team/sample.git"}'):
+            duplicate.write_bytes(data)
+            for args in commands:
+                out = io.StringIO()
+                with contextlib.chdir(code), contextlib.redirect_stdout(out):
+                    try:
+                        omi.cli.main(args)
+                    except SystemExit as exc:
+                        message = str(exc.code)
+                        assert len(message.splitlines()) == 1 and message.startswith("OMI: "), (args, message)
+                        assert str(duplicate) in message, (args, message)
+                    else:
+                        raise AssertionError(f"invalid registry accepted by {args}")
+                assert not out.getvalue(), (args, out.getvalue())
+            result = subprocess.run([sys.executable, "-m", "omi", "status"], cwd=code,
+                                    capture_output=True, encoding="utf-8", errors="replace")
+            assert result.returncode == 1 and result.stdout == "", result
+            assert len(result.stderr.splitlines()) == 1 and result.stderr.startswith("OMI: "), result.stderr
+            assert str(duplicate) in result.stderr and "Traceback" not in result.stderr, result.stderr
+            if data.startswith(b'{"remote":"https:') and b"invalid" not in data:
+                assert str(manifest) in result.stderr
 
 
 
@@ -4247,6 +4453,7 @@ def test_detached_project_commands():
         assert not (project / ".git").exists()
         assert omi.core.main_checkout(project) == project.parents[1]
         detached_cli(code, "upgrade", "--apply")
+        assert not (project / "AGENTS.md").exists() and not (project / ".claude").exists()
         assert (project / ".omi" / "version").read_text(encoding="utf-8").strip() == omi.core.version()
         def github_call(po):
             assert Path.cwd() == code and not po
@@ -4376,6 +4583,12 @@ def test_detached_default_hook_config():
 
 
 if __name__ == "__main__":
+    test_attach_registration()
+    test_attach_commit_failure_cleanup()
+    test_attach_init_failure_cleanup()
+    test_malformed_origin_cli()
+    test_attach_clone_portability()
+    test_invalid_registry_cli()
     test_detached_resolution()
     test_detached_commands_and_steps()
     test_detached_project_commands()
