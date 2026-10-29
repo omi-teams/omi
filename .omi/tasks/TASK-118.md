@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-refactor
-step:
+step: baseline
 ---
 ## Goal
 The 5050-line `tests/test_omi.py` becomes several `tests/test_<area>.py` files (for example upgrade, install, attach/detached, init, github, worker, tasks, cli) with shared fakes in `tests/helpers.py`, so later tasks touch separate test files and can run in parallel. No product code changes.
@@ -25,7 +25,13 @@ The 5050-line `tests/test_omi.py` becomes several `tests/test_<area>.py` files (
 - [ ] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
+Baseline (Coordinator, development a426da4+): `python tests/test_omi.py` -> ok on the Windows host and in CI; 91 top-level `def test_` functions in tests/test_omi.py (`grep -c "^def test_" tests/test_omi.py`). Keep that set of names identical after the split.
 Done:
 Not done:
 Tests:
 Next:
+
+## Steps
+- plan started 2026-10-29 14:54
+- plan done 2026-10-29 14:54
+- baseline started 2026-10-29 14:54
