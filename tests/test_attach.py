@@ -31,15 +31,15 @@ def test_attach_registration():
             assert json.loads((project / "project.json").read_text(encoding="utf-8")) == {"remote": "git@EXAMPLE.org:team/sample.git"}
             assert not (project / "AGENTS.md").exists() and not (project / ".claude").exists()
             assert not (project / ".git").exists()
-            wanted = {rel for rel in omi.upgrade.template_map() if rel != "AGENTS.md" and not rel.startswith(".claude/")}
+            wanted = {rel for rel in omi.setup.upgrade.template_map() if rel != "AGENTS.md" and not rel.startswith(".claude/")}
             assert wanted <= {p.relative_to(project).as_posix() for p in project.rglob("*") if p.is_file()}
             assert (project / ".omi/hooks/post-run.sh").is_file() and (project / "docker/Dockerfile").is_file()
-            assert omi.core.git(home, "status", "--porcelain") == ""
-            assert omi.core.git(home, "log", "-1", "--format=%s") == "omi: attach sample"
-            head = omi.core.git(home, "rev-parse", "HEAD")
+            assert omi.common.core.git(home, "status", "--porcelain") == ""
+            assert omi.common.core.git(home, "log", "-1", "--format=%s") == "omi: attach sample"
+            head = omi.common.core.git(home, "rev-parse", "HEAD")
             git(code, "remote", "set-url", "origin", "https://example.org/team/sample")
             assert "already attached:" in detached_cli(code, "attach", str(code))
-            assert omi.core.git(home, "rev-parse", "HEAD") == head
+            assert omi.common.core.git(home, "rev-parse", "HEAD") == head
             git(code, "remote", "set-url", "origin", "https://other.org/team/sample")
             try:
                 detached_cli(code, "attach")
@@ -52,8 +52,8 @@ def test_attach_registration():
         with patch.dict(os.environ, env):
             with patch.dict(os.environ, {"OMI_STATE": str(code / "state")}):
                 try:
-                    omi.upgrade.attach([] if Path.cwd() == code else [str(code)])
-                except omi.state.StateError as exc:
+                    omi.setup.attach.attach([] if Path.cwd() == code else [str(code)])
+                except omi.state.resolve.StateError as exc:
                     assert "outside the code repo" in str(exc)
                 else:
                     raise AssertionError("state inside code accepted")
@@ -62,8 +62,8 @@ def test_attach_registration():
             git(home, "add", "unrelated")
             git(code, "remote", "set-url", "origin", "https://example.org/team/second.git")
             detached_cli(code, "attach")
-            assert omi.core.git(home, "diff", "--cached", "--name-only") == "unrelated"
-            assert "unrelated" not in omi.core.git(home, "ls-tree", "--name-only", "HEAD")
+            assert omi.common.core.git(home, "diff", "--cached", "--name-only") == "unrelated"
+            assert "unrelated" not in omi.common.core.git(home, "ls-tree", "--name-only", "HEAD")
 
 
 def test_detached_in_repo_warning():
@@ -82,13 +82,13 @@ def test_detached_in_repo_warning():
             git(code, "remote", "set-url", "origin", "https://example.org/team/second.git")
             before = {p.relative_to(code): p.read_bytes() for p in code.rglob("*")
                       if p.is_file() and ".git" not in p.relative_to(code).parts}
-            staged = omi.core.git(code, "diff", "--cached")
+            staged = omi.common.core.git(code, "diff", "--cached")
             warning = "WARN: in-repo omi files ignored (detached): " + expected
             for cwd, args in ((code, ("attach",)), (wt, ("attach", str(wt))),
                               (code, ("status",)), (wt, ("status",))):
                 output = detached_cli(cwd, *args)
                 assert [line for line in output.splitlines() if line.startswith("WARN:")] == [warning], output
-            assert staged == omi.core.git(code, "diff", "--cached")
+            assert staged == omi.common.core.git(code, "diff", "--cached")
             assert before == {p.relative_to(code): p.read_bytes() for p in code.rglob("*")
                               if p.is_file() and ".git" not in p.relative_to(code).parts}
             second = project.parent / "second"
@@ -129,31 +129,31 @@ def test_in_repo_status_unchanged():
 def test_attach_push_success():
     with detached_project() as (code, project, wt, task):
         home, remote, other = state_remote(project)
-        previous = omi.core.git(home, "rev-parse", "HEAD")
+        previous = omi.common.core.git(home, "rev-parse", "HEAD")
         git(code, "remote", "set-url", "origin", "https://example.org/team/second.git")
         output = detached_cli(code, "attach")
-        head = omi.core.git(home, "rev-parse", "HEAD")
+        head = omi.common.core.git(home, "rev-parse", "HEAD")
         assert head != previous and "STATE NOT PUSHED" not in output
-        assert omi.core.git(remote, "rev-parse", "refs/heads/main") == head
-        assert omi.core.git(home, "status", "--porcelain") == ""
+        assert omi.common.core.git(remote, "rev-parse", "refs/heads/main") == head
+        assert omi.common.core.git(home, "status", "--porcelain") == ""
 
 
 def test_attach_push_failure():
     with detached_project() as (code, project, wt, task):
         home, remote, other = state_remote(project)
-        previous = omi.core.git(home, "rev-parse", "HEAD")
+        previous = omi.common.core.git(home, "rev-parse", "HEAD")
         git(home, "remote", "set-url", "origin", str(home.parent / "missing.git"))
         git(code, "remote", "set-url", "origin", "https://example.org/team/second.git")
         output = detached_cli(code, "attach")
         assert output.count("STATE NOT PUSHED: run omi sync") == 1
-        assert omi.core.git(home, "rev-parse", "HEAD^") == previous
-        assert omi.core.git(home, "log", "-1", "--format=%s") == "omi: attach second"
+        assert omi.common.core.git(home, "rev-parse", "HEAD^") == previous
+        assert omi.common.core.git(home, "log", "-1", "--format=%s") == "omi: attach second"
         assert (home / "projects/second/project.json").is_file()
-        assert omi.core.git(home, "status", "--porcelain") == ""
-        assert omi.core.git(remote, "rev-parse", "refs/heads/main") == previous
+        assert omi.common.core.git(home, "status", "--porcelain") == ""
+        assert omi.common.core.git(remote, "rev-parse", "refs/heads/main") == previous
         git(home, "remote", "set-url", "origin", str(remote))
         assert "state synced" in detached_cli(code, "sync")
-        assert omi.core.git(remote, "rev-parse", "refs/heads/main") == omi.core.git(home, "rev-parse", "HEAD")
+        assert omi.common.core.git(remote, "rev-parse", "refs/heads/main") == omi.common.core.git(home, "rev-parse", "HEAD")
 
 
 def test_attach_development_created():
@@ -163,15 +163,15 @@ def test_attach_development_created():
             git(code, "update-ref", "refs/remotes/origin/development", "HEAD")
             if not registered:
                 git(code, "remote", "set-url", "origin", "https://example.org/team/second.git")
-            head = omi.core.git(code, "rev-parse", "HEAD")
+            head = omi.common.core.git(code, "rev-parse", "HEAD")
             before = {p.relative_to(code): p.read_bytes() for p in code.rglob("*")
                       if p.is_file() and ".git" not in p.relative_to(code).parts}
             output = detached_cli(code, "attach")
             assert output.splitlines().count("created development tracking origin/development") == 1
-            assert omi.core.git(code, "rev-parse", "development") == head
-            assert omi.core.git(code, "for-each-ref", "--format=%(upstream:short)", "refs/heads/development") == "origin/development"
-            assert omi.core.git(code, "symbolic-ref", "--short", "HEAD") == "main"
-            assert omi.core.git(code, "rev-parse", "HEAD") == head
+            assert omi.common.core.git(code, "rev-parse", "development") == head
+            assert omi.common.core.git(code, "for-each-ref", "--format=%(upstream:short)", "refs/heads/development") == "origin/development"
+            assert omi.common.core.git(code, "symbolic-ref", "--short", "HEAD") == "main"
+            assert omi.common.core.git(code, "rev-parse", "HEAD") == head
             assert before == {p.relative_to(code): p.read_bytes() for p in code.rglob("*")
                               if p.is_file() and ".git" not in p.relative_to(code).parts}
             assert "created development" not in detached_cli(code, "attach")
@@ -179,7 +179,7 @@ def test_attach_development_created():
 
 def test_attach_development_present():
     with detached_project() as (code, project, wt, task):
-        head = omi.core.git(code, "rev-parse", "HEAD")
+        head = omi.common.core.git(code, "rev-parse", "HEAD")
         git(code, "checkout", "-qb", "main")
         git(code, "commit", "--allow-empty", "-qm", "remote development")
         git(code, "update-ref", "refs/remotes/origin/development", "HEAD")
@@ -188,8 +188,8 @@ def test_attach_development_present():
         git(code, "remote", "set-url", "origin", "https://example.org/team/second.git")
         before = {p.relative_to(code): p.read_bytes() for p in code.rglob("*") if p.is_file()}
         assert "created development" not in detached_cli(code, "attach")
-        assert omi.core.git(code, "rev-parse", "development") == head
-        assert omi.core.git(code, "config", "branch.development.merge") == "refs/heads/main"
+        assert omi.common.core.git(code, "rev-parse", "development") == head
+        assert omi.common.core.git(code, "config", "branch.development.merge") == "refs/heads/main"
         assert before == {p.relative_to(code): p.read_bytes() for p in code.rglob("*") if p.is_file()}
 
 
@@ -203,7 +203,7 @@ def test_attach_commit_failure_cleanup():
                 git(home, "commit", "-qm", "existing state")
             (home / "unrelated").write_text("keep staged\n", encoding="utf-8")
             git(home, "add", "unrelated")
-            staged = omi.core.git(home, "diff", "--cached", "--name-only")
+            staged = omi.common.core.git(home, "diff", "--cached", "--name-only")
             git(code, "remote", "set-url", "origin", "https://example.org/team/second.git")
             before = {p.relative_to(code): p.read_bytes() for p in code.rglob("*") if p.is_file()}
             empty_config = home.parent / "empty.gitconfig"
@@ -219,11 +219,11 @@ def test_attach_commit_failure_cleanup():
             assert result.returncode == 1 and "OMI: git" in result.stderr, result
             assert "identity" in result.stderr.lower() and "Traceback" not in result.stderr, result.stderr
             assert not (home / "projects/second").exists()
-            assert omi.core.git(home, "diff", "--cached", "--name-only") == staged
+            assert omi.common.core.git(home, "diff", "--cached", "--name-only") == staged
             with patch.dict(os.environ, {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
                                          "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}):
                 assert "attached:" in detached_cli(code, "attach")
-            assert omi.core.git(home, "diff", "--cached", "--name-only") == staged
+            assert omi.common.core.git(home, "diff", "--cached", "--name-only") == staged
             assert before == {p.relative_to(code): p.read_bytes() for p in code.rglob("*") if p.is_file()}
 
 
@@ -232,21 +232,21 @@ def test_attach_init_failure_cleanup():
     with detached_project() as (code, project, wt, task):
         home = project.parent.parent
         git(code, "remote", "set-url", "origin", "https://example.org/team/second.git")
-        real_init = omi.upgrade.init
+        real_init = omi.setup.upgrade.init
 
         def failing_init(target, *, detached=False):
             real_init(target, detached=detached)
             raise OSError("template initialization failed")
 
-        with patch.object(omi.upgrade, "init", side_effect=failing_init), contextlib.redirect_stdout(io.StringIO()):
+        with patch.object(omi.setup.upgrade, "init", side_effect=failing_init), contextlib.redirect_stdout(io.StringIO()):
             try:
-                omi.upgrade.attach([str(code)])
+                omi.setup.attach.attach([str(code)])
             except OSError as exc:
                 assert str(exc) == "template initialization failed"
             else:
                 raise AssertionError("init failure ignored")
         assert not (home / "projects/second").exists()
-        assert omi.core.git(home, "diff", "--cached", "--name-only") == ""
+        assert omi.common.core.git(home, "diff", "--cached", "--name-only") == ""
         with patch.dict(os.environ, {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
                                      "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}):
             assert "attached:" in detached_cli(code, "attach")
@@ -287,15 +287,15 @@ def test_attach_clone_portability():
                "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
         with patch.dict(os.environ, env):
             assert "attached:" in detached_cli(code, "attach", "--state", str(remote))
-            assert omi.core.git(home, "remote", "get-url", "origin") == str(remote)
-            assert omi.core.git(home, "rev-parse", "--abbrev-ref", "@{upstream}") == "origin/main"
-            assert omi.core.git(remote, "rev-parse", "refs/heads/main") == omi.core.git(home, "rev-parse", "HEAD")
+            assert omi.common.core.git(home, "remote", "get-url", "origin") == str(remote)
+            assert omi.common.core.git(home, "rev-parse", "--abbrev-ref", "@{upstream}") == "origin/main"
+            assert omi.common.core.git(remote, "rev-parse", "refs/heads/main") == omi.common.core.git(home, "rev-parse", "HEAD")
             second_home, fresh = base / "second-state", base / "fresh-code"
             git(base, "clone", "-q", str(remote), str(second_home))
             git(base, "clone", "-q", str(code), str(fresh))
             git(fresh, "remote", "set-url", "origin", "git@EXAMPLE.org:team/sample.git")
             with patch.dict(os.environ, {"OMI_STATE": str(second_home)}):
-                assert omi.state.resolve(fresh) == omi.state.Project(second_home / "projects/sample", fresh, True)
+                assert omi.state.resolve.resolve(fresh) == omi.state.resolve.Project(second_home / "projects/sample", fresh, True)
                 assert "already attached:" in detached_cli(fresh, "attach")
             # With no override, initialization uses ~/.omi/state.
             with patch.dict(os.environ), patch.object(Path, "home", return_value=base / "user"):
@@ -320,7 +320,7 @@ def test_invalid_registry_cli():
                 out = io.StringIO()
                 with contextlib.chdir(code), contextlib.redirect_stdout(out):
                     try:
-                        omi.cli.main(args)
+                        omi.app.cli.main(args)
                     except SystemExit as exc:
                         message = str(exc.code)
                         assert len(message.splitlines()) == 1 and message.startswith("OMI: "), (args, message)
@@ -354,17 +354,17 @@ def test_state_sync():
         leftover = project / ".omi" / "decisions.md"
         leftover.write_text("manual decision", encoding="utf-8")
         detached_cli(wt, "step", task.stem, "next")
-        assert omi.core.git(home, "show", "--format=", "--name-only", "HEAD") == task.relative_to(home).as_posix()
-        assert omi.core.git(home, "log", "-1", "--format=%s") == "chore(sample): step state"
-        assert omi.core.git(home, "diff", "--cached", "--name-only") == "unrelated.txt"
-        assert omi.core.git(home, "rev-parse", "HEAD") == omi.core.git(other, "ls-remote", "origin", "refs/heads/main").split()[0]
+        assert omi.common.core.git(home, "show", "--format=", "--name-only", "HEAD") == task.relative_to(home).as_posix()
+        assert omi.common.core.git(home, "log", "-1", "--format=%s") == "chore(sample): step state"
+        assert omi.common.core.git(home, "diff", "--cached", "--name-only") == "unrelated.txt"
+        assert omi.common.core.git(home, "rev-parse", "HEAD") == omi.common.core.git(other, "ls-remote", "origin", "refs/heads/main").split()[0]
         # A failed push leaves the command's local commit intact.
         git(home, "remote", "set-url", "origin", str(remote.parent / "missing.git"))
         out = detached_cli(code, "step", task.stem, "done")
         assert "STATE NOT PUSHED: run omi sync" in out
-        kept = omi.core.git(home, "rev-parse", "HEAD")
+        kept = omi.common.core.git(home, "rev-parse", "HEAD")
         assert "state pull skipped:" in detached_cli(code, "status")
-        assert omi.core.git(home, "rev-parse", "HEAD") == kept
+        assert omi.common.core.git(home, "rev-parse", "HEAD") == kept
         try:
             detached_cli(code, "sync")
         except AssertionError as exc:
@@ -375,9 +375,9 @@ def test_state_sync():
         unrelated.write_text("updated elsewhere", encoding="utf-8")
         leftover.write_text("updated decision", encoding="utf-8")
         assert "state synced" in detached_cli(code, "sync")
-        assert omi.core.git(home, "status", "--porcelain") == ""
-        assert omi.core.git(home, "rev-parse", "HEAD") == omi.core.git(other, "ls-remote", "origin", "refs/heads/main").split()[0]
-        assert set(omi.core.git(home, "show", "--format=", "--name-only", "HEAD").splitlines()) == {
+        assert omi.common.core.git(home, "status", "--porcelain") == ""
+        assert omi.common.core.git(home, "rev-parse", "HEAD") == omi.common.core.git(other, "ls-remote", "origin", "refs/heads/main").split()[0]
+        assert set(omi.common.core.git(home, "show", "--format=", "--name-only", "HEAD").splitlines()) == {
             "unrelated.txt", leftover.relative_to(home).as_posix()}
         # Manual task start/done and plan/decision edits are picked up together.
         task.write_text(task.read_text(encoding="utf-8").replace("status: in-progress", "status: done"), encoding="utf-8")
@@ -385,26 +385,26 @@ def test_state_sync():
         plan.write_text("plan update", encoding="utf-8")
         leftover.write_text("decision update", encoding="utf-8")
         assert "state synced" in detached_cli(code, "sync")
-        assert omi.core.git(home, "status", "--porcelain") == ""
+        assert omi.common.core.git(home, "status", "--porcelain") == ""
         # Both staged and unstaged deletions are committed by sync.
         git(home, "rm", "--", plan.relative_to(home).as_posix())
         leftover.unlink()
         assert "state synced" in detached_cli(code, "sync")
-        assert omi.core.git(home, "status", "--porcelain") == ""
+        assert omi.common.core.git(home, "status", "--porcelain") == ""
         # Offline exceptions and a repository without a remote both remain readable.
-        real_git = omi.state_sync.git
+        real_git = omi.state.sync.git
         def offline(root, *args):
             if args[0] == "pull":
-                raise omi.state.StateError("offline")
+                raise omi.state.resolve.StateError("offline")
             return real_git(root, *args)
-        with patch.object(omi.state_sync, "git", side_effect=offline):
+        with patch.object(omi.state.sync, "git", side_effect=offline):
             assert "state pull skipped: offline" in detached_cli(code, "status")
         git(home, "remote", "remove", "origin")
         assert "state pull skipped: no remote" in detached_cli(code, "status")
         assert "state synced" in detached_cli(code, "sync")
         git(home, "remote", "add", "origin", str(remote))
         assert "state synced" in detached_cli(code, "sync")
-        assert omi.core.git(home, "rev-parse", "--abbrev-ref", "@{upstream}") == "origin/main"
+        assert omi.common.core.git(home, "rev-parse", "--abbrev-ref", "@{upstream}") == "origin/main"
 
 
 def test_state_sync_conflict():
@@ -417,7 +417,7 @@ def test_state_sync_conflict():
             git(root, "add", ".")
             git(root, "commit", "-qm", title)
         git(other, "push", "-q")
-        remote_head = omi.core.git(other, "rev-parse", "HEAD")
+        remote_head = omi.common.core.git(other, "rev-parse", "HEAD")
         leftover = home / "uncommitted.txt"
         leftover.write_text("keep untouched", encoding="utf-8")
         for attempt in range(2):
@@ -427,10 +427,10 @@ def test_state_sync_conflict():
                 assert "state rebase conflict:" in str(exc) and "TASK-097.md" in str(exc), exc
             else:
                 raise AssertionError("conflict accepted")
-            assert omi.core.git(other, "ls-remote", "origin", "refs/heads/main").split()[0] == remote_head
+            assert omi.common.core.git(other, "ls-remote", "origin", "refs/heads/main").split()[0] == remote_head
             assert leftover.read_text(encoding="utf-8") == "keep untouched"
-            assert omi.core.git(home, "ls-files", "--", "uncommitted.txt") == ""
-        assert omi.core.git(home, "diff", "--name-only", "--diff-filter=U") == task.relative_to(home).as_posix()
+            assert omi.common.core.git(home, "ls-files", "--", "uncommitted.txt") == ""
+        assert omi.common.core.git(home, "diff", "--name-only", "--diff-filter=U") == task.relative_to(home).as_posix()
 
 
 def main():

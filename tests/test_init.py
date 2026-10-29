@@ -12,24 +12,24 @@ from helpers import omi, git
 
 
 def test_step_settings_format_and_docs():
-    assert omi.run.parse_step_settings("") == {}
-    assert omi.run.parse_step_settings("architect=codex/opus/high, review=claude//") == {
+    assert omi.worker.run.parse_step_settings("") == {}
+    assert omi.worker.run.parse_step_settings("architect=codex/opus/high, review=claude//") == {
         "architect": {"tool": "codex", "model": "opus", "effort": "high"},
         "review": {"tool": "claude", "model": "", "effort": ""},
     }
-    assert omi.run.parse_step_settings("build=//") == {"build": {"tool": "", "model": "", "effort": ""}}
+    assert omi.worker.run.parse_step_settings("build=//") == {"build": {"tool": "", "model": "", "effort": ""}}
     for value in ("review", "review=claude/opus", "=claude//", "review=claude///", "review=claude//,",
                   "review=claude//, review=codex//", "review=claude/o pus/high"):
         try:
-            omi.run.parse_step_settings(value)
+            omi.worker.run.parse_step_settings(value)
             raise AssertionError(f"accepted malformed entry: {value}")
         except SystemExit as exc:
             assert "expected <step>=<tool>/<model>/<effort>, ..." in str(exc)
     root = Path(__file__).parents[1]
-    for path in (root / ".omi/tasks/_template.md", omi.core.TEMPLATE / "dot-omi/tasks/_template.md"):
+    for path in (root / ".omi/tasks/_template.md", omi.common.core.TEMPLATE / "dot-omi/tasks/_template.md"):
         lines = path.read_text(encoding="utf-8").splitlines()
         assert len([line for line in lines if line.startswith("step_settings:  #")]) == 1
-    for path in (root / "AGENTS.md", omi.core.TEMPLATE / "AGENTS.md"):
+    for path in (root / "AGENTS.md", omi.common.core.TEMPLATE / "AGENTS.md"):
         line = next(line for line in path.read_text(encoding="utf-8").splitlines() if line.startswith("Tool per run:"))
         assert line.index("defaults") < line.index("role file") < line.index("task `tool/model/effort`") < line.index("step_settings:") < line.index("omi run --tool/--model/--effort")
     readme = (root / "README.md").read_text(encoding="utf-8")
@@ -42,7 +42,7 @@ def test_init_symlink_manifest():
     with tempfile.TemporaryDirectory() as d:
         root = Path(d) / "project"
         with contextlib.redirect_stdout(io.StringIO()):
-            omi.upgrade.init(root)
+            omi.setup.upgrade.init(root)
         outside = Path(d) / "outside.json"
         outside.write_bytes(b'{"keep": 1}\n')
         try:
@@ -54,7 +54,7 @@ def test_init_symlink_manifest():
             return
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            omi.upgrade.init(root)
+            omi.setup.upgrade.init(root)
         assert outside.read_bytes() == b'{"keep": 1}\n'
         assert "skip (symlink): .omi/manifest.json" in out.getvalue()
         assert "skip (symlink): .omi/version" in out.getvalue()
@@ -78,11 +78,11 @@ def test_init_symlink_destinations():
             print("skip init symlink destinations: symlink creation unavailable")
             return
         with contextlib.redirect_stdout(io.StringIO()) as out:
-            omi.upgrade.init(root)
+            omi.setup.upgrade.init(root)
         assert not missing.exists()
         assert list(outside.iterdir()) == [existing]
         assert existing.read_bytes() == b"keep existing contents\n"
-        files = omi.upgrade.read_manifest(root)
+        files = omi.setup.upgrade.read_manifest(root)
         for rel in ("AGENTS.md", "docker/Dockerfile", "docker/prove.sh", "docker/proxy.py", ".claude/settings.json"):
             assert f"skip (symlink): {rel}" in out.getvalue()
             assert rel not in files
@@ -92,7 +92,7 @@ def test_init_symlink_destinations():
 def test_invalid_manifest_recovery():
     invalid = ("{broken", "[]", "null", '"manifest"', "42", "true",
                '{"files": null}', '{"files": []}', '{"files": "hashes"}', '{"files": 42}', '{"files": true}')
-    for operation in (omi.upgrade.init, omi.upgrade.upgrade_apply):
+    for operation in (omi.setup.upgrade.init, omi.setup.upgrade.upgrade_apply):
         for contents in invalid:
             with tempfile.TemporaryDirectory() as d:
                 root = Path(d)
@@ -101,7 +101,7 @@ def test_invalid_manifest_recovery():
                 manifest.parent.mkdir()
                 manifest.write_text(contents, encoding="utf-8")
                 with contextlib.redirect_stdout(io.StringIO()) as out:
-                    assert omi.upgrade.read_manifest(root) == {}
+                    assert omi.setup.upgrade.read_manifest(root) == {}
                 assert len(out.getvalue().splitlines()) == 1
                 assert "warning:" in out.getvalue() and "manifest" in out.getvalue()
                 edited = root / "AGENTS.md"
@@ -112,35 +112,35 @@ def test_invalid_manifest_recovery():
                 assert edited.read_text(encoding="utf-8") == "local edits\n"
                 files = json.loads(manifest.read_text(encoding="utf-8"))["files"]
                 assert "AGENTS.md" not in files
-                assert files["docker/Dockerfile"] == omi.upgrade.template_shas()["docker/Dockerfile"]
-                if operation is omi.upgrade.upgrade_apply:
-                    assert (root / "AGENTS.md.omi-new").read_bytes() == (omi.core.TEMPLATE / "AGENTS.md").read_bytes()
+                assert files["docker/Dockerfile"] == omi.setup.upgrade.template_shas()["docker/Dockerfile"]
+                if operation is omi.setup.upgrade.upgrade_apply:
+                    assert (root / "AGENTS.md.omi-new").read_bytes() == (omi.common.core.TEMPLATE / "AGENTS.md").read_bytes()
 
 
 def test_init_fresh_project():
     with tempfile.TemporaryDirectory() as d:
         root = Path(d).resolve()
         (root / ".gitignore").write_text("*.log")
-        omi.upgrade.init(root)
+        omi.setup.upgrade.init(root)
         for kind in ("skills", "agents", "workflows", "references"):
             assert (root / ".omi" / kind / "CATALOG.md").exists(), kind
         assert (root / ".gitignore").read_text().splitlines() == ["*.log", "__pycache__/", ".omi-cache/"]
-        omi.upgrade.init(root)
+        omi.setup.upgrade.init(root)
         assert (root / ".gitignore").read_text().splitlines() == ["*.log", "__pycache__/", ".omi-cache/"]
         assert (root / ".gitattributes").read_text() == "* text=auto eol=lf\n"
         (root / ".gitattributes").write_text("custom\n")
-        omi.upgrade.init(root)
+        omi.setup.upgrade.init(root)
         assert (root / ".gitattributes").read_text() == "custom\n"
         assert '"test"' in (root / ".omi" / "config.json").read_text()
     with tempfile.TemporaryDirectory() as d:
-        omi.upgrade.init(d)
+        omi.setup.upgrade.init(d)
         assert (Path(d) / ".gitignore").read_text() == "__pycache__/\n.omi-cache/\n"
         (Path(d) / "tests").mkdir()
         (Path(d) / "tests" / "test_a.py").write_text("raise SystemExit(3)")
         real = importlib.util.find_spec
         importlib.util.find_spec = lambda n: None
         try:
-            cmd = omi.run.test_command(d, d)
+            cmd = omi.worker.run.test_command(d, d)
         finally:
             importlib.util.find_spec = real
         assert "pytest" not in cmd
@@ -150,23 +150,23 @@ def test_init_fresh_project():
         (Path(d) / "tests" / "test_b.py").write_text("import os,signal;os.kill(os.getpid(),signal.SIGKILL)")
         assert subprocess.run(cmd, cwd=d).returncode == 1, "a child killed by a signal must fail the run"
         (Path(d) / "tests" / "test_b.py").unlink()
-        line = omi.run.test_prompt_line(d, d)
+        line = omi.worker.run.test_prompt_line(d, d)
         assert shlex.split(line) == [("python3" if a == sys.executable else a) for a in cmd], line
     with tempfile.TemporaryDirectory() as d:
         for existing in ("__pycache__", "/__pycache__/", "__pycache__/"):
             (Path(d) / ".gitignore").write_text(existing + "\n")
-            omi.upgrade.init(d)
+            omi.setup.upgrade.init(d)
             assert (Path(d) / ".gitignore").read_text() == existing + "\n.omi-cache/\n", existing
 
 
 def test_init_guard_status():
     with tempfile.TemporaryDirectory() as d:
         root = Path(d).resolve()
-        omi.upgrade.init(root)
+        omi.setup.upgrade.init(root)
         assert (root / ".claude" / "settings.json").exists()
         assert (root / "AGENTS.md").exists() and not (root / "CLAUDE.md").exists()
         (root / "AGENTS.md").write_text("custom")
-        omi.upgrade.init(root)
+        omi.setup.upgrade.init(root)
         assert (root / "AGENTS.md").read_text() == "custom", "init must not overwrite"
 
         tasks = root / ".omi" / "tasks"
@@ -180,7 +180,7 @@ def test_init_guard_status():
         def guard(path, agent=None):
             payload = {"tool_input": {"file_path": str(path)}, "cwd": str(root), "hook_event_name": "PreToolUse",
                        "tool_name": "Write", **({"agent_id": "a1b2c3", "agent_type": agent} if agent else {})}
-            return omi.scope.guard(io.BytesIO(json.dumps(payload).encode()))
+            return omi.project.scope.guard(io.BytesIO(json.dumps(payload).encode()))
 
         assert guard(root / "README.md") == 0, "no task running: main checkout is free"
 
@@ -217,7 +217,7 @@ def test_init_guard_status():
         out = io.StringIO()
         sys.stdout, real = out, sys.stdout
         try:
-            omi.cli.status(root)
+            omi.app.cli.status(root)
         finally:
             sys.stdout = real
         text = out.getvalue()
@@ -228,7 +228,7 @@ def test_init_guard_status():
         out.truncate(0); out.seek(0)
         sys.stdout = out
         try:
-            omi.cli.status(root)
+            omi.app.cli.status(root)
         finally:
             sys.stdout = real
         assert "TASK-001 A (step: build)" in out.getvalue(), out.getvalue()
@@ -237,7 +237,7 @@ def test_init_guard_status():
             out = io.StringIO()
             sys.stdout, real = out, sys.stdout
             try:
-                omi.cli.status(root)
+                omi.app.cli.status(root)
             finally:
                 sys.stdout = real
             return out.getvalue()
@@ -261,13 +261,13 @@ def test_init_guard_status():
 
 
 def test_template_docker():
-    d = omi.core.TEMPLATE / "docker"
+    d = omi.common.core.TEMPLATE / "docker"
     text = (d / "Dockerfile").read_text()
     assert "python3" in text and "@anthropic-ai/claude-code@2." in text and (d / "prove.sh").exists()
-    pins = json.loads((omi.core.TEMPLATE / "dot-omi" / "config.json").read_text())["cli_versions"]
+    pins = json.loads((omi.common.core.TEMPLATE / "dot-omi" / "config.json").read_text())["cli_versions"]
     assert f"@openai/codex@{pins['codex']}" in text and f"claude-code@{pins['claude']}" in text
-    assert pins["codex"] in (omi.core.TEMPLATE.parents[2] / "README.md").read_text(encoding="utf-8")
-    assert "api.openai.com" not in json.loads((omi.core.TEMPLATE / "dot-omi" / "config.json").read_text())["network_allow"]
+    assert pins["codex"] in (omi.common.core.TEMPLATE.parents[2] / "README.md").read_text(encoding="utf-8")
+    assert "api.openai.com" not in json.loads((omi.common.core.TEMPLATE / "dot-omi" / "config.json").read_text())["network_allow"]
     assert "ca-certificates" in text
     prove = (d / "prove.sh").read_text()
     assert "codex exec" in prove and "OPENAI_API_KEY=sk-prove-invalid" in prove
@@ -275,7 +275,7 @@ def test_template_docker():
         out = io.StringIO()
         sys.stdout, saved = out, sys.stdout
         try:
-            omi.upgrade.init(t)
+            omi.setup.upgrade.init(t)
         finally:
             sys.stdout = saved
         assert (Path(t) / "docker" / "Dockerfile").exists()

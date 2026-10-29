@@ -8,7 +8,8 @@ import sys
 from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
 
-from . import core, state
+from ..common import core
+from ..state import resolve as state
 
 
 def task_scope(wt, tid):

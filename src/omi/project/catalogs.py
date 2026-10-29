@@ -6,7 +6,8 @@ import sys
 from fnmatch import fnmatch
 from pathlib import Path
 
-from . import core, tools
+from ..common import core
+from ..worker import tools
 
 
 SKILL_LIMITS = {"tokens": 6000, "skill_tokens": 2000}  # .omi/config.json "skill_limits" overrides (PO only)

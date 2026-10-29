@@ -7,7 +7,7 @@ import shlex
 import sys
 from pathlib import Path
 
-from . import core
+from ..common import core
 
 
 DEFAULT_MODELS = {"haiku": "claude-haiku-5-5", "sonnet": "claude-sonnet-5-5", "opus": "claude-opus-5-5"}

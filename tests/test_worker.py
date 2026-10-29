@@ -13,7 +13,7 @@ from helpers import omi, assert_download_cache_env, git, real_egress
 
 
 def test_download_cache_gitignore():
-    for apply in (omi.upgrade.init, lambda root: omi.upgrade.upgrade_cmd(["--apply"], root)):
+    for apply in (omi.setup.upgrade.init, lambda root: omi.setup.upgrade.upgrade_cmd(["--apply"], root)):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             ignore = root / ".gitignore"
@@ -55,20 +55,20 @@ def test_download_cache_shared_exclude():
         exclude.parent.rmdir()
 
         def statuses():
-            return [omi.core.git(p, "status", "--porcelain", "-uall") for p in (root, wt)]
+            return [omi.common.core.git(p, "status", "--porcelain", "-uall") for p in (root, wt)]
 
         before = statuses()
         assert before == ["", ""]
-        omi.run.ensure_cache_excluded(wt)
+        omi.worker.run.ensure_cache_excluded(wt)
         assert exclude.read_text(encoding="utf-8") == ".omi-cache/\n"
         assert statuses() == before
         for existing in ("*.local", "# preserved\n*.local\n", "*.local\n.omi-cache/\n"):
             exclude.write_text(existing, encoding="utf-8")
-            omi.run.ensure_cache_excluded(wt)
+            omi.worker.run.ensure_cache_excluded(wt)
             expected = existing if ".omi-cache/" in existing.splitlines() else existing.rstrip("\n") + "\n.omi-cache/\n"
             assert exclude.read_text(encoding="utf-8") == expected
             first = exclude.read_bytes()
-            omi.run.ensure_cache_excluded(root)
+            omi.worker.run.ensure_cache_excluded(root)
             assert exclude.read_bytes() == first
             assert statuses() == before
 
@@ -78,24 +78,24 @@ def test_download_cache_shared_exclude():
         cached.parent.mkdir(parents=True)
         cached.write_text("downloaded\n", encoding="utf-8")
         cache_rel = cached.relative_to(wt).as_posix()
-        assert omi.scope.out_of_scope(wt, "TASK-087") == [cache_rel]
-        omi.run.ensure_cache_excluded(wt)
-        assert omi.scope.out_of_scope(wt, "TASK-087") == []
-        assert omi.scope.out_of_scope(wt, "TASK-087", committed=True) == []
+        assert omi.project.scope.out_of_scope(wt, "TASK-087") == [cache_rel]
+        omi.worker.run.ensure_cache_excluded(wt)
+        assert omi.project.scope.out_of_scope(wt, "TASK-087") == []
+        assert omi.project.scope.out_of_scope(wt, "TASK-087", committed=True) == []
         assert statuses() == before
         git(root, "check-ignore", cache_rel)
         git(wt, "check-ignore", cache_rel)
         git(wt, "add", "-f", cache_rel)
         git(wt, "commit", "-qm", "tracked cache")
-        assert omi.scope.out_of_scope(wt, "TASK-087", committed=True) == [cache_rel]
+        assert omi.project.scope.out_of_scope(wt, "TASK-087", committed=True) == [cache_rel]
         cached.write_text("changed tracked cache\n", encoding="utf-8")
-        assert omi.scope.out_of_scope(wt, "TASK-087") == [cache_rel]
+        assert omi.project.scope.out_of_scope(wt, "TASK-087") == [cache_rel]
 
 
 def test_download_cache_scope():
-    real = subprocess.run, omi.scope.task_scope
+    real = subprocess.run, omi.project.scope.task_scope
     try:
-        omi.scope.task_scope = lambda *args: ["src/**"]
+        omi.project.scope.task_scope = lambda *args: ["src/**"]
         def run(argv, **kw):
             if "rev-parse" in argv or "remote" in argv:
                 return subprocess.CompletedProcess(argv, 1, "")
@@ -106,18 +106,18 @@ def test_download_cache_scope():
             return subprocess.CompletedProcess(argv, 0, paths if "status" in argv else diff)
         subprocess.run = run
         with tempfile.TemporaryDirectory() as d:
-            assert omi.scope.out_of_scope(d, "TASK-086") == [
+            assert omi.project.scope.out_of_scope(d, "TASK-086") == [
                 ".omi-cache/npm/pkg/.github/config", ".omi-cache/pip/tracked", ".omi-cache-other/file", "outside.py"]
-            assert omi.scope.out_of_scope(d, "TASK-086", committed=True) == [
+            assert omi.project.scope.out_of_scope(d, "TASK-086", committed=True) == [
                 ".omi-cache/go-mod/example/file", ".omi-cache/npm/pkg/.github/config", ".omi-cache/pip/pkg",
                 ".omi-cache/npm/ignored", ".omi-cache/pip/tracked", ".omi-cache-other/file", "outside.py",
                 ".omi-cache/x/.gitattributes", ".omi-cache/go-mod/x"]
     finally:
-        subprocess.run, omi.scope.task_scope = real
+        subprocess.run, omi.project.scope.task_scope = real
 
 
 def test_worker():
-    real = subprocess.run, shutil.which, omi.core.main_checkout, omi.core.WINDOWS, os.environ.get(omi.creds.TOKEN_ENV)
+    real = subprocess.run, shutil.which, omi.common.core.main_checkout, omi.common.core.WINDOWS, os.environ.get(omi.worker.creds.TOKEN_ENV)
     calls = []
     st = {}
 
@@ -152,8 +152,8 @@ def test_worker():
         (wt / ".git").write_text("gitdir: /x")
         task = wt / ".omi" / "tasks" / "TASK-001.md"
         subprocess.run, shutil.which = run, lambda _: "docker"
-        omi.core.main_checkout, omi.core.WINDOWS = (lambda _: wt), False  # no docker/ or agents here: template copies
-        os.environ[omi.creds.TOKEN_ENV] = "tok-SECRET"
+        omi.common.core.main_checkout, omi.common.core.WINDOWS = (lambda _: wt), False  # no docker/ or agents here: template copies
+        os.environ[omi.worker.creds.TOKEN_ENV] = "tok-SECRET"
         out = io.StringIO()
         sys.stdout, saved = out, sys.stdout
         try:
@@ -162,17 +162,17 @@ def test_worker():
                 st.update(info_rc=0, build_fail=0)
                 st.update(kw)
                 try:
-                    return omi.run.worker(wt, task, effort=kw.get("effort"))
+                    return omi.worker.run.worker(wt, task, effort=kw.get("effort"))
                 except SystemExit as e:
                     return str(e)
 
             assert go() == 3, "out-of-scope change"
             assert "OUT OF SCOPE: .gitattributes" in out.getvalue() and "src/a.py" not in out.getvalue()
             assert "OUT OF SCOPE: .github/x.yml" in out.getvalue()
-            assert omi.scope.GIT_HINT in out.getvalue()
+            assert omi.project.scope.GIT_HINT in out.getvalue()
             argv, kw = next(c for c in calls if c[0][:2] == ["docker", "run"])
             assert not any("tok-SECRET" in a for a in argv), "token in argv"
-            assert argv[argv.index("-e") + 1] == omi.creds.TOKEN_ENV and kw["env"][omi.creds.TOKEN_ENV] == "tok-SECRET"
+            assert argv[argv.index("-e") + 1] == omi.worker.creds.TOKEN_ENV and kw["env"][omi.worker.creds.TOKEN_ENV] == "tok-SECRET"
             assert kw["stdin"] is subprocess.DEVNULL
             for f in ("--read-only", "no-new-privileges", "node", f"{wt}:/work", f"{wt / '.git'}:/work/.git:ro"):
                 assert f in argv, f
@@ -184,7 +184,7 @@ def test_worker():
             name = argv[argv.index("--name") + 1]
             assert re.fullmatch(r"[a-z0-9_.-]+-TASK-001-engineer-claude-sonnet-5\.5-medium-\d{6}", name), name
             lab = [argv[i + 1] for i, a in enumerate(argv) if a == "--label"]
-            proj = omi.docker.compose_labels(name, "agent")["com.docker.compose.project"]
+            proj = omi.worker.docker.compose_labels(name, "agent")["com.docker.compose.project"]
             assert f"com.docker.compose.project={proj}" in lab and "com.docker.compose.service=agent" in lab
             for k, v in (("omi-role", "omi-agent-engineer"), ("omi-task", "TASK-001"), ("omi-model", "claude-sonnet-5-5"), ("omi-effort", "medium")):
                 assert f"{k}={v}" in lab, lab
@@ -197,12 +197,12 @@ def test_worker():
             (wt / ".omi" / "config.json").write_text('{"models": {"fast": "claude-haiku-5-5"}}')
             calls.clear(); st.update(info_rc=0, build_fail=0)
             try:
-                omi.run.worker(wt, task, model="turbo", effort="low")
+                omi.worker.run.worker(wt, task, model="turbo", effort="low")
             except SystemExit as e:
                 assert "turbo" in str(e) and not ran_docker(calls), e
             else:
                 raise AssertionError("unknown alias accepted")
-            go_model = lambda m: (calls.clear(), omi.run.worker(wt, task, model=m, effort="low"))
+            go_model = lambda m: (calls.clear(), omi.worker.run.worker(wt, task, model=m, effort="low"))
             go_model("fast")
             argv = next(c[0] for c in calls if c[0][:2] == ["docker", "run"])
             assert argv[argv.index("--model") + 1] == "claude-haiku-5-5" and "-claude-haiku-5.5-low-" in argv[argv.index("--name") + 1]
@@ -222,17 +222,17 @@ def test_worker():
             status = R(" M src/.gitattributes\0 M src/ok.py\0")
             run0 = subprocess.run
             subprocess.run = lambda cmd, **kw: status if "status" in cmd else run0(cmd, **kw)
-            assert omi.scope.out_of_scope(wt, "TASK-001") == ["src/.gitattributes"]
+            assert omi.project.scope.out_of_scope(wt, "TASK-001") == ["src/.gitattributes"]
             status = R(" M GIT~1/x\0 M src/GITATT~1\0 M a/gitmod~2\0 M GITIGN~1.TXT\0 M x/GITHUB~3\0 M src/GITHUB.py\0 M src/ok.py\0")
             subprocess.run = lambda cmd, **kw: status if "status" in cmd else run0(cmd, **kw)
-            assert omi.scope.out_of_scope(wt, "TASK-001") == ["GIT~1/x", "src/GITATT~1", "a/gitmod~2", "GITIGN~1.TXT", "x/GITHUB~3"]
+            assert omi.project.scope.out_of_scope(wt, "TASK-001") == ["GIT~1/x", "src/GITATT~1", "a/gitmod~2", "GITIGN~1.TXT", "x/GITHUB~3"]
             status = R(" M src/.gitattributes\0 M src/ok.py\0")
             subprocess.run = lambda cmd, **kw: (R("---\nscope: src/.gitattributes, src/ok.py\n---\n") if "show" in cmd
                                                     else status if "status" in cmd else run0(cmd, **kw))
-            assert omi.scope.out_of_scope(wt, "TASK-001") == []
+            assert omi.project.scope.out_of_scope(wt, "TASK-001") == []
             real_islink = os.path.islink
             os.path.islink = lambda p: str(p).endswith("ok.py")
-            assert omi.scope.out_of_scope(wt, "TASK-001") == ["src/ok.py"]
+            assert omi.project.scope.out_of_scope(wt, "TASK-001") == ["src/ok.py"]
             os.path.islink = real_islink
             subprocess.run = run0
 
@@ -244,29 +244,29 @@ def test_worker():
             assert "Docker is not running" in go() and not calls
             shutil.which = lambda _: "docker"
             assert "not inside" in go(task=wt.parent / "x.md") and not calls
-            del os.environ[omi.creds.TOKEN_ENV]
+            del os.environ[omi.worker.creds.TOKEN_ENV]
             e = go()
             assert "no token" in e and not ran(), e
         finally:
             sys.stdout = saved
-            subprocess.run, shutil.which, omi.core.main_checkout, omi.core.WINDOWS, tok = real
-            os.environ.pop(omi.creds.TOKEN_ENV, None)
+            subprocess.run, shutil.which, omi.common.core.main_checkout, omi.common.core.WINDOWS, tok = real
+            os.environ.pop(omi.worker.creds.TOKEN_ENV, None)
             if tok is not None:
-                os.environ[omi.creds.TOKEN_ENV] = tok
+                os.environ[omi.worker.creds.TOKEN_ENV] = tok
 
 
 def test_prove_exit_and_hosts():
     ok = "PASS claude CLI reaches\nPASS codex CLI reaches\nPASS write\n"
-    assert omi.docker.prove_rc(ok, 0) == 0 and omi.docker.prove_rc(ok, 5) == 5
-    assert omi.docker.prove_rc(ok + "FAIL codex CLI: network error: x\n", 0) == 1
-    assert omi.docker.prove_rc("PASS claude CLI x\n", 0) == 1 and omi.docker.prove_rc("", 0) == 1
+    assert omi.worker.docker.prove_rc(ok, 0) == 0 and omi.worker.docker.prove_rc(ok, 5) == 5
+    assert omi.worker.docker.prove_rc(ok + "FAIL codex CLI: network error: x\n", 0) == 1
+    assert omi.worker.docker.prove_rc("PASS claude CLI x\n", 0) == 1 and omi.worker.docker.prove_rc("", 0) == 1
     with tempfile.TemporaryDirectory() as d:
         (Path(d) / ".omi").mkdir()
         (Path(d) / ".omi" / "config.json").write_text('{"network_allow": ["api.anthropic.com"]}')
-        assert omi.docker.allow_for(d, "codex") == ["api.anthropic.com", "api.openai.com"]
-        assert omi.docker.allow_for(d, "claude") == ["api.anthropic.com"]
-        assert omi.docker.allow_for(d, *omi.docker.TOOL_API_HOST) == ["api.anthropic.com", "api.openai.com"]
-    sh = (omi.core.TEMPLATE / "docker" / "prove.sh").read_text()
+        assert omi.worker.docker.allow_for(d, "codex") == ["api.anthropic.com", "api.openai.com"]
+        assert omi.worker.docker.allow_for(d, "claude") == ["api.anthropic.com"]
+        assert omi.worker.docker.allow_for(d, *omi.worker.docker.TOOL_API_HOST) == ["api.anthropic.com", "api.openai.com"]
+    sh = (omi.common.core.TEMPLATE / "docker" / "prove.sh").read_text()
     assert "error sending request" in sh
     # codex prints "stream error: ... last status: 401" on a bad key: that is an auth result, not a network one
     net = next(l for l in sh.splitlines() if "ENOTFOUND" in l)
@@ -275,9 +275,9 @@ def test_prove_exit_and_hosts():
 
 def test_clip_report():
     short = "DONE\nx\ncommit"
-    assert omi.tasks.clip_report(short) == ["DONE", "x", "commit"]
+    assert omi.project.tasks.clip_report(short) == ["DONE", "x", "commit"]
     big = ["DONE"] + ["line %d" % i for i in range(1000)] + ["feat: commit msg"]
-    out = omi.tasks.clip_report("\n".join(big))
+    out = omi.project.tasks.clip_report("\n".join(big))
     assert out[0] == "DONE" and out[-1] == "feat: commit msg" and "[... truncated ...]" in out
     assert sum(map(len, out)) < 2200 and out[1] == "line 0"
 
@@ -285,33 +285,33 @@ def test_clip_report():
 def test_container_names():
     import datetime
     t = datetime.datetime(2026, 1, 1, 14, 32, 5)
-    assert omi.docker.container_name("omi", "omi-agent-reviewer", "TASK-055", "claude", "claude-sonnet-5-5", "medium", t) == \
+    assert omi.worker.docker.container_name("omi", "omi-agent-reviewer", "TASK-055", "claude", "claude-sonnet-5-5", "medium", t) == \
         "omi-TASK-055-reviewer-claude-sonnet-5.5-medium-143205"
-    assert omi.docker.container_name("omi", "omi-agent-engineer", "TASK-018", "codex", "gpt-5.1-codex", "high", t) == \
+    assert omi.worker.docker.container_name("omi", "omi-agent-engineer", "TASK-018", "codex", "gpt-5.1-codex", "high", t) == \
         "omi-TASK-018-engineer-codex-gpt-5.1-codex-high-143205"
-    assert omi.docker.container_name("omi", "omi-agent-engineer", "TASK-018", "codex", "gpt-6.1-sol", "high", t) == \
+    assert omi.worker.docker.container_name("omi", "omi-agent-engineer", "TASK-018", "codex", "gpt-6.1-sol", "high", t) == \
         "omi-TASK-018-engineer-codex-gpt-6.1-sol-high-143205"
-    assert omi.docker.container_name("omi", "my role", "prove", now=t) == "omi-prove-my-role-claude-none-none-143205"
-    assert omi.docker.container_name("omi", "omi-agent-engineer", "TASK-018", "codex", "gpt-6.1-sol", "high", t, salt="a3") == \
+    assert omi.worker.docker.container_name("omi", "my role", "prove", now=t) == "omi-prove-my-role-claude-none-none-143205"
+    assert omi.worker.docker.container_name("omi", "omi-agent-engineer", "TASK-018", "codex", "gpt-6.1-sol", "high", t, salt="a3") == \
         "omi-TASK-018-engineer-codex-gpt-6.1-sol-high-143205a3"
     # compose project: lowercased run name, chars outside [a-z0-9_-] become '-'
-    assert omi.docker.compose_labels("omi-TASK-055-reviewer-claude-sonnet-5.5-medium-143205", "agent") == {
+    assert omi.worker.docker.compose_labels("omi-TASK-055-reviewer-claude-sonnet-5.5-medium-143205", "agent") == {
         "com.docker.compose.project": "omi-task-055-reviewer-claude-sonnet-5-5-medium-143205",
         "com.docker.compose.service": "agent"}
     with tempfile.TemporaryDirectory() as d:
-        assert omi.tools.resolve_model(d, "opus") == "claude-opus-5-5" and omi.tools.resolve_model(d, "claude-x-1") == "claude-x-1"
+        assert omi.worker.tools.resolve_model(d, "opus") == "claude-opus-5-5" and omi.worker.tools.resolve_model(d, "claude-x-1") == "claude-x-1"
         for bad in ("gpt", None):
             try:
-                omi.tools.resolve_model(d, bad)
+                omi.worker.tools.resolve_model(d, bad)
             except SystemExit as e:
                 assert bad is None or bad in str(e)
             else:
                 raise AssertionError(bad)
-    labels = omi.docker.worker_labels("omi-agent-engineer", "TASK-1", "m", "low")
-    a = omi.docker.worker_argv(Path("/w"), "img", ["x"], "n", "r", labels)
+    labels = omi.worker.docker.worker_labels("omi-agent-engineer", "TASK-1", "m", "low")
+    a = omi.worker.docker.worker_argv(Path("/w"), "img", ["x"], "n", "r", labels)
     assert "omi-model=m" in a and "omi-effort=low" in a and "omi-task=TASK-1" in a and "omi-role=omi-agent-engineer" in a
     # agent container joins the run's compose group (same project as its proxy)
-    a = omi.docker.worker_argv(Path("/w"), "img", ["x"], "n", "r", {**labels, **omi.docker.compose_labels("n", "agent")})
+    a = omi.worker.docker.worker_argv(Path("/w"), "img", ["x"], "n", "r", {**labels, **omi.worker.docker.compose_labels("n", "agent")})
     assert "com.docker.compose.project=n" in a and "com.docker.compose.service=agent" in a
     # status lists running workers (docker mocked); nothing when none
     import datetime as dt
@@ -322,38 +322,38 @@ def test_container_names():
     buf = io.StringIO()
     sys.stdout, saved = buf, sys.stdout
     try:
-        omi.docker.print_workers(Path("/nonexistent"))
+        omi.worker.docker.print_workers(Path("/nonexistent"))
         shown = buf.getvalue()
         rows["out"] = ""
         buf.truncate(0); buf.seek(0)
-        omi.docker.print_workers(Path("/nonexistent"))
+        omi.worker.docker.print_workers(Path("/nonexistent"))
         none = buf.getvalue()
     finally:
         sys.stdout = saved
         subprocess.run = real_run
     assert "TASK-9 omi-agent-engineer claude-opus-5-5 high 1h15m" in shown and none == "", (shown, none)
-    argv = omi.docker.worker_argv(Path("/w"), "img", ["x"], "n1")
+    argv = omi.worker.docker.worker_argv(Path("/w"), "img", ["x"], "n1")
     assert argv[argv.index("--name") + 1] == "n1"
-    assert "--name" not in omi.docker.worker_argv(Path("/w"), "img", ["x"])
-    a = omi.docker.worker_argv(Path("/w"), "img", ["x"], "n1", "my-repo")
+    assert "--name" not in omi.worker.docker.worker_argv(Path("/w"), "img", ["x"])
+    a = omi.worker.docker.worker_argv(Path("/w"), "img", ["x"], "n1", "my-repo")
     assert a[a.index("omi-repo=my-repo") - 1] == "--label"
 
 
 def test_worker_cache_tmpfs_and_full_volumes():
-    a = omi.docker.worker_argv(Path("/w"), "img", ["x"])
+    a = omi.worker.docker.worker_argv(Path("/w"), "img", ["x"])
     assert "/cache:rw,exec,nosuid,uid=1000,gid=1000,size=2048m" in a and "/tmp:rw,noexec,nosuid,size=512m" in a
     assert "/home/node:rw,noexec,nosuid,uid=1000,gid=1000,size=512m" in a
     assert_download_cache_env(a)
-    assert "size=64m" in " ".join(omi.docker.worker_argv(Path("/w"), "img", ["x"], cache_mb=64))
+    assert "size=64m" in " ".join(omi.worker.docker.worker_argv(Path("/w"), "img", ["x"], cache_mb=64))
     with tempfile.TemporaryDirectory() as d:
-        assert omi.docker.worker_sizes(d) == {"cache_mb": 2048, "tmp_mb": 512}
+        assert omi.worker.docker.worker_sizes(d) == {"cache_mb": 2048, "tmp_mb": 512}
         (Path(d) / ".omi").mkdir()
         (Path(d) / ".omi" / "config.json").write_text('{"worker": {"cache_mb": 4096}}', encoding="utf-8")
-        assert omi.docker.worker_sizes(d) == {"cache_mb": 4096, "tmp_mb": 512}
+        assert omi.worker.docker.worker_sizes(d) == {"cache_mb": 4096, "tmp_mb": 512}
         for worker in (None, [], "invalid", 1, True, {"cache_mb": 0}, {"tmp_mb": False}):
             (Path(d) / ".omi" / "config.json").write_text(json.dumps({"worker": worker}), encoding="utf-8")
             try:
-                omi.docker.worker_sizes(d)
+                omi.worker.docker.worker_sizes(d)
                 raise AssertionError(f"invalid worker accepted: {worker!r}")
             except SystemExit as e:
                 assert str(e) == '"worker.cache_mb" and "worker.tmp_mb" in .omi/config.json must be positive integers. Nothing changed.'
@@ -369,7 +369,7 @@ def test_worker_cache_tmpfs_and_full_volumes():
         subprocess.run = fake
         try:
             for home_used in (10, 90, 92):
-                lines = omi.docker.full_volumes(Path(d))
+                lines = omi.worker.docker.full_volumes(Path(d))
                 mounts = "/cache 95%, /home/node 92%" if home_used == 92 else "/cache 95%"
                 assert lines == [f"c1: {mounts} full; raise worker.cache_mb / worker.tmp_mb in .omi/config.json"], lines
             for stage in ("ps", "exec"):
@@ -382,14 +382,14 @@ def test_worker_cache_tmpfs_and_full_volumes():
                             raise subprocess.TimeoutExpired(argv, 10)
                         return fake(argv, **kw)
                     subprocess.run = unavailable
-                    assert omi.docker.full_volumes(Path(d)) == []
+                    assert omi.worker.docker.full_volumes(Path(d)) == []
         finally:
             subprocess.run = real
 
 
 def test_network_allowlist():
     import importlib.util
-    spec = importlib.util.spec_from_file_location("omi_proxy", omi.core.TEMPLATE / "docker" / "proxy.py")
+    spec = importlib.util.spec_from_file_location("omi_proxy", omi.common.core.TEMPLATE / "docker" / "proxy.py")
     px = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(px)
     al = ["api.anthropic.com", "*.example.org", "host.io:8443"]
@@ -434,13 +434,13 @@ def test_network_allowlist():
     assert "BLOCKED example.com:443" in buf.getvalue() and "SECRET" not in buf.getvalue()
     # config
     with tempfile.TemporaryDirectory() as d:
-        assert omi.docker.network_allow(d) == ["api.anthropic.com"]
+        assert omi.worker.docker.network_allow(d) == ["api.anthropic.com"]
         (Path(d) / ".omi").mkdir()
         (Path(d) / ".omi" / "config.json").write_text('{"network_allow": ["api.anthropic.com", "*.x.io:8443"]}')
-        assert omi.docker.network_allow(d) == ["api.anthropic.com", "*.x.io:8443"]
+        assert omi.worker.docker.network_allow(d) == ["api.anthropic.com", "*.x.io:8443"]
         (Path(d) / ".omi" / "config.json").write_text('{"network_allow": ["bad host"]}')
         try:
-            omi.docker.network_allow(d)
+            omi.worker.docker.network_allow(d)
         except SystemExit as e:
             assert "bad host" in str(e)
         else:
@@ -448,15 +448,15 @@ def test_network_allowlist():
         for bad in ('{"network_allow": "api.anthropic.com"}', '{"network_allow": [1]}', "{not json"):
             (Path(d) / ".omi" / "config.json").write_text(bad)
             try:
-                omi.docker.network_allow(d)
+                omi.worker.docker.network_allow(d)
             except SystemExit as e:
                 assert "Nothing changed." in str(e)
             else:
                 raise AssertionError(bad)
     # argv: restricted network and proxy env; without a network nothing is added
-    a = omi.docker.worker_argv(Path("/w"), "img", ["x"], "n", network="omi-net-n", proxy="n-proxy")
+    a = omi.worker.docker.worker_argv(Path("/w"), "img", ["x"], "n", network="omi-net-n", proxy="n-proxy")
     assert a[a.index("--network") + 1] == "omi-net-n" and "HTTPS_PROXY=http://n-proxy:3128" in a
-    assert "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1" in a and "--network" not in omi.docker.worker_argv(Path("/w"), "img", ["x"])
+    assert "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1" in a and "--network" not in omi.worker.docker.worker_argv(Path("/w"), "img", ["x"])
     # egress: order, hardening, no token, cleanup and the blocked-host message
     calls = []
 
@@ -473,10 +473,10 @@ def test_network_allowlist():
     sys.stdout, saved = buf, sys.stdout
     try:
         # worst real name: a long codex model ID at xhigh effort
-        long = omi.docker.container_name("my-repo", "omi-agent-engineer", "TASK-052", "codex", "gpt-5.1-codex-mini-high-preview-2026-10-26", "xhigh")
+        long = omi.worker.docker.container_name("my-repo", "omi-agent-engineer", "TASK-052", "codex", "gpt-5.1-codex-mini-high-preview-2026-10-26", "xhigh")
         with real_egress(Path("/My Repo"), long, "img", ["api.anthropic.com"]) as (net, proxy):
             assert (net, proxy) == (f"omi-net-{long}", "omi-proxy") and len(f"{long}-proxy") > 63
-            host = omi.docker.worker_argv(Path("/w"), "img", ["x"], long, network=net, proxy=proxy)
+            host = omi.worker.docker.worker_argv(Path("/w"), "img", ["x"], long, network=net, proxy=proxy)
             assert "HTTPS_PROXY=http://omi-proxy:3128" in host
             inside = list(calls)
     finally:
@@ -486,7 +486,7 @@ def test_network_allowlist():
     create = next(c for c in inside if c[1] == "create")
     assert create[-3:] == ["python3", "/proxy.py", "api.anthropic.com"] and "--read-only" in create and "--cap-drop" in create
     assert not any("TOKEN" in a or ":/work" in a for a in create) and "omi-repo=my-repo" in create
-    assert f"com.docker.compose.project={omi.docker.compose_labels(long, 'proxy')['com.docker.compose.project']}" in create
+    assert f"com.docker.compose.project={omi.worker.docker.compose_labels(long, 'proxy')['com.docker.compose.project']}" in create
     assert "com.docker.compose.service=proxy" in create
     assert [c[1] for c in inside if c[1] in ("create", "start")] == ["create", "start"]
     assert next(c for c in inside if c[1:3] == ["network", "connect"])[3:5] == ["--alias", "omi-proxy"]
@@ -516,7 +516,7 @@ def test_network_allowlist():
         subprocess.run = real
     assert buf.getvalue().count("NETWORK BLOCKED") == 5 and "and 3 more" in buf.getvalue()
     # prove.sh checks both an allowed and a blocked host
-    sh = (omi.core.TEMPLATE / "docker" / "prove.sh").read_text()
+    sh = (omi.common.core.TEMPLATE / "docker" / "prove.sh").read_text()
     assert "api.anthropic.com" in sh and "example.com" in sh and "1.1.1.1" in sh and "network_allow" in sh
     # a name already in use: NameTaken, and only what this run created is removed (never another run's proxy)
     conflicts = {"network": "network with name omi-net-n already exists", "proxy": 'The container name "/n-proxy" is already in use'}
@@ -534,7 +534,7 @@ def test_network_allowlist():
             try:
                 with real_egress(Path("/My Repo"), "n", "img", ["a.com"]):
                     pass
-            except omi.docker.NameTaken:
+            except omi.worker.docker.NameTaken:
                 assert taken != "port", "a port conflict must not count as a taken name"
             except SystemExit as e:
                 assert taken == "port" and "cannot" in str(e), e
@@ -546,14 +546,14 @@ def test_network_allowlist():
         if taken != "port":
             assert ["rm", "-f"] not in cmds and (["network", "rm"] in cmds) == (taken == "proxy"), (taken, cmds)
     # only Docker's own message for this exact name counts
-    assert omi.docker.name_taken('Conflict. The container name "/x" is already in use', "x")
-    assert omi.docker.name_taken("network with name omi-net-x already exists", "omi-net-x")
-    assert not omi.docker.name_taken('Conflict. The container name "/x" is already in use', "y")
-    assert not omi.docker.name_taken("Bind failed: port already in use", "x")
+    assert omi.worker.docker.name_taken('Conflict. The container name "/x" is already in use', "x")
+    assert omi.worker.docker.name_taken("network with name omi-net-x already exists", "omi-net-x")
+    assert not omi.worker.docker.name_taken('Conflict. The container name "/x" is already in use', "y")
+    assert not omi.worker.docker.name_taken("Bind failed: port already in use", "x")
 
 
 def test_clean_and_old_images():
-    real, realmc = subprocess.run, omi.core.main_checkout
+    real, realmc = subprocess.run, omi.common.core.main_checkout
     calls = []
 
     class R:
@@ -562,8 +562,8 @@ def test_clean_and_old_images():
     with tempfile.TemporaryDirectory() as d:
         main = Path(d) / "My Repo"
         main.mkdir()
-        cur = omi.docker.image_tag(main)[1]
-        repo = omi.docker.image_repo(main)
+        cur = omi.worker.docker.image_tag(main)[1]
+        repo = omi.worker.docker.image_repo(main)
         assert repo == "omi-worker-my-repo"
 
         def run(cmd, **kw):
@@ -578,9 +578,9 @@ def test_clean_and_old_images():
                 return R("n1\n" if "label=omi-repo=my-repo" in cmd else "other\n")
             return R()
 
-        subprocess.run, omi.core.main_checkout = run, lambda _: main
+        subprocess.run, omi.common.core.main_checkout = run, lambda _: main
         try:
-            omi.docker.clean()
+            omi.worker.docker.clean()
             assert ["docker", "rm", "-f", "c1", "c2"] in calls and not any("other" in c for c in calls if c[:2] == ["docker", "rm"])
             assert ["docker", "network", "rm", "n1"] in calls
             assert ["docker", "rmi", f"{repo}:old1"] in calls and ["docker", "rmi", f"{repo}:old2"] in calls
@@ -588,13 +588,13 @@ def test_clean_and_old_images():
             ps = next(c for c in calls if c[:2] == ["docker", "ps"])
             assert "label=omi-worker=1" in ps and "label=omi-repo=my-repo" in ps and not any(a.startswith("name=") for a in ps)
             calls.clear()
-            omi.docker.clean(all_images=True)
+            omi.worker.docker.clean(all_images=True)
             assert ["docker", "rmi", cur] in calls and ["docker", "rmi", "omi-worker-other:x"] not in calls
             calls.clear()
-            assert omi.docker.ensure_image(main) == cur
+            assert omi.worker.docker.ensure_image(main) == cur
             assert ["docker", "rmi", f"{repo}:old1"] in calls and ["docker", "rmi", cur] not in calls
         finally:
-            subprocess.run, omi.core.main_checkout = real, realmc
+            subprocess.run, omi.common.core.main_checkout = real, realmc
 
 
 def main():

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from . import core
+from ..common import core
 
 
 @dataclass(frozen=True)

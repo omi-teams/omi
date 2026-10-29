@@ -9,7 +9,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import core
+from ..common import core
 
 
 CRED_TARGET = "omi/CLAUDE_CODE_OAUTH_TOKEN"

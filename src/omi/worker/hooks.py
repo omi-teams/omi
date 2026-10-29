@@ -7,7 +7,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import core, creds, docker, state, tasks
+from ..common import core
+from . import creds, docker
+from ..state import resolve as state
+from ..project import tasks
 
 
 HOOK_EVENTS = ("pre-run", "post-run", "pre-merge")

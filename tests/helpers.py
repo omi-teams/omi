@@ -15,7 +15,7 @@ import omi  # noqa: E402
 os.environ["CODEX_HOME"] = tempfile.mkdtemp()  # no host ChatGPT login unless a test writes one
 os.environ["CLAUDE_CONFIG_DIR"] = tempfile.mkdtemp()  # no host Claude Code login unless a test writes one
 
-real_egress = omi.docker.egress  # other tests run workers with docker mocked: no proxy
+real_egress = omi.worker.docker.egress  # other tests run workers with docker mocked: no proxy
 
 
 @contextlib.contextmanager
@@ -23,7 +23,7 @@ def no_egress(main, name, image, allow):
     yield f"omi-net-{name}", f"{name}-proxy"
 
 
-omi.docker.egress = no_egress
+omi.worker.docker.egress = no_egress
 
 
 def git(cwd, *args):
@@ -77,7 +77,7 @@ def detached_project():
         git(code, "remote", "add", "origin", "git@EXAMPLE.org:team/sample.git")
         with patch.dict(os.environ, {"OMI_STATE": str(home), "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")}):
             with contextlib.redirect_stdout(io.StringIO()):
-                omi.upgrade.init(project, detached=True)
+                omi.setup.upgrade.init(project, detached=True)
             git(home, "init", "-q", "-b", "main")
             (project / "project.json").write_text(json.dumps({"remote": "https://example.org/team/sample"}), encoding="utf-8")
             cfg = project / ".omi" / "config.json"
@@ -101,7 +101,7 @@ def detached_cli(cwd, *args):
     with contextlib.chdir(cwd), contextlib.redirect_stdout(out), patch.dict(os.environ, {
             "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}):
         try:
-            omi.cli.main(list(args))
+            omi.app.cli.main(list(args))
         except SystemExit as e:
             assert e.code in (None, 0), (e, out.getvalue())
     return out.getvalue()
