@@ -4342,6 +4342,9 @@ def test_attach_clone_portability():
         remote, code, home = base / "private.git", base / "code", base / "state"
         remote.mkdir()
         git(remote, "init", "--bare", "-q", "-b", "main")
+        # Keep receive-pack from leaving background GC racing temporary cleanup.
+        git(remote, "config", "receive.autogc", "false")
+        git(remote, "config", "gc.auto", "0")
         code.mkdir()
         git(code, "init", "-q", "-b", "main")
         (code / "app.py").write_text("value = 1\n", encoding="utf-8")
@@ -4670,6 +4673,9 @@ def state_remote(project):
     home = project.parents[1]
     remote = home.parent / "remote.git"
     git(home.parent, "init", "--bare", "-q", str(remote))
+    # Keep receive-pack from leaving background GC racing temporary cleanup.
+    git(remote, "config", "receive.autogc", "false")
+    git(remote, "config", "gc.auto", "0")
     git(home, "add", ".")
     git(home, "commit", "-qm", "initial state")
     git(home, "remote", "add", "origin", str(remote))

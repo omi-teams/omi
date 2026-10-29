@@ -24,14 +24,10 @@ Pilot gaps G2 and G3: after `omi attach` the state is on its remote and the code
 - [x] Unit tests cover push success, push failure, empty remote, branch created and branch already present; all tests pass.
 
 ## Checkpoint
-Review round 1 FAIL (CI, ubuntu, run 40836347944):
-- test_attach_push_success (tests/test_omi.py:4198) fails in TemporaryDirectory cleanup from detached_project (line 4410): `OSError: [Errno 39] Directory not empty: '/tmp/.../remote.git/objects/pack'`. Passes on the Windows host and the worker; likely a background `git gc --auto` started by receive-pack after the push still writing the bare remote while rmtree runs.
-- Fix in tests only: make the bare remotes created by the attach tests deterministic (e.g. `git -C remote.git config receive.autogc false` and `gc.auto 0`, or the same via the test git environment for all temp repos). Do not change product code for this. Run the attach tests several times in a loop to check.
-Host: python tests/test_omi.py (Windows host, worktree) -> ok, exit 0
-Done: Attach reuses state push with upstream setup and failure recovery; prepares a missing development branch tracking origin without checkout or code files/commits; README updated; all acceptance behaviors covered by tests.
+Done: Review round 1 CI cleanup race addressed in tests only. Both bare remote fixtures (`state_remote` and `test_attach_clone_portability`) set `receive.autogc=false` and `gc.auto=0` before pushes, preventing background Git GC from racing TemporaryDirectory cleanup. Existing acceptance tests cover push success, failed-push commit preservation and sync recovery, empty-remote upstream setup, and development branch creation/preservation.
 Not done: None.
-Tests: python3 tests/test_omi.py passed (exit 0, final output ok); five focused attach tests also passed after final test cleanup. No acceptance tests skipped.
-Next: Coordinator review and host commit; no worker commit made.
+Test result: `python3 tests/test_omi.py` executed successfully (exit 0, final output `ok`). All eight `test_attach_*` tests executed in a 10-iteration loop: 80 test executions passed (exit 0), with no cleanup failures. No acceptance tests skipped.
+Next step: Coordinator review and host CI/commit. Product code unchanged for this repair; no worker commit made.
 
 ## Steps
 PO approval accept: Chấp nhận, merge
@@ -105,9 +101,62 @@ PO approval accept: Chấp nhận, merge
 > AC: With a state remote, `omi attach` pushes its commit (sets upstream on an empty remote); a push failure keeps the commit and prints `STATE NOT PUSHED: run omi sync` ✓ `attach` now calls `state_sync.push`, which uses `--set-upstream <remote> HEAD` when no upstream exists. `test_attach_push_success` and the updated `test_attach_clone_portability` check the remote head and upstream. `test_attach_push_failure` checks the message appears once, the commit is kept, and a later `omi sync` pushes it.
 > AC: If `origin/development` exists and no local `development` does, attach creates it tracking origin and prints one line; an existing local branch is untouched; the code repo gets no commit and no file ✓ `prepare_development` runs `git branch --track`, so there is no checkout, commit or file. It runs on both the new-attach and "already attached" paths. `test_attach_development_created` checks the tracking upstream, HEAD, file contents and that the line prints once. `test_attach_development_present` checks the existing branch is unchanged.
 > AC: Unit tests cover push success, push failure, empty remote, branch created and branch already present; all tests pass ✓ `python3 tests/test_omi.py` exited 0 and printed `ok`. The new tests are registered in `__main__`. Empty remote is covered by `test_attach_clone_portability` and the push-success test, where the state remote has no upstream yet.
+2026-10-29 14:40 omi-agent-engineer (codex):
+> DONE
+> Files changed: `tests/test_omi.py`, `.omi/tasks/TASK-107.md`.
+> Disabled automatic GC in both bare remote fixtures; checkpoint updated.
+> Suggested commit: `test(attach): prevent background gc cleanup race`
+> Tests: `python3 tests/test_omi.py` passed; eight attach tests passed across 10 iterations (80 executions). None skipped.
+> Open issues: none. No commit made.
+2026-10-29 14:43 hook post-run passed:
+> OMI: outside.py is outside the scope of TASK-097. Stop and report NEEDS SCOPE to the Coordinator.
+> OMI: projects/sample/.omi/tasks/TASK-097.md is outside the task worktree.
+> OMI: .omi/tasks/TASK-097.md is outside the scope of TASK-097. Stop and report NEEDS SCOPE to the Coordinator.
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1149418 | 6176 | 1094912 | 297s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 1790 | 138282 | 481s | - | PASS 09763d7 |
+| omi-agent-engineer | gpt-6.1-sol (codex) | medium | 559284 | 2256 | 529536 | 258s | 1/1 omi-skill-lean-implementation | - |
