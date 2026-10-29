@@ -4,7 +4,7 @@ title: omi board frontend
 status: planned
 depends: TASK-114
 plan: PLAN-006
-scope: src/omi/board/web/**, pyproject.toml, tests/test_omi.py
+scope: src/omi/board/web/**, pyproject.toml, tests/test_board_web.py, .omi/tasks/TASK-115.md
 role: omi-agent-engineer
 skills: []
 refs: []
