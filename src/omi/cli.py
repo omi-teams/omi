@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import catalogs, core, creds, docker, github, hooks, run, scope, state, tasks, upgrade, workflows
+from . import catalogs, core, creds, docker, github, hooks, run, scope, state, state_sync, tasks, upgrade, workflows
 
 
 STATUSES = ("in-progress", "review", "blocked", "planned")
@@ -15,6 +15,7 @@ USAGE = """usage: omi <command>
   upgrade [--check | --to vX.Y.Z]   install a newer omi and update the project's unmodified template files (modified ones get <path>.omi-new)
   version      print the omi version and how to check for a newer one (also --version)
   status       show tasks, checkpoints and the next suggested task
+  sync         pull, commit leftover detached state changes and push
   guard        Claude Code PreToolUse hook: block writes outside task scope
   github       set up branches and rulesets: squad merges to development, only the PO to staging/main
   clean [--all]   remove this repo's worker containers and old worker images (--all: the current image too)
@@ -36,6 +37,8 @@ USAGE = """usage: omi <command>
 
 def status(cwd="."):
     project = state.resolve(cwd)
+    if project.detached:
+        state_sync.pull(project)
     root = project.state
     print(f"branch: {core.git(cwd, 'rev-parse', '--abbrev-ref', 'HEAD')}")
     stamp_file = root / ".omi" / "version"
@@ -97,7 +100,24 @@ def status(cwd="."):
 def main(argv: list[str] | None = None) -> None:
     try:
         state.registry()
-        return dispatch(argv)
+        args = sys.argv[1:] if argv is None else argv
+        cmd = args[0] if args else "help"
+        mutates = cmd in {"init", "upgrade", "skills", "rules", "plans", "references", "agents",
+                          "workflows", "step", "run", "hook", "worker"}
+        target = args[1] if cmd == "init" and len(args) > 1 else "."
+        project = state.resolve(target) if mutates else None
+        if project and project.detached:
+            state_sync.conflicts(state_sync.repo(project))
+        before = state_sync.snapshot(project) if project and project.detached else None
+        try:
+            return dispatch(argv)
+        finally:
+            if before is not None:
+                after = state_sync.snapshot(project)
+                paths = sorted(p for p in before.keys() | after.keys() if before.get(p) != after.get(p))
+                if paths:
+                    state_sync.commit(project, paths, cmd + " state")
+                    state_sync.push(project)
     except state.StateError as exc:
         sys.exit("OMI: " + " ".join(str(exc).splitlines()))
 
@@ -121,6 +141,13 @@ def dispatch(argv: list[str] | None = None) -> None:
         sys.exit(upgrade.upgrade_cmd(rest, root, detached=project.detached))
     elif cmd == "template-shas" and len(rest) == 2:
         upgrade.template_shas_cmd(*rest)
+    elif cmd == "sync":
+        project = state.resolve()
+        if rest:
+            raise state.StateError("usage: omi sync")
+        if not project.detached:
+            raise state.StateError("omi sync requires a detached project (omi attach)")
+        sys.exit(state_sync.sync(project))
     elif cmd == "status":
         status(*rest[:1])
     elif cmd == "github":

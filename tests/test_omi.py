@@ -4034,7 +4034,7 @@ def test_cli_characterization():
         rc, usage, err = cli(root)
         assert rc == 0 and usage.startswith("usage: omi <command>\n") and not err
         assert [l.split()[0] for l in usage.splitlines()[1:]] == [
-            "attach", "init", "upgrade", "version", "status", "guard", "github", "clean", "skills", "skills", "token", "plans",
+            "attach", "init", "upgrade", "version", "status", "sync", "guard", "github", "clean", "skills", "skills", "token", "plans",
             "references", "rules", "agents", "workflows", "step", "run", "hook", "parallel", "worker", "worker"]
         # unknown commands and incomplete arguments fall through to the usage text
         for args in (["help"], ["bogus"], ["step", "TASK-001"], ["run", "omi-agent-engineer", "--model"], ["parallel", "X"],
@@ -4042,6 +4042,7 @@ def test_cli_characterization():
             assert cli(root, *args) == (0, usage, ""), args
         for args in (["version"], ["--version"]):
             assert cli(root, *args) == (0, f"omi {want}\nlatest: python -m omi upgrade --check\n", ""), args
+        assert cli(root, "sync") == (1, "", "OMI: omi sync requires a detached project (omi attach)\n")
         rc, out, err = cli(root, "init", ".")
         assert rc == 0 and "create AGENTS.md\n" in out and f"stamp  .omi/version ({want})\n" in out, (out, err)
         assert "\ntools: git ok, gh MISSING, docker MISSING" in out and out.endswith("next: open Claude Code or Codex here and type omi-idea\n")
@@ -4124,6 +4125,8 @@ def test_cli_characterization():
         assert rc == 0 and "attached: " in out and "private remote: git -C " in out and not err, (rc, out, err)
         rc, out, err = cli(root, "attach", ".")
         assert rc == 0 and out.startswith("already attached: ") and not err, (rc, out, err)
+        assert cli(root, "sync") == (0, "state pull skipped: no remote\nstate push skipped: no remote\nstate synced\n", "")
+        assert cli(root, "sync", "extra") == (1, "", "OMI: usage: omi sync\n")
 
 
 
@@ -4404,9 +4407,11 @@ def test_detached_resolution():
 
 
 def detached_cli(cwd, *args):
+    from unittest.mock import patch
     out = io.StringIO()
     out.reconfigure = lambda **kw: None
-    with contextlib.chdir(cwd), contextlib.redirect_stdout(out):
+    with contextlib.chdir(cwd), contextlib.redirect_stdout(out), patch.dict(os.environ, {
+            "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}):
         try:
             omi.cli.main(list(args))
         except SystemExit as e:
@@ -4539,6 +4544,9 @@ def test_detached_run_and_hooks():
                 assert "replace instructions to edit the task" in system
                 assert "Tests: python3 -c 'print(123)'" in prompt
                 assert str(project) not in prompt
+            # The shared repo stores the project prefix.
+            committed = omi.core.git(project, "show", f"HEAD:projects/sample/.omi/tasks/{task.name}")
+            assert "DONE detached" in committed and "## Usage" in committed
             detached_cli(wt, "hook", "post-run", task.stem)
             argv, kwargs = next((a, k) for a, k in reversed(calls) if a[:2] == ["docker", "run"])
             assert f"{project}:/state:ro" in argv and f"{wt}:/work:ro" in argv
@@ -4582,7 +4590,118 @@ def test_detached_default_hook_config():
             assert result.returncode == 9, ("in-repo hook ignored local config", result.stdout, result.stderr)
 
 
+def state_remote(project):
+    home = project.parents[1]
+    remote = home.parent / "remote.git"
+    git(home.parent, "init", "--bare", "-q", str(remote))
+    git(home, "add", ".")
+    git(home, "commit", "-qm", "initial state")
+    git(home, "remote", "add", "origin", str(remote))
+    git(home, "push", "-qu", "origin", "main")
+    other = home.parent / "other"
+    git(home.parent, "clone", "-q", "-b", "main", str(remote), str(other))
+    return home, remote, other
+
+
+def test_state_sync():
+    """Real bare remote: refresh, selective commits, leftovers and failed pushes."""
+    from unittest.mock import patch
+    with detached_project() as (code, project, wt, task):
+        home, remote, other = state_remote(project)
+        peer_task = other / task.relative_to(home)
+        peer_task.write_text(peer_task.read_text(encoding="utf-8").replace("Detached test", "Remote title"), encoding="utf-8")
+        git(other, "add", ".")
+        git(other, "commit", "-qm", "remote update")
+        git(other, "push", "-q")
+        assert "Remote title" in detached_cli(code, "status")
+        unrelated = home / "unrelated.txt"
+        unrelated.write_text("staged elsewhere", encoding="utf-8")
+        git(home, "add", "unrelated.txt")
+        leftover = project / ".omi" / "decisions.md"
+        leftover.write_text("manual decision", encoding="utf-8")
+        detached_cli(wt, "step", task.stem, "next")
+        assert omi.core.git(home, "show", "--format=", "--name-only", "HEAD") == task.relative_to(home).as_posix()
+        assert omi.core.git(home, "log", "-1", "--format=%s") == "chore(sample): step state"
+        assert omi.core.git(home, "diff", "--cached", "--name-only") == "unrelated.txt"
+        assert omi.core.git(home, "rev-parse", "HEAD") == omi.core.git(other, "ls-remote", "origin", "refs/heads/main").split()[0]
+        # A failed push leaves the command's local commit intact.
+        git(home, "remote", "set-url", "origin", str(remote.parent / "missing.git"))
+        out = detached_cli(code, "step", task.stem, "done")
+        assert "STATE NOT PUSHED: run omi sync" in out
+        kept = omi.core.git(home, "rev-parse", "HEAD")
+        assert "state pull skipped:" in detached_cli(code, "status")
+        assert omi.core.git(home, "rev-parse", "HEAD") == kept
+        try:
+            detached_cli(code, "sync")
+        except AssertionError as exc:
+            assert "STATE NOT PUSHED: run omi sync" in str(exc), exc
+        else:
+            raise AssertionError("sync must fail when push fails")
+        git(home, "remote", "set-url", "origin", str(remote))
+        unrelated.write_text("updated elsewhere", encoding="utf-8")
+        leftover.write_text("updated decision", encoding="utf-8")
+        assert "state synced" in detached_cli(code, "sync")
+        assert omi.core.git(home, "status", "--porcelain") == ""
+        assert omi.core.git(home, "rev-parse", "HEAD") == omi.core.git(other, "ls-remote", "origin", "refs/heads/main").split()[0]
+        assert set(omi.core.git(home, "show", "--format=", "--name-only", "HEAD").splitlines()) == {
+            "unrelated.txt", leftover.relative_to(home).as_posix()}
+        # Manual task start/done and plan/decision edits are picked up together.
+        task.write_text(task.read_text(encoding="utf-8").replace("status: in-progress", "status: done"), encoding="utf-8")
+        plan = project / ".omi" / "plans" / "PLAN-099.md"
+        plan.write_text("plan update", encoding="utf-8")
+        leftover.write_text("decision update", encoding="utf-8")
+        assert "state synced" in detached_cli(code, "sync")
+        assert omi.core.git(home, "status", "--porcelain") == ""
+        # Both staged and unstaged deletions are committed by sync.
+        git(home, "rm", "--", plan.relative_to(home).as_posix())
+        leftover.unlink()
+        assert "state synced" in detached_cli(code, "sync")
+        assert omi.core.git(home, "status", "--porcelain") == ""
+        # Offline exceptions and a repository without a remote both remain readable.
+        real_git = omi.state_sync.git
+        def offline(root, *args):
+            if args[0] == "pull":
+                raise omi.state.StateError("offline")
+            return real_git(root, *args)
+        with patch.object(omi.state_sync, "git", side_effect=offline):
+            assert "state pull skipped: offline" in detached_cli(code, "status")
+        git(home, "remote", "remove", "origin")
+        assert "state pull skipped: no remote" in detached_cli(code, "status")
+        assert "state synced" in detached_cli(code, "sync")
+        git(home, "remote", "add", "origin", str(remote))
+        assert "state synced" in detached_cli(code, "sync")
+        assert omi.core.git(home, "rev-parse", "--abbrev-ref", "@{upstream}") == "origin/main"
+
+
+def test_state_sync_conflict():
+    """Rebase conflicts list files and stop before committing or pushing leftovers."""
+    with detached_project() as (code, project, wt, task):
+        home, remote, other = state_remote(project)
+        peer_task = other / task.relative_to(home)
+        for root, path, title in ((home, task, "Local"), (other, peer_task, "Peer")):
+            path.write_text(path.read_text(encoding="utf-8").replace("Detached test", title), encoding="utf-8")
+            git(root, "add", ".")
+            git(root, "commit", "-qm", title)
+        git(other, "push", "-q")
+        remote_head = omi.core.git(other, "rev-parse", "HEAD")
+        leftover = home / "uncommitted.txt"
+        leftover.write_text("keep untouched", encoding="utf-8")
+        for attempt in range(2):
+            try:
+                detached_cli(code, "sync")
+            except AssertionError as exc:
+                assert "state rebase conflict:" in str(exc) and "TASK-097.md" in str(exc), exc
+            else:
+                raise AssertionError("conflict accepted")
+            assert omi.core.git(other, "ls-remote", "origin", "refs/heads/main").split()[0] == remote_head
+            assert leftover.read_text(encoding="utf-8") == "keep untouched"
+            assert omi.core.git(home, "ls-files", "--", "uncommitted.txt") == ""
+        assert omi.core.git(home, "diff", "--name-only", "--diff-filter=U") == task.relative_to(home).as_posix()
+
+
 if __name__ == "__main__":
+    test_state_sync()
+    test_state_sync_conflict()
     test_attach_registration()
     test_attach_commit_failure_cleanup()
     test_attach_init_failure_cleanup()
