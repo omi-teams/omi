@@ -1,16 +1,16 @@
 ---
 id: TASK-118
 title: Split tests/test_omi.py into test files by area
-status: planned
+status: in-progress
 depends: TASK-107
 plan: PLAN-005
 scope: tests/**
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: claude
+model: sonnet
+effort: medium
 step_settings:
 workflow: omi-flow-refactor
 step:
