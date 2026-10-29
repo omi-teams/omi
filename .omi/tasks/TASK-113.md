@@ -1,7 +1,7 @@
 ---
 id: TASK-113
 title: Board data layer: state to JSON-ready dicts
-status: in-progress
+status: done
 depends: TASK-112
 plan: PLAN-006
 scope: src/omi/board/__init__.py, src/omi/board/data.py, tests/test_board.py, tests/test_omi.py, .omi/rules/omi-modules.md, .omi/rules/CATALOG.md, .omi/tasks/TASK-113.md
@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature
-step: build
+step: review
 ---
 ## Goal
 Backend half of the board: pure functions that read `$OMI_STATE` into dicts for the home page, a project dashboard and a task detail, reusing omi's task, plan and usage parsers.
@@ -27,6 +27,7 @@ Backend half of the board: pure functions that read `$OMI_STATE` into dicts for 
 - [x] Tests in tests/test_board.py (run by tests/test_omi.py) on a temporary state repo cover each function and the path refusal; all tests pass.
 
 ## Checkpoint
+Host: python tests/test_omi.py -> ok (exit 0, Windows; symlink refusal cases skipped: no symlink privilege)
 Done: Fixed review round 1 Windows portability failure. Each of the three symlink creation sites in tests/test_board.py catches OSError, prints "skip board symlink refusal: symlink creation unavailable", and returns. Invalid-name/id refusal checks always run first; refusal assertions and other filesystem operations remain outside the handlers. Existing board implementation and acceptance coverage retained.
 Not done: None.
 Tests: python3 tests/test_board.py passed (3 test functions, no skips). python3 tests/test_omi.py passed (exit 0, final output ok), including test_board.main(). Additional inline regression checks simulated OSError at symlink creation calls 1, 5 and 6: all three handlers printed the expected skip message, and all six invalid-name/id checks ran before each simulated skip. Only the remaining symlink cases were skipped in those simulations; normal board tests skipped none.
@@ -40,6 +41,8 @@ Next: Coordinator reviews the scoped diff and commits on the host. Native Window
 - review started 2026-10-29 22:18
 - review failed 2026-10-29 22:20
 - build started 2026-10-29 22:20
+- build done 2026-10-29 22:31
+- review started 2026-10-29 22:31
 
 ## Reports
 2026-10-29 22:11 omi-agent-engineer (codex):
@@ -150,9 +153,21 @@ Next: Coordinator reviews the scoped diff and commits on the host. Native Window
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-29 22:39 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/board/data.py:341 `project()` and `_waiting()` raise `ValueError` when a task filename or a `workflow:` value fails the strict id regex. One odd file then breaks the whole dashboard and `projects()` -> skip invalid entries instead of raising. Not blocking; the repo's real task and workflow files all pass the regex.
+> - tests/test_board.py:483 When symlink creation fails (Windows without the privilege), the test returns early. That skips every remaining path-escape case while still reporting success. This was an explicit fix for review round 1 -> acceptable, but the escape-refusal criterion is only partly covered on such hosts.
+> 
+> AC: `projects()` lists projects with active plan progress, task counts by status and PO-waiting count ✓ `test_views` asserts the full `projects()` output, and `python3 tests/test_omi.py` exits 0 ("ok").
+> AC: `project(name)` returns PO-waiting items, plans, kanban, activity, decisions, usage per task and model with review rounds, and sync status ✓ `test_views` asserts each of these, including ahead 1, behind 1 and dirty.
+> AC: `task(name, id)` returns frontmatter, Goal, criteria with ticks, Checkpoint, Steps, Reports, Usage ✓ `test_views` asserts each field.
+> AC: Names and IDs are validated; any resolved path outside `$OMI_STATE` raises; nothing is written ✓ `test_path_refusal` checks invalid names and the symlink escapes, and `test_views` compares file bytes before and after. On this host symlink creation worked, so none of the cases were skipped.
+> AC: `omi-modules` rule places `board` in the layer order ✓ `app.cli > board.data > setup.* …` is in the rule, and `test_empty_and_layer` asserts the order.
+> AC: Tests in tests/test_board.py (run by tests/test_omi.py) on a temporary state repo cover each function and the path refusal; all tests pass ✓ `test_board.main()` is wired into tests/test_omi.py. `python3 tests/test_board.py` exits 0 and the full suite ends with "ok".
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1109307 | 10176 | 1024384 | 357s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1162801 | 3535 | 1102208 | 299s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 16 | 3329 | 295000 | 316s | - | PASS ef448d3 |
