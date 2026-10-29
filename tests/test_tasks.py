@@ -263,7 +263,7 @@ def test_task_skill_step_commands():
     text = template.read_text(encoding="utf-8")
     assert text == (repo / ".claude/skills/omi-task/SKILL.md").read_text(encoding="utf-8")
     assert 'step <ID> approve --why "<PO\'s words>"' in text
-    assert 'gh pr create --base development --head task/<ID> --title "<type>: <title> (<ID>)"' in text
+    assert 'gh pr create --base development --head task/<ID> --title "<type>: <title> (<ID>)" --body "<one-paragraph summary of the change>"' in text
     assert "--fill" not in text
     assert 'step <ID> reopen --why "<CI failure reason>"' in text
     assert "fresh PO approval" in text

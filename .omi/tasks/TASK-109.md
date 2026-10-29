@@ -26,12 +26,10 @@ Pilot gaps G5, G6 and G9 (found in TASK-107: CI fails after accept and `omi step
 - [ ] Tests in tests/test_tasks.py cover approve in in-repo and detached mode and the refusal; all tests pass.
 
 ## Checkpoint
-Review round 1 FAIL:
-- .claude/skills/omi-task/SKILL.md:24 and the template copy: `gh pr create ... --title "<type>: <title> (<ID>)"` has no body, so non-interactive gh refuses or prompts. Add `--body "<one-paragraph summary of the change>"` to the command in both copies (keep them identical). No other change.
-Done: Implemented approve for PO gates and reopen for completed workflows, using the existing --why parser and authoritative task routing. Reopen restarts the last write step, restores in-progress status, logs the reason, invalidates downstream gates and requires approval after the restart while preserving earlier approval history. Updated both omi-task skills for approve, task IDs in PR titles and reopening after red CI. Added tests for local/detached approval, CLI parsing, commit routing, refusals, reopen/reapproval, last-write selection, no-write refusal and skill parity/content. CLI and README unchanged.
-Not done: No implementation work remains; Coordinator review and host commit are pending. No commit made in the worker.
-Tests: python3 tests/test_tasks.py passed (all 7 test functions in main); python3 tests/test_omi.py passed (ok, exit 0; no test skips reported). An initial run exposed a new test stdout fixture missing reconfigure; corrected and both commands rerun successfully.
-Next: Coordinator reviews the scoped diff and commits; suggested message: feat(tasks): add PO approval and reopen completed workflows.
+Done: Review round 1 fix completed: added --body "<one-paragraph summary of the change>" to gh pr create in both scoped omi-task skill copies, keeping them identical. Extended the existing skill command assertion to require the body argument. No other implementation changes in this round.
+Not done: Coordinator review and host commit are pending; no commit created in the worker.
+Tests: python3 tests/test_tasks.py passed (all 7 test functions in main, exit 0); python3 tests/test_omi.py passed (ok, exit 0). No test skips reported; fixture messages about skipping existing files are installer behavior.
+Next: Coordinator reviews the fix and commits; suggested message: fix(tasks): supply PR body in task skill.
 
 ## Steps
 - plan started 2026-10-29 16:07
@@ -104,9 +102,64 @@ Next: Coordinator reviews the scoped diff and commits; suggested message: feat(t
 > AC: both skill copies use approve, task-bearing PR titles, and reopen after red CI ✗ Required text is present, but PR creation needs the body fix above.
 > AC: reuse --why; leave cli.py and README untouched ✓ Existing parser exercised; neither file appears in the diff.
 > AC: approval tests cover in-repo/detached modes and refusal; all tests pass ✓ Task tests passed; `python3 tests/test_omi.py` exited 0 with `ok`.
+2026-10-29 16:31 omi-agent-engineer (codex):
+> DONE
+> Files changed: both scoped omi-task/SKILL.md copies, tests/test_tasks.py, .omi/tasks/TASK-109.md.
+> Added PR body argument and regression assertion; checkpoint updated.
+> Suggested commit: `fix(tasks): supply PR body in task skill`
+> Tests: `python3 tests/test_tasks.py` and `python3 tests/test_omi.py` passed; no test skips reported.
+> Open issues: none. No commit created.
+2026-10-29 16:34 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1821973 | 11921 | 1762304 | 565s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 1306369 | 3432 | 1240192 | 258s | - | FAIL 37100f6 |
+| omi-agent-engineer | gpt-6.1-sol (codex) | medium | 760625 | 1813 | 696320 | 227s | 1/1 omi-skill-lean-implementation | - |
