@@ -7,14 +7,14 @@ from helpers import omi
 
 
 def test_github_rulesets():
-    rs = omi.github.rulesets()
+    rs = omi.project.github.rulesets()
     dev, po = rs["omi-development"], rs["omi-po-only"]
     assert [r["type"] for r in dev["rules"]] == ["deletion", "non_fast_forward"]
     assert dev["bypass_actors"] == []
     assert po["conditions"]["ref_name"]["include"] == ["refs/heads/staging", "refs/heads/main"]
     types = {r["type"]: r for r in po["rules"]}
     assert {"pull_request", "update"} <= set(types) and "required_status_checks" not in types
-    po = omi.github.rulesets(["test (ubuntu-latest)", "test (macos-latest)"])["omi-po-only"]
+    po = omi.project.github.rulesets(["test (ubuntu-latest)", "test (macos-latest)"])["omi-po-only"]
     types = {r["type"]: r for r in po["rules"]}
     assert types["required_status_checks"]["parameters"]["required_status_checks"] == [
         {"context": "test (ubuntu-latest)"}, {"context": "test (macos-latest)"}]
@@ -27,7 +27,7 @@ def test_github_rulesets():
 
 
 def test_ci_checks_and_apply():
-    real_run, real_gh, real_info = subprocess.run, omi.github.gh, omi.github.repo_info
+    real_run, real_gh, real_info = subprocess.run, omi.project.github.gh, omi.project.github.repo_info
     done = lambda n: {"name": n, "status": "completed"}
     st = {"runs": [done("test (ubuntu-latest)"), done("test (windows-latest)"), done("test (ubuntu-latest)")],
           "live": None, "puts": [], "newer": []}
@@ -52,16 +52,16 @@ def test_ci_checks_and_apply():
             return None
         return {"permissions": {"admin": True}}
 
-    omi.github.gh, omi.github.repo_info = fake, lambda: "o/r"
+    omi.project.github.gh, omi.project.github.repo_info = fake, lambda: "o/r"
     try:
-        assert omi.github.ci_checks("o/r") == ["test (ubuntu-latest)", "test (windows-latest)"]
+        assert omi.project.github.ci_checks("o/r") == ["test (ubuntu-latest)", "test (windows-latest)"]
         st["runs"] = []
-        assert omi.github.ci_checks("o/r") == []
-        omi.github.gh = lambda *a, **k: (_ for _ in ()).throw(omi.github.GhError("gh api x failed: HTTP 404", 404))
-        assert omi.github.ci_checks("o/r") == []
-        omi.github.gh = lambda *a, **k: (_ for _ in ()).throw(omi.github.GhError("gh api x failed: HTTP 500", 500))
+        assert omi.project.github.ci_checks("o/r") == []
+        omi.project.github.gh = lambda *a, **k: (_ for _ in ()).throw(omi.project.github.GhError("gh api x failed: HTTP 404", 404))
+        assert omi.project.github.ci_checks("o/r") == []
+        omi.project.github.gh = lambda *a, **k: (_ for _ in ()).throw(omi.project.github.GhError("gh api x failed: HTTP 500", 500))
         try:
-            omi.github.ci_checks("o/r")
+            omi.project.github.ci_checks("o/r")
             assert False, "non-404 error must abort"
         except SystemExit as e:
             assert "500" in str(e)
@@ -69,61 +69,61 @@ def test_ci_checks_and_apply():
         class R:
             returncode, stdout, stderr = 1, "", "gh: Server Error (HTTP 500)"
         subprocess.run = lambda *a, **k: R()
-        omi.github.gh = real_gh
+        omi.project.github.gh = real_gh
         try:
-            omi.github.ci_checks("app404/r404")
+            omi.project.github.ci_checks("app404/r404")
             assert False, "HTTP 500 must abort even if the path contains 404"
         except SystemExit as e:
             assert "required checks left untouched" in str(e)
         R.stderr = "gh: Not Found (HTTP 404)"
-        assert omi.github.ci_checks("o/r") == []
+        assert omi.project.github.ci_checks("o/r") == []
         subprocess.run = real_run
-        omi.github.gh = fake
+        omi.project.github.gh = fake
         st["newer"] = [{"name": "test (new)", "status": "queued"}]  # fresh commit, CI not finished
         st["runs"] = [done("test (ubuntu-latest)")]
-        assert omi.github.ci_checks("o/r") == ["test (ubuntu-latest)"], "walks back past the unfinished commit"
+        assert omi.project.github.ci_checks("o/r") == ["test (ubuntu-latest)"], "walks back past the unfinished commit"
         st["newer"] = [done("test (new)")]
-        assert omi.github.ci_checks("o/r") == ["test (new)"]
+        assert omi.project.github.ci_checks("o/r") == ["test (new)"]
         st["newer"] = []
         st["runs"] = []
-        omi.github.gh = fake
+        omi.project.github.gh = fake
         import contextlib, io
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            omi.github.apply_github()
+            omi.project.github.apply_github()
         assert "no CI check runs" in out.getvalue()
-        st["live"] = omi.github.rulesets()["omi-po-only"]  # no required checks stored
+        st["live"] = omi.project.github.rulesets()["omi-po-only"]  # no required checks stored
         st["runs"] = [done("test (ubuntu-latest)")]
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            omi.github.apply_github()
+            omi.project.github.apply_github()
         assert "update ruleset omi-po-only" in out.getvalue() and len(st["puts"]) == 1
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            omi.github.apply_github()
+            omi.project.github.apply_github()
         assert "unchanged ruleset omi-po-only" in out.getvalue()
         st["runs"] = [done("test (ubuntu-latest)"), done("test (macos-latest)")]
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            omi.github.apply_github()
+            omi.project.github.apply_github()
         assert "update ruleset omi-po-only" in out.getvalue()
     finally:
-        subprocess.run, omi.github.gh, omi.github.repo_info = real_run, real_gh, real_info
+        subprocess.run, omi.project.github.gh, omi.project.github.repo_info = real_run, real_gh, real_info
 
 
 def test_same_and_no_gh():
-    po = omi.github.rulesets()["omi-po-only"]
+    po = omi.project.github.rulesets()["omi-po-only"]
     live = json.loads(json.dumps(po))
     live["id"] = 7
     live["rules"].reverse()
     live["rules"][0].setdefault("parameters", {})
-    assert omi.github.same(live, po)
+    assert omi.project.github.same(live, po)
     live["rules"].pop()
-    assert not omi.github.same(live, po)
+    assert not omi.project.github.same(live, po)
     real = shutil.which
     shutil.which = lambda _: None
     try:
-        omi.github.github()
+        omi.project.github.github()
         assert False
     except SystemExit as e:
         assert "gh is not installed" in str(e)
@@ -132,7 +132,7 @@ def test_same_and_no_gh():
 
 
 def test_github_po():
-    realrun, realwhich, realapply = subprocess.run, shutil.which, omi.github.apply_github
+    realrun, realwhich, realapply = subprocess.run, shutil.which, omi.project.github.apply_github
     st = {}
 
     class R:
@@ -173,9 +173,9 @@ def test_github_po():
         def apply():
             st["calls"].append("apply")
             if fail_apply: raise SystemExit("boom")
-        omi.github.apply_github = apply
+        omi.project.github.apply_github = apply
         try:
-            omi.github.github(po=True)
+            omi.project.github.github(po=True)
             return None
         except SystemExit as e:
             return str(e)
@@ -211,7 +211,7 @@ def test_github_po():
         e = go(switch_fail=True)  # active account not restored: warning + non-zero
         assert "WARNING" in e and "not the squad account squad" in e and st["accts"] == ["squad"]
     finally:
-        subprocess.run, shutil.which, omi.github.apply_github = realrun, realwhich, realapply
+        subprocess.run, shutil.which, omi.project.github.apply_github = realrun, realwhich, realapply
 
 
 def test_github_private():
@@ -219,7 +219,7 @@ def test_github_private():
     class R: stdout, stderr, returncode = "o/r PRIVATE", "", 0
     subprocess.run = lambda *a, **k: R()
     try:
-        omi.github.apply_github()
+        omi.project.github.apply_github()
         assert False
     except SystemExit as e:
         assert "private" in str(e)

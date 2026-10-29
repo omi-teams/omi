@@ -5,7 +5,11 @@ import json
 import sys
 from pathlib import Path
 
-from . import catalogs, core, creds, docker, github, hooks, install, run, scope, state, state_sync, tasks, upgrade, workflows
+from ..setup import attach, install, upgrade
+from ..project import catalogs, github, scope, tasks, workflows
+from ..common import core
+from ..worker import creds, docker, hooks, run
+from ..state import resolve as state, sync as state_sync
 
 
 STATUSES = ("in-progress", "review", "blocked", "planned")
@@ -39,7 +43,7 @@ USAGE = """usage: omi <command>
 def status(cwd="."):
     project = state.resolve(cwd)
     if project.detached:
-        upgrade.warn_in_repo_files(project.code)
+        attach.warn_in_repo_files(project.code)
         state_sync.pull(project)
     root = project.state
     print(f"branch: {core.git(cwd, 'rev-parse', '--abbrev-ref', 'HEAD')}")
@@ -134,7 +138,7 @@ def dispatch(argv: list[str] | None = None) -> None:
     if cmd in ("version", "--version"):
         print(f"omi {core.version()}\nlatest: python -m omi upgrade --check")
     elif cmd == "attach":
-        upgrade.attach(rest)
+        attach.attach(rest)
     elif cmd == "install-user":
         if rest not in ([], ["--remove"]):
             raise state.StateError("usage: omi install-user [--remove]")

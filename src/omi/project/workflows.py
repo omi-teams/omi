@@ -4,7 +4,8 @@ import re
 import sys
 from pathlib import Path
 
-from . import catalogs, core
+from . import catalogs
+from ..common import core
 
 
 WORKFLOW_TOKENS = 2000  # per workflow file (bytes/4)

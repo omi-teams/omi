@@ -4,7 +4,8 @@ import hashlib
 import subprocess
 from pathlib import Path
 
-from . import core, state
+from ..common import core
+from . import resolve as state
 
 
 def git(root: Path, *args: str) -> subprocess.CompletedProcess:

@@ -14,9 +14,9 @@ from helpers import omi, git
 
 def test_cli_correctness():
     repo = Path(__file__).resolve().parents[1]
-    for base, dot in ((repo, "."), (omi.core.TEMPLATE, "dot-")):
+    for base, dot in ((repo, "."), (omi.common.core.TEMPLATE, "dot-")):
         template = (base / f"{dot}omi/tasks/_template.md").read_text(encoding="utf-8")
-        assert omi.scope.GIT_HINT in template and "edit only on development" in template
+        assert omi.project.scope.GIT_HINT in template and "edit only on development" in template
         skill = (base / f"{dot}claude/skills/omi-task/SKILL.md").read_text(encoding="utf-8")
         assert "push `development` right away (`git push`)" in skill
         assert "development only" not in skill and "the worktree copy is ignored" not in skill
@@ -29,67 +29,67 @@ def test_cli_correctness():
         command = f'"{python}" -c "import os,sys;sys.exit(0 if os.environ[\'FOO\']==\'1\' else 1)"'
         cfg = root / ".omi" / "config.json"
         cfg.write_text(json.dumps({"test": command}), encoding="utf-8")
-        argv = omi.run.test_command(root, root)
+        argv = omi.worker.run.test_command(root, root)
         shell = "cmd" if isinstance(argv, str) else argv[0]
         command = ('set "FOO=1" && ' if shell == "cmd" else "FOO=1 ") + command
         cfg.write_text(json.dumps({"test": command}), encoding="utf-8")
-        argv = omi.run.test_command(root, root)
+        argv = omi.worker.run.test_command(root, root)
         assert argv == (f'cmd /d /s /c "{command}"' if shell == "cmd" else [shell, "-c", command])
         assert subprocess.run(argv, cwd=d).returncode == 0
-        assert omi.run.test_prompt_line(root, root) == command
+        assert omi.worker.run.test_prompt_line(root, root) == command
         # a program that cannot start: message, no traceback
-        real = omi.run.test_command, omi.scope.out_of_scope, omi.catalogs.check_all_skills
-        omi.run.test_command, omi.scope.out_of_scope, omi.catalogs.check_all_skills = (
+        real = omi.worker.run.test_command, omi.project.scope.out_of_scope, omi.project.catalogs.check_all_skills
+        omi.worker.run.test_command, omi.project.scope.out_of_scope, omi.project.catalogs.check_all_skills = (
             lambda *a: [str(root / "no-such-prog")], lambda *a, **k: [], lambda wt: None)
         try:
-            problems = omi.run.deterministic_checks(root, root, "TASK-001")
+            problems = omi.worker.run.deterministic_checks(root, root, "TASK-001")
         finally:
-            omi.run.test_command, omi.scope.out_of_scope, omi.catalogs.check_all_skills = real
+            omi.worker.run.test_command, omi.project.scope.out_of_scope, omi.project.catalogs.check_all_skills = real
         assert len(problems) == 1 and problems[0].startswith("test command failed to start: "), problems
         # a nonexistent program in the configured command: shell exit 127/9009
         cfg.write_text(json.dumps({"test": "no-such-prog-omi-xyz --run"}), encoding="utf-8")
-        omi.scope.out_of_scope, omi.catalogs.check_all_skills = lambda *a, **k: [], lambda wt: None
+        omi.project.scope.out_of_scope, omi.project.catalogs.check_all_skills = lambda *a, **k: [], lambda wt: None
         try:
-            problems = omi.run.deterministic_checks(root, root, "TASK-001")
+            problems = omi.worker.run.deterministic_checks(root, root, "TASK-001")
         finally:
-            omi.scope.out_of_scope, omi.catalogs.check_all_skills = real[1], real[2]
+            omi.project.scope.out_of_scope, omi.project.catalogs.check_all_skills = real[1], real[2]
         assert len(problems) == 1 and problems[0].startswith("test command failed to start: "), problems
         # #14 status hint on an empty `test`
         (root / ".omi" / "config.json").write_text('{"test": ""}')
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            omi.cli.status(root)
+            omi.app.cli.status(root)
         assert "no `test` command in .omi/config.json" in buf.getvalue()
         (root / ".omi" / "config.json").write_text('{"test": "true"}')
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            omi.cli.status(root)
+            omi.app.cli.status(root)
         assert "no `test` command" not in buf.getvalue()
         cfg.write_text('{"test":', encoding="utf-8")
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            omi.cli.status(root)
+            omi.app.cli.status(root)
         assert "no `test` command" not in buf.getvalue()
     # #8 PO approval with or without a leading `- `
-    assert omi.tasks.po_approved("x\n## Steps\n- PO approval accept: ok\n", "accept")
-    assert omi.tasks.po_approved("x\n## Steps\nPO approval accept: ok\n", "accept")
-    assert not omi.tasks.po_approved("x\n## Steps\n- PO approval accept:\n", "accept")
+    assert omi.project.tasks.po_approved("x\n## Steps\n- PO approval accept: ok\n", "accept")
+    assert omi.project.tasks.po_approved("x\n## Steps\nPO approval accept: ok\n", "accept")
+    assert not omi.project.tasks.po_approved("x\n## Steps\n- PO approval accept:\n", "accept")
     # #4 hint for .git* paths
-    assert "exact scope entry (no globs), e.g. .github/workflows/ci.yml" in omi.scope.git_hint([".github/x.yml"])
-    assert omi.scope.git_hint(["src/a.py"]) == ""
+    assert "exact scope entry (no globs), e.g. .github/workflows/ci.yml" in omi.project.scope.git_hint([".github/x.yml"])
+    assert omi.project.scope.git_hint(["src/a.py"]) == ""
     # #10 scope comes from development, not from the worktree copy
-    real_git = omi.core.git
-    omi.core.git = lambda cwd, *a: "---\nscope: a/**\n---\n" if "show" in a else None
+    real_git = omi.common.core.git
+    omi.common.core.git = lambda cwd, *a: "---\nscope: a/**\n---\n" if "show" in a else None
     try:
-        assert omi.scope.task_scope("/nowhere", "TASK-001") == ["a/**"]
+        assert omi.project.scope.task_scope("/nowhere", "TASK-001") == ["a/**"]
     finally:
-        omi.core.git = real_git
+        omi.common.core.git = real_git
     with tempfile.TemporaryDirectory() as d:
         wt = Path(d)
         task = wt / ".omi" / "tasks" / "TASK-001.md"
         task.parent.mkdir(parents=True)
         task.write_text("---\nscope: **\n---\n", encoding="utf-8")
-        real = omi.core.git, subprocess.run
+        real = omi.common.core.git, subprocess.run
         calls = []
 
         def development_scope(cwd, *args):
@@ -104,29 +104,29 @@ def test_cli_correctness():
             return subprocess.CompletedProcess(cmd, 0, " M src/a.py\0?? docs/outside.md\0", "")
 
         try:
-            omi.core.git, subprocess.run = development_scope, changed
-            assert omi.scope.out_of_scope(wt, "TASK-001") == ["docs/outside.md"]
+            omi.common.core.git, subprocess.run = development_scope, changed
+            assert omi.project.scope.out_of_scope(wt, "TASK-001") == ["docs/outside.md"]
             assert calls
         finally:
-            omi.core.git, subprocess.run = real
+            omi.common.core.git, subprocess.run = real
     # review gate: `done` refuses after a FAIL verdict
     with tempfile.TemporaryDirectory() as d:
         root = Path(d).resolve()
-        omi.upgrade.init(root)
+        omi.setup.upgrade.init(root)
         task = root / ".omi" / "tasks" / "TASK-001.md"
         task.parent.mkdir(parents=True, exist_ok=True)
         row = lambda v: f"| omi-agent-reviewer | sonnet | low | 1 | 1 | 1 | 5s | - | {v} |\n"
         base = ("---\nid: TASK-001\nworkflow: omi-flow-feature\nstep: review\n---\n## Steps\n- plan done 2026-01-01 00:00\n"
-                "- build done 2026-01-01 00:00\n- review started 2026-01-01 00:00\n\n## Usage\n" + omi.tasks.USAGE_HEAD
+                "- build done 2026-01-01 00:00\n- review started 2026-01-01 00:00\n\n## Usage\n" + omi.project.tasks.USAGE_HEAD
                 + "\n|---|---|---|---|---|---|---|---|---|\n")
         task.write_text(base + row("FAIL abc1234"))
         try:
-            omi.tasks.step(root, "TASK-001", "done")
+            omi.project.tasks.step(root, "TASK-001", "done")
             raise AssertionError("done passed after FAIL")
         except SystemExit as e:
             assert "FAIL" in str(e) and "omi step TASK-001 back" in str(e), e
         task.write_text(base + row("FAIL abc1234") + row("PASS def5678"))
-        assert omi.tasks.step(root, "TASK-001", "done") == 0
+        assert omi.project.tasks.step(root, "TASK-001", "done") == 0
 
 
 def test_cli_characterization():

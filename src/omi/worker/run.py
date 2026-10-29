@@ -18,7 +18,10 @@ import time
 import types
 from pathlib import Path
 
-from . import catalogs, core, creds, docker, hooks, scope, state, tasks, tools, workflows
+from ..project import catalogs, scope, tasks, workflows
+from ..common import core
+from . import creds, docker, hooks, tools
+from ..state import resolve as state
 
 
 def skills_read(root, ids, opened):

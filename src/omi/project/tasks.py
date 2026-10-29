@@ -5,7 +5,9 @@ import re
 import sys
 from pathlib import Path
 
-from . import catalogs, core, state, workflows
+from . import catalogs, workflows
+from ..common import core
+from ..state import resolve as state
 
 
 STEP_LOG = re.compile(r"^- (\S+) (started|done|skipped|failed) ", re.M)

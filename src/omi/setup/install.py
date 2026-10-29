@@ -8,7 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import core, state
+from ..common import core
+from ..state import resolve as state
 
 
 def _hook() -> dict:

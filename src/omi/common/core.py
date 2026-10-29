@@ -8,7 +8,7 @@ import tomllib
 from pathlib import Path
 
 
-TEMPLATE = Path(__file__).parent / "template"
+TEMPLATE = Path(__file__).parents[1] / "template"
 WINDOWS = sys.platform == "win32"
 
 
@@ -42,7 +42,7 @@ def tokens(*files):
 
 def version():
     """The one version lives in pyproject.toml; a source checkout wins over (possibly stale) editable-install metadata."""
-    pp = Path(__file__).parents[2] / "pyproject.toml"
+    pp = Path(__file__).parents[3] / "pyproject.toml"
     if pp.is_file():
         proj = tomllib.loads(pp.read_text(encoding="utf-8")).get("project", {})
         if proj.get("name") == "omi-squad":

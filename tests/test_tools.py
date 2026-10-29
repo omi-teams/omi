@@ -14,24 +14,24 @@ from helpers import omi
 def test_tool_choice_and_quota_switch():
     import contextlib
     for template in (Path(__file__).parents[1] / ".omi" / "tasks" / "_template.md",
-                     omi.core.TEMPLATE / "dot-omi" / "tasks" / "_template.md"):
+                     omi.common.core.TEMPLATE / "dot-omi" / "tasks" / "_template.md"):
         lines = template.read_text(encoding="utf-8").splitlines()
         for field in ("tool:", "model:"):
             assert "write role or the task's own role" in next(line for line in lines if line.startswith(field))
-    real = (subprocess.run, shutil.which, omi.core.main_checkout, omi.core.WINDOWS)
+    real = (subprocess.run, shutil.which, omi.common.core.main_checkout, omi.common.core.WINDOWS)
     claude_quota = json.dumps({"type": "result", "is_error": True, "result": "Claude AI usage limit reached|1760000000"})
     codex_quota = json.dumps({"type": "error", "message": "You've hit your usage limit. Upgrade to Pro or try again at 3:05 PM."})
     ok_codex = "\n".join(json.dumps(e) for e in (
         {"type": "item.completed", "item": {"type": "agent_message", "text": "DONE codex"}},
         {"type": "turn.completed", "usage": {"input_tokens": 8, "output_tokens": 3, "cached_input_tokens": 3}}))
-    assert omi.tools.quota_hit("claude", claude_quota, 1) and omi.tools.quota_hit("codex", codex_quota, 1)
-    assert not omi.tools.quota_hit("claude", claude_quota, 0) and not omi.tools.quota_hit("codex", claude_quota, 1)
+    assert omi.worker.tools.quota_hit("claude", claude_quota, 1) and omi.worker.tools.quota_hit("codex", codex_quota, 1)
+    assert not omi.worker.tools.quota_hit("claude", claude_quota, 0) and not omi.worker.tools.quota_hit("codex", claude_quota, 1)
     codex_failed = json.dumps({"type": "turn.failed", "error": {"message": "usage_limit_reached"}})
-    assert omi.tools.quota_hit("codex", codex_failed, 1)
+    assert omi.worker.tools.quota_hit("codex", codex_failed, 1)
     tool_out = json.dumps({"type": "item.completed", "item": {"type": "command_execution", "aggregated_output": "quota exceeded"}})
     other_fail = json.dumps({"type": "error", "message": "model crashed"})
-    assert not omi.tools.quota_hit("codex", tool_out + "\n" + other_fail, 1)
-    assert not omi.tools.quota_hit("claude", json.dumps({"type": "user", "message": "quota exceeded"}) + "\n" + json.dumps({"type": "result", "is_error": True, "result": "boom"}), 1)
+    assert not omi.worker.tools.quota_hit("codex", tool_out + "\n" + other_fail, 1)
+    assert not omi.worker.tools.quota_hit("claude", json.dumps({"type": "user", "message": "quota exceeded"}) + "\n" + json.dumps({"type": "result", "is_error": True, "result": "boom"}), 1)
     with tempfile.TemporaryDirectory() as d:
         wt = Path(d).resolve()
         (wt / ".git").write_text("gitdir: /x")
@@ -64,21 +64,21 @@ def test_tool_choice_and_quota_switch():
         def noegress(*a):
             yield "net", "proxy"
 
-        egress, ensure = omi.docker.egress, omi.docker.ensure_image
-        omi.docker.egress, omi.docker.ensure_image = noegress, lambda m: "img"
-        subprocess.run, shutil.which, omi.core.main_checkout, omi.core.WINDOWS = run, lambda _: "docker", (lambda _: wt), False
-        os.environ[omi.creds.TOKEN_ENV], os.environ[omi.creds.CODEX_ENV] = "tok", "sk-x"
+        egress, ensure = omi.worker.docker.egress, omi.worker.docker.ensure_image
+        omi.worker.docker.egress, omi.worker.docker.ensure_image = noegress, lambda m: "img"
+        subprocess.run, shutil.which, omi.common.core.main_checkout, omi.common.core.WINDOWS = run, lambda _: "docker", (lambda _: wt), False
+        os.environ[omi.worker.creds.TOKEN_ENV], os.environ[omi.worker.creds.CODEX_ENV] = "tok", "sk-x"
         sys.stdout, saved = io.StringIO(), sys.stdout
         try:
             def go(*o, **kw):
                 outs[:] = list(o)
                 calls.clear()
                 sys.stdout.truncate(0); sys.stdout.seek(0)
-                return omi.run.run_role("omi-agent-engineer", wt, task, **kw)
+                return omi.worker.run.run_role("omi-agent-engineer", wt, task, **kw)
 
             role_path = wt / ".omi" / "agents" / "omi-agent-engineer.md"
-            shutil.copytree(omi.core.TEMPLATE / "dot-omi/agents", role_path.parent, dirs_exist_ok=True)
-            original_role = omi.catalogs.get_role(wt, "omi-agent-engineer")["_text"]
+            shutil.copytree(omi.common.core.TEMPLATE / "dot-omi/agents", role_path.parent, dirs_exist_ok=True)
+            original_role = omi.project.catalogs.get_role(wt, "omi-agent-engineer")["_text"]
             role_path.write_text(re.sub(r"^effort:.*\n", "", original_role, flags=re.M), encoding="utf-8")
             try:
                 for selected in ("claude", "codex"):
@@ -120,19 +120,19 @@ def test_tool_choice_and_quota_switch():
             assert go(R(json.dumps({"result": "ok", "usage": {}})), tool="claude") == 0
             hook.clear()
             assert "REVERTED: status" in sys.stdout.getvalue() and "REVERTED: scope" not in sys.stdout.getvalue()
-            assert omi.core.parse(task.read_text())["status"] == "in-progress" and "Done: x" in task.read_text()
+            assert omi.common.core.parse(task.read_text())["status"] == "in-progress" and "Done: x" in task.read_text()
             task.write_text(task.read_text().replace("status: in-progress\n", ""), encoding="utf-8")
             # revert_front: step edited, a field added, a field removed; comments and order kept; lost frontmatter restored
             t2 = task.with_name("T2.md")
             orig = "---\nid: T\nstep: fix  # keep\nscope: src/**\nrole: r\n---\n## Checkpoint\nold\n"
             t2.write_text(orig, encoding="utf-8")
             t2.write_text("---\nid: T\nstep: done\nstatus: done\n---\n## Checkpoint\nnew\n", encoding="utf-8")
-            assert omi.tasks.revert_front(t2, orig) == ["step", "status", "scope", "role"]
+            assert omi.project.tasks.revert_front(t2, orig) == ["step", "status", "scope", "role"]
             assert t2.read_text() == "---\nid: T\nstep: fix  # keep\nscope: src/**\nrole: r\n---\n## Checkpoint\nnew\n"
             t2.write_text("no front\n", encoding="utf-8")
-            assert omi.tasks.revert_front(t2, orig) == ["frontmatter"] and t2.read_text() == orig.split("---\n", 2)[0] + "---\nid: T\nstep: fix  # keep\nscope: src/**\nrole: r\n---\nno front\n"
+            assert omi.project.tasks.revert_front(t2, orig) == ["frontmatter"] and t2.read_text() == orig.split("---\n", 2)[0] + "---\nid: T\nstep: fix  # keep\nscope: src/**\nrole: r\n---\nno front\n"
             t2.unlink()
-            assert omi.tasks.revert_front(t2, orig) == ["frontmatter"] and t2.read_text() == orig
+            assert omi.project.tasks.revert_front(t2, orig) == ["frontmatter"] and t2.read_text() == orig
             t2.unlink()
             # unknown codex alias fails before any container
             try:
@@ -190,12 +190,12 @@ def test_tool_choice_and_quota_switch():
             # Independent read roles ignore task settings; the task's own read role inherits them.
             front(tool="codex", model="opus", effort="high")
             assert go(R(ok_codex)) == 0 and "codex" in calls[0]
-            det, omi.run.deterministic_checks = omi.run.deterministic_checks, lambda *a: []
+            det, omi.worker.run.deterministic_checks = omi.worker.run.deterministic_checks, lambda *a: []
             try:
                 def review(output, **kw):
                     outs[:] = [R(output)]
                     calls.clear()
-                    return omi.run.run_role("omi-agent-reviewer", wt, task, **kw)
+                    return omi.worker.run.run_role("omi-agent-reviewer", wt, task, **kw)
 
                 assert review(ok_claude) == 0
                 assert "claude" in calls[0] and "codex" not in calls[0]
@@ -211,7 +211,7 @@ def test_tool_choice_and_quota_switch():
                 assert review(ok_claude) == 0
                 assert "claude" in calls[0] and "claude-sonnet-5-5" in calls[0] and "medium" in calls[0]
             finally:
-                omi.run.deterministic_checks = det
+                omi.worker.run.deterministic_checks = det
                 task.write_text(task.read_text(encoding="utf-8").replace("role: omi-agent-reviewer\n", ""), encoding="utf-8")
             # Per-step settings apply only to the current step's role, including read roles.
             workflow_dir = wt / ".omi" / "workflows"
@@ -223,14 +223,14 @@ def test_tool_choice_and_quota_switch():
                     f"- id: {sid} | role: {role} | skills: | input: task | output: report | gate: none | stop: done\n"
                     for sid, role in steps) + "---\n", encoding="utf-8")
             base = "---\nid: TASK-001\nscope: src/**\nworkflow: omi-flow-settings\n"
-            det, omi.run.deterministic_checks = omi.run.deterministic_checks, lambda *a: []
+            det, omi.worker.run.deterministic_checks = omi.worker.run.deterministic_checks, lambda *a: []
             try:
                 def step_run(sid, role, settings, output, own_role="omi-agent-engineer", **kw):
                     task.write_text(base + f"role: {own_role}\nstep: {sid}\ntool: claude\nmodel: haiku\neffort: low\n"
                                     + f"step_settings: {settings}\n---\n## Checkpoint\n", encoding="utf-8")
                     outs[:] = [R(output)]
                     calls.clear()
-                    return omi.run.run_role(role, wt, task, **kw)
+                    return omi.worker.run.run_role(role, wt, task, **kw)
 
                 settings = "build=codex/opus/high, architect=codex/opus/high, security=codex/opus/high"
                 for sid, role in steps:
@@ -271,7 +271,7 @@ def test_tool_choice_and_quota_switch():
                     except SystemExit as exc:
                         assert "architet" in str(exc) and "build, architect, security" in str(exc) and not calls
             finally:
-                omi.run.deterministic_checks = det
+                omi.worker.run.deterministic_checks = det
                 task.write_text("---\nid: TASK-001\nscope: src/**\n---\n## Checkpoint\n", encoding="utf-8")
             front(tool="codex", model="opus")
             # model/effort are Coordinator-owned frontmatter
@@ -327,39 +327,39 @@ def test_tool_choice_and_quota_switch():
             assert echoed == "thinking\nstill thinking\n", echoed
             # the other tool also at its limit, or without a token: exit 5, QUOTA line, one run only when no token
             assert go(R(claude_quota, 1), R(codex_quota, 1)) == 5 and "QUOTA: claude and codex" in sys.stdout.getvalue()
-            del os.environ[omi.creds.CODEX_ENV]
+            del os.environ[omi.worker.creds.CODEX_ENV]
             assert go(R(claude_quota, 1)) == 5 and len(calls) == 1 and "no ChatGPT login" in sys.stdout.getvalue()
             # A missing fallback credential must not hide a model/effort configuration error.
             (wt / ".omi" / "config.json").write_text("{}", encoding="utf-8")
             assert go(R(claude_quota, 1)) == 5 and len(calls) == 1
             assert "codex_models" in sys.stdout.getvalue() and "no ChatGPT login" not in sys.stdout.getvalue()
             (wt / ".omi" / "config.json").write_text('{"codex_models": {"sonnet": "gpt-x"}}', encoding="utf-8")
-            resolve_effort = omi.tools.resolve_effort
+            resolve_effort = omi.worker.tools.resolve_effort
             def fallback_effort(effort, tool):
                 if tool == "codex":
                     raise SystemExit("missing codex effort entry")
                 return resolve_effort(effort, tool)
-            omi.tools.resolve_effort = fallback_effort
+            omi.worker.tools.resolve_effort = fallback_effort
             try:
                 assert go(R(claude_quota, 1)) == 5 and len(calls) == 1
                 assert "missing codex effort entry" in sys.stdout.getvalue() and "no ChatGPT login" not in sys.stdout.getvalue()
             finally:
-                omi.tools.resolve_effort = resolve_effort
+                omi.worker.tools.resolve_effort = resolve_effort
         finally:
             sys.stdout = saved
-            omi.docker.egress, omi.docker.ensure_image = egress, ensure
-            subprocess.run, shutil.which, omi.core.main_checkout, omi.core.WINDOWS = real
-            os.environ.pop(omi.creds.TOKEN_ENV, None)
-            os.environ.pop(omi.creds.CODEX_ENV, None)
+            omi.worker.docker.egress, omi.worker.docker.ensure_image = egress, ensure
+            subprocess.run, shutil.which, omi.common.core.main_checkout, omi.common.core.WINDOWS = real
+            os.environ.pop(omi.worker.creds.TOKEN_ENV, None)
+            os.environ.pop(omi.worker.creds.CODEX_ENV, None)
         # a role file's `tool:` is validated and used when neither task nor --tool names one
         ag = wt / ".omi" / "agents"
         ag.mkdir()
-        role = (omi.core.TEMPLATE / "dot-omi" / "agents" / "omi-agent-engineer.md").read_text(encoding="utf-8")
+        role = (omi.common.core.TEMPLATE / "dot-omi" / "agents" / "omi-agent-engineer.md").read_text(encoding="utf-8")
         (ag / "omi-agent-engineer.md").write_text(role.replace("access: write", "access: write\ntool: codex"), encoding="utf-8")
-        assert omi.catalogs.load_roles(wt)["omi-agent-engineer"]["tool"] == "codex"
+        assert omi.project.catalogs.load_roles(wt)["omi-agent-engineer"]["tool"] == "codex"
         (ag / "omi-agent-engineer.md").write_text(role.replace("access: write", "access: write\ntool: gemini"), encoding="utf-8")
         try:
-            omi.catalogs.load_roles(wt)
+            omi.project.catalogs.load_roles(wt)
             raise AssertionError("bad tool accepted")
         except SystemExit as e:
             assert "tool is not claude|codex" in str(e)
@@ -368,7 +368,7 @@ def test_tool_choice_and_quota_switch():
         task.write_text("---\nid: TASK-001\ntitle: t\nstatus: in-progress\nstep: build\n---\n## Checkpoint\nDone:\n")
         sys.stdout, saved = io.StringIO(), sys.stdout
         try:
-            omi.cli.status(wt)
+            omi.app.cli.status(wt)
             printed = sys.stdout.getvalue()
         finally:
             sys.stdout = saved
@@ -379,10 +379,10 @@ def test_model_catalog_and_task_start():
     root = Path(__file__).parents[1]
     for base, config_rel, catalog_rel in (
         (root, ".omi/config.json", ".omi/agents/CATALOG.md"),
-        (omi.core.TEMPLATE, "dot-omi/config.json", "dot-omi/agents/CATALOG.md"),
+        (omi.common.core.TEMPLATE, "dot-omi/config.json", "dot-omi/agents/CATALOG.md"),
     ):
         cfg = json.loads((base / config_rel).read_text(encoding="utf-8"))
-        assert cfg["models"] == omi.tools.DEFAULT_MODELS
+        assert cfg["models"] == omi.worker.tools.DEFAULT_MODELS
         assert cfg["codex_models"] == {"haiku": "gpt-6-luna", "sonnet": "gpt-6.1-sol", "opus": "gpt-6-astra"}
         catalog = (base / catalog_rel).read_text(encoding="utf-8")
         assert "## Models" in catalog
@@ -393,20 +393,20 @@ def test_model_catalog_and_task_start():
                 assert f"- {alias}: {model}; fits: {note['fits']}; avoid: {note['avoid']}" in catalog
             for effort, note in cfg["model_notes"][tool]["efforts"].items():
                 assert f"- effort {effort}; fits: {note['fits']}; avoid: {note['avoid']}" in catalog
-    for path in (root / "AGENTS.md", omi.core.TEMPLATE / "AGENTS.md",
-                 root / ".claude/skills/omi-task/SKILL.md", omi.core.TEMPLATE / "dot-claude/skills/omi-task/SKILL.md"):
+    for path in (root / "AGENTS.md", omi.common.core.TEMPLATE / "AGENTS.md",
+                 root / ".claude/skills/omi-task/SKILL.md", omi.common.core.TEMPLATE / "dot-claude/skills/omi-task/SKILL.md"):
         text = path.read_text(encoding="utf-8").split("## Task-start tool choice", 1)[1]
         for phrase in ("every task-start pick-list", "Start with Claude Code", "Start with Codex",
                        "exactly one option Recommended", "task-specific reason", "PO chooses", "model>/<effort>"):
             assert phrase in text, (path, phrase)
     with tempfile.TemporaryDirectory() as d:
         target = Path(d)
-        omi.upgrade.init(target)
+        omi.setup.upgrade.init(target)
         config = target / ".omi/config.json"
         cfg = json.loads(config.read_text(encoding="utf-8"))
         cfg["model_notes"]["codex"]["models"]["sonnet"]["fits"] = "custom fit from config"
         config.write_text(json.dumps(cfg), encoding="utf-8")
-        omi.catalogs.agents_catalog(target)
+        omi.project.catalogs.agents_catalog(target)
         assert "custom fit from config" in (target / ".omi/agents/CATALOG.md").read_text(encoding="utf-8")
         valid_cfg = json.dumps(cfg)
         for models in (None, {"sonnet": "claude-custom-1-2"}):
@@ -416,9 +416,9 @@ def test_model_catalog_and_task_start():
             else:
                 inherited["models"] = models
             config.write_text(json.dumps(inherited), encoding="utf-8")
-            omi.catalogs.agents_catalog(target)
+            omi.project.catalogs.agents_catalog(target)
             catalog = (target / ".omi/agents/CATALOG.md").read_text(encoding="utf-8")
-            for alias, model in (omi.tools.DEFAULT_MODELS | (models or {})).items():
+            for alias, model in (omi.worker.tools.DEFAULT_MODELS | (models or {})).items():
                 assert f"- {alias}: {model};" in catalog
         for tool, mapping in (("claude", "models"), ("codex", "codex_models")):
             for kind, name in (("models", "haiku"), ("efforts", "medium")):
@@ -432,7 +432,7 @@ def test_model_catalog_and_task_start():
                             note[field] = value
                         config.write_text(json.dumps(broken), encoding="utf-8")
                         try:
-                            omi.catalogs.agents_catalog(target)
+                            omi.project.catalogs.agents_catalog(target)
                             raise AssertionError("invalid catalog note accepted")
                         except SystemExit as exc:
                             assert f"model_notes.{tool}.{kind}.{name}.{field}" in str(exc)
@@ -444,7 +444,7 @@ def test_model_catalog_and_task_start():
                     broken[mapping]["haiku"] = value
                 config.write_text(json.dumps(broken), encoding="utf-8")
                 try:
-                    omi.catalogs.agents_catalog(target)
+                    omi.project.catalogs.agents_catalog(target)
                     raise AssertionError("missing or invalid catalog model accepted")
                 except SystemExit as exc:
                     assert f"{mapping}.haiku" in str(exc) and f"model_notes.{tool}.models.haiku" in str(exc)
@@ -452,19 +452,19 @@ def test_model_catalog_and_task_start():
             cfg["codex_models"]["sonnet"] = value
             config.write_text(json.dumps(cfg), encoding="utf-8")
             try:
-                omi.tools.resolve_model(target, "sonnet", "codex")
+                omi.worker.tools.resolve_model(target, "sonnet", "codex")
                 raise AssertionError("nonconcrete model accepted")
             except SystemExit as exc:
                 assert "codex_models" in str(exc)
         for tool in ("claude", "codex"):
             for effort in (None, "", "minimal"):
                 try:
-                    omi.tools.resolve_effort(effort, tool)
+                    omi.worker.tools.resolve_effort(effort, tool)
                     raise AssertionError("invalid effort accepted")
                 except SystemExit as exc:
                     assert "effort" in str(exc)
-        assert omi.tools.resolve_effort("none", "codex") == "none"
-        assert omi.tools.resolve_effort("ultra", "codex") == "ultra"
+        assert omi.worker.tools.resolve_effort("none", "codex") == "none"
+        assert omi.worker.tools.resolve_effort("ultra", "codex") == "ultra"
 
 
 def main():
