@@ -1,16 +1,16 @@
 ---
 id: TASK-109
 title: omi step approve, reopen after CI failure, task ID in PR titles
-status: planned
+status: in-progress
 depends: TASK-118
 plan: PLAN-005
 scope: src/omi/tasks.py, src/omi/template/dot-claude/skills/omi-task/SKILL.md, .claude/skills/omi-task/SKILL.md, tests/test_tasks.py, .omi/tasks/TASK-109.md
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: codex
+model: sonnet
+effort: medium
 step_settings:
 workflow: omi-flow-feature
 step:
