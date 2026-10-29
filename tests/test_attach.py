@@ -66,6 +66,66 @@ def test_attach_registration():
             assert "unrelated" not in omi.core.git(home, "ls-tree", "--name-only", "HEAD")
 
 
+def test_detached_in_repo_warning():
+    for paths, expected in (
+        ((".omi/legacy.txt", ".omi/nested/other.txt"), ".omi/"),
+        (("AGENTS.md",), "AGENTS.md"),
+        ((".claude/settings.json",), ".claude/"),
+        ((".omi/legacy.txt", "AGENTS.md", ".claude/settings.json"), ".omi/, AGENTS.md, .claude/"),
+    ):
+        with detached_project() as (code, project, wt, task):
+            for rel in paths:
+                path = code / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("legacy content\n", encoding="utf-8")
+            git(code, "add", "--", *paths)
+            git(code, "remote", "set-url", "origin", "https://example.org/team/second.git")
+            before = {p.relative_to(code): p.read_bytes() for p in code.rglob("*")
+                      if p.is_file() and ".git" not in p.relative_to(code).parts}
+            staged = omi.core.git(code, "diff", "--cached")
+            warning = "WARN: in-repo omi files ignored (detached): " + expected
+            for cwd, args in ((code, ("attach",)), (wt, ("attach", str(wt))),
+                              (code, ("status",)), (wt, ("status",))):
+                output = detached_cli(cwd, *args)
+                assert [line for line in output.splitlines() if line.startswith("WARN:")] == [warning], output
+            assert staged == omi.core.git(code, "diff", "--cached")
+            assert before == {p.relative_to(code): p.read_bytes() for p in code.rglob("*")
+                              if p.is_file() and ".git" not in p.relative_to(code).parts}
+            second = project.parent / "second"
+            assert not (second / ".omi/legacy.txt").exists()
+            assert not (second / "AGENTS.md").exists() and not (second / ".claude").exists()
+
+
+def test_detached_in_repo_no_warning():
+    with detached_project() as (code, project, wt, task):
+        for files in ((), (".omi/local.txt", "AGENTS.md", ".claude/local.txt")):
+            for rel in files:
+                path = code / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("untracked\n", encoding="utf-8")
+            # Similarly named tracked files must not match the top-level paths.
+            for rel in ("AGENTS.md.bak", ".omi-extra/file", "nested/.claude/file"):
+                path = code / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("tracked\n", encoding="utf-8")
+                git(code, "add", "--", rel)
+            git(code, "remote", "set-url", "origin", "https://example.org/team/second.git")
+            for args in (("attach",), ("attach",), ("status",)):
+                assert "WARN: in-repo omi files ignored" not in detached_cli(code, *args)
+
+
+def test_in_repo_status_unchanged():
+    with detached_project() as (code, project, wt, task):
+        with patch.dict(os.environ, {"OMI_STATE": str(project.parent.parent / "unused")}):
+            before = detached_cli(code, "status")
+            for rel in (".omi/legacy.txt", "AGENTS.md", ".claude/legacy.txt"):
+                path = code / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("legacy content\n", encoding="utf-8")
+                git(code, "add", "--", rel)
+            assert detached_cli(code, "status") == before
+
+
 def test_attach_push_success():
     with detached_project() as (code, project, wt, task):
         home, remote, other = state_remote(project)
@@ -374,6 +434,9 @@ def test_state_sync_conflict():
 
 
 def main():
+    test_detached_in_repo_warning()
+    test_detached_in_repo_no_warning()
+    test_in_repo_status_unchanged()
     test_state_sync()
     test_state_sync_conflict()
     test_attach_registration()

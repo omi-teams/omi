@@ -39,6 +39,7 @@ USAGE = """usage: omi <command>
 def status(cwd="."):
     project = state.resolve(cwd)
     if project.detached:
+        upgrade.warn_in_repo_files(project.code)
         state_sync.pull(project)
     root = project.state
     print(f"branch: {core.git(cwd, 'rev-parse', '--abbrev-ref', 'HEAD')}")
