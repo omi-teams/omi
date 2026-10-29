@@ -48,6 +48,7 @@ Host: temp USERPROFILE: omi install-user, run the recorded hook via cmd.exe in a
 - security done 2026-10-29 11:00
 - accept started 2026-10-29 11:00
 - PO approval accept: Sửa 1 vòng rồi merge (fix round done, review + security PASS 2026-10-29 11:30)
+- accept done 2026-10-29 11:30
 
 ## Reports
 2026-10-29 10:36 omi-agent-architect (claude):
