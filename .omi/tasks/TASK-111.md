@@ -24,6 +24,7 @@ Release prep for PLAN-005, as in TASK-102.
 - [ ] All tests pass on the Linux worker and the Windows host.
 
 ## Checkpoint
+Post-run hook FAIL: tests/test_cli.py expects the new `step` usage, but the message comes from `sys.exit(...)` in src/omi/project/tasks.py:236 (still `next|done|back|skip`). Scope widened to src/omi/project/tasks.py: update that message so the test passes.
 Done: Bumped package/project version to 0.4.1, recorded current template hashes, updated README, and expanded CLI step usage and its test expectation.
 Not done: Windows host test run.
 Tests: `PYTHONPATH=src python3 -c 'from omi.setup.upgrade import template_shas_cmd; template_shas_cmd("src/omi/template", "0.4.1")'` recorded 62 hashes; `python3 tests/test_omi.py` completed with `ok` on Linux.
