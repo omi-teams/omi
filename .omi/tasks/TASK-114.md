@@ -25,8 +25,8 @@ step: build
 - [ ] Unit tests start the server on a free port against a temporary state and cover each route, traversal and method refusal; all tests pass.
 
 ## Checkpoint
-Paused 2026-10-30 by PO during fix round 1 build: engineer stopped mid-run; uncommitted partial edits left in the worktree (cli.py, server.py, test_board_server.py), unverified.
-Next: rerun `python -m omi run omi-agent-engineer TASK-114` (it continues from the worktree), commit, `omi step TASK-114 done` + `next`, then reviewer round 2.
+Fix round 1 done and verified: cli.py catches OSError/OverflowError around make_server; server.py catches OSError/UnicodeError and answers via self.send; test_board_cli and test_unreadable_task added. `python3 tests/test_omi.py` ran in full and printed `ok`.
+Next: commit, `omi step TASK-114 done` + `next`, then reviewer round 2.
 Review round 1 PASS with findings, PO asked for one fix round:
 - cli.py: catch OSError/OverflowError around make_server (port in use, >65535) and raise state.StateError("cannot bind 127.0.0.1:<port>: ...").
 - server.py: also catch OSError and UnicodeError from data.*; answer via self.send (404 or 500) so CSP/nosniff are always set.
@@ -177,6 +177,60 @@ Next: review and commit.
 > AC: Static files only from `board/web/`; `../`, encoded traversal, absolute paths and unknown routes give 404; GET only; no writes ✓ The test covers 18 bad paths, all 404, and POST/PUT/DELETE/PATCH/HEAD/OPTIONS all return 405 with `Allow: GET`. The handler never writes. `board/web/` does not exist yet, which the checkpoint says is deferred to a later task.
 > [... truncated ...]
 > Scope: every file in the diff is listed in the task's `scope`.
+2026-10-30 12:38 omi-agent-engineer (claude):
+> DONE
+> - Fix round 1 was already in the worktree from the paused run, so I only verified it and changed no code. It has all three review fixes: `cli.py` turns a bind error into `StateError("cannot bind 127.0.0.1:<port>: ...")`, `server.py` answers `OSError` and `UnicodeError` through `self.send` with CSP and nosniff set, and `test_board_cli` and `test_unreadable_task` are new.
+> - Files changed: `.omi/tasks/TASK-114.md` (checkpoint only). The code files are unchanged by this run (`src/omi/board/server.py`, `src/omi/app/cli.py`, `tests/test_board_server.py`).
+> - Commit message: `feat(board): add omi board localhost server and CLI`
+> - Tests: the full `python3 tests/test_omi.py` ran and printed `ok`. `tests/test_board_server.py` also ran on its own and passed.
+> - Open issues: `board/web/` and the `pyproject.toml` package-data entry are left for the frontend task, so `/` returns 404 until then.
+2026-10-30 12:42 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -185,3 +239,4 @@ Next: review and commit.
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 26 | 6501 | 411235 | 674s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 1757 | 215020 | 352s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 2822 | 203639 | 590s | - | PASS ed54d6d |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 1808 | 209280 | 367s | 1/1 omi-skill-lean-implementation | - |

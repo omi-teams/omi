@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import helpers  # noqa: F401
+from helpers import omi
 from omi.board import server
 from test_board import fixture, write
 
@@ -60,8 +61,57 @@ def test_server():
             httpd.server_close()
 
 
+def test_board_cli():
+    def board(*args):
+        with patch("omi.state.resolve.resolve") as resolve, patch("omi.board.server.make_server") as make, \
+                patch("webbrowser.open") as opened:
+            resolve.return_value.detached = True
+            make.return_value.server_port = 8765
+            with patch("omi.state.sync.pull") as pull:
+                omi.app.cli.dispatch(["board", *args])
+            return pull, make, opened
+
+    pull, make, opened = board()
+    assert make.call_args.args == (8765,) and pull.call_count == 1 and opened.call_count == 1
+    pull, make, opened = board("--port", "9000", "--no-open")
+    assert make.call_args.args == (9000,) and not opened.called
+    for bad in (["--port"], ["--port", "x"], ["--bogus"], ["--port", "-1"]):
+        try:
+            board(*bad)
+        except omi.state.resolve.StateError as exc:
+            assert "usage: omi board" in str(exc)
+        else:
+            raise AssertionError(bad)
+    for port, error in (("8765", OSError("in use")), ("99999", OverflowError("big"))):
+        with patch("omi.state.resolve.resolve"), patch("omi.state.sync.pull"), \
+                patch("omi.board.server.make_server", side_effect=error):
+            try:
+                omi.app.cli.dispatch(["board", "--port", port])
+            except omi.state.resolve.StateError as exc:
+                assert f"cannot bind 127.0.0.1:{port}" in str(exc)
+            else:
+                raise AssertionError(port)
+
+
+def test_unreadable_task():
+    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+        httpd = server.make_server(0, Path(directory))
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        try:
+            with patch("omi.board.data.projects", side_effect=UnicodeDecodeError("utf-8", b"", 0, 1, "bad")):
+                status, res, _ = request(httpd.server_port, "GET", "/api/projects")
+            assert status == 500 and res.getheader("Content-Security-Policy") == "default-src 'self'"
+            with patch("omi.board.data.projects", side_effect=PermissionError("no")):
+                assert request(httpd.server_port, "GET", "/api/projects")[0] == 500
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+
 def main():
     test_server()
+    test_board_cli()
+    test_unreadable_task()
 
 
 if __name__ == "__main__":

@@ -24,7 +24,10 @@ class Handler(BaseHTTPRequestHandler):
             name, id = match.groups()
             try:
                 body = data.projects() if name is None else data.project(name) if id is None else data.task(name, id)
-            except (ValueError, FileNotFoundError):
+            except (OSError, UnicodeError) as exc:
+                code = 404 if isinstance(exc, FileNotFoundError) else 500
+                return self.send(code, "text/plain; charset=utf-8", b"not found" if code == 404 else b"error")
+            except ValueError:
                 return self.send(404, "text/plain; charset=utf-8", b"not found")
             return self.send(200, "application/json", json.dumps(body).encode("utf-8"))
         parts = path.lstrip("/").split("/") if path != "/" else ["index.html"]
@@ -33,7 +36,11 @@ class Handler(BaseHTTPRequestHandler):
         file = (self.web / Path(*parts)).resolve()
         if not file.is_relative_to(self.web.resolve()) or not file.is_file():
             return self.send(404, "text/plain; charset=utf-8", b"not found")
-        self.send(200, TYPES.get(file.suffix, "application/octet-stream"), file.read_bytes())
+        try:
+            body = file.read_bytes()
+        except OSError:
+            return self.send(500, "text/plain; charset=utf-8", b"error")
+        self.send(200, TYPES.get(file.suffix, "application/octet-stream"), body)
 
     def send(self, code: int, kind: str, body: bytes) -> None:
         self.send_response(code)

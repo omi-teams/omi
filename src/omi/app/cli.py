@@ -179,7 +179,10 @@ def dispatch(argv: list[str] | None = None) -> None:
         project = state.resolve()
         if project.detached:
             state_sync.pull(project)
-        httpd = server.make_server(int(port) if port else 8765)
+        try:
+            httpd = server.make_server(int(port) if port else 8765)
+        except (OSError, OverflowError) as exc:
+            raise state.StateError(f"cannot bind 127.0.0.1:{port or 8765}: {exc}") from exc
         url = f"http://127.0.0.1:{httpd.server_port}/"
         print(f"omi board: {url} (Ctrl+C to stop)")
         if "--no-open" not in rest:
