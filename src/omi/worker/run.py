@@ -20,7 +20,7 @@ from pathlib import Path
 
 from ..project import catalogs, scope, tasks, workflows
 from ..common import core
-from . import creds, docker, hooks, pr, tools
+from . import creds, docker, hooks, pr, session, tools
 from ..state import resolve as state
 
 
@@ -157,7 +157,7 @@ def parse_step_settings(value: str, step_ids: list[str] | None = None) -> dict[s
     return settings
 
 
-def run_role(role, wt, task_file, model=None, effort=None, tool=None):
+def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=False):
     wt = Path(wt).resolve()
     main = core.main_checkout(wt)
     if not main or not (wt / ".git").is_file():
@@ -236,14 +236,18 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
                  "with reporting those updates in your final response. /state is read-only.")
     tmp = tempfile.TemporaryDirectory() if read else None
 
-    def attempt(t, secret, note=""):
-        """One container run with tool t; returns (process, report text, usage numbers, usage-row skills, seconds)."""
+    repo = docker.repo_label(main)
+
+    def attempt(t, secret, note="", resume=None, hook_tail=None):
+        """One container run with tool t (resume: continue that session id); returns (process, report text, skills read)."""
         env = dict(os.environ)
         env.pop(creds.TOKEN_ENV, None)
         env_name, value, _ = secret
         env[env_name] = value
         mdl, eff = models[t], efforts[t]
-        cmd = (tools.engineer_cmd if t == "claude" else tools.codex_cmd)(text, task_rel, mdl, eff, prompt_skills + note)
+        cmd = (tools.engineer_cmd if t == "claude" else tools.codex_cmd)(text, task_rel, mdl, eff, prompt_skills + note, resume, hook_tail)
+        if not read:  # the CLI's transcripts go to the per-task cache so a fix round can resume them
+            cmd = session.wrap(t, cmd)
         chatgpt = env_name == creds.CODEX_AUTH_ENV
         if chatgpt:
             cmd = ["sh", "-c", creds.CODEX_AUTH_BOOT, "sh", *cmd]
@@ -253,7 +257,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
             with docker.egress(main, name, image, docker.allow_for(main, t, chatgpt=chatgpt)) as (net, proxy):
                 with subprocess.Popen(docker.worker_argv(wt, image, cmd, name, docker.repo_label(main),
                                                   {**docker.worker_labels(role, task.stem, mdl, eff), **docker.compose_labels(name, "agent")}, ro=read,
-                                                  mounts=mounts, env_names=(env_name,), network=net, proxy=proxy,
+                                                  mounts=mounts, extra=[] if read else session.mount_args(repo, task.stem, t), env_names=(env_name,), network=net, proxy=proxy,
                                                   **docker.worker_sizes(main)),
                                       env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                       encoding="utf-8", errors="replace") as p:
@@ -291,6 +295,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
             verdict += " " + head
         if tools.quota_hit(t, r.stdout, r.returncode):
             verdict = f"QUOTA->{'codex' if t == 'claude' else 'claude'}"
+        if not read and (sid := session.session_id(t, r.stdout)) and task.exists():
+            task.write_text(session.with_session(task.read_text(encoding="utf-8"), t, sid), encoding="utf-8")
         tasks.record_usage(task, role, models[t] + (" (codex)" if t == "codex" else ""), efforts[t], nums,
                      time.monotonic() - t0, skills_cell(ids, done), verdict)
         return r, result, done
@@ -320,7 +326,14 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
             mounts.append(f"{tmp.name}:/review")
             prompt_skills += note
         print(f"tool: {tool} ({models[tool]})")
-        r, result, done = attempt(tool, secret)
+        sid = None if read or fresh else session.recorded(before, tool)  # another tool last: no line for this one, fresh
+        if sid and not session.available(repo, task.stem, tool, sid):
+            print(f"RESUME FAILED: session {sid} is not in the cache; starting a fresh session")
+            sid = None
+        r, result, done = attempt(tool, secret, resume=sid)
+        if sid and r.returncode and result is None and not tools.quota_hit(tool, r.stdout, r.returncode):
+            print(f"RESUME FAILED: session {sid} could not be resumed; starting a fresh session")
+            r, result, done = attempt(tool, secret)
         if tools.quota_hit(tool, r.stdout, r.returncode):
             other_secret, problem = (creds.claude_auth() if other == "claude" else creds.tool_secret(other)), None
             try:
@@ -343,7 +356,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
             r, result, done = attempt(other, other_secret,
                                       f"\nNote: a previous run with {tool} stopped on its usage limit; "
                                       "a partial diff already exists in /work. Inspect it and continue, do not start over.")
-            tool = other
+            tool, secret = other, other_secret
             if tools.quota_hit(other, r.stdout, r.returncode):
                 return stop_quota("claude and codex both hit their usage limit")
         rc = r.returncode
@@ -359,6 +372,11 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
             if sid not in done:
                 print(f"SKILL NOT READ: {sid}")
         res = hooks.run_hook(wt, main, "post-run", task.stem, image) if not rc and not read else None
+        if res and res[0] and (sid := session.recorded(task.read_text(encoding="utf-8"), tool)) \
+                and session.available(repo, task.stem, tool, sid):  # one retry: the engineer fixes what the hook found
+            print("post-run hook failed; resuming the engineer once to fix it")
+            attempt(tool, secret, resume=sid, hook_tail="\n".join(res[1].strip().splitlines()[-20:]))
+            res = hooks.run_hook(wt, main, "post-run", task.stem, image)
         if res:
             pr.post_hook(wt, task.stem, "post-run", res)
             if hooks.hook_note(task, "post-run", res):
@@ -429,4 +447,4 @@ def run_cmd(role, tid, rest):
     if not wt:
         sys.exit(f"no worktree for {tid}: create it first (git worktree add). Nothing changed.")
     return run_role(role, wt, state.task_file(project, tid), core.flag(rest, "--model"), core.flag(rest, "--effort"),
-                    core.flag(rest, "--tool"))
+                    core.flag(rest, "--tool"), "--fresh" in rest)

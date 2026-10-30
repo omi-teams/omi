@@ -36,7 +36,7 @@ USAGE = """usage: omi <command>
   agents       write .omi/agents/CATALOG.md (one line per role)
   workflows [--check]   write .omi/workflows/CATALOG.md (one line per workflow); --check validates every workflow
   step <TASK-ID> next|done|back|skip|approve|reopen --why <reason>   record the task's workflow step (gates cannot be skipped)
-  run <role> <TASK-ID> [--model M] [--effort E] [--tool claude|codex]   run a role in Docker (read roles: ro worktree, after the deterministic checks)
+  run <role> <TASK-ID> [--model M] [--effort E] [--tool claude|codex] [--fresh]   run a role in Docker (--fresh: no engineer session resume; read roles: ro worktree, after the deterministic checks)
   hook pre-run|post-run|pre-merge <TASK-ID>   run .omi/hooks/<event> (from the main checkout) in Docker against the task worktree; exits with its code
   parallel <TASK-ID> <TASK-ID> [...]   check that tasks can run in parallel (depends, status, scope overlap)
   worker <wt> <task-file> [--model M] [--effort E]   run the engineer in the Docker worker

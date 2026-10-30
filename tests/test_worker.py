@@ -255,6 +255,121 @@ def test_worker():
                 os.environ[omi.worker.creds.TOKEN_ENV] = tok
 
 
+def test_session_resume():
+    sess, tools = omi.worker.session, omi.worker.tools
+    out = '{"type":"system","session_id":"S1"}\n{"type":"result","session_id":"S2","result":"DONE","usage":{}}\n'
+    assert sess.session_id("claude", out) == "S2" and sess.session_id("codex", '{"type":"thread.started","thread_id":"T1"}') == "T1"
+    assert sess.session_id("claude", "junk") is None and sess.session_id("codex", out) is None
+    text = sess.with_session("---\na: b\n---\n## Checkpoint\nDone:\n\n## Usage\nrow\n", "claude", "S1")
+    assert text == "---\na: b\n---\n\n## Checkpoint\nDone:\nSession: claude S1\n\n## Usage\nrow\n".replace("---\n\n", "---\n"), text
+    again = sess.with_session(text, "codex", "T9")
+    assert again.count("Session:") == 1 and sess.recorded(again, "codex") == "T9" and sess.recorded(again, "claude") is None
+    c = tools.engineer_cmd("---\n---\nbody", "t.md", "m", "low", "", "S1", "boom")
+    assert c[c.index("--resume") + 1] == "S1" and "boom" in c[2] and "body" not in c[2]
+    x = tools.codex_cmd("---\n---\nbody", "t.md", "m", "low", "", "T1")
+    assert x[:4] == ["codex", "exec", "resume", "T1"] and "Checkpoint" in x[-1] and "body" not in x[-1]
+    assert "resume" not in tools.codex_cmd("---\n---\nbody", "t.md", "m", "low") and "--resume" not in tools.engineer_cmd("---\n---\nbody", "t.md")
+
+    calls, state = [], {"stdout": out, "hook": [1, 0]}
+
+    class R:
+        def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
+
+    def run(cmd, **kw):
+        if "--git-common-dir" in cmd:
+            return R(str(Path(cmd[2]) / "shared.git"))
+        if "show" in cmd:
+            return R("---\nscope: src/**\n---\n")
+        if "status" in cmd:
+            return R(" M src/a.py\0")
+        if cmd[:2] == ["docker", "run"]:  # the post-run hook
+            return R(b"hook says no\n", state["hook"].pop(0)) if state["hook"] else R(b"", 0)
+        return R()
+
+    class P:
+        def __init__(s, cmd, **kw):
+            calls.append(cmd)
+            s.stdout, s.stderr, s.returncode = io.StringIO(state["stdout"]), io.StringIO(""), 0
+        def __enter__(s): return s
+        def __exit__(s, *a): pass
+        def wait(s): pass
+
+    real = subprocess.run, subprocess.Popen, shutil.which, omi.common.core.main_checkout, omi.common.core.WINDOWS, omi.worker.docker.ensure_image
+    old_env = os.environ.get("XDG_CACHE_HOME"), os.environ.get(omi.worker.creds.TOKEN_ENV)
+    os.environ["XDG_CACHE_HOME"], os.environ[omi.worker.creds.TOKEN_ENV] = tempfile.mkdtemp(), "tok"
+    with tempfile.TemporaryDirectory() as d:
+        wt = Path(d).resolve()
+        (wt / ".git").write_text("gitdir: /x")
+        task = wt / ".omi" / "tasks" / "TASK-001.md"
+        task.parent.mkdir(parents=True)
+        task.write_text("---\nid: TASK-001\nscope: src/**\nrole: omi-agent-engineer\n---\n## Checkpoint\nDone:\n\n## Usage\n", encoding="utf-8")
+        subprocess.run, subprocess.Popen, shutil.which = run, P, lambda _: "docker"
+        omi.common.core.main_checkout, omi.common.core.WINDOWS, omi.worker.docker.ensure_image = (lambda _: wt), False, lambda m: "img"
+        repo, saved, buf = omi.worker.docker.repo_label(wt), sys.stdout, io.StringIO()
+        sys.stdout = buf
+
+        def go(role="omi-agent-engineer", **kw):
+            calls.clear()
+            buf.truncate(0); buf.seek(0)
+            omi.worker.run.run_role(role, wt, task, effort="low", **kw)
+            return calls[0] if calls else None
+
+        try:
+            argv = go()
+            assert "--resume" not in argv and "type=bind,src=" in " ".join(argv) and "dst=/sessions" in argv[argv.index("--mount") + 1]
+            assert "Session: claude S2" in task.read_text(encoding="utf-8") and "tok" not in " ".join(argv)
+            mounted = omi.worker.session.task_dir(repo, "TASK-001", "claude")
+            assert mounted.is_dir() and str(mounted).startswith(os.environ["XDG_CACHE_HOME"])
+            # recorded but no transcript in the cache: one RESUME FAILED line, fresh run
+            argv = go()
+            assert "--resume" not in argv and buf.getvalue().count("RESUME FAILED:") == 1
+            (mounted / "-work").mkdir()
+            (mounted / "-work" / "S2.jsonl").write_text("{}")
+            argv = go()
+            assert argv[argv.index("--resume") + 1] == "S2" and "RESUME FAILED" not in buf.getvalue()
+            assert "new findings" in argv[argv.index("-p") + 1] and "--append-system-prompt" in argv
+            assert "--resume" not in go(fresh=True)
+            # an expired session (the CLI fails without a result) falls back to a fresh run
+            state["stdout"] = ""
+            real_p = P.__init__
+            def failing(s, cmd, **kw):
+                real_p(s, cmd, **kw); s.returncode = 1 if "--resume" in cmd else 0
+            P.__init__ = failing
+            go()
+            assert [("--resume" in c) for c in calls] == [True, False] and buf.getvalue().count("RESUME FAILED:") == 1
+            P.__init__ = real_p
+            state["stdout"] = out
+            # read roles never resume nor mount the cache
+            argv = go("omi-agent-reviewer")
+            assert "--resume" not in argv and "--mount" not in argv
+            # the other tool as the last one: fresh, silent
+            task.write_text(sess.with_session(task.read_text(encoding="utf-8"), "codex", "T1"), encoding="utf-8")
+            argv = go()
+            assert "--resume" not in argv and "RESUME FAILED" not in buf.getvalue()
+            # a failing post-run hook: one resumed retry with the hook output, then the hook reruns
+            hooks = wt / ".omi" / "hooks"
+            hooks.mkdir()
+            (hooks / "post-run.sh").write_text("exit 1\n")
+            task.write_text(sess.with_session(task.read_text(encoding="utf-8"), "claude", "S2"), encoding="utf-8")
+            state["hook"] = [1, 0]
+            go()
+            assert len(calls) == 2 and "--resume" in calls[1] and "hook says no" in calls[1][calls[1].index("-p") + 1], calls
+            assert "hook post-run passed" in buf.getvalue() and "retry" not in buf.getvalue()
+            state["hook"] = [1, 1, 1]
+            go()
+            assert len(calls) == 2 and "hook post-run FAILED" in buf.getvalue() and state["hook"] == [1], "single retry"
+            usage = [l for l in task.read_text(encoding="utf-8").splitlines() if l.startswith("| omi-agent-engineer")]
+            assert len(usage) >= 8, usage  # the retries are recorded like any run
+            # omi clean removes the cache
+            omi.worker.session.clear(repo)
+            assert not omi.worker.session.root(repo).exists()
+        finally:
+            sys.stdout = saved
+            subprocess.run, subprocess.Popen, shutil.which, omi.common.core.main_checkout, omi.common.core.WINDOWS, omi.worker.docker.ensure_image = real
+            for k, v in zip(("XDG_CACHE_HOME", omi.worker.creds.TOKEN_ENV), old_env):
+                os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+
+
 def test_prove_exit_and_hosts():
     ok = "PASS claude CLI reaches\nPASS codex CLI reaches\nPASS write\n"
     assert omi.worker.docker.prove_rc(ok, 0) == 0 and omi.worker.docker.prove_rc(ok, 5) == 5
@@ -641,6 +756,7 @@ def main():
     test_download_cache_scope()
     test_download_cache_shared_exclude()
     test_worker()
+    test_session_resume()
     test_container_names()
     test_clip_report()
     test_network_allowlist()
