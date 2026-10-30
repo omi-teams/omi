@@ -32,8 +32,9 @@ Host evidence (Coordinator, Windows 11 host, 2026-10-30, omi at development 478f
 - C4: Windows host: C1-C3 above, and `python tests/test_omi.py` -> ok (only the Playwright browser test is skipped). Linux: CI `ubuntu-latest` on development 478f894 -> success, and the Docker worker (Linux) runs `tests/test_omi.py` -> ok in every TASK-115/134 run. Browser QA in real Chrome at 360/390/768/1280 px is recorded in TASK-115.
 - Gaps seen: no Playwright on the host or the worker (TASK-128); the board shows only the projects in the registry (the omi repo itself is not listed); a done task shows its last step as current, and Usage scrolls inside its card (TASK-125).
 Done: docs/pilot-board.md (criteria 1-4, gaps) and README section "Bảng theo dõi" (6 lines).
+Review round 1 fix done: README board section moved after the `omi init` table and its cache paragraph (content unchanged, no other edits).
 Not done: nothing.
-Tests: python3 tests/test_omi.py -> ok (Playwright browser test skipped).
+Tests: python3 tests/test_omi.py -> ok (exit 0; skipped: test_wheel_ships_web (pip missing), test_browser_layout_and_keyboard (playwright missing)).
 Next: Coordinator review and commit.
 
 ## Steps
@@ -109,9 +110,63 @@ Next: Coordinator review and commit.
 > AC: Gaps found are listed for a later plan. ✓ The "Gap cho plan sau" section lists all three gaps from the checkpoint.
 > 
 > `python3 tests/test_omi.py` printed `ok`. Two tests were skipped: the wheel test (pip missing) and the Playwright browser test. No finding depends on either.
+2026-10-30 21:32 omi-agent-engineer (claude):
+> DONE
+> - Files: `README.md` (moved the "Bảng theo dýs (`omi board`)" section below the `omi init` table and its cache paragraph; content unchanged), `.omi/tasks/TASK-116.md` (checkpoint).
+> - Commit (Coordinator to use): `docs(readme): move omi board section below omi init table`
+> - Tests: `python3 tests/test_omi.py` exit 0, prints `ok`. Skipped: `test_wheel_ships_web` (pip missing) and `test_browser_layout_and_keyboard` (playwright missing).
+> - Open issues: none. Board section is 5 content lines (plus heading), not the 7 the checkpoint mentioned; I kept the text as is.
+2026-10-30 21:36 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 20 | 3172 | 238559 | 508s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 1601 | 158299 | 315s | - | FAIL 133e25d |
+| omi-agent-engineer | claude-haiku-5-5 | low | 16 | 2954 | 230987 | 368s | 1/1 omi-skill-lean-implementation | - |

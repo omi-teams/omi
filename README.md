@@ -31,14 +31,6 @@ Trên Windows, tìm thư mục Python `Scripts` bằng `python -c "import syscon
 Worker tự cho phép API host của tool được chọn (Claude: `api.anthropic.com`, Codex: `api.openai.com`); đăng nhập Codex bằng ChatGPT cũng thêm `chatgpt.com`. Khai host bổ sung trong `network_allow` của `.omi/config.json`.
 Nếu repo code có `.omi/`, `AGENTS.md` hoặc `.claude/` được Git theo dõi, `omi attach`/`omi status` báo `WARN: in-repo omi files ignored (detached): <paths>`; omi không tự di chuyển các file này. PO duyệt bước bằng `omi step <ID> approve --why "<lời PO>"`; mở lại workflow đã hoàn tất bằng `omi step <ID> reopen --why "<lý do>"`.
 
-## Bảng theo dõi (`omi board`)
-
-`omi board [--port N] [--no-open]` (mặc định 8765) mở web UI chỉ đọc trên 127.0.0.1, liệt kê các dự án trong registry state.
-Mỗi dự án có plan, kanban task và chi tiết task (Steps, Reports, Usage).
-Dữ liệu đọc lại từ file state ở mỗi request, nên sửa file không cần restart.
-Mọi nội dung hiển thị bằng `textContent`, đường dẫn thoát thư mục trả 404, CSP `default-src 'self'`.
-`OMI_STATE=<thư mục>` chọn state khác. Kết quả pilot và gap: [docs/pilot-board.md](docs/pilot-board.md).
-
 `omi init` tạo các file sau trong dự án:
 
 | File | Vai trò |
@@ -52,6 +44,14 @@ Mọi nội dung hiển thị bằng `textContent`, đường dẫn thoát thư 
 | `.omi/decisions.md` | Nhật ký quyết định của PO |
 
 Cache tải xuống (Go modules, npm, pip) nằm trong `.omi-cache/` của worktree (được gitignore) để hook và reviewer dùng lại dependency của engineer; cache build vẫn ở tmpfs `/cache`.
+
+## Bảng theo dõi (`omi board`)
+
+`omi board [--port N] [--no-open]` (mặc định 8765) mở web UI chỉ đọc trên 127.0.0.1, liệt kê các dự án trong registry state.
+Mỗi dự án có plan, kanban task và chi tiết task (Steps, Reports, Usage).
+Dữ liệu đọc lại từ file state ở mỗi request, nên sửa file không cần restart.
+Mọi nội dung hiển thị bằng `textContent`, đường dẫn thoát thư mục trả 404, CSP `default-src 'self'`.
+`OMI_STATE=<thư mục>` chọn state khác. Kết quả pilot và gap: [docs/pilot-board.md](docs/pilot-board.md).
 
 ## Lấy và lưu key
 
