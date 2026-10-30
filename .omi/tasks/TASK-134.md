@@ -4,7 +4,7 @@ title: Task phase derived from the current workflow step
 status: in-progress
 depends: TASK-115
 plan: PLAN-006
-scope: src/omi/project/**, src/omi/app/cli.py, src/omi/board/data.py, tests/test_omi.py, tests/test_board.py, .omi/tasks/TASK-134.md
+scope: src/omi/project/**, src/omi/app/cli.py, src/omi/board/data.py, tests/test_omi.py, tests/test_board.py, tests/test_content.py, tests/test_cli.py, .omi/tasks/TASK-134.md
 role: omi-agent-engineer
 skills: []
 refs: []
