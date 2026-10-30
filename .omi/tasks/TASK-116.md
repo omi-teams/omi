@@ -1,7 +1,7 @@
 ---
 id: TASK-116
 title: Pilot omi board on real state
-status: in-progress
+status: done
 depends: TASK-115
 plan: PLAN-006
 scope: docs/pilot-board.md, README.md
@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature
-step: review
+step: accept
 ---
 ## Goal
 Prove the spec's success criteria 1-4 on the pilot omi-state and document how to use the board.
@@ -49,6 +49,9 @@ Next: Coordinator review and commit.
 - build started 2026-10-30 21:26
 - build done 2026-10-30 21:36
 - review started 2026-10-30 21:36
+- review done 2026-10-30 21:46
+- accept started 2026-10-30 21:46
+- PO approval accept: "Nghiệm thu" (2026-10-30)
 
 ## Reports
 2026-10-30 21:15 omi-agent-engineer (claude):
