@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature-sensitive
-step: build
+step: review
 ---
 ## Goal
 `omi board [--port N] [--no-open]` serves the data layer as JSON and the static frontend on 127.0.0.1 only.
@@ -58,6 +58,8 @@ Next: review and commit.
 - security started 2026-10-30 12:49
 - security failed 2026-10-30 12:56
 - build started 2026-10-30 12:56
+- build done 2026-10-30 13:07
+- review started 2026-10-30 13:07
 
 ## Reports
 2026-10-30 08:59 omi-agent-architect (claude):
