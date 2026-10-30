@@ -23,6 +23,7 @@ USAGE = """usage: omi <command>
   version      print the omi version and how to check for a newer one (also --version)
   status       show tasks, checkpoints and the next suggested task
   sync         pull, commit leftover detached state changes and push
+  board [--port N] [--no-open]   serve the read-only task board on 127.0.0.1 (default port 8765)
   guard        Claude Code PreToolUse hook: block writes outside task scope
   github       set up branches and rulesets: squad merges to development, only the PO to staging/main
   clean [--all]   remove this repo's worker containers and old worker images (--all: the current image too)

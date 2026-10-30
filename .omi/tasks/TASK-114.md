@@ -4,7 +4,7 @@ title: omi board server and CLI
 status: in-progress
 depends: TASK-113
 plan: PLAN-006
-scope: src/omi/board/server.py, src/omi/app/cli.py, tests/test_board_server.py, tests/test_omi.py, .omi/tasks/TASK-114.md, .omi/rules/omi-modules.md
+scope: src/omi/board/server.py, src/omi/app/cli.py, tests/test_board_server.py, tests/test_omi.py, .omi/tasks/TASK-114.md, .omi/rules/omi-modules.md, tests/test_cli.py
 role: omi-agent-engineer
 skills: []
 refs: []
@@ -26,9 +26,10 @@ step: build
 
 ## Checkpoint
 Done: board/server.py, `omi board` in cli.py, tests/test_board_server.py, test_omi.py wiring, omi-modules rule line + layer order.
-Not done: USAGE line for `board` (tests/test_cli.py pins the usage command list; needs scope), board/web/ frontend and pyproject package-data (later task).
-Tests: test_board_server.py and test_board.py pass; full test_omi.py run to be re-run after USAGE decision.
-Next: PO/Coordinator decides on tests/test_cli.py scope to add the USAGE line.
+Also done: USAGE line for `board` in cli.py, command list in tests/test_cli.py.
+Not done: board/web/ frontend and pyproject package-data (later task).
+Tests: full `python3 tests/test_omi.py` ran, printed `ok`.
+Next: review and commit.
 
 ## Steps
 - plan started 2026-10-30 08:54
@@ -101,9 +102,65 @@ Next: PO/Coordinator decides on tests/test_cli.py scope to add the USAGE line.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-30 09:21 omi-agent-engineer (claude):
+> DONE
+> - Files changed: `src/omi/board/server.py` (new), `src/omi/app/cli.py` (`omi board` command and USAGE line), `tests/test_board_server.py` (new), `tests/test_omi.py`, `tests/test_cli.py`, `.omi/rules/omi-modules.md`, `.omi/tasks/TASK-114.md`.
+> - Commit message: `feat(board): add omi board localhost server and CLI`
+> - Tests: the full `python3 tests/test_omi.py` ran and printed `ok`. That includes `test_board_server` (each route, traversal, method refusal, headers) and the updated USAGE command list in `test_cli.py`.
+> - Open issues:
+>   - The browser-open and serve-loop path in `cli.py` has no test.
+>   - `board/web/` doesn't exist yet, so `/` returns 404 until the frontend task adds it. That task also needs `pyproject.toml` package-data for `board/web`.
+2026-10-30 09:25 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-architect | claude-opus-5-5 | high | 12 | 5753 | 190869 | 92s | - | n/a |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 26 | 6501 | 411235 | 674s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 1757 | 215020 | 352s | 1/1 omi-skill-lean-implementation | - |
