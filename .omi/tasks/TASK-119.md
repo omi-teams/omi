@@ -1,7 +1,7 @@
 ---
 id: TASK-119
 title: PR naming rules (task ID first) and step results as PR comments
-status: in-progress
+status: done
 depends:
 plan: PLAN-006
 scope: src/omi/**, .omi/rules/omi-modules.md, .claude/skills/omi-task/SKILL.md, .claude/skills/omi-release/SKILL.md, src/omi/template/dot-claude/skills/omi-task/SKILL.md, src/omi/template/dot-claude/skills/omi-release/SKILL.md, src/omi/template_shas.json, tests/**, .omi/tasks/TASK-119.md
@@ -19,13 +19,13 @@ step: accept
 Every PR the squad opens is readable without opening the commits: the task ID comes first in the title, and the body follows a fixed set of sections. The omi-task and omi-release skills (repo copy and `src/omi/template`) state the rule, so new projects get it too. Every step result (agent, model, verdict, report) is also posted to the PR as a comment, so the PR shows the whole run. PR #119 (TASK-114) was opened with `--fill`, which gave the title `task/TASK 114` and a list of commits as the body.
 
 ## Acceptance criteria
-- [ ] omi-task PR step: title `[TASK-NNN] <type>(<area>): <summary>` (type one of feat, fix, docs, chore, refactor, test, ci; English, imperative, at most 72 characters); `gh pr create` passes `--title` and `--body-file`, never `--fill`; `gh pr merge --squash` keeps the PR title as the squash commit subject; the no-remote squash commit uses the same subject.
-- [ ] PR body sections, in order: `## Summary` (1-2 lines, plan and task id), `## Changes` (per file or area), `## Not in this PR`, `## Verification` (test command -> result, review rounds and verdicts, security review when the workflow has one, one `Host:` line per HOST check), `## Known issues` (or `none`).
-- [ ] omi-release promotion PRs use the title `[RELEASE vX.Y.Z] development -> staging` (and `-> main`) with the same body sections.
-- [ ] Repo and template copies of both skills are identical; `src/omi/template_shas.json` is updated if the template checks need it; a test asserts both skills name the title format and never mention `--fill`.
-- [ ] Every step result goes to the PR as its own comment. omi-task opens the PR as a draft after the first build commit, and marks it ready (`gh pr ready`) once every review-type step in the workflow (review, security, and any other `gate review`) has passed. A later FAIL or `step back` turns it back into a draft (`gh pr ready --undo`). When a PR exists for `task/<ID>`, `omi run` posts each final report itself (its `## Reports` entry). Each comment starts with `**Step:** <step> · **Agent:** <role> (<tool>/<model>/<effort>) · **Time:** <time> · **Verdict:** <verdict>`, followed by the report verbatim. Hook results get one short line each (name, pass/fail, last line of output). Coordinator decisions (scope widened, step back, fix round, `Host:` checks) and PO approvals (quoting the PO's words) are posted as `**Agent:** Coordinator` comments. If posting fails (no remote, no `gh`), `omi run` prints a warning and continues, and the task file still has the report.
-- [ ] A test for posting the comment (gh patched): the header format, the verbatim body, and a skipped post when no PR or no remote exists.
-- [ ] `python3 tests/test_omi.py` prints `ok`.
+- [x] omi-task PR step: title `[TASK-NNN] <type>(<area>): <summary>` (type one of feat, fix, docs, chore, refactor, test, ci; English, imperative, at most 72 characters); `gh pr create` passes `--title` and `--body-file`, never `--fill`; `gh pr merge --squash` keeps the PR title as the squash commit subject; the no-remote squash commit uses the same subject.
+- [x] PR body sections, in order: `## Summary` (1-2 lines, plan and task id), `## Changes` (per file or area), `## Not in this PR`, `## Verification` (test command -> result, review rounds and verdicts, security review when the workflow has one, one `Host:` line per HOST check), `## Known issues` (or `none`).
+- [x] omi-release promotion PRs use the title `[RELEASE vX.Y.Z] development -> staging` (and `-> main`) with the same body sections.
+- [x] Repo and template copies of both skills are identical; `src/omi/template_shas.json` is updated if the template checks need it; a test asserts both skills name the title format and never mention `--fill`.
+- [x] Every step result goes to the PR as its own comment. omi-task opens the PR as a draft after the first build commit, and marks it ready (`gh pr ready`) once every review-type step in the workflow (review, security, and any other `gate review`) has passed. A later FAIL or `step back` turns it back into a draft (`gh pr ready --undo`). When a PR exists for `task/<ID>`, `omi run` posts each final report itself (its `## Reports` entry). Each comment starts with `**Step:** <step> · **Agent:** <role> (<tool>/<model>/<effort>) · **Time:** <time> · **Verdict:** <verdict>`, followed by the report verbatim. Hook results get one short line each (name, pass/fail, last line of output). Coordinator decisions (scope widened, step back, fix round, `Host:` checks) and PO approvals (quoting the PO's words) are posted as `**Agent:** Coordinator` comments. If posting fails (no remote, no `gh`), `omi run` prints a warning and continues, and the task file still has the report.
+- [x] A test for posting the comment (gh patched): the header format, the verbatim body, and a skipped post when no PR or no remote exists.
+- [x] `python3 tests/test_omi.py` prints `ok`.
 
 ## Checkpoint
 Fix round 1 done (all review round 1 findings addressed; tests -> ok). Review round 1 FAIL:
@@ -54,6 +54,8 @@ Next: Coordinator review
 - review started 2026-10-30 14:05
 - review done 2026-10-30 14:13
 - accept started 2026-10-30 14:13
+PO approval accept: Accept, merge development
+- accept done 2026-10-30 14:14
 
 ## Reports
 2026-10-30 13:38 omi-agent-engineer (claude):
