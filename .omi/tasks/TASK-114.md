@@ -25,6 +25,10 @@ step: review
 - [ ] Unit tests start the server on a free port against a temporary state and cover each route, traversal and method refusal; all tests pass.
 
 ## Checkpoint
+Review round 1 PASS with findings, PO asked for one fix round:
+- cli.py: catch OSError/OverflowError around make_server (port in use, >65535) and raise state.StateError("cannot bind 127.0.0.1:<port>: ...").
+- server.py: also catch OSError and UnicodeError from data.*; answer via self.send (404 or 500) so CSP/nosniff are always set.
+- tests: add a small test for `omi board` CLI flag validation, default port 8765, one-time pull and --no-open (patch pull, webbrowser and serve).
 Done: board/server.py, `omi board` in cli.py, tests/test_board_server.py, test_omi.py wiring, omi-modules rule line + layer order.
 Also done: USAGE line for `board` in cli.py, command list in tests/test_cli.py.
 Not done: board/web/ frontend and pyproject package-data (later task).
