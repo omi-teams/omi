@@ -3,6 +3,7 @@
 const view = document.getElementById("view");
 const nav = document.getElementById("nav");
 const auto = document.getElementById("auto");
+const countdown = document.getElementById("countdown");
 const status = document.getElementById("status");
 const err = document.getElementById("err");
 const KEY = "omi-board-auto";
@@ -10,6 +11,7 @@ const GLYPH = {planned: "○", "in-progress": "▶", review: "◐", blocked: "�
 const STATUS = {planned: "Kế hoạch", "in-progress": "Đang làm", review: "Review", blocked: "Bị chặn", done: "Xong"};
 const REASON = {blocked: "Bị chặn", next_task: "Việc kế tiếp", next: "Bước tiếp theo", po_gate: "Chờ PO duyệt bước"};
 let timer = null;
+let nextRefresh = 0;
 let current = "";
 let seen = null;
 let request = 0;
@@ -189,6 +191,7 @@ function updated() {
     el("span", new Date().toLocaleTimeString("vi-VN", {hour12: false})));
 }
 async function route() {
+  clearInterval(timer);
   const hash = location.hash === "#main" ? current || "#/" : location.hash || "#/";
   const changed = hash !== current;
   current = hash;
@@ -218,11 +221,22 @@ async function route() {
     const retry = el("button", "Thử lại", {type: "button", class: "btn"});
     retry.addEventListener("click", route);
     err.replaceChildren(el("span", `Không tải được dữ liệu (${e.message}). `), retry);
+  } finally {
+    if (ticket === request) schedule();
   }
+}
+function updateCountdown() {
+  countdown.textContent = !auto.checked ? "Đã tắt" : document.hidden ? "Tạm dừng" :
+    `Làm mới sau ${Math.max(0, Math.ceil((nextRefresh - Date.now()) / 1000))} giây`;
 }
 function schedule() {
   clearInterval(timer);
-  timer = auto.checked ? setInterval(() => { if (!document.hidden) route(); }, 30000) : null;
+  nextRefresh = Date.now() + 30000;
+  updateCountdown();
+  timer = auto.checked && !document.hidden ? setInterval(() => {
+    updateCountdown();
+    if (!document.hidden && Date.now() >= nextRefresh) route();
+  }, 1000) : null;
 }
 try { auto.checked = localStorage.getItem(KEY) !== "off"; } catch (e) { /* Keep the default if storage is blocked. */ }
 auto.addEventListener("change", () => {
@@ -230,7 +244,10 @@ auto.addEventListener("change", () => {
   schedule();
 });
 document.getElementById("refresh").addEventListener("click", route);
-document.addEventListener("visibilitychange", () => { if (!document.hidden && auto.checked) route(); });
+document.addEventListener("visibilitychange", () => {
+  schedule();
+  if (!document.hidden && auto.checked) route();
+});
 window.addEventListener("hashchange", route);
-route();
 schedule();
+route();

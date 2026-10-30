@@ -10,7 +10,7 @@ skills: [omi-skill-ui-direction]
 refs: []
 tool: codex
 model: opus
-effort: high
+effort: medium
 step_settings:
 workflow: omi-flow-feature-ui
 step: build
@@ -28,6 +28,13 @@ Plain HTML/CSS/JS pages for home, project dashboard and task detail, in Vietname
 - [ ] Readable at 360 px width and keyboard navigable; all tests pass.
 
 ## Checkpoint
+### Countdown build (2026-10-30)
+Done: implemented only the round-3 countdown gap. The header groups the toggle and countdown, with a compact stacked arrangement on phones. The countdown uses textContent, is aria-hidden and outside live regions, and keeps the toggle's “30 giây” label. One-second ticks use a timestamp deadline without re-rendering the view or changing focus/status. Completed manual, automatic, retry and route refreshes restart the 30-second deadline, including unchanged responses and failures. Polling pauses during an active request and while hidden; off shows “Đã tắt”, hidden shows “Tạm dừng”, and returning to a visible tab refreshes when enabled.
+Not done: real-browser layout/keyboard checks and a new installed-package check cannot run here (Playwright and pip missing). Existing host wheel/install evidence and the qa handoff remain applicable; no additional scope is needed.
+Tests: `python3 tests/test_board_web.py` exited 0: static safety/package configuration/mockup structure and Node DOM tests ran, including countdown ticks, no view/live-status updates, focus preservation, manual/auto reset, disabled/manual behavior, hidden/resume, slow responses and delayed ticks. Wheel/install explicitly skipped (pip missing); browser explicitly skipped (Playwright missing). Browser coverage also checks countdown placement/visibility at 360/390/768/1280 px, live-region exclusion and keyboard toggle state. `node --check src/omi/board/web/app.js` exited 0 (syntax only). Full `python3 tests/test_omi.py` exited 0 and printed `ok`, including board API/static/Node countdown tests; wheel/install and browser checks explicitly skipped for missing pip and Playwright. The full run used temporary fixtures within the allowed mockup directory and removed them on completion.
+Next: Coordinator review of the countdown-only diff; browser visual/keyboard verification remains in qa (TASK-128). No commit was made.
+
+### Previous build and review context
 Done: addressed the round-2 frontend gaps within scope. Task detail and dashboard task records now expose workflow_steps from the project workflow file (with path validation) plus current_step; the task page renders the definition's steps, PO gates and “Bước N/M” (six steps in the regression fixture). Home and dashboard show API-provided project path, branch and sync chips. Kanban shows two cards per column with a native keyboard-operable “+ N task khác” disclosure for the rest. Below 768 px, usage becomes a one-line total and empty Review/Blocked columns merge into one row; populated columns remain separate. The header is sticky, phone breadcrumbs stay on one compact line, the skip link stays reachable while scrolled, and root scroll-padding-top clears the header.
 Data semantics: path is the actual detached project directory; branch and sync describe its state repository. The portable project registry stores only remote identities, so no local code checkout path or code branch is invented. UI tooltips identify the state directory and branch. Workflow files retain the state path/symlink boundary checks; missing definitions remain an explicit empty list with a current-step fallback.
 Not done: real-browser visual/keyboard verification and installed-package verification cannot execute in this worker because Playwright and pip are absent. The review records a prior host wheel/install pass; this run does not claim a new installed-package verification.
@@ -331,6 +338,13 @@ PO 2026-10-30 (after round 3, while viewing the board): add a countdown next to 
 > AC: Sticky header and scroll-padding prevent obscured focus/anchors UNVERIFIED CSS declarations exist; browser clearance checks skipped.
 > AC: Accessible countdown with refresh resets and off/hidden states ✗ No countdown element or update logic exists.
 > AC: Readable at 360 px, keyboard navigable; all tests pass UNVERIFIED `python3 tests/test_omi.py` exited 0 and printed `ok`; package-install and browser tests skipped.
+2026-10-30 18:46 omi-agent-engineer (codex):
+> DONE — implemented countdown, regression tests, and checkpoint update.
+> Files: `src/omi/board/web/{app.js,app.css,index.html}`, `tests/test_board_web.py`, `.omi/tasks/TASK-115.md`.
+> Suggested commit: `feat(board): add auto-refresh countdown`
+> Tests: frontend static/Node tests and full `python3 tests/test_omi.py` exited 0.
+> Skipped: wheel/install (pip missing); browser checks (Playwright missing).
+> Open: browser QA remains pending. No commit made.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -343,3 +357,4 @@ PO 2026-10-30 (after round 3, while viewing the board): add a countdown next to 
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 2883 | 302266 | 316s | - | FAIL 1cfb48d |
 | omi-agent-engineer | gpt-6-astra (codex) | high | 1622113 | 13573 | 1555328 | 509s | 2/2 omi-skill-ui-direction omi-skill-lean-implementation | - |
 | omi-agent-reviewer | gpt-6-astra (codex) | high | 1304849 | 3250 | 1224704 | 265s | - | FAIL c763d1f |
+| omi-agent-engineer | gpt-6-astra (codex) | high | 2914956 | 12126 | 2848896 | 1129s | 2/2 omi-skill-ui-direction omi-skill-lean-implementation | - |

@@ -66,6 +66,10 @@ def test_app_js_behaviors() -> None:
         assert needle in js, needle
     html = (WEB / "index.html").read_text(encoding="utf-8")
     assert 'role="status"' in html and 'id="refresh"' in html and "Làm mới" in html
+    # Countdown is a sibling of the label, outside the last-updated live region.
+    assert re.search(r'<span id="status"[^>]*></span>\s*<div class="auto-refresh">\s*'
+                     r'<label[^>]*><input[^>]*id="auto"[^>]*> Tự làm mới \(30 giây\)</label>\s*'
+                     r'<span id="countdown" class="countdown" aria-hidden="true"></span>', html)
 
 
 def test_mockup_layout() -> None:
@@ -141,7 +145,7 @@ class Element {
   addEventListener(k, f) { this.listeners[k] = f; }
   focus() { document.activeElement = this; }
 }
-const elements = Object.fromEntries(['view','nav','auto','status','err','refresh','main'].map(id => [id,new Element('div')]));
+const elements = Object.fromEntries(['view','nav','auto','countdown','status','err','refresh','main'].map(id => [id,new Element('div')]));
 function all(root) { return [root, ...root.children.flatMap(all)]; }
 function find(root, cls) { return all(root).filter(n => (n.attrs.class || '').split(' ').includes(cls)); }
 const document = {
@@ -152,6 +156,8 @@ const document = {
 };
 document.activeElement = document.body;
 let interval, intervalMs, calls=0, stored={}, fail=false, pending=null;
+let now=0;
+class Clock extends Date { static now() { return now; } }
 const localStorage={getItem:k=>stored[k] || null,setItem:(k,v)=>{stored[k]=v;}};
 const window={listeners:{},addEventListener(k,f){this.listeners[k]=f;}};
 const location={hash:'#/'};
@@ -163,12 +169,16 @@ async function fetch(path) {
   if(fail) throw Error('offline');
   return {ok:true,text:async()=>JSON.stringify(data)};
 }
-const context=vm.createContext({document,localStorage,window,location,fetch,console,Date,
+const context=vm.createContext({document,localStorage,window,location,fetch,console,Date:Clock,
   setInterval:(f,ms)=>{interval=f;intervalMs=ms;return 1;},clearInterval:()=>{interval=null;}});
 const source=fs.readFileSync(process.argv[1],'utf8');
 vm.runInContext(source,context);
 const invoke=code=>vm.runInContext(code,context);
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
+async function advance(seconds) {
+  for(let i=0;i<seconds;i++) { now+=1000;if(interval) interval();await flush(); }
+}
+const countdown=()=>elements.countdown.textContent;
 (async()=>{
   await flush();
   assert.equal(find(elements.view,'pc').length,1);
@@ -179,23 +189,61 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
   const unknown=invoke('home([{name:"unknown",plans:[],task_counts:{},po_waiting_count:0}])');
   assert(unknown[1].textContent.includes('Nhánh: Chưa rõ'));
   assert(unknown[1].textContent.includes('Đồng bộ: Chưa rõ'));
-  assert.equal(intervalMs,30000);
+  assert.equal(intervalMs,1000);
+  assert.equal(countdown(),'Làm mới sau 30 giây');
   const original=elements.view.children[0];
   const focused=find(elements.view,'pc')[0];focused.focus();
+  const initialCalls=calls;
+  const replacements=[elements.view.replacements,elements.nav.replacements,elements.status.replacements];
+  await advance(5);
+  assert.equal(countdown(),'Làm mới sau 25 giây');
+  assert.equal(calls,initialCalls);
+  assert.deepEqual([elements.view.replacements,elements.nav.replacements,elements.status.replacements],replacements);
+  assert.equal(document.activeElement,focused);
+  // A manual refresh restarts the deadline, including an unchanged API response.
+  await elements.refresh.listeners.click();
+  assert.equal(countdown(),'Làm mới sau 30 giây');
+  await advance(29);assert.equal(calls,initialCalls+1);
+  assert.equal(countdown(),'Làm mới sau 1 giây');
+  await advance(1);assert.equal(calls,initialCalls+2);
+  assert.equal(countdown(),'Làm mới sau 30 giây');
+  await advance(1);assert.equal(countdown(),'Làm mới sau 29 giây');
   await invoke('route()');
   assert.equal(elements.view.children[0],original);
   assert.equal(document.activeElement,focused);
   fail=true; await invoke('route()');
   assert(elements.err.textContent.includes('Thử lại'));
+  assert.equal(countdown(),'Làm mới sau 30 giây');
   assert.equal(elements.view.children[0],original);
   fail=false;await invoke('route()');
   assert.equal(elements.err.textContent,'');
   assert(elements.status.textContent.startsWith('Cập nhật lần cuối '));
   assert.equal(elements.view.children[0],original);
-  const before=calls;document.hidden=true;interval();await flush();assert.equal(calls,before);
+  const before=calls;document.hidden=true;document.listeners.visibilitychange();
+  assert.equal(countdown(),'Tạm dừng');assert.equal(interval,null);
+  await advance(60);assert.equal(calls,before);assert.equal(countdown(),'Tạm dừng');
   document.hidden=false;document.listeners.visibilitychange();await flush();assert.equal(calls,before+1);
+  assert.equal(countdown(),'Làm mới sau 30 giây');
   elements.auto.checked=false;elements.auto.listeners.change();assert.equal(interval,null);assert.equal(stored['omi-board-auto'],'off');
-  elements.auto.checked=true;elements.auto.listeners.change();assert.equal(intervalMs,30000);
+  assert.equal(countdown(),'Đã tắt');
+  await advance(30);assert.equal(calls,before+1);
+  await elements.refresh.listeners.click();assert.equal(calls,before+2);assert.equal(countdown(),'Đã tắt');
+  document.hidden=true;document.listeners.visibilitychange();
+  document.hidden=false;document.listeners.visibilitychange();await flush();assert.equal(calls,before+2);
+  assert.equal(countdown(),'Đã tắt');assert.equal(interval,null);
+  elements.auto.checked=true;elements.auto.listeners.change();assert.equal(intervalMs,1000);
+  assert.equal(countdown(),'Làm mới sau 30 giây');
+  // The next poll is 30 seconds after a slow refresh completes.
+  let completeRefresh;
+  pending=()=>new Promise(resolve=>{completeRefresh=resolve;});
+  const slow=elements.refresh.listeners.click();await advance(35);
+  assert.equal(calls,before+3);
+  pending=null;completeRefresh({ok:true,text:async()=>JSON.stringify(data)});await slow;
+  assert.equal(countdown(),'Làm mới sau 30 giây');
+  await advance(29);assert.equal(calls,before+3);
+  await advance(1);assert.equal(calls,before+4);
+  // Delayed timer callbacks use elapsed time rather than counting callbacks.
+  now+=5000;interval();await flush();assert.equal(countdown(),'Làm mới sau 25 giây');
   localStorage.setItem=()=>{throw Error('blocked');};elements.auto.listeners.change();
   data=dashboard;location.hash='#/p/omi';await invoke('route()');
   assert.equal(find(elements.view,'stat').length,4);
@@ -250,7 +298,7 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
   data=[summary];await elements.refresh.listeners.click();assert.equal(find(elements.view,'pc').length,1);
   data={...dashboard,po_waiting:[],plans:[],activity:[],decisions:[]};location.hash='#/p/omi';await invoke('route()');
   for(const text of ['Không có việc chờ PO.','Chưa có kế hoạch.','Chưa có hoạt động.','Chưa có quyết định.']) assert(elements.view.textContent.includes(text));
-  console.log('ok: API views, mockup DOM, safe text, polling, recovery, focus, storage, races');
+  console.log('ok: API views, mockup DOM, safe text, countdown ticks/resets/off/hidden, polling, recovery, focus, storage, races');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 """
 
@@ -296,6 +344,16 @@ catch(e) {
         assert.equal(await page.locator('[style]').count(),0);
         assert.equal(await page.locator('#view script, #view img').count(),0);
         const header=await page.locator('.top').boundingBox();
+        assert(await page.locator('#countdown').isVisible());
+        assert.equal(await page.locator('#countdown').getAttribute('aria-hidden'),'true');
+        assert.equal(await page.locator('#countdown').evaluate(n=>n.closest('[aria-live], [role="status"], [role="alert"]')),null);
+        const countdownBox=await page.locator('#countdown').boundingBox();
+        const switchBox=await page.locator('.switch').boundingBox();
+        if(width<768) {
+          assert.equal(countdownBox.x,switchBox.x);
+          assert(countdownBox.y>=switchBox.y+switchBox.height);
+        } else assert(countdownBox.x>=switchBox.x+switchBox.width);
+        assert(countdownBox.y+countdownBox.height<=header.y+header.height);
         assert.equal(await page.locator('.top').evaluate(n=>getComputedStyle(n).position),'sticky');
         assert(await page.locator('html').evaluate(n=>parseFloat(getComputedStyle(n).scrollPaddingTop))>header.height);
         if(width<768) assert(header.height<150,'compact phone header');
@@ -327,6 +385,7 @@ catch(e) {
         const checked=await page.locator('#auto').isChecked();
         await page.keyboard.press('Space');
         assert.equal(await page.locator('#auto').isChecked(),!checked);
+        assert.equal(await page.locator('#countdown').innerText(),'Đã tắt');
         await page.keyboard.press('Space');
         const initial=await page.locator('body').evaluate(n=>getComputedStyle(n).backgroundColor);
         await page.emulateMedia({colorScheme:'dark'});
