@@ -1,10 +1,10 @@
 ---
 id: TASK-135
-title: omi board shows the in-repo project it is started from
+title: Move the omi repo to detached mode on omi-state
 status: planned
-depends: TASK-115
+depends: TASK-137
 plan: PLAN-007
-scope: src/omi/board/**, tests/test_board.py, tests/test_board_server.py, .omi/tasks/TASK-135.md
+scope: .omi/tasks/TASK-135.md, docs/**
 role: omi-agent-engineer
 skills: []
 refs: []
@@ -16,16 +16,16 @@ workflow: omi-flow-feature-sensitive
 step:
 ---
 ## Goal
-`omi board` started inside an in-repo project (its own `.omi/`, not attached) lists that project next to the `$OMI_STATE` projects, so the PO can see repos like omi itself without a detached copy.
+The omi repo's own plans, tasks and decisions live in `projects/omi/` on GitHub omi-teams/omi-state (`omi attach`), so they appear on the board like every other project; GitHub omi-state is the single source of omi state.
 
 ## Acceptance criteria
-- [ ] Started in an in-repo project, `/api/projects` includes it (name = repo folder name) with plans, kanban, tasks and decisions read from its `.omi/`; started anywhere else, the list is unchanged.
-- [ ] Path safety stays: every resolved path must sit under `$OMI_STATE` or under that one in-repo root; traversal, symlinks or junctions pointing elsewhere still raise; nothing is written.
-- [ ] A name clash with a `$OMI_STATE` project is resolved predictably (the in-repo one is listed once, with a marker such as `"mode": "in-repo"`), and the sync block says `in-repo` instead of ahead/behind of the state repo.
-- [ ] Tests on a temporary in-repo project and a temporary state cover listing, project and task views, the clash and the path refusal; all tests pass.
+- [ ] `omi attach` registers this repo; `.omi/tasks`, `.omi/plans`, `.omi/decisions.md`, config, rules, skills and catalogs are copied to `projects/omi/` with history noted, committed and pushed to omi-state; `omi status` from the code repo gives the same output before and after.
+- [ ] The in-repo omi state files are removed from the code repo in one PR (the `src/omi/template/**` copies stay); `omi status` prints no `WARN: in-repo omi files ignored` line.
+- [ ] A fresh clone of omi-state shows project `omi` with PLAN-007 on the board.
+- [ ] `docs/pilot-detached.md` (Vietnamese) records the migration commands and their output, and the rollback (restore the in-repo files from the commit before removal).
 
 ## Checkpoint
 Done:
 Not done:
 Tests:
-Next:
+Next: architect decides which in-repo files (AGENTS.md, .claude/) stay for developing omi itself; scope widened from that.

@@ -114,3 +114,4 @@
 - 2026-10-30 | Task phase is derived from the current step's role and gate (TASK-134), not a new stored status; board kanban uses phases (TASK-125) | PO wants to see each task's step at a glance; a stored copy would drift from step: | TASK-134
 - 2026-10-30 | TASK-115 effort lowered to medium from round 4 review on | PO asked to save quota (Codex near its limit) | TASK-115
 - 2026-10-30 | Release 0.5.0 with board v1 now; TASK-123/124/125 move to PLAN-007 (0.6.0) | PO: ship v1 first, PLAN-006 done criteria are TASK-112..117 | TASK-117
+- 2026-10-30 | GitHub omi-teams/omi-state is the board's only source: each refresh fetches and reads origin/main, the local clone is a cache and its path is never shown (TASK-137); TASK-135 changes from "board reads in-repo projects" to "move the omi repo to omi-state"; TASK-123 version = origin/main sha | PO: data must come from GitHub, not local | TASK-135, TASK-137
