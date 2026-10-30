@@ -1,16 +1,16 @@
 ---
 id: TASK-137
 title: omi board reads GitHub omi-state as its only source
-status: planned
+status: in-progress
 depends: TASK-115
 plan: PLAN-007
 scope: src/omi/board/**, tests/test_board.py, tests/test_board_server.py, tests/test_board_web.py, .omi/tasks/TASK-137.md
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: codex
+model: sonnet
+effort: medium
 step_settings:
 workflow: omi-flow-feature
 step:
