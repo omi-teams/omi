@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature-sensitive
-step: build
+step: review
 ---
 ## Goal
 `omi board [--port N] [--no-open]` serves the data layer as JSON and the static frontend on 127.0.0.1 only.
@@ -37,6 +37,8 @@ Next: review and commit.
 - architect started 2026-10-30 08:54
 - architect done 2026-10-30 08:59
 - build started 2026-10-30 08:59
+- build done 2026-10-30 09:25
+- review started 2026-10-30 09:25
 
 ## Reports
 2026-10-30 08:59 omi-agent-architect (claude):
@@ -157,6 +159,16 @@ Next: review and commit.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-30 09:38 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/app/cli.py:178-187 A port in use or above 65535 gives a raw traceback. I ran it: `--port 99999` raised `OverflowError`, and a second server on 8799 raised `OSError: Address already in use`. -> Catch `OSError` and `OverflowError` around `make_server` and raise `state.StateError("cannot bind 127.0.0.1:<port>: ...")`.
+> - src/omi/board/server.py:270-275 Only `ValueError` and `FileNotFoundError` are caught. An unreadable or undecodable task file, which raises `OSError` or `UnicodeDecodeError`, produces a 500 with a stack trace on stderr and no CSP or nosniff headers. -> Also catch `OSError` and `UnicodeError`, and answer with a `self.send(...)` 404 or 500.
+> - tests/test_board_server.py The `omi board` CLI path has no test: flag validation, the default port 8765, the one-time pull and `--no-open`. -> Add a small test for the argument validation.
+> 
+> AC: Binds 127.0.0.1 (default 8765), opens the browser unless `--no-open`, pulls once at start, serves the three JSON routes fresh per request ✓ `make_server` binds `("127.0.0.1", port)`, and the test asserts that address. cli.py defaults to 8765, calls `state_sync.pull` once when the project is detached, and calls `webbrowser.open` only without `--no-open`; this part is from reading the code, with no test. The routes are tested, and `board.data` is uncached.
+> AC: Static files only from `board/web/`; `../`, encoded traversal, absolute paths and unknown routes give 404; GET only; no writes ✓ The test covers 18 bad paths, all 404, and POST/PUT/DELETE/PATCH/HEAD/OPTIONS all return 405 with `Allow: GET`. The handler never writes. `board/web/` does not exist yet, which the checkpoint says is deferred to a later task.
+> [... truncated ...]
+> Scope: every file in the diff is listed in the task's `scope`.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -164,3 +176,4 @@ Next: review and commit.
 | omi-agent-architect | claude-opus-5-5 | high | 12 | 5753 | 190869 | 92s | - | n/a |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 26 | 6501 | 411235 | 674s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 1757 | 215020 | 352s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 2822 | 203639 | 590s | - | PASS ed54d6d |
