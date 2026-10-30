@@ -1,16 +1,16 @@
 ---
 id: TASK-114
 title: omi board server and CLI
-status: planned
+status: in-progress
 depends: TASK-113
 plan: PLAN-006
 scope: src/omi/board/server.py, src/omi/app/cli.py, tests/test_board_server.py, tests/test_omi.py, .omi/tasks/TASK-114.md
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: claude
+model: sonnet
+effort: medium
 step_settings:
 workflow: omi-flow-feature-sensitive
 step:
