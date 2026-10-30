@@ -4,16 +4,16 @@ title: omi board frontend
 status: in-progress
 depends: TASK-114
 plan: PLAN-006
-scope: src/omi/board/web/**, pyproject.toml, tests/test_board_web.py, tests/test_omi.py, .omi/tasks/TASK-115.md
+scope: src/omi/board/web/**, pyproject.toml, tests/test_board_web.py, tests/test_omi.py, .omi/tasks/TASK-115.md, .omi/tasks/TASK-115-mockup/**
 role: omi-agent-engineer
 skills: [omi-skill-ui-direction]
 refs: []
 tool: codex
-model: sonnet
-effort: medium
+model: opus
+effort: high
 step_settings:
 workflow: omi-flow-feature-ui
-step: build
+step: review
 ---
 ## Goal
 Plain HTML/CSS/JS pages for home, project dashboard and task detail, in Vietnamese, calling the JSON API.
@@ -23,6 +23,7 @@ Plain HTML/CSS/JS pages for home, project dashboard and task detail, in Vietname
 - [ ] State text is inserted with `textContent` only, never `innerHTML`; no external script, font or CDN.
 - [ ] `pip install .` ships `board/web/*` (package data); a test checks the files are in the installed package.
 - [ ] Pages match the PO-approved mockup in `.omi/tasks/TASK-115-mockup/` (Main = dashboard, Home, Task, Phone = 390 px dashboard): same layout, sections, header controls, cards, chips, progress bars, kanban columns, workflow stepper and colours.
+- [ ] The header stays pinned at the top while scrolling (sticky), with `scroll-padding-top` so focused or anchored elements are never hidden under it.
 - [ ] Readable at 360 px width and keyboard navigable; all tests pass.
 
 ## Checkpoint
@@ -35,6 +36,13 @@ Next: Coordinator runs the retained wheel/install test and browser test on a hos
 PO 2026-10-30 approved `.omi/tasks/TASK-115-mockup/*.dc.html` and defaults: header "omi board", teal #0f6e6e, dark mode via prefers-color-scheme, Vietnamese date/number format, evergreen browsers.
 The implementation copies/merges mockup CSS and DOM structure, keeps class names, moves inline styles into CSS classes for CSP, uses system fonts, and leaves design files/API unchanged. Stats use task_counts/po_waiting_count; plans use progress bars; kanban cards use IDs/titles/chips; criteria use a checklist; reports use details. Workflow steps may only come from an API definition; absent that list, show the current step chip.
 
+Review round 2 FAIL:
+- Host: `python tests/test_board_web.py` on the host (pip present) -> wheel test passed, no skip line. Playwright is missing on host and worker: 360/390 px and keyboard are left to the qa step; keep the Playwright test as skip-if-missing.
+- PO 2026-10-30 approved widening scope to `src/omi/board/data.py` and `tests/test_board.py` (read-only API, still no writes): add the task's workflow step list and current step to the task detail (render the 6-step stepper "Bước N/M" as in the mockup), and the project path, branch and sync summary to `projects()` (Home cards) and the dashboard heading. Update `tests/test_board.py`.
+- Frontend gaps vs mockup: kanban "+ N task khác" overflow link when a column has more cards than shown; phone width (<768 px) shows the usage one-line summary instead of the table, and merges the empty Review and Blocked columns into one row as in Phone.dc.html.
+- PO 2026-10-30: header must stay pinned while scrolling (new criterion); on phones the header stays compact.
+- Model raised to opus alias (gpt-6-astra/high) after two review FAILs, PO approved.
+
 ## Steps
 - plan started 2026-10-30 14:35
 - plan done 2026-10-30 14:35
@@ -45,6 +53,8 @@ The implementation copies/merges mockup CSS and DOM structure, keeps class names
 - review started 2026-10-30 15:02
 - review failed 2026-10-30 15:11
 - build started 2026-10-30 15:11
+- build done 2026-10-30 15:29
+- review started 2026-10-30 15:29
 
 ## Reports
 2026-10-30 14:38 omi-agent-designer-ui (claude):
@@ -228,6 +238,17 @@ The implementation copies/merges mockup CSS and DOM structure, keeps class names
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-30 15:39 omi-agent-reviewer (claude):
+> VERDICT: FAIL
+> - `tests/test_board_web.py:1318` The wheel test prints "skip: pip missing" here, so nothing was built or installed. Package-data criterion is not proven. -> Run it on a host with pip.
+> - `src/omi/board/web/app.js:1135` The API has no `workflow_steps` field (`data.py` `_detail` doesn't return it), so the task page always shows a single step chip. The mockup shows a 6-step stepper with "Bước 4/6". -> Have the API supply the workflow definition, or get the PO to accept the chip.
+> - `src/omi/board/web/app.js:1075` Home project cards omit the project path, the branch chip and the sync chip that the mockup shows. The `projects()` API doesn't return them. The dashboard heading also omits the path and the branch chip. -> Extend the API, or get the PO to accept the omissions.
+> - `src/omi/board/web/app.js:1104` Kanban columns omit the "+ N task khác" overflow link from the mockup. The Phone mockup shows only a "9 lượt · 25.542 output" summary for usage, and the implementation renders the full table instead. The Phone Review and Blocked columns are not merged. -> Align with the mockup, or record the PO's acceptance.
+> - `tests/test_board_web.py:1517` The Playwright browser test did not run here, so the 360/390/1280 px layout, dark mode and keyboard checks are unexecuted. The Node DOM test uses a hand-written fake DOM, so it says nothing about CSS or real focus behaviour. -> Run it on a host with Playwright.
+> 
+> AC: Home, dashboard (PO-waiting, plans, kanban, activity, decisions, usage, sync) and task detail render from the API; 30 s auto-refresh with a toggle ✓ in code and in the Node fake-DOM test (30000 ms interval, toggle, hidden pause, recovery). Field names match `data.py`. Not seen in a real browser.
+> [... truncated ...]
+> AC: Readable at 360 px and keyboard navigable; all tests pass: tests pass ✓ (`python3 tests/test_omi.py` exit 0, "ok"). The 360 px and keyboard parts are UNVERIFIED (Playwright skipped). The code has a skip link, focus styles and `max-width:767px` rules.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -237,3 +258,4 @@ The implementation copies/merges mockup CSS and DOM structure, keeps class names
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 6 | 235 | 63674 | 288s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 16 | 3095 | 294311 | 368s | - | FAIL 1ed62b0 |
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1548711 | 20265 | 1486720 | 616s | 2/2 omi-skill-ui-direction omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 2883 | 302266 | 316s | - | FAIL 1cfb48d |
