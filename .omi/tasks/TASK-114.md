@@ -25,6 +25,7 @@ step: build
 - [ ] Unit tests start the server on a free port against a temporary state and cover each route, traversal and method refusal; all tests pass.
 
 ## Checkpoint
+Security fix round 1 done: server.py Host check (403 via self.send in do_GET and refuse), cli.py `isascii() and isdigit()`, tests added (foreign Host, `²` port). `python3 tests/test_omi.py` ran in full and printed `ok`. Next: commit, step done + next (security round 2).
 Review round 2 PASS. Security review round 1 FAIL:
 - server.py: no `Host` header check, so DNS rebinding can read `/api/*` (verified: `Host: evil.example:80` gave 200). In `do_GET` and `refuse`, answer 403 through `self.send` (CSP/nosniff set) unless `Host` is exactly `127.0.0.1:<port>` or `localhost:<port>` (server's own port). Add a test: a foreign Host gets 403 on `/api/projects` and on a static path; the right Host gets 200.
 - cli.py: `--port Â²` passes `isdigit()`, then `int()` raises a traceback. Validate with `port.isascii() and port.isdigit()`; add `Â²` to the bad-flag cases in `test_board_cli`.
@@ -258,6 +259,62 @@ Next: review and commit.
 > - src/omi/app/cli.py:324 `--port Â²` passes `isdigit()`, but `int("Â²")` raises `ValueError`, so the user gets a traceback instead of the usage error. The round-2 reviewer flagged this and it is still unfixed. | why: `"Â²".isdigit()` is True. | verified: ran `'Â²'.isdigit()` and it printed `True`. I did not run `omi board --port Â²` itself. -> Check `port.isascii() and port.isdigit()`.
 > 
 > The background run finished with exit code 0. `python3 tests/test_omi.py` printed `ok` (the earlier unverified item is resolved). The two `omi board: http://127.0.0.1:8765/ ...` lines in the output come from `test_board_cli`.
+2026-10-30 13:03 omi-agent-engineer (claude):
+> DONE
+> - Files changed: `src/omi/board/server.py`, `src/omi/app/cli.py`, `tests/test_board_server.py`, `.omi/tasks/TASK-114.md`.
+> - Host check: `do_GET` and `refuse` now answer 403 through `self.send` (CSP and nosniff set) unless `Host` is exactly `127.0.0.1:<port>` or `localhost:<port>` for the server's own port.
+> - Port check: `--port` now needs `isascii() and isdigit()`, so `--port ²` gives the usage error instead of a traceback.
+> - Tests added: five foreign Host values get 403 on `/api/projects`, `/app.js` and a POST, and `localhost:<port>` gets 200. `²` is a new bad-flag case in `test_board_cli`.
+> - Commit message: `fix(board): reject foreign Host header and non-ASCII port digits`
+> - Tests: the full `python3 tests/test_omi.py` ran and printed `ok`, and `python3 tests/test_board_server.py` also passed on its own.
+> - Open issues: none. `board/web/` and the `pyproject.toml` package-data entry are still left for the frontend task.
+2026-10-30 13:07 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -269,3 +326,4 @@ Next: review and commit.
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 1808 | 209280 | 367s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 1860 | 182917 | 247s | - | PASS a30e091 |
 | omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 6 | 582 | 100669 | 255s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL 48d69e0 |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 2853 | 253358 | 364s | 1/1 omi-skill-lean-implementation | - |

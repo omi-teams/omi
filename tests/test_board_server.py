@@ -13,9 +13,9 @@ from omi.board import server
 from test_board import fixture, write
 
 
-def request(port, method, path):
+def request(port, method, path, host=None):
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-    conn.request(method, path)
+    conn.request(method, path, headers={"Host": host} if host else {})
     res = conn.getresponse()
     body = res.read()
     conn.close()
@@ -53,6 +53,12 @@ def test_server():
                 status, res, _ = request(port, "GET", path)
                 assert status == 404, path
                 assert res.getheader("X-Content-Type-Options") == "nosniff"
+            for host in ("evil.example:80", "evil.example", f"127.0.0.1:{port + 1}", "127.0.0.1", f"evil.example:{port}"):
+                for path in ("/api/projects", "/app.js"):
+                    status, res, _ = request(port, "GET", path, host)
+                    assert status == 403 and res.getheader("Content-Security-Policy") == "default-src 'self'", (host, path)
+                assert request(port, "POST", "/api/projects", host)[0] == 403
+            assert request(port, "GET", "/api/projects", f"localhost:{port}")[0] == 200
             for method in ("POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"):
                 status, res, _ = request(port, method, "/api/projects")
                 assert status == 405 and res.getheader("Allow") == "GET", method
@@ -75,7 +81,7 @@ def test_board_cli():
     assert make.call_args.args == (8765,) and pull.call_count == 1 and opened.call_count == 1
     pull, make, opened = board("--port", "9000", "--no-open")
     assert make.call_args.args == (9000,) and not opened.called
-    for bad in (["--port"], ["--port", "x"], ["--bogus"], ["--port", "-1"]):
+    for bad in (["--port"], ["--port", "x"], ["--bogus"], ["--port", "-1"], ["--port", "\u00b2"]):
         try:
             board(*bad)
         except omi.state.resolve.StateError as exc:

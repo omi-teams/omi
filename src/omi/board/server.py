@@ -17,7 +17,14 @@ API = re.compile(r"/api/projects(?:/([^/]+)(?:/tasks/([^/]+))?)?")
 class Handler(BaseHTTPRequestHandler):
     web = WEB
 
+    def foreign_host(self) -> bool:
+        """DNS rebinding guard: only this server's own 127.0.0.1/localhost authority is served."""
+        port = self.server.server_port
+        return self.headers.get("Host") not in (f"127.0.0.1:{port}", f"localhost:{port}")
+
     def do_GET(self) -> None:
+        if self.foreign_host():
+            return self.send(403, "text/plain; charset=utf-8", b"forbidden")
         path = unquote(urlsplit(self.path).path)
         match = API.fullmatch(path)
         if match:
@@ -52,6 +59,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def refuse(self) -> None:
+        if self.foreign_host():
+            return self.send(403, "text/plain; charset=utf-8", b"forbidden")
         self.send_response(405)
         self.send_header("Allow", "GET")
         self.send_header("X-Content-Type-Options", "nosniff")
