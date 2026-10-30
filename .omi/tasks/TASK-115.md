@@ -34,6 +34,10 @@ Not done: real-browser visual/keyboard verification and installed-package verifi
 Tests: `python3 tests/test_board.py` exited 0 (API metadata, workflow definitions/defaults/refresh, read-only behavior and path refusal). `python3 tests/test_board_web.py` exited 0 (static safety/package-data/layout checks and Node DOM behavior tests); wheel/install explicitly skipped: pip missing; browser explicitly skipped: Playwright missing. Browser tests retained and extended for 360/390/768/1280 px, sticky-header/anchor clearance, compact phone header, merged empty columns, usage summary and keyboard overflow disclosure. `node --check src/omi/board/web/app.js` exited 0 (syntax only). `python3 tests/test_omi.py` exited 0 and printed `ok`, including the board API/static/Node tests; wheel/install and browser tests explicitly skipped for missing pip and Playwright.
 Next: RESUME (session stopped by PO 2026-10-30 after build round 3). Build round 3 (codex gpt-6-astra/high) committed. Host: `python tests/test_board.py` and `python tests/test_board_web.py` -> pass, wheel test ran (no skip). Playwright missing on host and worker. Resume: `python -m omi step TASK-115 next` (review), run a fresh `omi-agent-reviewer`; on FAIL (would be the 3rd) ask the PO before another build (workflow rule: rescope, change approach or drop). On PASS: qa step (omi-agent-qa-tester, browser screenshots vs `.omi/tasks/TASK-115-mockup/`), then PO accept, PR, CI, merge.
 
+Review round 3 FAIL (codex gpt-6-astra/high): only the countdown criterion is missing (added by the PO after build 3, expected).
+- Fix: src/omi/board/web/app.js has no countdown; add it next to the auto-refresh toggle per the countdown criterion (1 s ticks without re-render, reset after auto and manual refresh, "Đã tắt" when off, "Tạm dừng" when hidden, aria-hidden, toggle label keeps 30 giây). Add Node DOM tests for tick, reset, off and hidden.
+- Not code gaps: wheel/install is covered by the host run (pip absent in worker); browser checks belong to the qa step (Playwright absent, TASK-128). Do nothing else in this round.
+
 ### Approved direction
 PO 2026-10-30 approved `.omi/tasks/TASK-115-mockup/*.dc.html` and defaults: header "omi board", teal #0f6e6e, dark mode via prefers-color-scheme, Vietnamese date/number format, evergreen browsers.
 The implementation copies/merges mockup CSS and DOM structure, keeps class names, moves inline styles into CSS classes for CSP, uses system fonts, and leaves design files/API unchanged. Stats use task_counts/po_waiting_count; plans use progress bars; kanban cards use IDs/titles/chips; criteria use a checklist; reports use details. Workflow steps may only come from an API definition; absent that list, show the current step chip.
@@ -62,6 +66,9 @@ PO 2026-10-30 (after round 3, while viewing the board): add a countdown next to 
 - review failed 2026-10-30 15:44
 - build started 2026-10-30 15:44
 - build done 2026-10-30 15:57
+- review started 2026-10-30 18:20
+- review failed 2026-10-30 18:27
+- build started 2026-10-30 18:27
 
 ## Reports
 2026-10-30 14:38 omi-agent-designer-ui (claude):
@@ -310,6 +317,20 @@ PO 2026-10-30 (after round 3, while viewing the board): add a countdown next to 
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-30 18:27 omi-agent-reviewer (codex):
+> VERDICT: FAIL
+> 
+> - src/omi/board/web/app.js:223 Countdown is absent; the timer only polls every 30 seconds and does not reset after manual refresh. -> Add the adjacent countdown, one-second updates, refresh resets, off/hidden states, and exclusion from live announcements.
+> - tests/test_board_web.py:40 Installed-package verification skipped because pip is missing. -> Run the wheel/install test with pip available.
+> - tests/test_board_web.py:265 Browser verification skipped because Playwright is missing. -> Run browser checks and compare rendered pages against all four approved mockups.
+> 
+> AC: API-rendered home, dashboard sections and task detail; 30-second refresh toggle UNVERIFIED Node behavior tests passed; browser rendering checks skipped. Real TASK-115 and its six-step workflow parsed correctly.
+> AC: State uses textContent only; no external scripts, fonts or CDN ✓ Source inspection and static safety tests passed.
+> AC: pip install ships board/web/*, verified in installed package UNVERIFIED Package-data configuration passed; wheel/install test skipped.
+> AC: Pages match approved Main, Home, Task and Phone mockups UNVERIFIED Static structure checks passed; rendered visual comparison not executed.
+> AC: Sticky header and scroll-padding prevent obscured focus/anchors UNVERIFIED CSS declarations exist; browser clearance checks skipped.
+> AC: Accessible countdown with refresh resets and off/hidden states ✗ No countdown element or update logic exists.
+> AC: Readable at 360 px, keyboard navigable; all tests pass UNVERIFIED `python3 tests/test_omi.py` exited 0 and printed `ok`; package-install and browser tests skipped.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -321,3 +342,4 @@ PO 2026-10-30 (after round 3, while viewing the board): add a countdown next to 
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1548711 | 20265 | 1486720 | 616s | 2/2 omi-skill-ui-direction omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 2883 | 302266 | 316s | - | FAIL 1cfb48d |
 | omi-agent-engineer | gpt-6-astra (codex) | high | 1622113 | 13573 | 1555328 | 509s | 2/2 omi-skill-ui-direction omi-skill-lean-implementation | - |
+| omi-agent-reviewer | gpt-6-astra (codex) | high | 1304849 | 3250 | 1224704 | 265s | - | FAIL c763d1f |
