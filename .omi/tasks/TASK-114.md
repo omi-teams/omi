@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature-sensitive
-step: review
+step: security
 ---
 ## Goal
 `omi board [--port N] [--no-open]` serves the data layer as JSON and the static frontend on 127.0.0.1 only.
@@ -60,6 +60,8 @@ Next: review and commit.
 - build started 2026-10-30 12:56
 - build done 2026-10-30 13:07
 - review started 2026-10-30 13:07
+- review done 2026-10-30 13:16
+- security started 2026-10-30 13:16
 
 ## Reports
 2026-10-30 08:59 omi-agent-architect (claude):
@@ -317,6 +319,15 @@ Next: review and commit.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-30 13:16 omi-agent-reviewer (claude):
+> ```
+> VERDICT: PASS
+> AC: Binds 127.0.0.1 (default 8765), opens browser unless --no-open, pulls once at start, serves the three JSON routes fresh per request ✓ cli.py:383-403 defaults to 8765, pulls once when detached, and calls webbrowser.open only without --no-open. server.py make_server binds ("127.0.0.1", port). test_board_cli checks the default port, one pull, and the open/--no-open behaviour. test_server checks the bind address and all three routes. board.data is read per request.
+> AC: Static files only from board/web/; ../, encoded traversal, absolute paths and unknown routes give 404; GET only; no writes ✓ test_server sends 18 bad paths and gets 404 on each. POST, PUT, DELETE, PATCH, HEAD and OPTIONS return 405 with Allow: GET. server.py has a resolve()/is_relative_to confinement and no write path. A foreign Host header now gets 403, covered by test_server (five hosts, GET and POST).
+> AC: Responses set Content-Type, X-Content-Type-Options: nosniff and CSP default-src 'self' ✓ send() sets all three. test_server asserts them on 200, 404 and 403 responses, and test_unreadable_task asserts the CSP on a 500. The 405 path sets nosniff and CSP in refuse().
+> AC: Unit tests start the server on a free port (port 0) against a temporary state and cover each route, traversal and method refusal; all tests pass ✓ test_server, test_board_cli and test_unreadable_task are wired into tests/test_omi.py. The full `python3 tests/test_omi.py` exited 0 and printed `ok`. `tests/test_board_server.py` also ran on its own and exited 0.
+> Scope: every changed file is in the task's scope. The last two security fixes (Host check, `isascii()` on the port) are present and tested.
+> ```
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -329,3 +340,4 @@ Next: review and commit.
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 1860 | 182917 | 247s | - | PASS a30e091 |
 | omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 6 | 582 | 100669 | 255s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL 48d69e0 |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 2853 | 253358 | 364s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1606 | 164567 | 306s | - | PASS 8c8ea55 |
