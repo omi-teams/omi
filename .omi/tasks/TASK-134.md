@@ -1,16 +1,16 @@
 ---
 id: TASK-134
 title: Task phase derived from the current workflow step
-status: planned
+status: in-progress
 depends: TASK-115
 plan: PLAN-006
 scope: src/omi/project/**, src/omi/app/cli.py, src/omi/board/data.py, tests/test_omi.py, tests/test_board.py, .omi/tasks/TASK-134.md
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: claude
+model: sonnet
+effort: medium
 step_settings:
 workflow: omi-flow-feature
 step:
