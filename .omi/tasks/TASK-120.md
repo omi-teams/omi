@@ -13,7 +13,7 @@ model: opus
 effort: high
 step_settings:
 workflow: omi-flow-feature-sensitive
-step: review
+step: build
 ---
 ## Goal
 On a fix round, `omi run` continues the engineer's previous CLI session (`claude -p --resume <id>`, `codex exec resume <id>`) with only the new findings, instead of starting a fresh agent that rereads everything; the reviewer stays a fresh instance.
@@ -27,6 +27,8 @@ On a fix round, `omi run` continues the engineer's previous CLI session (`claude
 - [ ] The omi-task skill (template copy) describes the resume behaviour; tests cover resume, fresh fallback and read-role exclusion; all tests pass.
 
 ## Checkpoint
+Review round 6 FAIL (security):
+- src/omi/worker/session.py scrub: `f.read_bytes()` raises on an unreadable file (e.g. the engineer writes the token to /sessions/x.jsonl and `chmod 000`), the exception escapes `attempt`'s `finally`, the post-run hook and the OUT OF SCOPE check never run, and the token stays in the host cache. Fail closed: any OSError while walking or reading, or any entry that is not a readable regular file (other than a skipped symlink), counts as a hit: rmtree the task cache dir, print `SESSION DROPPED`, return True. scrub itself must never raise out of `attempt`. Test with a mode-0 transcript (POSIX only; skip line on Windows).
 Round 6 done: `scrub` also parses a JSON secret and, when it has a `tokens` object (codex ChatGPT auth.json), adds every non-empty `*_token` string (except the `omi-no-refresh` placeholder) as raw and JSON-escaped needles; it skips symlinks (`f.is_symlink()`), and rglob does not recurse into linked dirs. run.py `attempt()` runs the scrub (and the `Session:` line removal) in a `finally` around the container run, so Ctrl-C, a container exception and the NameTaken exit are covered. Tests: access_token alone and id_token alone wiped, placeholder/account_id not flagged, planted symlink to a host file holding the token neither followed nor deleted, a KeyboardInterrupt from the container run still drops the token transcript. python3 tests/test_omi.py passed (pip/playwright skipped). Next: Coordinator review and commit.
 Review round 5 FAIL (security):
 - src/omi/worker/session.py scrub: with a codex ChatGPT login `value` is the whole slim auth.json blob (creds.py:97), so a transcript holding only `tokens.access_token` (or id_token / refresh_token) is not flagged. When the secret is that blob, parse it and add every token string inside it as needles (raw and JSON-escaped). Test: transcript with the access token alone is wiped.
@@ -77,6 +79,10 @@ Next: Coordinator review and commit.
 - build started 2026-10-31 00:53
 - build done 2026-10-31 06:20
 - review started 2026-10-31 06:20
+- review done 2026-10-31 06:22
+- security started 2026-10-31 06:22
+- security failed 2026-10-31 06:42
+- build started 2026-10-31 06:42
 
 ## Reports
 2026-10-30 22:43 omi-agent-architect (claude):
@@ -495,6 +501,32 @@ Next: Coordinator review and commit.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-31 06:27 omi-agent-reviewer (claude):
+> Failed to authenticate: OAuth token revoked. Please log in again or contact your administrator.
+> ERROR: Failed to authenticate: OAuth token revoked. Please log in again or contact your administrator.
+> exit code 1
+2026-10-31 06:28 omi-agent-reviewer (claude):
+> Failed to authenticate: OAuth token revoked. Please log in again or contact your administrator.
+> ERROR: Failed to authenticate: OAuth token revoked. Please log in again or contact your administrator.
+> exit code 1
+2026-10-31 06:35 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/worker/run.py:764 The hook-fix retry ignores a quota hit and prints no `RESUME FAILED:` line if the resumed session is lost. It only prints `hook-fix attempt exited with code N`, then reruns the hook. -> Optional: reuse the quota and fallback handling for the retry.
+> - src/omi/worker/session.py:889 `clear()` uses `rmtree(ignore_errors=True)`, so on a Linux host with uid != 1000 `omi clean` can silently leave container-created transcripts. The task file records this as a known issue with no change wanted. -> Optional: print a line when files remain.
+> - UNVERIFIED (no Docker or real CLIs here, only mocks): the `ln -s /sessions $HOME/.claude/projects` link, and that the `claude --resume` / `codex exec resume` flags behave as the tests assume.
+> 
+> `python3 tests/test_omi.py` ended `ok`. The pip/wheel and playwright checks were skipped because those tools are missing. The `omi-task` skill copies match the sha in `template_shas.json`. All changed files are within `scope`.
+> 
+> AC: `omi run` records the engineer's session id per tool in the task file after each write-role run ✓ `run.py:727` calls `with_session`, which writes `Session: <tool> <id>` under `## Checkpoint`. `test_session_resume` asserts `Session: claude S2`.
+> AC: A later write-role run on the same task and tool resumes that session with a short prompt pointing at `## Checkpoint`; `--fresh` forces a new session; a tool switch starts fresh ✓ `run.py:737` passes `resume` only when the recorded tool matches and `--fresh` is not set. `tools.resume_prompt` builds the short prompt. The tests cover resume, `--fresh`, a codex-then-claude switch, and the quota fallback, which runs fresh.
+> [... truncated ...]
+> AC: The omi-task skill (template copy) describes the resume behaviour; tests cover resume, fresh fallback and read-role exclusion; all tests pass ✓ The skill text is in both copies, the sha matches, and the suite ended `ok`.
+2026-10-31 06:42 omi-agent-security-reviewer (claude):
+> VERDICT: FAIL
+> - src/omi/worker/session.py:100 (call site run.py:292) | problem: `scrub` crashes when a cached file can't be read, and the crash lets the token check fail open | why: `f.read_bytes()` has no `OSError` handling, and it runs in `attempt`'s `finally` with nothing catching it. So the `PermissionError` leaves `run_role`, and the post-run hook (run.py:379) and the `OUT OF SCOPE` / exit-3 check (run.py:400-402) never run. The file holding the token stays in the host cache, so criterion 4 is broken. The engineer can trigger this on purpose inside the container (write the token to `/sessions/x.jsonl`, then `chmod 000`; same uid 1000, so the host can't read it either). | verified: called `session.scrub` on a mode-0 file holding the token and got `PermissionError: [Errno 13]`; traced the code from the call site to the scope check -> on any `OSError` while reading (or any entry that isn't a readable regular file), treat it as a hit: rmtree the dir, print `SESSION DROPPED`, return True. Also stop scrub errors from escaping `attempt`. Add a test with a mode-0 transcript.
+> UNVERIFIED: on a Linux host with uid != 1000, files the CLI writes as 0600 (owner uid 1000) would make every engineer run hit the crash above. Running real `claude -p` in the container and checking the transcript mode would confirm it.
+> UNVERIFIED: between the `is_symlink()` check and `read_bytes()` (session.py:100), the container could swap a file for a symlink if it is still running after Ctrl-C. Only a True/False comes out, so the risk is memory use or blocking on a huge or special file. An interrupt test with a live `docker run` would confirm it.
+> Checked: `python3 tests/test_omi.py` ended `ok` (pip/playwright checks skipped). `rglob` on Python 3.13 does not follow symlinked dirs. `repo_label` and the session ids are sanitised. Read roles get no mount and no resume.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -512,3 +544,7 @@ Next: Coordinator review and commit.
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 14 | 5324 | 433067 | 358s | - | PASS 9d5f47f |
 | omi-agent-security-reviewer | claude-opus-5-5 | high | 22 | 5874 | 509415 | 433s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL 9d5f47f |
 | omi-agent-engineer | claude-opus-5-5 | high | 30 | 7881 | 660168 | 19335s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1712 | 234596 | 295s | - | n/a |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 2876 | 159414 | 253s | - | n/a |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 3935 | 242681 | 257s | - | PASS 47d0458 |
+| omi-agent-security-reviewer | claude-opus-5-5 | high | 20 | 7043 | 607723 | 323s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL 47d0458 |
