@@ -24,6 +24,7 @@ Prove the spec's success criteria 1-4 on the pilot omi-state and document how to
 - [ ] Gaps found are listed for a later plan.
 
 ## Checkpoint
+Review round 1 FAIL: README.md - the "Bảng theo dõi (`omi board`)" section sits before "`omi init` tạo các file sau trong dự án:" and its table, so they fall under the board heading. Fix only: move the board section after the `omi init` table (keep its 7 lines). Change nothing else.
 Host evidence (Coordinator, Windows 11 host, 2026-10-30, omi at development 478f894). The worker cannot read the real omi-state, so write the doc from these lines and do not re-run them:
 - C1: `omi board` (port 8801) on the real `~/.omi/state` -> `/api/projects/omi-pilot-splitbill` returns plan PLAN-000 and kanban done=[TASK-003]. `/api/projects/omi-pilot-splitbill/tasks/TASK-003`: Steps and Reports text equal the file sections (compared byte for byte), and Usage has 2 rows, the same as the file (engineer + reviewer PASS 98f8665).
 - C2: a copy of the state with `OMI_STATE=<copy>` (port 8802): editing TASK-003 `title:` -> the next API request returns the new title without restarting the server.
@@ -39,6 +40,10 @@ Next: Coordinator review and commit.
 - plan started 2026-10-30 21:06
 - plan done 2026-10-30 21:06
 - build started 2026-10-30 21:06
+- build done 2026-10-30 21:19
+- review started 2026-10-30 21:19
+- review failed 2026-10-30 21:26
+- build started 2026-10-30 21:26
 
 ## Reports
 2026-10-30 21:15 omi-agent-engineer (claude):
@@ -95,8 +100,18 @@ Next: Coordinator review and commit.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-30 21:26 omi-agent-reviewer (claude):
+> VERDICT: FAIL
+> - README.md:110 The new "Bảng theo dõi (`omi board`)" section sits before "`omi init` tạo các file sau trong dự án:" and its table, so that content now falls under the board heading. -> Move the board section after the init table, or put the `omi init` lead-in under its own heading.
+> 
+> AC: `docs/pilot-board.md` (Vietnamese) lists criteria 1-4 with the command and result on the pilot state, on Windows and Linux. ✓ The file lists criteria 1-4 with commands and results. The Windows and Linux evidence matches the checkpoint lines. The doc says it was copied from the Coordinator's checkpoint, not re-run, which matches the task's instruction.
+> AC: README documents `omi board` in at most 8 lines. ✗ The section is 5 lines, and the flags and default port 8765 match `src/omi/app/cli.py`. It sits in the wrong place and splits the `omi init` paragraph from its heading.
+> AC: Gaps found are listed for a later plan. ✓ The "Gap cho plan sau" section lists all three gaps from the checkpoint.
+> 
+> `python3 tests/test_omi.py` printed `ok`. Two tests were skipped: the wheel test (pip missing) and the Playwright browser test. No finding depends on either.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 20 | 3172 | 238559 | 508s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 1601 | 158299 | 315s | - | FAIL 133e25d |
