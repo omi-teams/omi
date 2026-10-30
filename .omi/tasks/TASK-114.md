@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature-sensitive
-step: security
+step: accept
 ---
 ## Goal
 `omi board [--port N] [--no-open]` serves the data layer as JSON and the static frontend on 127.0.0.1 only.
@@ -62,6 +62,8 @@ Next: review and commit.
 - review started 2026-10-30 13:07
 - review done 2026-10-30 13:16
 - security started 2026-10-30 13:16
+- security done 2026-10-30 13:23
+- accept started 2026-10-30 13:23
 
 ## Reports
 2026-10-30 08:59 omi-agent-architect (claude):
@@ -328,6 +330,11 @@ Next: review and commit.
 > AC: Unit tests start the server on a free port (port 0) against a temporary state and cover each route, traversal and method refusal; all tests pass ✓ test_server, test_board_cli and test_unreadable_task are wired into tests/test_omi.py. The full `python3 tests/test_omi.py` exited 0 and printed `ok`. `tests/test_board_server.py` also ran on its own and exited 0.
 > Scope: every changed file is in the task's scope. The last two security fixes (Host check, `isascii()` on the port) are present and tested.
 > ```
+2026-10-30 13:23 omi-agent-security-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/app/cli.py:397 (diff line) A `--port` value of more than 4300 ASCII digits passes `isascii() and isdigit()`, then `int(port)` raises a raw `ValueError` traceback. | why: this is the same failure class as the `²` fix, but it needs a deliberately absurd argument, so I rate it minor. | verified: `int('9'*5000)` raised `ValueError: Exceeds the limit (4300 digits)`. I did not run the CLI path itself. -> Check `len(port) <= 5` before `int()`, or catch `ValueError` next to `OSError` and `OverflowError`.
+> UNVERIFIED: none. The earlier open item is resolved: the full `python3 tests/test_omi.py` finished with exit 0 and printed `ok`. Its output included the two `omi board:` lines from `test_board_cli`, so the worktree contains the diff.
+> The Host check, path confinement, GET-only handling, headers, bind address, layering and scope all look correct from reading the diff. `omi-modules.md` has the new layer order.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -341,3 +348,4 @@ Next: review and commit.
 | omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 6 | 582 | 100669 | 255s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL 48d69e0 |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 2853 | 253358 | 364s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1606 | 164567 | 306s | - | PASS 8c8ea55 |
+| omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 6 | 522 | 108857 | 265s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS bd34815 |
