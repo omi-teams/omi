@@ -2,7 +2,7 @@
 id: TASK-125
 title: omi board v2 - colour, workflow diagram and task tree
 status: planned
-depends: TASK-115, TASK-124
+depends: TASK-115, TASK-124, TASK-134
 plan: PLAN-006
 scope: src/omi/board/web/**, tests/test_board_web.py, .omi/tasks/TASK-125.md, .omi/tasks/TASK-125-mockup/**
 role: omi-agent-engineer
@@ -23,6 +23,7 @@ The board looks livelier, draws the workflow as a diagram and lists tasks as a t
 - [ ] Richer colour: each status and each type has its own colour token (light and dark mode), always paired with text or an icon (never colour alone), text contrast at least 4.5:1.
 - [ ] The task page draws the workflow as a diagram (steps as nodes with arrows, PO gates marked, current step highlighted, done steps marked) from the API's workflow steps; it stays readable at 360 px.
 - [ ] The dashboard has a tree view of tasks: expand/collapse per parent (native, keyboard operable), type badge, derived status chip and a done/total progress bar per parent, from the TASK-124 API fields.
+- [ ] Kanban columns follow the TASK-134 phases (Chưa bắt đầu, Lên kế hoạch, Thiết kế, Đang làm, Đang review, Đang QA, Chờ PO, Bị chặn, Xong); each card shows a phase chip, `bước N/M` and the review round; empty columns collapse.
 - [ ] State text still goes in via `textContent` only; no external script, font or CDN; all tests pass.
 
 ## Checkpoint
