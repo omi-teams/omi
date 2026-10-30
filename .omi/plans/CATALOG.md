@@ -8,3 +8,4 @@
 - PLAN-004 (active): omi 0.4.0 - detached mode (no omi files in the code repo)
 - PLAN-005 (active): omi 0.4.1 - detached mode pilot gaps
 - PLAN-006 (active): omi 0.5.0 - omi board (read-only web view of omi-state)
+- PLAN-007 (active): omi 0.6.0 - professional omi board
