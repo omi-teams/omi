@@ -13,17 +13,19 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature
-step: build
+step: review
 ---
 ## Goal
 Prove the spec's success criteria 1-4 on the pilot omi-state and document how to use the board.
 
 ## Acceptance criteria
-- [ ] `docs/pilot-board.md` (Vietnamese) lists criteria 1-4 with the command or action and its result on the pilot state (omi-pilot-splitbill, TASK-003), on the Windows host and Linux.
-- [ ] README documents `omi board` in at most 8 lines.
-- [ ] Gaps found are listed for a later plan.
+- [x] `docs/pilot-board.md` (Vietnamese) lists criteria 1-4 with the command or action and its result on the pilot state (omi-pilot-splitbill, TASK-003), on the Windows host and Linux.
+- [x] README documents `omi board` in at most 8 lines.
+- [x] Gaps found are listed for a later plan.
 
 ## Checkpoint
+Review round 2 (claude sonnet/medium): VERDICT PASS; HOST: the Windows-host runs on the real state.
+Host: Coordinator on Windows 11 -> C1-C4 evidence lines below, run 2026-10-30 against ~/.omi/state and an OMI_STATE copy (ports 8801/8802); all as recorded.
 Review round 1 FAIL: README.md - the "Bảng theo dõi (`omi board`)" section sits before "`omi init` tạo các file sau trong dự án:" and its table, so they fall under the board heading. Fix only: move the board section after the `omi init` table (keep its 7 lines). Change nothing else.
 Host evidence (Coordinator, Windows 11 host, 2026-10-30, omi at development 478f894). The worker cannot read the real omi-state, so write the doc from these lines and do not re-run them:
 - C1: `omi board` (port 8801) on the real `~/.omi/state` -> `/api/projects/omi-pilot-splitbill` returns plan PLAN-000 and kanban done=[TASK-003]. `/api/projects/omi-pilot-splitbill/tasks/TASK-003`: Steps and Reports text equal the file sections (compared byte for byte), and Usage has 2 rows, the same as the file (engineer + reviewer PASS 98f8665).
@@ -45,6 +47,8 @@ Next: Coordinator review and commit.
 - review started 2026-10-30 21:19
 - review failed 2026-10-30 21:26
 - build started 2026-10-30 21:26
+- build done 2026-10-30 21:36
+- review started 2026-10-30 21:36
 
 ## Reports
 2026-10-30 21:15 omi-agent-engineer (claude):
@@ -163,6 +167,15 @@ Next: Coordinator review and commit.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-30 21:46 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - README.md:46 The earlier misplacement is fixed. The board section now follows the `omi init` table and the cache paragraph. The diff also drops one stray blank line before "`omi init` tạo các file…", which is harmless.
+> 
+> AC: `docs/pilot-board.md` (Vietnamese) lists criteria 1-4 with the command and result on the pilot state, on Windows and Linux ✓ The file has a table for criteria 1-4. Each row's command and result match the checkpoint evidence lines (ports 8801/8802, the four 404 paths, the CSP header, the CI and Docker Linux results). HOST The Windows-host runs against the real `~/.omi/state` can't be reproduced here. They are copied from the Coordinator's evidence.
+> AC: README documents `omi board` in at most 8 lines ✓ The section is a heading plus 5 content lines, at README.md:48-54. It stays under 8 lines whether or not the heading counts.
+> AC: Gaps found are listed for a later plan ✓ The "Gap cho plan sau" section lists all three gaps from the checkpoint, with TASK-128 and TASK-125 referenced.
+> 
+> `python3 tests/test_omi.py` exited 0 and printed `ok`. `test_browser_layout_and_keyboard` was skipped because Playwright is missing. That test isn't tied to any acceptance criterion here. The scope is respected: the diff touches only `docs/pilot-board.md`, `README.md` and the task file.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -170,3 +183,4 @@ Next: Coordinator review and commit.
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 20 | 3172 | 238559 | 508s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 1601 | 158299 | 315s | - | FAIL 133e25d |
 | omi-agent-engineer | claude-haiku-5-5 | low | 16 | 2954 | 230987 | 368s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1156 | 106976 | 478s | - | PASS 5ebfe8f |
