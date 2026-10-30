@@ -104,3 +104,4 @@
 - 2026-10-30 | every step result is posted to the task PR as a comment naming the agent, tool/model/effort, time, verdict and the verbatim report; Coordinator decisions and PO approvals too | PO: PR must show who did what | TASK-119
 - 2026-10-30 | task PR stays draft until every review-type workflow step has passed, then becomes ready; a later FAIL turns it back to draft | PO correction (not tied to PO accept) | TASK-119
 - 2026-10-30 | plan TASK-120: engineer fix rounds resume the previous CLI session (claude --resume / codex exec resume); reviewer stays fresh | PO wants direct agent communication; resume is the cheapest form | TASK-120
+- 2026-10-30 | Coordinator proposes tool, model and effort per task; the PO only approves (other tool shown as alternative); applies to omi itself, not just this project | PO: "tôi chỉ xem và duyệt thôi", "áp dụng cho omi" | TASK-121
