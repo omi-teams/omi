@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature
-step: review
+step: accept
 ---
 ## Goal
 Every PR the squad opens is readable without opening the commits: the task ID comes first in the title, and the body follows a fixed set of sections. The omi-task and omi-release skills (repo copy and `src/omi/template`) state the rule, so new projects get it too. Every step result (agent, model, verdict, report) is also posted to the PR as a comment, so the PR shows the whole run. PR #119 (TASK-114) was opened with `--fill`, which gave the title `task/TASK 114` and a list of commits as the body.
@@ -52,6 +52,8 @@ Next: Coordinator review
 - build started 2026-10-30 13:54
 - build done 2026-10-30 14:05
 - review started 2026-10-30 14:05
+- review done 2026-10-30 14:13
+- accept started 2026-10-30 14:13
 
 ## Reports
 2026-10-30 13:38 omi-agent-engineer (claude):
@@ -190,6 +192,17 @@ Next: Coordinator review
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-30 14:12 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - `src/omi/worker/run.py:356` The write-role verdict regex allows leading non-word characters (`\W*`), so a report that starts with punctuation still gets a verdict. This is harmless. No fix needed.
+> - `src/omi/worker/run.py:357` The comment posts the full `report`, while the task file's `## Reports` entry is clipped by `clip_report`. The comment is therefore not byte-identical to that entry, but it is the more complete of the two. No fix needed.
+> 
+> AC: omi-task PR step title format, `--title`/`--body-file` (no `--fill`), `--subject` on `gh pr merge --squash`, no-remote squash subject ✓ Step 6 of `.claude/skills/omi-task/SKILL.md` has `[TASK-NNN] <type>(<area>): <summary>` with the type list and the 72-character limit. It uses `--title` and `--body-file`, `--fill` only appears as "never", and `gh pr merge --squash --delete-branch --subject "<title>"` is there. The no-remote branch says to commit with the same `<title>`.
+> AC: PR body sections in order ✓ The five sections are listed in order in the skill, with the Verification contents and `none` for Known issues.
+> AC: omi-release promotion PR titles and body sections ✓ The release skill has `[RELEASE vX.Y.Z] development -> staging` and `staging -> main`, the same five sections, and `--title`/`--body-file`.
+> AC: repo and template skill copies identical, `template_shas.json`, test asserts title format and no `--fill` ✓ `diff` shows the omi-task and omi-release copies are identical. `template_shas.json` is unchanged, which the task allows ("if the template checks need it"). `test_task_skill_step_commands` asserts the title format and the absence of `--fill`.
+> [... truncated ...]
+> AC: `python3 tests/test_omi.py` prints `ok` ✓ I ran it and it printed `ok`, exit 0.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -197,3 +210,4 @@ Next: Coordinator review
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 30 | 8680 | 632447 | 537s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 3181 | 120628 | 493s | - | FAIL c1eafa7 |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 3566 | 267210 | 344s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 2640 | 147564 | 307s | - | PASS f126c88 |
