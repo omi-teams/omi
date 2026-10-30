@@ -1,7 +1,7 @@
 ---
 id: TASK-114
 title: omi board server and CLI
-status: in-progress
+status: done
 depends: TASK-113
 plan: PLAN-006
 scope: src/omi/board/server.py, src/omi/app/cli.py, tests/test_board_server.py, tests/test_omi.py, .omi/tasks/TASK-114.md, .omi/rules/omi-modules.md, tests/test_cli.py
@@ -19,10 +19,10 @@ step: accept
 `omi board [--port N] [--no-open]` serves the data layer as JSON and the static frontend on 127.0.0.1 only.
 
 ## Acceptance criteria
-- [ ] Binds 127.0.0.1 (default port 8765), opens the browser unless `--no-open`, pulls state once at start like `omi status`, then serves `/api/projects`, `/api/projects/<name>`, `/api/projects/<name>/tasks/<id>` as JSON read fresh per request.
-- [ ] Static files only from `board/web/`; `../`, encoded traversal, absolute paths and unknown routes return 404; only GET; no write to state or code repo.
-- [ ] Responses set `Content-Type`, `X-Content-Type-Options: nosniff` and a CSP of `default-src 'self'`.
-- [ ] Unit tests start the server on a free port against a temporary state and cover each route, traversal and method refusal; all tests pass.
+- [x] Binds 127.0.0.1 (default port 8765), opens the browser unless `--no-open`, pulls state once at start like `omi status`, then serves `/api/projects`, `/api/projects/<name>`, `/api/projects/<name>/tasks/<id>` as JSON read fresh per request.
+- [x] Static files only from `board/web/`; `../`, encoded traversal, absolute paths and unknown routes return 404; only GET; no write to state or code repo.
+- [x] Responses set `Content-Type`, `X-Content-Type-Options: nosniff` and a CSP of `default-src 'self'`.
+- [x] Unit tests start the server on a free port against a temporary state and cover each route, traversal and method refusal; all tests pass.
 
 ## Checkpoint
 Security fix round 1 done: server.py Host check (403 via self.send in do_GET and refuse), cli.py `isascii() and isdigit()`, tests added (foreign Host, `²` port). `python3 tests/test_omi.py` ran in full and printed `ok`. Next: commit, step done + next (security round 2).
@@ -64,6 +64,7 @@ Next: review and commit.
 - security started 2026-10-30 13:16
 - security done 2026-10-30 13:23
 - accept started 2026-10-30 13:23
+PO approval accept: Accept, merge development
 
 ## Reports
 2026-10-30 08:59 omi-agent-architect (claude):
