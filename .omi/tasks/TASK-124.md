@@ -3,7 +3,7 @@ id: TASK-124
 title: Task hierarchy - type, parent and rolled-up status
 status: planned
 depends: TASK-115
-plan: PLAN-006
+plan: PLAN-007
 scope: src/omi/project/**, src/omi/app/cli.py, src/omi/board/data.py, src/omi/template/**, .omi/tasks/_template.md, tests/test_omi.py, tests/test_board.py, .omi/tasks/TASK-124.md
 role: omi-agent-engineer
 skills: []

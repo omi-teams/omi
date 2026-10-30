@@ -3,7 +3,7 @@ id: TASK-125
 title: omi board v2 - colour, workflow diagram and task tree
 status: planned
 depends: TASK-115, TASK-124, TASK-134
-plan: PLAN-006
+plan: PLAN-007
 scope: src/omi/board/web/**, tests/test_board_web.py, src/omi/app/cli.py, tests/test_cli.py, tests/test_init.py, tests/test_tools.py, .omi/tasks/TASK-125.md, .omi/tasks/TASK-125-mockup/**
 role: omi-agent-engineer
 skills: [omi-skill-ui-direction]

@@ -113,3 +113,4 @@
 - 2026-10-30 | PLAN-007 (0.6.0) professional omi board: cost/quota, PO inbox + notifications, browser QA in CI, filters, health alerts, dependency graph, timeline, weekly report (TASK-126..133) | PO picked all proposed ideas; kept out of 0.5.0 so v1 ships first | PLAN-007
 - 2026-10-30 | Task phase is derived from the current step's role and gate (TASK-134), not a new stored status; board kanban uses phases (TASK-125) | PO wants to see each task's step at a glance; a stored copy would drift from step: | TASK-134
 - 2026-10-30 | TASK-115 effort lowered to medium from round 4 review on | PO asked to save quota (Codex near its limit) | TASK-115
+- 2026-10-30 | Release 0.5.0 with board v1 now; TASK-123/124/125 move to PLAN-007 (0.6.0) | PO: ship v1 first, PLAN-006 done criteria are TASK-112..117 | TASK-117

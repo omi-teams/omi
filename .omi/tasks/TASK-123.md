@@ -3,7 +3,7 @@ id: TASK-123
 title: Near-realtime omi board via a lightweight version endpoint
 status: planned
 depends: TASK-115
-plan: PLAN-006
+plan: PLAN-007
 scope: src/omi/board/**, tests/test_board.py, tests/test_board_server.py, tests/test_board_web.py, .omi/tasks/TASK-123.md
 role: omi-agent-engineer
 skills: []
