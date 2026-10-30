@@ -322,6 +322,14 @@ def test_session_resume():
             assert mounted.is_dir() and str(mounted).startswith(os.environ["XDG_CACHE_HOME"])
             assert all(p.stat().st_mode & 0o077 == 0 for p in (sess.root(repo), sess.root(repo).parent, sess.root(repo).parent.parent))
             assert mounted.stat().st_mode & 0o777 == (0o770 if os.getuid() == 1000 else 0o777)
+            # as on Windows: no os.getuid, the mount still works and the leaf is not opened to 0777
+            real_uid = os.getuid
+            del os.getuid
+            try:
+                sess.mount_args(repo, "TASK-001", "codex")
+            finally:
+                os.getuid = real_uid
+            assert sess.task_dir(repo, "TASK-001", "codex").stat().st_mode & 0o777 == 0o700
             assert sess.recorded("Session: claude --x", "claude") is None and sess.recorded("Session: claude *", "claude") is None
             (mounted / "planted.jsonl").write_text("{}")
             assert not sess.available(repo, "TASK-001", "claude", "*") and not sess.available(repo, "TASK-001", "claude", "--x")

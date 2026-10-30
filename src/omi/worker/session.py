@@ -31,7 +31,9 @@ def mount_args(repo, tid, tool):
     for p in (*d.parents[:d.parents.index(root(repo)) + 3], d):  # task dir, repo dir and the omi cache dirs above it: owner only
         p.chmod(0o700)
     # ponytail: the container user is uid 1000; any other host uid needs the leaf open, which the 0700 parents keep unreachable
-    d.chmod(0o770 if os.getuid() == 1000 else 0o777)
+    uid = getattr(os, "getuid", None)  # Windows has none; Docker Desktop maps the bind mount itself, so the leaf stays 0700
+    if uid:
+        d.chmod(0o770 if uid() == 1000 else 0o777)
     return ["--mount", f"type=bind,src={d},dst=/sessions"]
 
 
