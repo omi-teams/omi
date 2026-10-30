@@ -25,13 +25,11 @@ Every board refresh shows exactly what is on `origin/main` of the GitHub omi-sta
 - [ ] Tests with a local bare repo as origin cover: a pushed change appears, a local unpushed change does not, fetch failure gives `stale: true`, and no response contains the state dir path; all tests pass.
 
 ## Checkpoint
-Review round 1 FAIL:
-- Host tests (Windows) fail at tests/test_board.py:155: `source._repo(str(home))` returns the local path (e.g. `C:\Users\...\state`) because the scp-like regex reads the drive letter `C` as a host. That leaks the local path this task must hide. Fix in `_repo`: a one-letter host followed by `:\` or `:/` is a drive path, not a remote; return "". Add `C:\x\y` and `C:/x/y` cases to the test.
-- The `state_sync.pull` removal in src/omi/app/cli.py stays out of this round: cli.py is in the parallel TASK-120's scope; the Coordinator widens the scope after TASK-120 merges.
-Done: Scoped board implementation reads immutable fetched origin/main blobs; concurrent requests share a 10-second fetch throttle; responses include sanitized source metadata; stale snapshots and Vietnamese warning are supported; local cache paths are removed. Added bare-origin integration, concurrency, failure/recovery, API and frontend runtime coverage.
-Not done: Criterion 1 remains incomplete end to end: src/omi/app/cli.py:190 still calls state_sync.pull(project) on board startup, outside this task's scope. Existing tests/test_board_server.py::test_board_cli explicitly expects that pull and must change alongside its removal; tests/test_cli.py dispatch coverage is also affected.
-Tests: python3 tests/test_board.py, python3 tests/test_board_server.py, and python3 tests/test_board_web.py executed successfully. JavaScript DOM/runtime checks executed. Wheel test skipped (pip missing); browser layout/keyboard test skipped (Playwright missing). python3 tests/test_omi.py completed with exit 0 (final ok); the focused board tests were rerun successfully after the final code/test edits. The same wheel and browser checks were skipped in the full suite.
-Next: Coordinator must extend scope to src/omi/app/cli.py; remove the board startup pull, update tests/test_board_server.py::test_board_cli to assert no pull, and rerun python3 tests/test_omi.py. Scoped work is ready for review; no commit made.
+Done: Review round 1 Windows path leak fixed in src/omi/board/source.py::_repo: a drive letter followed by :/ or :\ returns an empty repo value before scp-like remote parsing. Added C:\x\y and C:/x/y regression cases in tests/test_board.py; credential sanitization and valid remote cases remain covered.
+Done: Existing tests cover fetched origin/main data, pushed changes, ignored local dirty/unpushed changes, concurrent 10-second fetch throttling, failed fetch and recovery, unchanged checkout, API path redaction, source metadata, header and stale warning.
+Not done: Criterion 1 remains incomplete end to end because src/omi/app/cli.py:190 still calls state_sync.pull(project) at board startup. The task explicitly defers that file to parallel TASK-120; it was not modified. Checked affected tests: tests/test_board_server.py::test_board_cli expects one pull and must change alongside removal; tests/test_cli.py::test_cli_characterization covers board dispatch.
+Tests: python3 tests/test_omi.py executed and exited 0 with final "ok", including board data/server tests, both Windows drive path cases and JavaScript DOM/runtime checks. Skipped: test_wheel_ships_web (pip missing); test_browser_layout_and_keyboard (Playwright missing). Windows host execution was not available; Windows path strings were tested on this container.
+Next: Coordinator reviews the scoped fix, extends scope to src/omi/app/cli.py after TASK-120 merges, removes the board startup pull, updates the existing CLI assertion, and reruns python3 tests/test_omi.py. No commit made.
 
 ## Steps
 - plan started 2026-10-30 22:45
@@ -97,8 +95,64 @@ Next: Coordinator must extend scope to src/omi/app/cli.py; remove the board star
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-30 23:07 omi-agent-engineer (codex):
+> NEEDS SCOPE: src/omi/app/cli.py - remove startup pull to complete criterion 1; update existing board CLI test.
+> Changed: src/omi/board/source.py, tests/test_board.py, .omi/tasks/TASK-137.md.
+> Fixed Windows drive-path leak; added both regression cases; checkpoint updated.
+> Suggested commit: `fix(board): reject Windows drive paths in source metadata`
+> Tests: `python3 tests/test_omi.py` exited 0, final `ok`; DOM/runtime checks ran.
+> Skipped: wheel test (pip missing), browser layout/keyboard test (Playwright missing).
+> Open issue: startup pull remains; no commit made.
+2026-10-30 23:13 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1862645 | 13715 | 1792768 | 457s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-engineer | gpt-6.1-sol (codex) | medium | 990160 | 3031 | 920320 | 366s | 1/1 omi-skill-lean-implementation | - |

@@ -151,7 +151,7 @@ def test_shared_fetch():
         for url, expected in (("https://user:token@github.com/omi-teams/omi-state?token=secret", "https://github.com/omi-teams/omi-state"),
                               ("git@github.com:omi-teams/omi-state.git", "github.com:omi-teams/omi-state.git"),
                               ("ssh://git@github.com:2222/omi-teams/omi-state.git", "ssh://github.com:2222/omi-teams/omi-state.git"),
-                              (str(home), ""), ("file:///local/state", "")):
+                              (str(home), ""), (r"C:\x\y", ""), ("C:/x/y", ""), ("file:///local/state", "")):
             assert source._repo(url) == expected
 
 

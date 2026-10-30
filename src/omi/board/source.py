@@ -15,6 +15,8 @@ _CACHE = {}
 
 
 def _repo(url: str) -> str:
+    if re.match(r"^[A-Za-z]:[/\\]", url):
+        return ""
     if "://" in url:
         parts = urlsplit(url)
         if parts.scheme not in ("https", "http", "ssh", "git"):
