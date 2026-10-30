@@ -1,7 +1,7 @@
 ---
 id: TASK-115
 title: omi board frontend
-status: in-progress
+status: done
 depends: TASK-114
 plan: PLAN-006
 scope: src/omi/board/web/**, src/omi/board/data.py, tests/test_board.py, pyproject.toml, tests/test_board_web.py, tests/test_omi.py, .omi/tasks/TASK-115.md, .omi/tasks/TASK-115-mockup/**
@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature-ui
-step: review
+step: accept
 ---
 ## Goal
 Plain HTML/CSS/JS pages for home, project dashboard and task detail, in Vietnamese, calling the JSON API.
@@ -101,6 +101,11 @@ QUOTA: codex hit its usage limit; omi-agent-reviewer continued with claude on th
 - build started 2026-10-30 19:02
 - build done 2026-10-30 19:13
 - review started 2026-10-30 19:13
+- review done 2026-10-30 19:36
+- qa started 2026-10-30 19:36
+- qa done 2026-10-30 19:36
+- accept started 2026-10-30 19:36
+- PO approval accept: "Nghiệm thu, 2 điểm sang 125" (2026-10-30)
 
 ## Reports
 2026-10-30 14:38 omi-agent-designer-ui (claude):
