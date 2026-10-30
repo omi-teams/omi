@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature-ui
-step: build
+step: review
 ---
 ## Goal
 Plain HTML/CSS/JS pages for home, project dashboard and task detail, in Vietnamese, calling the JSON API.
@@ -34,6 +34,9 @@ Review round 4 FAIL (codex quota -> claude-opus-5-5/medium): countdown ✓. PO 2
 
 ### Fetch timeout fix (2026-10-30)
 Done: route() aborts the fetch after 10 s (AbortController), the catch shows the error/retry UI ("quá thời gian chờ"), finally clears the timeout and schedule() runs. Node test with a never-resolving fetch added. Tests: test_board_web.py exit 0; wheel and Playwright tests skipped (pip/Playwright missing). Full `python3 tests/test_omi.py` exit 0, printed ok. Next: review, then qa.
+
+Review round 5 (claude sonnet/medium): no code defect; FAIL only on environment-skipped checks. PO 2026-10-30: treat review as passed on code, browser QA by the Coordinator in real Chrome (Claude in Chrome) at 360/390/768/1280 px vs the mockups.
+Host: `python tests/test_board_web.py` -> ok, test_wheel_ships_web ran (no skip line); only the Playwright browser test skipped.
 
 ### Countdown build (2026-10-30)
 Done: implemented only the round-3 countdown gap. The header groups the toggle and countdown, with a compact stacked arrangement on phones. The countdown uses textContent, is aria-hidden and outside live regions, and keeps the toggle's “30 giây” label. One-second ticks use a timestamp deadline without re-rendering the view or changing focus/status. Completed manual, automatic, retry and route refreshes restart the 30-second deadline, including unchanged responses and failures. Polling pauses during an active request and while hidden; off shows “Đã tắt”, hidden shows “Tạm dừng”, and returning to a visible tab refreshes when enabled.
@@ -88,6 +91,8 @@ QUOTA: codex hit its usage limit; omi-agent-reviewer continued with claude on th
 - review started 2026-10-30 18:51
 - review failed 2026-10-30 19:02
 - build started 2026-10-30 19:02
+- build done 2026-10-30 19:13
+- review started 2026-10-30 19:13
 
 ## Reports
 2026-10-30 14:38 omi-agent-designer-ui (claude):
@@ -422,6 +427,23 @@ QUOTA: codex hit its usage limit; omi-agent-reviewer continued with claude on th
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-30 19:20 omi-agent-reviewer (claude):
+> ```
+> VERDICT: FAIL
+> - tests/test_board_web.py:41 test_wheel_ships_web printed "skip: pip missing", so nothing was built or installed here; the installed-package criterion is UNVERIFIED -> run `python tests/test_board_web.py` where pip exists. The task checkpoint says the host run had no skip line.
+> - tests/test_board_web.py:314 test_browser_layout_and_keyboard printed "skip: playwright missing", so the layout, sticky-header and keyboard criteria were not run in a browser -> run it in the qa step (TASK-128).
+> - I found no code defect in the timeout fix at src/omi/board/web/app.js:200-229. The 10 s AbortController aborts the fetch and the catch shows "quá thời gian chờ" plus "Thử lại". The finally block clears the timeout and calls schedule() when the request is still current, so the countdown no longer freezes.
+> ```
+> The files in the diff that I read are inside the task scope. I read only the app.js fix and the test grep, not the whole diff. The diff against the base is the whole branch (2117 lines) and I viewed only its first 685 lines.
+> 
+> Test results:
+> - `python3 tests/test_omi.py` exited 0 and printed `ok`.
+> - `python3 tests/test_board_web.py` printed `ok` for the Node tests. These include the never-resolving-fetch test (`tests/test_board_web.py:247-252`), which checks the 10 s timeout, the error text and the retry button.
+> 
+> AC: Home, dashboard (PO-waiting, plans, kanban, activity, decisions, usage, sync) and task detail render from the API; auto-refresh every 30 s with a toggle ✓ The Node DOM tests pass; the 30000 ms polling and the toggle are in app.js:235-248.
+> AC: State text via `textContent` only, no `innerHTML`; no external script, font or CDN ✓ The static safety tests pass, and `el()` sets `textContent`.
+> [... truncated ...]
+> AC: Readable at 360 px and keyboard navigable; all tests pass UNVERIFIED All tests pass (`test_omi.py` exit 0, `ok`). The 360 px and keyboard parts were not run because Playwright is missing.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -438,3 +460,4 @@ QUOTA: codex hit its usage limit; omi-agent-reviewer continued with claude on th
 | omi-agent-reviewer | gpt-6-astra (codex) | medium | n/a | n/a | n/a | 29s | - | QUOTA->claude |
 | omi-agent-reviewer | claude-opus-5-5 | medium | 20 | 3769 | 310930 | 414s | - | FAIL 8c6c0f8 |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 24 | 3976 | 487241 | 389s | 2/2 omi-skill-ui-direction omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 2169 | 326601 | 310s | - | FAIL 277c46d |
