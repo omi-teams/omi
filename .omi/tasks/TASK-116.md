@@ -1,7 +1,7 @@
 ---
 id: TASK-116
 title: Pilot omi board on real state
-status: in-progress
+status: done
 depends: TASK-115
 plan: PLAN-006
 scope: docs/pilot-board.md, README.md
@@ -13,24 +13,178 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature
-step:
+step: accept
 ---
 ## Goal
 Prove the spec's success criteria 1-4 on the pilot omi-state and document how to use the board.
 
 ## Acceptance criteria
-- [ ] `docs/pilot-board.md` (Vietnamese) lists criteria 1-4 with the command or action and its result on the pilot state (omi-pilot-splitbill, TASK-003), on the Windows host and Linux.
-- [ ] README documents `omi board` in at most 8 lines.
-- [ ] Gaps found are listed for a later plan.
+- [x] `docs/pilot-board.md` (Vietnamese) lists criteria 1-4 with the command or action and its result on the pilot state (omi-pilot-splitbill, TASK-003), on the Windows host and Linux.
+- [x] README documents `omi board` in at most 8 lines.
+- [x] Gaps found are listed for a later plan.
 
 ## Checkpoint
+Review round 2 (claude sonnet/medium): VERDICT PASS; HOST: the Windows-host runs on the real state.
+Host: Coordinator on Windows 11 -> C1-C4 evidence lines below, run 2026-10-30 against ~/.omi/state and an OMI_STATE copy (ports 8801/8802); all as recorded.
+Review round 1 FAIL: README.md - the "Bảng theo dõi (`omi board`)" section sits before "`omi init` tạo các file sau trong dự án:" and its table, so they fall under the board heading. Fix only: move the board section after the `omi init` table (keep its 7 lines). Change nothing else.
 Host evidence (Coordinator, Windows 11 host, 2026-10-30, omi at development 478f894). The worker cannot read the real omi-state, so write the doc from these lines and do not re-run them:
 - C1: `omi board` (port 8801) on the real `~/.omi/state` -> `/api/projects/omi-pilot-splitbill` returns plan PLAN-000 and kanban done=[TASK-003]. `/api/projects/omi-pilot-splitbill/tasks/TASK-003`: Steps and Reports text equal the file sections (compared byte for byte), and Usage has 2 rows, the same as the file (engineer + reviewer PASS 98f8665).
 - C2: a copy of the state with `OMI_STATE=<copy>` (port 8802): editing TASK-003 `title:` -> the next API request returns the new title without restarting the server.
 - C3: `title: <script>alert(1)</script>` comes back as plain JSON text, and the UI inserts text with textContent only (TASK-115 static test). The paths `/../../etc/passwd`, `/%2e%2e/%2e%2e/README.md`, `/api/projects/..%2f..%2f/tasks/x` and `/api/projects/omi-pilot-splitbill/tasks/..%2fTASK-003` (`curl --path-as-is`) all return 404. The CSP header is `default-src 'self'`.
 - C4: Windows host: C1-C3 above, and `python tests/test_omi.py` -> ok (only the Playwright browser test is skipped). Linux: CI `ubuntu-latest` on development 478f894 -> success, and the Docker worker (Linux) runs `tests/test_omi.py` -> ok in every TASK-115/134 run. Browser QA in real Chrome at 360/390/768/1280 px is recorded in TASK-115.
 - Gaps seen: no Playwright on the host or the worker (TASK-128); the board shows only the projects in the registry (the omi repo itself is not listed); a done task shows its last step as current, and Usage scrolls inside its card (TASK-125).
-Done:
-Not done:
-Tests:
-Next:
+Done: docs/pilot-board.md (criteria 1-4, gaps) and README section "Bảng theo dõi" (6 lines).
+Review round 1 fix done: README board section moved after the `omi init` table and its cache paragraph (content unchanged, no other edits).
+Not done: nothing.
+Tests: python3 tests/test_omi.py -> ok (exit 0; skipped: test_wheel_ships_web (pip missing), test_browser_layout_and_keyboard (playwright missing)).
+Next: Coordinator review and commit.
+
+## Steps
+- plan started 2026-10-30 21:06
+- plan done 2026-10-30 21:06
+- build started 2026-10-30 21:06
+- build done 2026-10-30 21:19
+- review started 2026-10-30 21:19
+- review failed 2026-10-30 21:26
+- build started 2026-10-30 21:26
+- build done 2026-10-30 21:36
+- review started 2026-10-30 21:36
+- review done 2026-10-30 21:46
+- accept started 2026-10-30 21:46
+- PO approval accept: "Nghiệm thu" (2026-10-30)
+- accept done 2026-10-30 21:47
+
+## Reports
+2026-10-30 21:15 omi-agent-engineer (claude):
+> DONE
+> - Files: `docs/pilot-board.md` (new, Vietnamese), `README.md` (new "Bảng theo dõi (`omi board`)" section, 6 lines), `.omi/tasks/TASK-116.md` (checkpoint).
+> - `docs/pilot-board.md` lists criteria 1–4 with the command, result and Windows/Linux evidence, plus the gaps for a later plan. It is copied from the Coordinator's checkpoint lines; I did not re-run any of them.
+> - Commit: `docs(board): add omi board pilot results and README usage`
+> - Tests: `python3 tests/test_omi.py` printed `ok`. The Playwright browser test was skipped because Playwright is missing.
+> - Open issues: none. The README flags (`--port N`, `--no-open`, default port 8765) were checked against `src/omi/app/cli.py`.
+2026-10-30 21:18 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
+2026-10-30 21:26 omi-agent-reviewer (claude):
+> VERDICT: FAIL
+> - README.md:110 The new "Bảng theo dõi (`omi board`)" section sits before "`omi init` tạo các file sau trong dự án:" and its table, so that content now falls under the board heading. -> Move the board section after the init table, or put the `omi init` lead-in under its own heading.
+> 
+> AC: `docs/pilot-board.md` (Vietnamese) lists criteria 1-4 with the command and result on the pilot state, on Windows and Linux. ✓ The file lists criteria 1-4 with commands and results. The Windows and Linux evidence matches the checkpoint lines. The doc says it was copied from the Coordinator's checkpoint, not re-run, which matches the task's instruction.
+> AC: README documents `omi board` in at most 8 lines. ✗ The section is 5 lines, and the flags and default port 8765 match `src/omi/app/cli.py`. It sits in the wrong place and splits the `omi init` paragraph from its heading.
+> AC: Gaps found are listed for a later plan. ✓ The "Gap cho plan sau" section lists all three gaps from the checkpoint.
+> 
+> `python3 tests/test_omi.py` printed `ok`. Two tests were skipped: the wheel test (pip missing) and the Playwright browser test. No finding depends on either.
+2026-10-30 21:32 omi-agent-engineer (claude):
+> DONE
+> - Files: `README.md` (moved the "Bảng theo dýs (`omi board`)" section below the `omi init` table and its cache paragraph; content unchanged), `.omi/tasks/TASK-116.md` (checkpoint).
+> - Commit (Coordinator to use): `docs(readme): move omi board section below omi init table`
+> - Tests: `python3 tests/test_omi.py` exit 0, prints `ok`. Skipped: `test_wheel_ships_web` (pip missing) and `test_browser_layout_and_keyboard` (playwright missing).
+> - Open issues: none. Board section is 5 content lines (plus heading), not the 7 the checkpoint mentioned; I kept the text as is.
+2026-10-30 21:36 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
+2026-10-30 21:46 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - README.md:46 The earlier misplacement is fixed. The board section now follows the `omi init` table and the cache paragraph. The diff also drops one stray blank line before "`omi init` tạo các file…", which is harmless.
+> 
+> AC: `docs/pilot-board.md` (Vietnamese) lists criteria 1-4 with the command and result on the pilot state, on Windows and Linux ✓ The file has a table for criteria 1-4. Each row's command and result match the checkpoint evidence lines (ports 8801/8802, the four 404 paths, the CSP header, the CI and Docker Linux results). HOST The Windows-host runs against the real `~/.omi/state` can't be reproduced here. They are copied from the Coordinator's evidence.
+> AC: README documents `omi board` in at most 8 lines ✓ The section is a heading plus 5 content lines, at README.md:48-54. It stays under 8 lines whether or not the heading counts.
+> AC: Gaps found are listed for a later plan ✓ The "Gap cho plan sau" section lists all three gaps from the checkpoint, with TASK-128 and TASK-125 referenced.
+> 
+> `python3 tests/test_omi.py` exited 0 and printed `ok`. `test_browser_layout_and_keyboard` was skipped because Playwright is missing. That test isn't tied to any acceptance criterion here. The scope is respected: the diff touches only `docs/pilot-board.md`, `README.md` and the task file.
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read | verdict |
+|---|---|---|---|---|---|---|---|---|
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 20 | 3172 | 238559 | 508s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 1601 | 158299 | 315s | - | FAIL 133e25d |
+| omi-agent-engineer | claude-haiku-5-5 | low | 16 | 2954 | 230987 | 368s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1156 | 106976 | 478s | - | PASS 5ebfe8f |
