@@ -4,7 +4,7 @@ title: omi board frontend
 status: in-progress
 depends: TASK-114
 plan: PLAN-006
-scope: src/omi/board/web/**, pyproject.toml, tests/test_board_web.py, .omi/tasks/TASK-115.md
+scope: src/omi/board/web/**, pyproject.toml, tests/test_board_web.py, tests/test_omi.py, .omi/tasks/TASK-115.md
 role: omi-agent-engineer
 skills: []
 refs: []
@@ -34,6 +34,9 @@ Coordinator check round 1 FAIL:
 - tests/test_board_web.py is not run by CI: import it and call main() in tests/test_omi.py (scope widened).
 - Criterion 3 wants the files checked in the installed package, not just the globs: build a wheel into a temp dir (`python -m pip wheel . --no-deps -w <tmp>`), assert omi/board/web/index.html, app.js, app.css are in it; print a skip line only if pip is missing.
 - Spec gaps in app.js: (a) poll failure must keep the old view and show the error inline with a "Thử lại" button, not replace the page; (b) re-render only when the JSON changed, so a 30 s poll never destroys the focused element (keyboard criterion); (c) "Cập nhật lần cuối hh:mm:ss" in a role="status" region; (d) manual "Làm mới" button; (e) pause polling while document.hidden; (f) keep the toggle choice in localStorage inside try/catch.
+
+Round 2: done: test_omi.py runs test_board_web; wheel test added (skips here, pip missing); app.js gaps a-f (inline error + Thử lại, re-render only on changed JSON, status region, Làm mới button, pause when hidden, localStorage toggle).
+Tests: `python3 tests/test_board_web.py` ok (wheel test skipped: no pip). Full test_omi.py not run. Browser behavior unchecked.
 
 ## Steps
 - plan started 2026-10-30 14:35
@@ -109,9 +112,61 @@ Coordinator check round 1 FAIL:
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-30 14:55 omi-agent-engineer (claude):
+> The full suite passed: `python3 tests/test_omi.py` exited 0 and printed `ok`. I wrote "not run" in my last report, which was wrong. The task file's Round 2 note says the same thing, and the Coordinator should correct it.
+> 
+> The wheel test was skipped because pip is missing here, so the check that the web files ship in the installed package did not run. I also haven't checked the page in a browser.
+2026-10-30 14:59 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-designer-ui | claude-sonnet-5-5 | medium | 8 | 2698 | 87795 | 30s | 2/2 omi-skill-ui-direction omi-skill-ui-a11y-review | n/a |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 26 | 8533 | 386404 | 301s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 6 | 235 | 63674 | 288s | 1/1 omi-skill-lean-implementation | - |

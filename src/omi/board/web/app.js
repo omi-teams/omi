@@ -4,11 +4,16 @@ const view = document.getElementById("view");
 const title = document.getElementById("title");
 const nav = document.getElementById("nav");
 const auto = document.getElementById("auto");
+const status = document.getElementById("status");
+const err = document.getElementById("err");
+const KEY = "omi-board-auto";
 const GLYPH = {planned: "○", "in-progress": "▶", review: "◐", blocked: "✖", done: "✔"};
 const STATUS = {planned: "Kế hoạch", "in-progress": "Đang làm", review: "Review", blocked: "Bị chặn", done: "Xong"};
 const REASON = {blocked: "Bị chặn", next_task: "Việc kế tiếp", next: "Bước tiếp theo", po_gate: "Chờ PO duyệt bước"};
 let timer = null;
 let current = "";
+const seen = {};
+const UNCHANGED = new Error("unchanged");
 
 function el(tag, text, attrs, kids) {
   const node = document.createElement(tag);
@@ -42,7 +47,10 @@ function prog(done, total) {
 async function get(path) {
   const res = await fetch(path, {cache: "no-store"});
   if (!res.ok) throw new Error(`${res.status}`);
-  return res.json();
+  const text = await res.text();
+  if (seen[path] === text) throw UNCHANGED;
+  seen[path] = text;
+  return JSON.parse(text);
 }
 function setNav(parts) {
   nav.replaceChildren(link("Trang chủ", "#/"));
@@ -112,22 +120,41 @@ async function route() {
   const m = hash.match(/^#\/p\/([^/]+)(?:\/t\/([^/]+))?$/);
   const changed = hash !== current;
   current = hash;
+  if (changed) for (const k of Object.keys(seen)) delete seen[k];
   try {
     if (!m) await home();
     else if (m[2]) await taskPage(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
     else await dashboard(decodeURIComponent(m[1]));
-  } catch (err) {
-    title.textContent = "Lỗi";
-    view.replaceChildren(el("p", `Không tải được dữ liệu (${err.message}).`, {role: "alert"}));
+    err.replaceChildren();
+    status.textContent = `Cập nhật lần cuối ${new Date().toLocaleTimeString("vi-VN", {hour12: false})}`;
+  } catch (e) {
+    if (e === UNCHANGED) {
+      status.textContent = `Cập nhật lần cuối ${new Date().toLocaleTimeString("vi-VN", {hour12: false})}`;
+      return;
+    }
+    // Keep the old view on a failed poll; only a new page starts empty.
+    if (changed) {
+      title.textContent = "Lỗi";
+      view.replaceChildren();
+    }
+    const retry = el("button", "Thử lại", {type: "button"});
+    retry.addEventListener("click", route);
+    err.replaceChildren(el("span", `Không tải được dữ liệu (${e.message}). `), retry);
   }
   if (changed) title.focus();
 }
 
 function schedule() {
   clearInterval(timer);
-  timer = auto.checked ? setInterval(route, 30000) : null;
+  timer = auto.checked ? setInterval(() => { if (!document.hidden) route(); }, 30000) : null;
 }
-auto.addEventListener("change", schedule);
+try { auto.checked = localStorage.getItem(KEY) !== "off"; } catch (e) { /* storage blocked: keep default */ }
+auto.addEventListener("change", () => {
+  try { localStorage.setItem(KEY, auto.checked ? "on" : "off"); } catch (e) { /* storage blocked */ }
+  schedule();
+});
+document.getElementById("refresh").addEventListener("click", route);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && auto.checked) route(); });
 window.addEventListener("hashchange", route);
 route();
 schedule();

@@ -1,7 +1,11 @@
 """Board frontend: no innerHTML or external resources, files ship as package data."""
 import fnmatch
 import re
+import subprocess
+import sys
+import tempfile
 import tomllib
+import zipfile
 from pathlib import Path
 
 import helpers  # noqa: F401
@@ -31,9 +35,33 @@ def test_package_data():
         assert (WEB / name).is_file() and any(fnmatch.fnmatch(rel, p) for p in patterns), name
 
 
+def test_wheel_ships_web():
+    if subprocess.run([sys.executable, "-m", "pip", "--version"], capture_output=True).returncode:
+        print("skip test_wheel_ships_web: pip missing")
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        run = subprocess.run([sys.executable, "-m", "pip", "wheel", ".", "--no-deps", "-w", tmp],
+                             cwd=ROOT, capture_output=True, text=True)
+        assert run.returncode == 0, run.stderr
+        wheel = next(Path(tmp).glob("*.whl"))
+        names = zipfile.ZipFile(wheel).namelist()
+    for name in FILES:
+        assert f"omi/board/web/{name}" in names, name
+
+
+def test_app_js_behaviors():
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    for needle in ("Thử lại", "Cập nhật lần cuối", "document.hidden", "localStorage"):
+        assert needle in js, needle
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    assert 'role="status"' in html and 'id="refresh"' in html and "Làm mới" in html
+
+
 def main():
     test_files_safe()
     test_package_data()
+    test_wheel_ships_web()
+    test_app_js_behaviors()
 
 
 if __name__ == "__main__":

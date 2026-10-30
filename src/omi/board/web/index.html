@@ -11,9 +11,12 @@
 <header>
   <nav id="nav" aria-label="Điều hướng"></nav>
   <label class="refresh"><input type="checkbox" id="auto" checked> Tự làm mới (30 giây)</label>
+  <button type="button" id="refresh">Làm mới</button>
 </header>
 <main id="main" tabindex="-1">
   <h1 id="title" tabindex="-1">omi board</h1>
+  <p id="status" role="status" class="muted"></p>
+  <div id="err" role="alert"></div>
   <div id="view"></div>
 </main>
 <script src="app.js"></script>
