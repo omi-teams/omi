@@ -21,11 +21,11 @@ Plain HTML/CSS/JS pages for home, project dashboard and task detail, in Vietname
 ## Acceptance criteria
 - [ ] Home, dashboard (PO-waiting, plans, kanban, activity, decisions, usage, sync) and task detail render from the API; auto-refresh every 30 s with a toggle.
 - [ ] State text is inserted with `textContent` only, never `innerHTML`; no external script, font or CDN.
-- [ ] `pip install .` ships `board/web/*` (package data); a test checks the files are in the installed package.
-- [ ] Pages match the PO-approved mockup in `.omi/tasks/TASK-115-mockup/` (Main = dashboard, Home, Task, Phone = 390 px dashboard): same layout, sections, header controls, cards, chips, progress bars, kanban columns, workflow stepper and colours.
-- [ ] The header stays pinned at the top while scrolling (sticky), with `scroll-padding-top` so focused or anchored elements are never hidden under it.
+- [ ] `pip install .` ships `board/web/*` (package data); a test checks the files are in the installed package (wheel/install part runs on the host, where pip exists).
+- [ ] Pages match the PO-approved mockup in `.omi/tasks/TASK-115-mockup/` (Main = dashboard, Home, Task, Phone = 390 px dashboard): same layout, sections, header controls, cards, chips, progress bars, kanban columns, workflow stepper and colours (visual comparison on the host in a real browser).
+- [ ] The header stays pinned at the top while scrolling (sticky), with `scroll-padding-top` so focused or anchored elements are never hidden under it (in-browser check on the host).
 - [ ] Next to the auto-refresh toggle a countdown shows the seconds to the next refresh ("Làm mới sau 25 giây"), resets after every refresh (auto or manual), shows "Đã tắt" when the toggle is off and "Tạm dừng" while the tab is hidden; it updates once per second without re-rendering the view and is not announced every second (outside any live region, e.g. aria-hidden, with the toggle label still saying 30 giây).
-- [ ] Readable at 360 px width and keyboard navigable; all tests pass.
+- [ ] Readable at 360 px width and keyboard navigable (checked on the host in a real browser); all tests pass.
 
 ## Checkpoint
 Review round 4 FAIL (codex quota -> claude-opus-5-5/medium): countdown ✓. PO 2026-10-30 approved one small fix round with claude sonnet/medium.
@@ -36,6 +36,7 @@ Review round 4 FAIL (codex quota -> claude-opus-5-5/medium): countdown ✓. PO 2
 Done: route() aborts the fetch after 10 s (AbortController), the catch shows the error/retry UI ("quá thời gian chờ"), finally clears the timeout and schedule() runs. Node test with a never-resolving fetch added. Tests: test_board_web.py exit 0; wheel and Playwright tests skipped (pip/Playwright missing). Full `python3 tests/test_omi.py` exit 0, printed ok. Next: review, then qa.
 
 Review round 5 (claude sonnet/medium): no code defect; FAIL only on environment-skipped checks. PO 2026-10-30: treat review as passed on code, browser QA by the Coordinator in real Chrome (Claude in Chrome) at 360/390/768/1280 px vs the mockups.
+PO 2026-10-30: pip, mockup, sticky-header and 360 px/keyboard criteria now name the host (HOST items), since the worker has neither pip nor Playwright.
 Host: `python tests/test_board_web.py` -> ok, test_wheel_ships_web ran (no skip line); only the Playwright browser test skipped.
 
 ### Countdown build (2026-10-30)
