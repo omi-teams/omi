@@ -27,6 +27,9 @@ On a fix round, `omi run` continues the engineer's previous CLI session (`claude
 - [ ] The omi-task skill (template copy) describes the resume behaviour; tests cover resume, fresh fallback and read-role exclusion; all tests pass.
 
 ## Checkpoint
+Review round 4 FAIL (security UNVERIFIED, criterion 4 "holds no auth token"):
+- Transcripts store tool output, so an engineer that runs `env`/`printenv` writes the token value into the host session cache. Add `session.scrub(repo, tid, tool, secret_value)` called by run.py after every write-role run (incl. the hook-fix retry): if the token value (non-empty) appears in any file under the task's cache dir, delete that task's cache dir, print one `SESSION DROPPED: token found in transcript` line, and do not record/resume that session (next run is fresh). Test: a planted transcript containing the token is wiped and the next run has no `--resume`; a clean transcript is kept.
+- Known issue, no change: on a Linux host with uid != 1000, files the container creates may not be removable by `omi clean`; documented in the PR, not fixed here.
 Round 4 done: in test_session_resume every POSIX-mode assertion (and the `del os.getuid` check) now runs only when `os.name != "nt"`; on Windows the test still calls `mount_args` and prints `skip session cache modes: no POSIX modes on Windows` to the real stdout. Linux mode checks unchanged. python3 tests/test_omi.py passed on Linux (pip/playwright skipped); the Windows branch was not run here. Next: Coordinator review and commit.
 Review round 3 FAIL (host; PO: round 3 on opus/high):
 - On the Windows host tests/test_worker.py:323 fails: `st_mode & 0o077 == 0` cannot hold on Windows (chmod only toggles read-only; st_mode reports 0o777/0o666). The code fix is right; make every POSIX-mode assertion in the session tests run only when `os.name != "nt"` and print one `skip session cache modes: no POSIX modes on Windows` line otherwise. Run the full `python3 tests/test_omi.py`; keep the Linux mode checks intact.
@@ -54,6 +57,12 @@ Next: Coordinator review and commit.
 - review started 2026-10-30 23:37
 - review failed 2026-10-30 23:37
 - build started 2026-10-30 23:37
+- build done 2026-10-31 00:03
+- review started 2026-10-31 00:03
+- review done 2026-10-31 00:12
+- security started 2026-10-31 00:12
+- security failed 2026-10-31 00:20
+- build started 2026-10-31 00:20
 
 ## Reports
 2026-10-30 22:43 omi-agent-architect (claude):
@@ -316,6 +325,28 @@ Next: Coordinator review and commit.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-31 00:11 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/worker/tools.py:684 The `codex exec resume <id> -c … -m … --dangerously-bypass… --json <prompt>` flag order has only been checked against mocks. -> Run `codex exec resume --help` on a host that has the CLI.
+> - src/omi/worker/run.py:376 The hook-fix attempt ignores a quota hit or a failed resume (it only prints the exit code), and a lost session there gets no `RESUME FAILED:` line. -> Optional: reuse the quota and fallback handling, or print the line.
+> 
+> AC: `omi run` records the engineer's session id per tool in the task file after each write-role run ✓ run.py:298 calls `session.with_session`, which writes `Session: <tool> <id>` under `## Checkpoint`. The test asserts `Session: claude S2`.
+> AC: A later write-role run on the same task and tool resumes that session with a short findings prompt; `--fresh` forces a new session; a tool switch starts fresh ✓ run.py:329 passes `resume` only when the recorded tool matches, and `resume_prompt` points at `## Checkpoint`. The test covers resume, `--fresh`, a codex-then-claude switch, and the quota fallback, which runs without `resume`.
+> AC: Read roles (reviewer, security, qa) never resume ✓ `read` skips both the session lookup and the cache mount. The test asserts no `--resume` and no `--mount` for the reviewer.
+> AC: Cache lives outside the repo with no auth token, and `omi clean` removes it; a missing or expired session falls back to a fresh run with one `RESUME FAILED:` line ✓ The cache is under `XDG_CACHE_HOME/omi/sessions/<repo>/<task>/<tool>`. Only the transcript directory is linked in, so no auth file lands there. `docker.clean` calls `session.clear`. The test covers a missing transcript, an expired-session failure, and the clear. The 0700 parent modes are asserted on Linux. The Windows branch skips them and was not run here.
+> [... truncated ...]
+> AC: Changes stay within `scope` ✓ All changed files are listed in `scope`.
+2026-10-31 00:19 omi-agent-security-reviewer (claude):
+> ```
+> VERDICT: PASS
+> UNVERIFIED: if the host uid is not 1000 (Linux), the container's uid 1000 creates `-work/` inside the 0777 leaf as 0755. The host user then can't delete the files in it, and `session.clear` (`rmtree(..., ignore_errors=True)`, session.py:657) leaves transcripts behind without saying so, which breaks the "`omi clean` removes it" criterion. A real `docker run` as uid 1000 followed by `omi clean` as uid 1001 would confirm it.
+> UNVERIFIED: the token goes in by name only, and the auth files stay outside `/sessions`. But the transcripts store tool output, so an agent that runs `env`/`printenv` would write the token into the host cache. Grepping a real transcript after such a command would confirm it.
+> UNVERIFIED: the `codex exec resume <id> -c … -m … --json <prompt>` argument order (tools.py:698) has only been checked against mocks. `codex exec resume --help` on a host that has the CLI would confirm it.
+> ```
+> 
+> - **Earlier findings:** both are fixed. With umask 022 the cache parents come out 0700 and the leaf 0770 (uid 1000). `recorded()`, `session_id()` and `available()` all require `\w[\w-]*`, so ids like `--x`, `*` and `../x` are rejected.
+> - **Hook retry:** the out-of-scope check (run.py, after `finally`) still runs after the hook-fix retry. Read roles get no cache mount and no resume.
+> - **Tests:** `python3 tests/test_omi.py` ended `ok`; the pip/wheel and playwright checks were skipped because those tools aren't installed here.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -327,3 +358,5 @@ Next: Coordinator review and commit.
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 26 | 6419 | 487013 | 680s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 2196 | 263119 | 371s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-opus-5-5 | high | 18 | 2718 | 273851 | 374s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 3541 | 314898 | 325s | - | PASS 7f1d5e0 |
+| omi-agent-security-reviewer | claude-opus-5-5 | high | 18 | 5636 | 371258 | 328s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS 7f1d5e0 |
