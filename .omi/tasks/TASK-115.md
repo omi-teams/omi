@@ -30,6 +30,11 @@ Not done: tests/test_omi.py does not import test_board_web (outside scope); real
 Tests: `python3 tests/test_board_web.py` ok. `python3 tests/test_omi.py` aborted in the sandbox on a docker container name/port conflict (environment), so full suite not confirmed.
 Next: (done) build per designer spec in ## Reports. PO 2026-10-30: accept designer defaults for OPEN 1-4 (header "omi board", teal #0f6e6e, dark mode via prefers-color-scheme, Vietnamese date/number format, evergreen browsers).
 
+Coordinator check round 1 FAIL:
+- tests/test_board_web.py is not run by CI: import it and call main() in tests/test_omi.py (scope widened).
+- Criterion 3 wants the files checked in the installed package, not just the globs: build a wheel into a temp dir (`python -m pip wheel . --no-deps -w <tmp>`), assert omi/board/web/index.html, app.js, app.css are in it; print a skip line only if pip is missing.
+- Spec gaps in app.js: (a) poll failure must keep the old view and show the error inline with a "Thử lại" button, not replace the page; (b) re-render only when the JSON changed, so a 30 s poll never destroys the focused element (keyboard criterion); (c) "Cập nhật lần cuối hh:mm:ss" in a role="status" region; (d) manual "Làm mới" button; (e) pause polling while document.hidden; (f) keep the toggle choice in localStorage inside try/catch.
+
 ## Steps
 - plan started 2026-10-30 14:35
 - plan done 2026-10-30 14:35
