@@ -1,16 +1,16 @@
 ---
 id: TASK-120
 title: Resume the engineer session on fix rounds
-status: planned
+status: in-progress
 depends:
 plan:
-scope: src/omi/worker/**, src/omi/template/**, tests/test_worker.py, .omi/tasks/TASK-120.md
+scope: src/omi/worker/**, src/omi/template/**, src/omi/template_shas.json, .claude/skills/omi-task/SKILL.md, tests/test_worker.py, .omi/tasks/TASK-120.md
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: claude
+model: sonnet
+effort: medium
 step_settings:
 workflow: omi-flow-feature-sensitive
 step:
