@@ -4,7 +4,7 @@ group: delivery-ops
 description: Use when an omi worker or run container fails, cannot write, cannot run git or the CLI, leaves containers or images behind, or when changing the worker Dockerfile.
 tokens: 706
 tools: Read, Bash
-source_repo: https://github.com/omi-teams/omi-squad2
+source_repo: https://github.com/omi-teams/omi
 source_ref: a35ba0957a0a8e7e431fbbaba2b3df1f3588a79d
 source_file: docs/spikes/docker.md, .omi/tasks/TASK-006.md, .omi/tasks/TASK-015.md, .omi/tasks/TASK-018.md, src/omi/template/docker/Dockerfile, src/omi/template/docker/prove.sh
 source_license: internal (no LICENSE file yet)
