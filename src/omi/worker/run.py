@@ -20,7 +20,7 @@ from pathlib import Path
 
 from ..project import catalogs, scope, tasks, workflows
 from ..common import core
-from . import creds, docker, hooks, tools
+from . import creds, docker, hooks, pr, tools
 from ..state import resolve as state
 
 
@@ -218,6 +218,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
             return 4
     image = docker.ensure_image(main)
     res = None if read else hooks.run_hook(wt, main, "pre-run", task.stem, image)  # hooks guard write roles only
+    if res:
+        pr.post_hook(wt, task.stem, "pre-run", res)
     if res and hooks.hook_note(task, "pre-run", res):
         print("pre-run hook failed; the agent was not started")
         return 6
@@ -351,12 +353,16 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
             report += "".join(f"\nERROR: {' '.join(t.split())}" for t in tools.error_texts(tool, r.stdout) if t.strip()) + f"\nexit code {rc}"
             print(report.partition(result or "(no report)")[2].strip())
         tasks.append_note(task, "Reports", f"{datetime.datetime.now():%Y-%m-%d %H:%M} {role} ({tool}):\n" + "\n".join("> " + l for l in tasks.clip_report(report)))
+        verdict = (tools.verdict_of(result) or "n/a") if read else (next(iter(re.findall(r"\b(DONE|BLOCKED|NEEDS SCOPE)\b", report)), None) or f"exit {rc}")
+        pr.post_report(wt, task.stem, cur["id"] if cur else "-", role, tool, models[tool], efforts[tool], verdict, report)
         for sid in ids:
             if sid not in done:
                 print(f"SKILL NOT READ: {sid}")
         res = hooks.run_hook(wt, main, "post-run", task.stem, image) if not rc and not read else None
-        if res and hooks.hook_note(task, "post-run", res):
-            hook_failed = True
+        if res:
+            pr.post_hook(wt, task.stem, "post-run", res)
+            if hooks.hook_note(task, "post-run", res):
+                hook_failed = True
     finally:
         if tmp:
             tmp.cleanup()
