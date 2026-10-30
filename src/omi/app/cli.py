@@ -3,8 +3,10 @@
 import contextlib
 import json
 import sys
+import webbrowser
 from pathlib import Path
 
+from ..board import server
 from ..setup import attach, install, upgrade
 from ..project import catalogs, github, scope, tasks, workflows
 from ..common import core
@@ -169,6 +171,24 @@ def dispatch(argv: list[str] | None = None) -> None:
         sys.exit(state_sync.sync(project))
     elif cmd == "status":
         status(*rest[:1])
+    elif cmd == "board":
+        port = core.flag(rest, "--port")
+        if not set(rest) <= {"--port", "--no-open", port} or ("--port" in rest and not (port or "").isdigit()):
+            raise state.StateError("usage: omi board [--port N] [--no-open]")
+        project = state.resolve()
+        if project.detached:
+            state_sync.pull(project)
+        httpd = server.make_server(int(port) if port else 8765)
+        url = f"http://127.0.0.1:{httpd.server_port}/"
+        print(f"omi board: {url} (Ctrl+C to stop)")
+        if "--no-open" not in rest:
+            webbrowser.open(url)
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            httpd.server_close()
     elif cmd == "github":
         project = state.resolve()
         with contextlib.chdir(project.code if project.detached else Path.cwd()):
