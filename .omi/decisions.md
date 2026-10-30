@@ -108,3 +108,4 @@
 - 2026-10-30 | PO decisions about the process apply to omi itself: they go into src/omi/template via a task, not only this repo | PO: "áp dụng cho cả omi chứ không chỉ riêng cho project này" | TASK-121, TASK-122
 - 2026-10-30 | UI tasks: designer delivers HTML mockups, PO approves them before build; build gets omi-skill-ui-direction; review and qa check against the mockup | TASK-115 first build was bare, PO approved a mockup and asked for a rebuild | TASK-122
 - 2026-10-30 | UI mockups are plain self-contained HTML files in the repo only; no Figma or hosted canvas as source | PO picked repo HTML (account-independent, readable by every agent, no cost) | TASK-122
+- 2026-10-30 | omi board goes near-realtime via a version endpoint polled every 3 s (TASK-123), after TASK-115 ships with 30 s refresh plus countdown | PO asked for realtime; polling is the cheapest stdlib way, SSE adds threads for ~1-2 s gain | TASK-123
