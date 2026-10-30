@@ -65,12 +65,18 @@ def _totals(rows: list[dict]) -> dict:
 
 def task(name: str, id: str) -> dict:
     """Read a task detail. Invalid identifiers/escaping symlinks raise ValueError."""
-    text = _read(_root(name) / ".omi" / "tasks" / f"{_name(id)}.md")
-    return _detail(id, text)
+    root = _root(name)
+    text = _read(root / ".omi" / "tasks" / f"{_name(id)}.md")
+    return _detail(root, id, text)
 
 
-def _detail(id: str, text: str) -> dict:
-    return {"id": id, "frontmatter": {k: v for k, v in core.parse(text).items() if k != "_text"},
+def _detail(root: Path, id: str, text: str) -> dict:
+    meta = {k: v for k, v in core.parse(text).items() if k != "_text"}
+    wid = _name(meta.get("workflow") or workflows.DEFAULT_WORKFLOW)
+    path = _safe(root / ".omi" / "workflows" / f"{wid}.md")
+    definitions = workflows.workflow_steps(_read(path)) if path.exists() else []
+    return {"id": id, "frontmatter": meta, "workflow_steps": definitions,
+            "current_step": meta.get("step") or None,
             "goal": _section(text, "Goal"),
             "criteria": [{"text": m[2], "checked": m[1].lower() == "x"}
                          for m in re.finditer(r"^- \[([ xX])\] (.*)$", _section(text, "Acceptance criteria"), re.M)],
@@ -106,11 +112,8 @@ def _waiting(root: Path, details: list[dict]) -> list[dict]:
             reasons.extend(("next", line.partition(":")[2].strip()) for line in t["checkpoint"].splitlines()
                            if line.startswith("Next:") and line.partition(":")[2].strip())
         if status != "done" and step:
-            wid = _name(m.get("workflow") or workflows.DEFAULT_WORKFLOW)
-            path = _safe(root / ".omi" / "workflows" / f"{wid}.md")
-            definitions = workflows.workflow_steps(_read(path)) if path.exists() else []
             text = "\n## Steps\n" + t["steps"] + "\n"
-            if any(s.get("id") == step and s.get("gate") == "po" for s in definitions) and tasks.step_states(text).get(step) not in ("done", "skipped"):
+            if any(s.get("id") == step and s.get("gate") == "po" for s in t["workflow_steps"]) and tasks.step_states(text).get(step) not in ("done", "skipped"):
                 reasons.append(("po_gate", step))
         waiting.extend({"id": t["id"], "reason": reason, "text": text} for reason, text in reasons)
     return waiting
@@ -128,7 +131,7 @@ def _sync() -> dict:
 def project(name: str) -> dict:
     """Return a dashboard; sync describes the shared state repo, without fetching."""
     root = _root(name)
-    details = [_detail(f.stem, _read(f)) for f in _files(root / ".omi" / "tasks", "*.md") if f.name != "_template.md" and _name(f.stem)]
+    details = [_detail(root, f.stem, _read(f)) for f in _files(root / ".omi" / "tasks", "*.md") if f.name != "_template.md" and _name(f.stem)]
     kanban = {status: [] for status in STATUSES}
     for t in details:
         kanban.setdefault(t["frontmatter"].get("status", "planned"), []).append(t)
@@ -146,7 +149,10 @@ def project(name: str) -> dict:
     decisions = [line for line in _read(decisions_path).splitlines() if line.startswith("- ")] if decisions_path.exists() else []
     rows = [row for t in details for row in t["usage"]["rows"]]
     waiting = _waiting(root, details)
-    return {"name": name, "plans": _plans(root, details), "kanban": kanban,
+    # These describe detached project state, like sync; the portable registry
+    # stores remote identities, not local code checkout paths.
+    return {"name": name, "path": str(root), "branch": core.git(root, "branch", "--show-current") or None,
+            "plans": _plans(root, details), "kanban": kanban,
             "task_counts": {status: len(items) for status, items in kanban.items()},
             "po_waiting": waiting, "po_waiting_count": len({item["id"] for item in waiting}),
             "activity": activity, "decisions": sorted(decisions, reverse=True),
@@ -165,5 +171,6 @@ def projects() -> list[dict]:
         if _safe(path).is_dir():
             view = project(path.name)
             result.append({"name": path.name, "plans": [p for p in view["plans"] if p["status"] == "active"],
+                           "path": view["path"], "branch": view["branch"], "sync": view["sync"],
                            "task_counts": view["task_counts"], "po_waiting_count": view["po_waiting_count"]})
     return result
