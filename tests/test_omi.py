@@ -1,4 +1,7 @@
 """Runs every area test file in one process: python tests/test_omi.py"""
+import json
+from pathlib import Path
+
 import helpers  # noqa: F401
 import test_upgrade
 import test_init
@@ -18,6 +21,13 @@ import test_board_server
 import test_board_web
 
 from omi.project import tasks
+from omi.setup import upgrade
+import omi.common.core
+
+
+def test_release_0_5_0():
+    assert omi.common.core.version() == "0.5.0" and Path(".omi/version").read_text(encoding="utf-8").strip() == "0.5.0"
+    assert upgrade.template_shas() == json.loads(upgrade.SHAS.read_text(encoding="utf-8"))["0.5.0"]
 
 
 def test_phase():
@@ -55,6 +65,7 @@ def test_phase():
 
 if __name__ == "__main__":
     test_phase()
+    test_release_0_5_0()
     test_upgrade.main()
     test_init.main()
     test_github.main()
