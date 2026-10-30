@@ -1,16 +1,16 @@
 ---
 id: TASK-115
 title: omi board frontend
-status: planned
+status: in-progress
 depends: TASK-114
 plan: PLAN-006
 scope: src/omi/board/web/**, pyproject.toml, tests/test_board_web.py, .omi/tasks/TASK-115.md
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: claude
+model: sonnet
+effort: medium
 step_settings:
 workflow: omi-flow-feature-ui
 step:
