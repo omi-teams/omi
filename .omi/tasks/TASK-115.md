@@ -24,6 +24,7 @@ Plain HTML/CSS/JS pages for home, project dashboard and task detail, in Vietname
 - [ ] `pip install .` ships `board/web/*` (package data); a test checks the files are in the installed package.
 - [ ] Pages match the PO-approved mockup in `.omi/tasks/TASK-115-mockup/` (Main = dashboard, Home, Task, Phone = 390 px dashboard): same layout, sections, header controls, cards, chips, progress bars, kanban columns, workflow stepper and colours.
 - [ ] The header stays pinned at the top while scrolling (sticky), with `scroll-padding-top` so focused or anchored elements are never hidden under it.
+- [ ] Next to the auto-refresh toggle a countdown shows the seconds to the next refresh ("Làm mới sau 25 giây"), resets after every refresh (auto or manual), shows "Đã tắt" when the toggle is off and "Tạm dừng" while the tab is hidden; it updates once per second without re-rendering the view and is not announced every second (outside any live region, e.g. aria-hidden, with the toggle label still saying 30 giây).
 - [ ] Readable at 360 px width and keyboard navigable; all tests pass.
 
 ## Checkpoint
@@ -43,6 +44,8 @@ Review round 2 FAIL:
 - Frontend gaps vs mockup: kanban "+ N task khác" overflow link when a column has more cards than shown; phone width (<768 px) shows the usage one-line summary instead of the table, and merges the empty Review and Blocked columns into one row as in Phone.dc.html.
 - PO 2026-10-30: header must stay pinned while scrolling (new criterion); on phones the header stays compact.
 - Model raised to opus alias (gpt-6-astra/high) after two review FAILs, PO approved.
+
+PO 2026-10-30 (after round 3, while viewing the board): add a countdown next to the auto-refresh toggle (new criterion above). Do it in the next build round; if review round 3 PASSes otherwise, run one small build round for it before qa.
 
 ## Steps
 - plan started 2026-10-30 14:35
