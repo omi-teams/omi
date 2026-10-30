@@ -222,7 +222,7 @@ def test_cli_characterization():
         task(root, "TASK-002", "depends: TASK-001\nscope: b/**\n")
         task(root, "TASK-003", "scope: a/x.py\n")
         rc, out, _ = cli(root, "status")
-        assert rc == 0 and out.endswith("done: 0/3\n[planned] TASK-001 T1\n[planned] TASK-002 T2\n[planned] TASK-003 T3\nnext: TASK-001\n"), out
+        assert rc == 0 and out.endswith("done: 0/3\n[Chưa bắt đầu] TASK-001 T1\n[Chưa bắt đầu] TASK-002 T2\n[Chưa bắt đầu] TASK-003 T3\nnext: TASK-001\n"), out
         assert cli(root, "parallel", "TASK-001", "TASK-002") == (1, "", "TASK-002 depends on TASK-001\n")
         assert cli(root, "parallel", "TASK-001", "TASK-003") == (1, "", "TASK-001 and TASK-003 scopes overlap: a/** vs a/x.py\n")
         assert cli(root, "parallel", "TASK-001", "TASK-001") == (1, "", "TASK-001: duplicate id\n")
@@ -247,7 +247,7 @@ def test_cli_characterization():
         text = (root / ".omi" / "tasks" / "TASK-001.md").read_text(encoding="utf-8")
         assert "\nstep: build\n" in text and re.search(r"\n## Steps\n- plan started [\d-]+ [\d:]+\n- plan done ", text), text
         rc, out, _ = cli(root, "status")
-        assert rc == 0 and "[planned] TASK-001 T1\n" in out
+        assert rc == 0 and "[Chưa bắt đầu] TASK-001 T1\n" in out
         assert cli(root, "attach") == (1, "", f"OMI: {root.as_posix()} has no origin remote\n")
         rc, out, err = cli(root, "attach", "--state")
         assert (rc, out, err) == (1, "", "OMI: usage: omi attach [<repo path>] [--state <git url>]\n")

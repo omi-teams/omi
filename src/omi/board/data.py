@@ -75,7 +75,10 @@ def _detail(root: Path, id: str, text: str) -> dict:
     wid = _name(meta.get("workflow") or workflows.DEFAULT_WORKFLOW)
     path = _safe(root / ".omi" / "workflows" / f"{wid}.md")
     definitions = workflows.workflow_steps(_read(path)) if path.exists() else []
+    ph = tasks.phase({**meta, "_text": text}, definitions)
     return {"id": id, "frontmatter": meta, "workflow_steps": definitions,
+            "phase": {"key": ph["key"], "label": ph["label"]}, "step_index": ph["step_index"],
+            "step_count": ph["step_count"], "review_round": ph["review_round"],
             "current_step": meta.get("step") or None,
             "goal": _section(text, "Goal"),
             "criteria": [{"text": m[2], "checked": m[1].lower() == "x"}

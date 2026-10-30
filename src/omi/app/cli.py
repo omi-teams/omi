@@ -89,7 +89,16 @@ def status(cwd="."):
     for st in STATUSES:
         for k, m in ts.items():
             if m.get("status", "planned") == st:
-                print(f"[{st}] {k} {m.get('title', '')}" + (f" (step: {m['step']})" if st == "in-progress" and m.get("step") else ""))
+                try:
+                    steps = workflows.get_workflow(root, m.get("workflow") or workflows.DEFAULT_WORKFLOW)
+                except SystemExit:
+                    steps = []
+                ph = tasks.phase(m, steps)
+                print(f"[{ph['label']}] {k} {m.get('title', '')}" + (f" (step: {m['step']})" if st == "in-progress" and m.get("step") else ""))
+                if ph["step"] and steps:
+                    rnd = f" · vòng {ph['review_round']}" if ph["review_round"] else ""
+                    print(f"  bước {ph['step_index']}/{ph['step_count']} {ph['step']}{rnd} · {m.get('tool', '-')} {m.get('model', '-')}/{m.get('effort', '-')}")
+                    print("  " + tasks.step_strip(m, steps))
                 if st == "in-progress":
                     print(f"  resume: omi-task {k}")
                 if st != "planned":

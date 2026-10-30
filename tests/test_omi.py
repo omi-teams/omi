@@ -17,8 +17,44 @@ import test_board
 import test_board_server
 import test_board_web
 
+from omi.project import tasks
+
+
+def test_phase():
+    wf = [{"id": "plan", "role": "coordinator"}, {"id": "design", "role": "omi-agent-architect"},
+          {"id": "build", "role": "omi-agent-engineer"}, {"id": "docs", "role": "omi-agent-docs-writer"},
+          {"id": "ops", "role": "omi-agent-devops"}, {"id": "ui", "role": "omi-agent-designer-ui"},
+          {"id": "res", "role": "omi-agent-researcher"}, {"id": "review", "role": "omi-agent-reviewer"},
+          {"id": "sec", "role": "omi-agent-security-reviewer"}, {"id": "qa", "role": "omi-agent-qa-tester"},
+          {"id": "odd", "role": "mystery"}, {"id": "accept", "role": "coordinator", "gate": "po"}]
+    ph = lambda status, step, steps=wf, text="": tasks.phase({"status": status, "step": step, "_text": text}, steps)
+    assert ph("planned", "build")["label"] == "Chưa bắt đầu" and ph("planned", "build")["key"] == "not_started"
+    assert ph("blocked", "build")["label"] == "Bị chặn" and ph("done", "accept")["label"] == "Xong"
+    for step, key, label in (("accept", "po", "Chờ PO"), ("plan", "planning", "Lên kế hoạch"), ("design", "design", "Thiết kế"),
+                             ("ui", "design", "Thiết kế"), ("res", "design", "Thiết kế"), ("build", "working", "Đang làm"),
+                             ("docs", "working", "Đang làm"), ("ops", "working", "Đang làm"), ("review", "review", "Đang review"),
+                             ("sec", "review", "Đang review"), ("qa", "qa", "Đang QA"), ("odd", "working", "Đang làm"),
+                             ("", "working", "Đang làm"), ("nope", "working", "Đang làm")):
+        got = ph("in-progress", step)
+        assert (got["key"], got["label"]) == (key, label), (step, got)
+    assert ph("in-progress", "build", [])["label"] == "Đang làm" and ph("in-progress", "build", [])["step_count"] == 0
+    got = ph("in-progress", "review")
+    assert (got["step_index"], got["step_count"], got["step"]) == (8, 12, "review") and got["review_round"] == 1
+    assert ph("in-progress", "build")["review_round"] is None
+    usage = ("\n## Usage\n| role | model | effort | input | output | cache | duration | skills read | verdict |\n|---|---|---|---|---|---|---|---|---|\n"
+             "| omi-agent-reviewer | m | high | 1 | 1 | 1 | 1s | - | FAIL abc1234 |\n"
+             "| omi-agent-reviewer | m | high | 1 | 1 | 1 | 1s | - | QUOTA->x |\n"
+             "| omi-agent-engineer | m | high | 1 | 1 | 1 | 1s | - | FAIL |\n"
+             "| omi-agent-reviewer | m | high | 1 | 1 | 1 | 1s | - | PASS |\n")
+    assert ph("in-progress", "review", text=usage)["review_round"] == 2
+    assert ph("in-progress", "qa", text=usage)["review_round"] == 2
+    m = {"status": "in-progress", "step": "design", "_text": ""}
+    assert tasks.step_strip(m, wf[:4]) == "plan ✓ [design] build docs"
+    assert tasks.step_strip({**m, "status": "done"}, wf[:2]) == "plan ✓ design ✓"
+
 
 if __name__ == "__main__":
+    test_phase()
     test_upgrade.main()
     test_init.main()
     test_github.main()
