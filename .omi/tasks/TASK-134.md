@@ -1,7 +1,7 @@
 ---
 id: TASK-134
 title: Task phase derived from the current workflow step
-status: in-progress
+status: done
 depends: TASK-115
 plan: PLAN-006
 scope: src/omi/project/**, src/omi/app/cli.py, src/omi/board/data.py, tests/test_omi.py, tests/test_board.py, tests/test_content.py, tests/test_cli.py, .omi/tasks/TASK-134.md
@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature
-step: review
+step: accept
 ---
 ## Goal
 At a glance the PO sees which phase and step every task is in, the same set for every workflow, computed from the task's `status`, `step` and workflow definition, with no new field to keep in sync by hand.
@@ -40,6 +40,9 @@ Next: review.
 - build started 2026-10-30 19:42
 - build done 2026-10-30 20:07
 - review started 2026-10-30 20:07
+- review done 2026-10-30 20:15
+- accept started 2026-10-30 20:15
+- PO approval accept: "Nghiệm thu, 3 điểm sang 125" (2026-10-30)
 
 ## Reports
 2026-10-30 19:52 omi-agent-engineer (claude):
