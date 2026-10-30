@@ -4,7 +4,7 @@ group: delivery-ops
 description: Use when something broke in a release, CI gate, ruleset, tag or worker run and you must triage, contain and record it.
 tokens: 534
 tools: Read, Bash
-source_repo: https://github.com/omi-teams/omi-squad2
+source_repo: https://github.com/omi-teams/omi
 source_ref: a35ba0957a0a8e7e431fbbaba2b3df1f3588a79d
 source_file: docs/pilot.md, .omi/tasks/TASK-018.md, .omi/tasks/TASK-010.md, .omi/decisions.md
 source_license: internal (no LICENSE file yet)

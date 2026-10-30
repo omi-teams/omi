@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Theo dõi dự án, kế hoạch và tiến độ công việc cùng omi board.">
+<title>omi board</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<a class="skip" href="#main">Bỏ qua đến nội dung</a>
+<header class="top">
+  <div class="bar">
+    <a class="brand" href="#/"><svg class="brand-mark" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"></rect><circle cx="12" cy="12" r="4"></circle></svg>omi board</a>
+    <nav id="nav" class="crumb" aria-label="Điều hướng"></nav>
+    <div class="tools">
+      <span id="status" class="updated" role="status"></span>
+      <div class="auto-refresh">
+        <label class="switch"><input type="checkbox" id="auto" checked> Tự làm mới (30 giây)</label>
+        <span id="countdown" class="countdown" aria-hidden="true"></span>
+      </div>
+      <button class="btn" type="button" id="refresh" aria-label="Làm mới"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"></path><path d="M20 4v7h-7"></path></svg><span class="refresh-text">Làm mới</span></button>
+    </div>
+  </div>
+</header>
+<main id="main" class="wrap" tabindex="-1">
+  <div id="err" role="alert"></div>
+  <div id="view"><h1 id="title" tabindex="-1">Đang tải…</h1></div>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

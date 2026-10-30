@@ -7,17 +7,29 @@
 Phiên bản (SemVer 0.x) chỉ ghi ở `pyproject.toml`; `omi init` ghi nó vào `.omi/version`, `omi status` báo khi dự án cũ hơn omi đang cài.
 
 ```sh
-python -m pip install --user "git+https://github.com/omi-teams/omi-squad2@v0.3.1"     # cài từ tag
+python -m pip install --user "git+https://github.com/omi-teams/omi@v0.5.0"     # cài từ tag
 python -m omi upgrade [--check|--to vX.Y.Z]   # nâng cấp omi rồi cập nhật file khung chưa bị sửa (file đã sửa: giữ nguyên, bản mới ở <file>.omi-new); trong Claude Code: /omi-upgrade
-omi --version             # omi 0.3.1
+omi --version             # omi 0.5.0
 # Mỗi Python trên máy có một omi (hook và AGENTS.md gọi `python -m omi`); người phát triển omi dùng `pip install -e .` thay cho lệnh trên.
 mkdir my-app && cd my-app
 omi init                  # cài khung squad, không ghi đè file sẵn có
 omi github [--po]         # (PO, quyền admin; --po: đăng nhập PO trên browser, xong tự logout + quay lại tài khoản squad) tạo staging + ruleset: squad chỉ merge vào development
 # Coordinator mặc định chạy model sonnet ("model" trong .claude/settings.json); đổi: sửa key đó hoặc /model trong phiên
-# Worker: alias haiku/sonnet/opus đổi thành model ID đầy đủ qua "models" trong .omi/config.json (PO sửa được); tên container <repo>-<task>-<role>-<tool>-<model>-<effort>-<HHMMSS> (vd. omi-squad2-TASK-055-reviewer-claude-sonnet-5.5-medium-143205), agent và proxy cùng một nhóm compose (com.docker.compose.project) để Docker Desktop gom lại, label omi-role/task/model/effort/started; omi status liệt kê worker đang chạy
+# Worker: alias haiku/sonnet/opus đổi thành model ID đầy đủ qua "models" trong .omi/config.json (PO sửa được); tên container <repo>-<task>-<role>-<tool>-<model>-<effort>-<HHMMSS> (vd. omi-TASK-055-reviewer-claude-sonnet-5.5-medium-143205), agent và proxy cùng một nhóm compose (com.docker.compose.project) để Docker Desktop gom lại, label omi-role/task/model/effort/started; omi status liệt kê worker đang chạy
 claude                    # rồi gõ /omi-idea, /omi-task TASK-001, /omi-status
 ```
+
+Để giữ repo code nguyên vẹn, dùng `omi attach [<repo path>]` (mặc định: thư mục hiện tại, cần remote `origin`). Lệnh tạo và commit `projects/<tên-repo>/project.json`, `.omi/`, `docker/` và hooks trong repo state `~/.omi/state` (đổi bằng `OMI_STATE`), không tạo `AGENTS.md` hay `.claude` ở đó. Tên đã tồn tại bị từ chối trừ khi cùng URL origin; HTTPS và SSH của cùng repo được nhận diện như nhau.
+
+Lần đầu dùng `omi attach --state <git url>` để clone repo state riêng tư; không có URL thì omi khởi tạo repo state và in lệnh thêm private remote. Git cần có `user.name` và `user.email` để commit. Attach tự push commit lên remote state (thiết lập upstream nếu remote trống); push lỗi giữ commit local và in `STATE NOT PUSHED: run omi sync`. Nếu có `origin/development` mà chưa có nhánh local `development`, attach tạo nhánh tracking và in một dòng; nhánh local đã có được giữ nguyên, repo code không nhận commit hay file mới. Khi chưa có remote state, thêm private remote rồi chạy `omi sync`; trên máy khác clone nó vào `OMI_STATE` rồi clone repo code: omi nhận diện dự án theo URL origin, không phụ thuộc đường dẫn checkout. Manifest lỗi hoặc URL trùng trong registry khiến mọi lệnh dừng với thông báo `OMI:` nêu file cần sửa.
+
+Chạy `omi install-user` một lần trên mỗi máy để cài skills vào `~/.claude/skills/`, thêm SessionStart hook vào `~/.claude/settings.json` và luật Coordinator vào block `<!-- omi -->` trong `~/.codex/AGENTS.md`. Hook `python -m omi session-start` chỉ in luật và status trong repo đã attach; Codex chạy lệnh này theo luật đầu phiên. Các đường dẫn `.omi/` trong luật trỏ tới repo state; skills dùng đường dẫn user. Lệnh giữ settings và nội dung AGENTS khác, chạy lại không nhân đôi; lần sửa settings đầu tiên có backup `settings.json.omi-bak`. `omi install-user --remove` hoàn tác phần đã cài theo manifest `~/.omi/install-user.json`, giữ skills đã sửa và nội dung user thêm sau đó. In-repo mode vẫn dùng `omi init` như trước.
+
+Trong detached mode, `omi status` tự pull repo state bằng `git pull --rebase`; offline hoặc chưa có remote thì in một dòng và vẫn hiển thị state local. Các lệnh thay đổi state (step, catalogs, run reports/usage, hooks) tự commit đúng các file chúng sửa với message `chore(<project>): <what>` rồi push. Push lỗi giữ commit local và in `STATE NOT PUSHED: run omi sync`. Chạy `omi sync` để pull, commit các thay đổi còn lại (task start/done, decisions, plans sửa bằng tay) và push toàn bộ repo state. Nếu rebase conflict, omi liệt kê file và dừng; giải quyết bằng git rồi chạy lại `omi sync`. In-repo mode giữ nguyên.
+
+Trên Windows, tìm thư mục Python `Scripts` bằng `python -c "import sysconfig; print(sysconfig.get_path('scripts', 'nt_user'))"` nếu cài với `pip install --user`, bỏ `, 'nt_user'` nếu cài không có `--user` (vd. `pip install -e .`); thêm vào `PATH`, hoặc gọi `python -m omi`. Dự án đã attach cần đặt lệnh kiểm thử `"test": "python tests/test_omi.py"` trong `.omi/config.json` của bản state (`~/.omi/state/projects/<tên>/.omi/config.json`, hoặc dưới `OMI_STATE`), không phải repo code.
+Worker tự cho phép API host của tool được chọn (Claude: `api.anthropic.com`, Codex: `api.openai.com`); đăng nhập Codex bằng ChatGPT cũng thêm `chatgpt.com`. Khai host bổ sung trong `network_allow` của `.omi/config.json`.
+Nếu repo code có `.omi/`, `AGENTS.md` hoặc `.claude/` được Git theo dõi, `omi attach`/`omi status` báo `WARN: in-repo omi files ignored (detached): <paths>`; omi không tự di chuyển các file này. PO duyệt bước bằng `omi step <ID> approve --why "<lời PO>"`; mở lại workflow đã hoàn tất bằng `omi step <ID> reopen --why "<lý do>"`.
 
 `omi init` tạo các file sau trong dự án:
 
@@ -32,6 +44,14 @@ claude                    # rồi gõ /omi-idea, /omi-task TASK-001, /omi-status
 | `.omi/decisions.md` | Nhật ký quyết định của PO |
 
 Cache tải xuống (Go modules, npm, pip) nằm trong `.omi-cache/` của worktree (được gitignore) để hook và reviewer dùng lại dependency của engineer; cache build vẫn ở tmpfs `/cache`.
+
+## Bảng theo dõi (`omi board`)
+
+`omi board [--port N] [--no-open]` (mặc định 8765) mở web UI chỉ đọc trên 127.0.0.1, liệt kê các dự án trong registry state.
+Mỗi dự án có plan, kanban task và chi tiết task (Steps, Reports, Usage).
+Dữ liệu đọc lại từ file state ở mỗi request, nên sửa file không cần restart.
+Mọi nội dung hiển thị bằng `textContent`, đường dẫn thoát thư mục trả 404, CSP `default-src 'self'`.
+`OMI_STATE=<thư mục>` chọn state khác. Kết quả pilot và gap: [docs/pilot-board.md](docs/pilot-board.md).
 
 ## Lấy và lưu key
 
