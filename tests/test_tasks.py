@@ -263,8 +263,14 @@ def test_task_skill_step_commands():
     text = template.read_text(encoding="utf-8")
     assert text == (repo / ".claude/skills/omi-task/SKILL.md").read_text(encoding="utf-8")
     assert 'step <ID> approve --why "<PO\'s words>"' in text
-    assert 'gh pr create --base development --head task/<ID> --title "<type>: <title> (<ID>)" --body "<one-paragraph summary of the change>"' in text
-    assert "--fill" not in text
+    assert '--title "<title>" --body-file <file>' in text and "[TASK-NNN] <type>(<area>): <summary>" in text
+    assert "## Summary" in text and "## Known issues" in text and "gh pr ready --undo" in text
+    assert "--draft" in text and "gh pr ready`" in text and "**Agent:** Coordinator" in text and "--subject" in text
+    assert "gh pr edit task/<ID>" in text and "gh pr comment task/<ID> --body-file" in text
+    release = (repo / ".claude/skills/omi-release/SKILL.md").read_text(encoding="utf-8")
+    assert release == (omi.common.core.TEMPLATE / "dot-claude/skills/omi-release/SKILL.md").read_text(encoding="utf-8")
+    assert "[RELEASE vX.Y.Z] development -> staging" in release and "-> main" in release
+    assert "--fill" not in text.replace("never `--fill`", "") and "--fill" not in release.replace("never `--fill`", "")
     assert 'step <ID> reopen --why "<CI failure reason>"' in text
     assert "fresh PO approval" in text
 

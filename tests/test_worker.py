@@ -597,7 +597,45 @@ def test_clean_and_old_images():
             subprocess.run, omi.common.core.main_checkout = real, realmc
 
 
+def test_pr_comment():
+    pr = omi.worker.pr
+    h = pr.header("build", "omi-agent-engineer (claude/sonnet/medium)", "DONE", "2026-10-30 13:40")
+    assert h == ("**Step:** build · **Agent:** omi-agent-engineer (claude/sonnet/medium) · "
+                 "**Time:** 2026-10-30 13:40 · **Verdict:** DONE")
+    calls, state = [], {"remote": "origin", "pr": "OPEN", "gh": "gh"}
+
+    def run(cmd, **kw):
+        calls.append((cmd, kw.get("input")))
+        out = state["pr"] if "view" in cmd else ""
+        return type("R", (), {"stdout": out, "stderr": "boom", "returncode": 1 if state.get("fail") and "comment" in cmd else 0})()
+
+    real = subprocess.run, shutil.which, omi.common.core.git
+    subprocess.run, shutil.which, omi.common.core.git = run, lambda _: state["gh"], lambda wt, *a: state["remote"]
+    try:
+        assert pr.post_report("/wt", "TASK-1", "build", "r", "claude", "sonnet", "low", "DONE", "line1\nline2")
+        cmd, text = calls[-1]
+        assert cmd[:4] == ["gh", "pr", "comment", "task/TASK-1"] and text.startswith("**Step:** build · **Agent:** r (claude/sonnet/low) · **Time:** ")
+        assert text.endswith("**Verdict:** DONE\n\nline1\nline2")
+        assert pr.post_hook("/wt", "TASK-1", "post-run", (0, "a\nlast")) and calls[-1][1].endswith("\n\nlast")
+        assert "**Step:** hook post-run · **Agent:** omi hook (Docker)" in calls[-1][1] and "**Verdict:** pass" in calls[-1][1]
+        for key, val in (("remote", ""), ("pr", "")):  # no remote / no open PR: skipped, no comment
+            saved, state[key] = state[key], val
+            n = len(calls)
+            assert not pr.post("/wt", "TASK-1", "x") and not any("comment" in c for c, _ in calls[n:])
+            state[key] = saved
+        state["fail"] = True
+        out, sys.stdout = sys.stdout, io.StringIO()
+        try:
+            assert not pr.post("/wt", "TASK-1", "x")
+            assert "WARNING" in sys.stdout.getvalue()
+        finally:
+            sys.stdout = out
+    finally:
+        subprocess.run, shutil.which, omi.common.core.git = real
+
+
 def main():
+    test_pr_comment()
     test_worker_cache_tmpfs_and_full_volumes()
     test_download_cache_gitignore()
     test_download_cache_scope()
