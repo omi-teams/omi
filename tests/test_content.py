@@ -177,7 +177,7 @@ def test_plans():
         assert "plans check failed: PLAN-001: `status` must be active or done" in text, text
         assert "PLAN-001 : done" not in text, text
         assert "PLAN-002 Empty: done 0/0" in text, text
-        assert "done: 3/4" in text and "[review] TASK-002" in text and "next: none ready" in text, text
+        assert "done: 3/4" in text and "[Đang làm] TASK-002" in text and "next: none ready" in text, text
         try:
             omi.project.catalogs.check_task_plan(root, {"plan": "PLAN-001"})
             raise AssertionError("invalid plan accepted by run validation")

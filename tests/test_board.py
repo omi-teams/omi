@@ -50,6 +50,8 @@ def test_views():
         assert detail["criteria"] == [{"text": "one", "checked": True}, {"text": "two", "checked": False}]
         assert "Next: ask PO" in detail["checkpoint"] and "accept started" in detail["steps"]
         assert "took 12s" in detail["reports"]
+        assert detail["phase"] == {"key": "po", "label": "Chờ PO"} and (detail["step_index"], detail["step_count"], detail["review_round"]) == (1, 1, None)
+        assert data.task("sample", "TASK-003")["phase"]["key"] == "blocked"
         assert detail["usage"]["input"] == 10 and detail["usage"]["review_rounds"] == 1
         view = data.project("sample")
         assert view["plans"][0]["done"] == 1 and view["plans"][0]["total"] == 5

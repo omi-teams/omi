@@ -388,3 +388,37 @@ def prior_review(text):
     after = re.split(r"^.*Review round.*$", text.partition("\n## Usage")[0], flags=re.M)[-1] if "Review round" in text else ""
     after = after.split("\n## ", 1)[0]
     return len(rows), last and last.group(1), set(re.findall(r"[\w.-]+(?:/[\w.-]+)+|[\w-]+\.(?:py|md|json|toml|ya?ml|sh|txt|js|ts|cfg|ini)\b", after))
+
+
+PHASES = {"planned": ("not_started", "Chưa bắt đầu"), "blocked": ("blocked", "Bị chặn"), "done": ("done", "Xong"),
+          "po": ("po", "Chờ PO"), "coordinator": ("planning", "Lên kế hoạch"), "designer-ui": ("design", "Thiết kế"),
+          "architect": ("design", "Thiết kế"), "researcher": ("design", "Thiết kế"), "reviewer": ("review", "Đang review"),
+          "security-reviewer": ("review", "Đang review"), "qa-tester": ("qa", "Đang QA")}
+WORKING = ("working", "Đang làm")  # engineer, docs-writer, devops and the fallback for anything unknown
+
+
+def review_round(text):
+    """Review FAIL reports (reviewer rows of the Usage table with a FAIL verdict) + 1."""
+    rows = [l for l in text.partition("\n## Usage")[2].splitlines() if re.match(r"\| omi-agent-(security-)?reviewer \|", l)]
+    return 1 + sum(l.strip().strip("|").split("|")[-1].strip().startswith("FAIL") for l in rows)
+
+
+def phase(m, steps):
+    """Phase of a task from its status, step and workflow steps (list of step dicts, [] if unknown):
+    {key, label, step, step_index (0 = none), step_count, review_round (None outside review/qa)}."""
+    status, sid = m.get("status", "planned"), m.get("step", "")
+    at = next((i for i, s in enumerate(steps, 1) if s.get("id") == sid), 0)
+    cur = steps[at - 1] if at else {}
+    role = cur.get("role", "").removeprefix("omi-agent-")
+    key = status if status in ("planned", "blocked", "done") else "po" if cur.get("gate") == "po" else role
+    key, label = PHASES.get(key, WORKING)
+    return {"key": key, "label": label, "step": sid, "step_index": at, "step_count": len(steps),
+            "review_round": review_round(m.get("_text", "")) if key in ("review", "qa") else None}
+
+
+def step_strip(m, steps):
+    """`plan ✓ build [review] qa`: done steps ticked, the current one in brackets."""
+    at = phase(m, steps)["step_index"]
+    done = m.get("status") == "done"
+    return " ".join(f"{s.get('id')} ✓" if done or i < at else f"[{s.get('id')}]" if i == at else s.get("id", "?")
+                    for i, s in enumerate(steps, 1))
