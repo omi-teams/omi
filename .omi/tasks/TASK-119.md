@@ -4,7 +4,7 @@ title: PR naming rules (task ID first) and step results as PR comments
 status: in-progress
 depends:
 plan: PLAN-006
-scope: src/omi/**, .claude/skills/omi-task/SKILL.md, .claude/skills/omi-release/SKILL.md, src/omi/template/dot-claude/skills/omi-task/SKILL.md, src/omi/template/dot-claude/skills/omi-release/SKILL.md, src/omi/template_shas.json, tests/**, .omi/tasks/TASK-119.md
+scope: src/omi/**, .omi/rules/omi-modules.md, .claude/skills/omi-task/SKILL.md, .claude/skills/omi-release/SKILL.md, src/omi/template/dot-claude/skills/omi-task/SKILL.md, src/omi/template/dot-claude/skills/omi-release/SKILL.md, src/omi/template_shas.json, tests/**, .omi/tasks/TASK-119.md
 role: omi-agent-engineer
 skills: []
 refs: []
