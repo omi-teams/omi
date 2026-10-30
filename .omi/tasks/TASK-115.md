@@ -8,8 +8,8 @@ scope: src/omi/board/web/**, src/omi/board/data.py, tests/test_board.py, pyproje
 role: omi-agent-engineer
 skills: [omi-skill-ui-direction]
 refs: []
-tool: codex
-model: opus
+tool: claude
+model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature-ui
@@ -28,6 +28,10 @@ Plain HTML/CSS/JS pages for home, project dashboard and task detail, in Vietname
 - [ ] Readable at 360 px width and keyboard navigable; all tests pass.
 
 ## Checkpoint
+Review round 4 FAIL (codex quota -> claude-opus-5-5/medium): countdown ✓. PO 2026-10-30 approved one small fix round with claude sonnet/medium.
+- Fix only: src/omi/board/web/app.js route() clears the timer before fetch and fetch has no timeout; a hung request freezes the countdown at "0 giây" and stops auto-refresh. Abort the fetch after 10 s (AbortController) so the catch shows the existing error/retry UI and finally -> schedule() always runs. Add a Node test with a never-resolving fetch.
+- Host: `python tests/test_board_web.py` -> ok, wheel test ran (no skip line); only the Playwright browser test skipped (qa step).
+
 ### Countdown build (2026-10-30)
 Done: implemented only the round-3 countdown gap. The header groups the toggle and countdown, with a compact stacked arrangement on phones. The countdown uses textContent, is aria-hidden and outside live regions, and keeps the toggle's “30 giây” label. One-second ticks use a timestamp deadline without re-rendering the view or changing focus/status. Completed manual, automatic, retry and route refreshes restart the 30-second deadline, including unchanged responses and failures. Polling pauses during an active request and while hidden; off shows “Đã tắt”, hidden shows “Tạm dừng”, and returning to a visible tab refreshes when enabled.
 Not done: real-browser layout/keyboard checks and a new installed-package check cannot run here (Playwright and pip missing). Existing host wheel/install evidence and the qa handoff remain applicable; no additional scope is needed.
@@ -57,6 +61,7 @@ Review round 2 FAIL:
 - Model raised to opus alias (gpt-6-astra/high) after two review FAILs, PO approved.
 
 PO 2026-10-30 (after round 3, while viewing the board): add a countdown next to the auto-refresh toggle (new criterion above). Do it in the next build round; if review round 3 PASSes otherwise, run one small build round for it before qa.
+QUOTA: codex hit its usage limit; omi-agent-reviewer continued with claude on the partial diff.
 
 ## Steps
 - plan started 2026-10-30 14:35
@@ -76,6 +81,10 @@ PO 2026-10-30 (after round 3, while viewing the board): add a countdown next to 
 - review started 2026-10-30 18:20
 - review failed 2026-10-30 18:27
 - build started 2026-10-30 18:27
+- build done 2026-10-30 18:51
+- review started 2026-10-30 18:51
+- review failed 2026-10-30 19:02
+- build started 2026-10-30 19:02
 
 ## Reports
 2026-10-30 14:38 omi-agent-designer-ui (claude):
@@ -345,6 +354,16 @@ PO 2026-10-30 (after round 3, while viewing the board): add a countdown next to 
 > Tests: frontend static/Node tests and full `python3 tests/test_omi.py` exited 0.
 > Skipped: wheel/install (pip missing); browser checks (Playwright missing).
 > Open: browser QA remains pending. No commit made.
+2026-10-30 19:00 omi-agent-reviewer (claude):
+> ```
+> VERDICT: FAIL
+> - src/omi/board/web/app.js:194,205 route() clears the refresh timer before fetch, and fetch has no timeout or abort. If one request hangs (server stalls, network drops), schedule() never runs again: the countdown freezes at "Làm mới sau 0 giây" and auto-refresh stops until a manual click -> abort the fetch after ~10 s with an AbortController (or reschedule in the catch on timeout) so finally → schedule() always runs
+> - tests/test_board_web.py:41 test_wheel_ships_web skipped here (pip missing), so the installed-package check did not run in this review -> run `python tests/test_board_web.py` where pip is present and record the output with no skip line
+> - tests/test_board_web.py:314 test_browser_layout_and_keyboard skipped (Playwright missing): 360/390 px layout, sticky header, scroll-padding and keyboard were not run in a real browser -> run it in qa (TASK-128) with Playwright installed
+> AC: Home, dashboard (PO-waiting, plans, kanban, activity, decisions, usage, sync) and task detail render from the API; 30 s auto-refresh with toggle ✓ Node DOM tests in test_board_web.py passed ("ok: API views, mockup DOM, … polling"); app.js:62-187 renderers, schedule() 30000 ms, #auto toggle stored in localStorage
+> AC: State text via textContent only, no innerHTML; no external script/font/CDN ✓ el() sets textContent only (app.js:21); test_files_safe passed (no innerHTML/outerHTML/eval, no external URL/@import/@font-face, no inline script/style)
+> [... truncated ...]
+> I found no code bug in the countdown work other than the hanging-request case above. The FAIL comes from the review rule: four criteria depend on tests that were skipped in this container. The wheel test needs pip; the mockup, sticky-header and 360 px/keyboard checks need Playwright. None of these criteria names the host, so the HOST exception doesn't apply. All changed files are within the task's scope, and I made no edits.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -358,3 +377,5 @@ PO 2026-10-30 (after round 3, while viewing the board): add a countdown next to 
 | omi-agent-engineer | gpt-6-astra (codex) | high | 1622113 | 13573 | 1555328 | 509s | 2/2 omi-skill-ui-direction omi-skill-lean-implementation | - |
 | omi-agent-reviewer | gpt-6-astra (codex) | high | 1304849 | 3250 | 1224704 | 265s | - | FAIL c763d1f |
 | omi-agent-engineer | gpt-6-astra (codex) | high | 2914956 | 12126 | 2848896 | 1129s | 2/2 omi-skill-ui-direction omi-skill-lean-implementation | - |
+| omi-agent-reviewer | gpt-6-astra (codex) | medium | n/a | n/a | n/a | 29s | - | QUOTA->claude |
+| omi-agent-reviewer | claude-opus-5-5 | medium | 20 | 3769 | 310930 | 414s | - | FAIL 8c6c0f8 |
