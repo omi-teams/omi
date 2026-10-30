@@ -4,7 +4,7 @@ title: PR naming rules (task ID first) and step results as PR comments
 status: in-progress
 depends:
 plan: PLAN-006
-scope: src/omi/**, .claude/skills/omi-task/SKILL.md, .claude/skills/omi-release/SKILL.md, src/omi/template/dot-claude/skills/omi-task/SKILL.md, src/omi/template/dot-claude/skills/omi-release/SKILL.md, src/omi/template_shas.json, tests/**, .omi/tasks/TASK-119.md
+scope: src/omi/**, .omi/rules/omi-modules.md, .claude/skills/omi-task/SKILL.md, .claude/skills/omi-release/SKILL.md, src/omi/template/dot-claude/skills/omi-task/SKILL.md, src/omi/template/dot-claude/skills/omi-release/SKILL.md, src/omi/template_shas.json, tests/**, .omi/tasks/TASK-119.md
 role: omi-agent-engineer
 skills: []
 refs: []
@@ -28,7 +28,7 @@ Every PR the squad opens is readable without opening the commits: the task ID co
 - [ ] `python3 tests/test_omi.py` prints `ok`.
 
 ## Checkpoint
-Review round 1 FAIL:
+Fix round 1 done (all review round 1 findings addressed; tests -> ok). Review round 1 FAIL:
 - omi-task SKILL.md (repo + template): the PR is opened as a draft right after the first build commit (`gh pr create --draft --title ... --body-file ...`). Step 6 updates it with `gh pr edit task/<ID> --title ... --body-file ...` once Verification is known. Keep `gh pr create` in step 6 only for the case where no PR exists yet.
 - Coordinator comments: use `gh pr comment task/<ID> --body-file <file>`, never `--body "...
 ..."`.
@@ -123,9 +123,75 @@ Next: Coordinator review
 > 
 > [... truncated ...]
 > AC: `python3 tests/test_omi.py` prints `ok`. ✓ I ran it and it printed `ok`, exit 0.
+2026-10-30 14:01 omi-agent-engineer (claude):
+> DONE. All review round 1 findings are fixed.
+> - Files changed:
+>   - `.claude/skills/omi-task/SKILL.md` and `src/omi/template/dot-claude/skills/omi-task/SKILL.md`
+>   - `src/omi/worker/pr.py`
+>   - `src/omi/worker/run.py`
+>   - `.omi/rules/omi-modules.md`
+>   - `tests/test_tasks.py`
+>   - `tests/test_worker.py`
+>   - `.omi/tasks/TASK-119.md`
+> - **Skill:** the PR opens as a draft after the first build commit. Step 6 runs `gh pr edit task/<ID> --title ... --body-file ...`, and `gh pr create` stays only for when no PR exists yet. Coordinator comments use `gh pr comment task/<ID> --body-file <file>`.
+> - **Code:** the write-role verdict now comes only from the report's first line (DONE, BLOCKED or NEEDS SCOPE), else `exit <rc>`. Hook comments use the agent label `omi hook (Docker)`.
+> - **Rule:** `worker.pr` is added to the `worker/` line and the layer order in `omi-modules.md`.
+> - **Tests:** the skill test now also asserts `--draft`, `gh pr ready`, `**Agent:** Coordinator`, `--subject`, `gh pr edit` and `gh pr comment ... --body-file`. The hook-label assertion in `test_worker.py` is updated. `python3 tests/test_omi.py` printed `ok`.
+> - Open issues: none from this round. The host-level `omi-task` skill copy outside the repo is still older, as the checkpoint note says.
+> - Commit message: `feat(omi): task-ID-first PR titles, fixed PR body and step results as PR comments`
+> 
+> Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+2026-10-30 14:04 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 30 | 8680 | 632447 | 537s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 3181 | 120628 | 493s | - | FAIL c1eafa7 |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 3566 | 267210 | 344s | 1/1 omi-skill-lean-implementation | - |

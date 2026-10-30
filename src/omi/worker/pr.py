@@ -42,4 +42,4 @@ def post_hook(wt, tid, event, res):
     """One short line for a hook result: name, pass/fail, last line of its output."""
     rc, out = res
     last = (out or "").strip().splitlines()[-1:] or ["(no output)"]
-    return post(wt, tid, header(f"hook {event}", "Coordinator", "pass" if rc == 0 else "fail") + f"\n\n{last[0]}")
+    return post(wt, tid, header(f"hook {event}", "omi hook (Docker)", "pass" if rc == 0 else "fail") + f"\n\n{last[0]}")

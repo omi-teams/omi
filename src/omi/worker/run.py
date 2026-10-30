@@ -353,7 +353,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
             report += "".join(f"\nERROR: {' '.join(t.split())}" for t in tools.error_texts(tool, r.stdout) if t.strip()) + f"\nexit code {rc}"
             print(report.partition(result or "(no report)")[2].strip())
         tasks.append_note(task, "Reports", f"{datetime.datetime.now():%Y-%m-%d %H:%M} {role} ({tool}):\n" + "\n".join("> " + l for l in tasks.clip_report(report)))
-        verdict = (tools.verdict_of(result) or "n/a") if read else (next(iter(re.findall(r"\b(DONE|BLOCKED|NEEDS SCOPE)\b", report)), None) or f"exit {rc}")
+        verdict = (tools.verdict_of(result) or "n/a") if read else (m.group(1) if (m := re.match(r"\W*(DONE|BLOCKED|NEEDS SCOPE)\b", report)) else f"exit {rc}")
         pr.post_report(wt, task.stem, cur["id"] if cur else "-", role, tool, models[tool], efforts[tool], verdict, report)
         for sid in ids:
             if sid not in done:

@@ -617,7 +617,7 @@ def test_pr_comment():
         assert cmd[:4] == ["gh", "pr", "comment", "task/TASK-1"] and text.startswith("**Step:** build · **Agent:** r (claude/sonnet/low) · **Time:** ")
         assert text.endswith("**Verdict:** DONE\n\nline1\nline2")
         assert pr.post_hook("/wt", "TASK-1", "post-run", (0, "a\nlast")) and calls[-1][1].endswith("\n\nlast")
-        assert "**Step:** hook post-run · **Agent:** Coordinator" in calls[-1][1] and "**Verdict:** pass" in calls[-1][1]
+        assert "**Step:** hook post-run · **Agent:** omi hook (Docker)" in calls[-1][1] and "**Verdict:** pass" in calls[-1][1]
         for key, val in (("remote", ""), ("pr", "")):  # no remote / no open PR: skipped, no comment
             saved, state[key] = state[key], val
             n = len(calls)
