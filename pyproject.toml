@@ -12,7 +12,7 @@ requires-python = ">=3.13"
 omi = "omi:main"
 
 [tool.setuptools.package-data]
-omi = ["template_shas.json", "template/*", "template/**/*", "template/**/.*"]
+omi = ["template_shas.json", "template/*", "template/**/*", "template/**/.*", "board/web/*"]
 
 [tool.setuptools.exclude-package-data]
 omi = ["**/__pycache__/*", "*.pyc"]

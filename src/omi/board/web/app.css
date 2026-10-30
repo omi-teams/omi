@@ -1,0 +1,37 @@
+:root {
+  --bg: #fafaf9; --fg: #292524; --muted: #57534e; --line: #d6d3d1; --card: #fff; --accent: #0f6e6e;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #1c1917; --fg: #e7e5e4; --muted: #a8a29e; --line: #44403c; --card: #292524; --accent: #5eb8b8; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); line-height: 1.5;
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-variant-numeric: tabular-nums; }
+a { color: var(--accent); }
+a:focus-visible, input:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.skip { position: absolute; left: -999px; }
+.skip:focus { left: 8px; top: 8px; background: var(--card); padding: 8px; z-index: 1; }
+header { display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; align-items: center;
+  padding: 8px 16px; border-bottom: 1px solid var(--line); }
+nav a, nav span { margin-right: 8px; }
+main { max-width: 1200px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 1.5rem; margin: 0 0 16px; overflow-wrap: anywhere; }
+h2 { font-size: 1.125rem; margin: 0 0 8px; }
+section { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+section.waiting { border-left: 4px solid var(--accent); }
+ul { margin: 0; padding-left: 20px; }
+li { margin-bottom: 4px; overflow-wrap: anywhere; }
+progress { width: 100%; max-width: 240px; accent-color: var(--accent); }
+.muted { color: var(--muted); }
+.kanban { display: grid; gap: 8px; grid-template-columns: 1fr; }
+.col { border: 1px solid var(--line); border-radius: 8px; padding: 8px; min-width: 0; }
+.card { display: block; border: 1px solid var(--line); border-radius: 4px; padding: 8px; margin-bottom: 8px;
+  overflow-wrap: anywhere; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border-bottom: 1px solid var(--line); padding: 4px 8px; text-align: left; white-space: nowrap; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; font: inherit; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+dd { margin: 0; overflow-wrap: anywhere; }
+@media (min-width: 768px) { .kanban { grid-template-columns: repeat(5, 1fr); } }
