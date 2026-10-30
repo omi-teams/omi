@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature
-step: build
+step: review
 ---
 ## Goal
 Every PR the squad opens is readable without opening the commits: the task ID comes first in the title, and the body follows a fixed set of sections. The omi-task and omi-release skills (repo copy and `src/omi/template`) state the rule, so new projects get it too. Every step result (agent, model, verdict, report) is also posted to the PR as a comment, so the PR shows the whole run. PR #119 (TASK-114) was opened with `--fill`, which gave the title `task/TASK 114` and a list of commits as the body.
@@ -38,6 +38,8 @@ Next: Coordinator review
 - plan started 2026-10-30 13:29
 - plan done 2026-10-30 13:29
 - build started 2026-10-30 13:29
+- build done 2026-10-30 13:43
+- review started 2026-10-30 13:43
 
 ## Reports
 2026-10-30 13:38 omi-agent-engineer (claude):
