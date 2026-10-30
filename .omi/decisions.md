@@ -103,3 +103,4 @@
 - 2026-10-30 | PR titles start with the task ID ([TASK-NNN] <type>(<area>): <summary>) and PR bodies use fixed sections; never gh pr create --fill | PO: PR #119 title and body were opaque | TASK-119
 - 2026-10-30 | every step result is posted to the task PR as a comment naming the agent, tool/model/effort, time, verdict and the verbatim report; Coordinator decisions and PO approvals too | PO: PR must show who did what | TASK-119
 - 2026-10-30 | task PR stays draft until every review-type workflow step has passed, then becomes ready; a later FAIL turns it back to draft | PO correction (not tied to PO accept) | TASK-119
+- 2026-10-30 | plan TASK-120: engineer fix rounds resume the previous CLI session (claude --resume / codex exec resume); reviewer stays fresh | PO wants direct agent communication; resume is the cheapest form | TASK-120
