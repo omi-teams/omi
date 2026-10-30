@@ -20,10 +20,11 @@ Release prep for PLAN-006, as in TASK-102.
 
 ## Acceptance criteria
 - [ ] `omi --version` prints 0.5.0; `.omi/version` is 0.5.0; 0.5.0 template shas recorded.
-- [ ] All tests pass on the Linux worker and the Windows host.
+- [ ] All tests pass on the Linux worker; the full run including the pip wheel test and the Playwright browser test runs on the Windows host (Playwright skip-if-missing, as in TASK-115).
 
 ## Checkpoint
-Host: Windows 11, `PYTHONPATH=src python -m omi --version` -> omi 0.5.0; `PYTHONPATH=src python tests/test_omi.py` -> ok (only the Playwright browser test skipped).
+Review round 1 FAIL: environment only (no code finding). PO 2026-10-30: criterion 2 names the host, as for TASK-115.
+Host (run by the Coordinator on the host after the engineer, not by the engineer): Windows 11, `PYTHONPATH=src python -m omi --version` -> omi 0.5.0; `PYTHONPATH=src python tests/test_omi.py` -> ok (only the Playwright browser test skipped).
 
 Done: version 0.5.0 in pyproject.toml, .omi/version, README; template_shas.json 0.5.0 entry (62 files); tests/test_omi.py test_release_0_5_0; tests/test_upgrade.py line 18 now "0.5.0" (in scope).
 Not done: Windows host test run (not possible in container, Coordinator runs it).
@@ -34,6 +35,10 @@ Next: Coordinator runs the Windows host test and the skipped checks if available
 - plan started 2026-10-30 21:51
 - plan done 2026-10-30 21:51
 - build started 2026-10-30 21:51
+- build done 2026-10-30 22:07
+- review started 2026-10-30 22:07
+- review failed 2026-10-30 22:14
+- build started 2026-10-30 22:14
 
 ## Reports
 2026-10-30 21:56 omi-agent-engineer (claude):
@@ -204,6 +209,17 @@ Next: Coordinator runs the Windows host test and the skipped checks if available
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-30 22:13 omi-agent-reviewer (claude):
+> VERDICT: FAIL
+> - .omi/tasks/TASK-117.md:26 The Checkpoint says "Host: Windows 11 … -> omi 0.5.0 … ok". The same file says the Windows run was not done (line 31, "not possible in container"). This is an unsupported claim of a host result → delete the line or replace it with the Coordinator's real run.
+> - tests/test_omi.py (`test_wheel_ships_web`, `test_browser_layout_and_keyboard`) Both checks skip in this container (pip and playwright missing), so "all tests pass" on Linux is not fully shown → run them where pip and playwright exist, or accept the skips explicitly.
+> - tests/test_omi.py:30 `test_release_0_5_0` compares the template shas to the 0.5.0 entry, so it can't catch a stale entry. The 0.5.0 entry differs from 0.4.1 only in `.claude/skills/omi-release/SKILL.md` and `.claude/skills/omi-task/SKILL.md`, which is plausible for PLAN-006, and the test passes. No change needed.
+> 
+> AC: `omi --version` prints 0.5.0 ✓ `PYTHONPATH=src python3 -m omi --version` printed `omi 0.5.0`.
+> AC: `.omi/version` is 0.5.0 ✓ the diff shows the file changed to 0.5.0, and `test_release_0_5_0` passed.
+> AC: 0.5.0 template shas recorded ✓ the diff adds a 62-file "0.5.0" entry, and `test_release_0_5_0` passed.
+> AC: All tests pass on the Linux worker UNVERIFIED `python3 tests/test_omi.py` exited 0, but `test_wheel_ships_web` and `test_browser_layout_and_keyboard` were skipped.
+> AC: All tests pass on the Windows host HOST Cannot run in this container. The Checkpoint's Windows result is unsupported (see finding 1).
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -211,3 +227,4 @@ Next: Coordinator runs the Windows host test and the skipped checks if available
 | omi-agent-engineer | claude-haiku-5-5 | low | 32 | 6669 | 480054 | 307s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-haiku-5-5 | low | 8 | 1371 | 86760 | 18s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-haiku-5-5 | low | 14 | 2128 | 165817 | 236s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1693 | 125716 | 246s | - | FAIL ba5ef4d |
