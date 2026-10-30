@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature-ui
-step: review
+step: build
 ---
 ## Goal
 Plain HTML/CSS/JS pages for home, project dashboard and task detail, in Vietnamese, calling the JSON API.
@@ -26,31 +26,14 @@ Plain HTML/CSS/JS pages for home, project dashboard and task detail, in Vietname
 - [ ] Readable at 360 px width and keyboard navigable; all tests pass.
 
 ## Checkpoint
-Done: web/index.html, app.css, app.js; pyproject package-data `board/web/*`; tests/test_board_web.py.
-Not done: tests/test_omi.py does not import test_board_web (outside scope); real `pip install .` check (no pip/setuptools here, test checks package-data globs instead).
-Tests: `python3 tests/test_board_web.py` ok. `python3 tests/test_omi.py` aborted in the sandbox on a docker container name/port conflict (environment), so full suite not confirmed.
-Next: (done) build per designer spec in ## Reports. PO 2026-10-30: accept designer defaults for OPEN 1-4 (header "omi board", teal #0f6e6e, dark mode via prefers-color-scheme, Vietnamese date/number format, evergreen browsers).
+Done: rebuilt the Home project cards, dashboard PO panel/stat tiles/plan progress/kanban/activity/decisions/usage/sync chips, and task workflow/checklist/reports/sidebar from the approved mockup structure and CSS. Added responsive 360/390 px rules, dark palette, keyboard focus styles, local favicon, and safe text-only API rendering. Polling retains the old view on failure, clears recovered errors even for unchanged JSON, caches only successful renders, ignores stale requests, pauses while hidden, and persists the toggle defensively.
+Not done: browser visual/keyboard verification and installed-package verification cannot run in this worker (no browser/Playwright or pip; registry policy blocks Playwright download). No fabricated path/branch values are shown when the API does not provide them. The current API provides no workflow definition, so task pages show the current-step chip; a supplied workflow_steps list renders the stepper.
+Tests: `python3 tests/test_board_web.py` exited 0: static safety/package-data/layout checks and Node DOM behavior tests ran. Wheel build/install test explicitly skipped (pip missing); real-browser 360/390/1280 px, dark-mode, CSP and keyboard tests explicitly skipped (Playwright missing). `python3 tests/test_omi.py` exited 0 and printed `ok`, including the board DOM/safety tests (wheel skipped: pip missing). The final standalone board run also exercised the added browser-test entry point and explicitly reported its Playwright skip. `node --check src/omi/board/web/app.js` exited 0 (syntax check only).
+Next: Coordinator runs the retained wheel/install test and browser test on a host with pip and Playwright/Chromium, and compares Home/Main/Task/Phone against the approved mockups.
 
-Coordinator check round 1 FAIL:
-- tests/test_board_web.py is not run by CI: import it and call main() in tests/test_omi.py (scope widened).
-- Criterion 3 wants the files checked in the installed package, not just the globs: build a wheel into a temp dir (`python -m pip wheel . --no-deps -w <tmp>`), assert omi/board/web/index.html, app.js, app.css are in it; print a skip line only if pip is missing.
-- Spec gaps in app.js: (a) poll failure must keep the old view and show the error inline with a "Thử lại" button, not replace the page; (b) re-render only when the JSON changed, so a 30 s poll never destroys the focused element (keyboard criterion); (c) "Cập nhật lần cuối hh:mm:ss" in a role="status" region; (d) manual "Làm mới" button; (e) pause polling while document.hidden; (f) keep the toggle choice in localStorage inside try/catch.
-
-Round 2: done: test_omi.py runs test_board_web; wheel test added (skips here, pip missing); app.js gaps a-f (inline error + Thử lại, re-render only on changed JSON, status region, Làm mới button, pause when hidden, localStorage toggle).
-Tests: `python3 tests/test_board_web.py` ok (wheel test skipped: no pip). Full test_omi.py not run. Browser behavior unchecked.
-
-Review round 1 FAIL:
-- app.js: after a failed poll, an unchanged successful poll returns early (UNCHANGED) and never clears the error; clear `err` on UNCHANGED too.
-- app.js: `seen[path]` is set before render; a render error makes every later poll silently UNCHANGED. Set it only after the render succeeds.
-- Wheel test skipped (no pip in worker); the Coordinator runs it on the host. Keep it.
-- Checkpoint text is stale; rewrite it.
-
-PO 2026-10-30: first build "thực sự là không có chút UIUX nào", wants a truly professional board. PO approved the mockup in `.omi/tasks/TASK-115-mockup/*.dc.html` and moved the task to Codex.
-Rebuild instructions:
-- Rework app.css/app.js/index.html to reproduce the mockup. The `.dc.html` files are design files: copy their `<helmet><style>` CSS into app.css (merge into one stylesheet, keep the class names) and the markup structure into the DOM that app.js builds. Ignore `<x-dc>`, `<helmet>`, `support.js`, `data-dc-script` and the inline `style=` attributes: move those styles into classes, since the CSP forbids inline styles.
-- Add dark-mode tokens (prefers-color-scheme) for the same palette; keep system fonts only.
-- Map API data to mockup parts: stat tiles from task_counts/po_waiting_count; plan rows with progress bars; kanban cards with id, title and chips; workflow stepper on the task page from the workflow steps plus the current `step` (if the API lacks the step list, show the current step chip only; do not change the API, it is out of scope); criteria as a checklist; reports in <details>.
-- The mockup files themselves stay as they are.
+### Approved direction
+PO 2026-10-30 approved `.omi/tasks/TASK-115-mockup/*.dc.html` and defaults: header "omi board", teal #0f6e6e, dark mode via prefers-color-scheme, Vietnamese date/number format, evergreen browsers.
+The implementation copies/merges mockup CSS and DOM structure, keeps class names, moves inline styles into CSS classes for CSP, uses system fonts, and leaves design files/API unchanged. Stats use task_counts/po_waiting_count; plans use progress bars; kanban cards use IDs/titles/chips; criteria use a checklist; reports use details. Workflow steps may only come from an API definition; absent that list, show the current step chip.
 
 ## Steps
 - plan started 2026-10-30 14:35
@@ -60,6 +43,8 @@ Rebuild instructions:
 - build started 2026-10-30 14:39
 - build done 2026-10-30 15:02
 - review started 2026-10-30 15:02
+- review failed 2026-10-30 15:11
+- build started 2026-10-30 15:11
 
 ## Reports
 2026-10-30 14:38 omi-agent-designer-ui (claude):
@@ -189,6 +174,60 @@ Rebuild instructions:
 > AC: Home, dashboard (PO-waiting, plans, kanban, activity, decisions, usage, sync) and task detail render from the API; auto-refresh every 30 s with a toggle. ✗ UNVERIFIED in a browser. The JSON field names in `app.js` match `data.py`, and the 30 s `setInterval`, the toggle and the pause-when-hidden logic are in the code. The stale-error bug above means the recovery path is not correct.
 > [... truncated ...]
 > AC: Readable at 360 px width and keyboard navigable; all tests pass. UNVERIFIED for 360 px and keyboard use, since it was not opened in a browser. The CSS is one column below 768 px, and the page has a skip link and focus styles. `python3 tests/test_omi.py` exited 0 and printed `ok`.
+2026-10-30 15:22 omi-agent-engineer (codex):
+> BLOCKED — implementation complete; host verification pending.
+> Files: `src/omi/board/web/{index.html,app.css,app.js,favicon.svg}`, `tests/test_board_web.py`, task checkpoint.
+> Suggested commit: `feat(board): reproduce approved dashboard mockups`
+> Tests: full `test_omi.py` and board static/DOM tests exited 0.
+> Skipped: wheel/install check (pip missing); browser checks (Playwright missing).
+> Open: verify mockup fidelity, mobile layout, keyboard navigation, and installed assets on host.
+2026-10-30 15:26 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -197,3 +236,4 @@ Rebuild instructions:
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 26 | 8533 | 386404 | 301s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 6 | 235 | 63674 | 288s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 16 | 3095 | 294311 | 368s | - | FAIL 1ed62b0 |
+| omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1548711 | 20265 | 1486720 | 616s | 2/2 omi-skill-ui-direction omi-skill-lean-implementation | - |
