@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature-sensitive
-step:
+step: architect
 ---
 ## Goal
 On a fix round, `omi run` continues the engineer's previous CLI session (`claude -p --resume <id>`, `codex exec resume <id>`) with only the new findings, instead of starting a fresh agent that rereads everything; the reviewer stays a fresh instance.
@@ -31,3 +31,23 @@ Done:
 Not done:
 Tests:
 Next:
+
+## Steps
+- plan started 2026-10-30 22:39
+- plan done 2026-10-30 22:39
+- architect started 2026-10-30 22:39
+
+## Reports
+2026-10-30 22:43 omi-agent-architect (claude):
+> I'm not escalating: nothing in the brief conflicts and no approved decision changes. Option A does need the task scope widened by two files, which the Coordinator should confirm.
+> 
+> ```
+> RECOMMEND: A (new worker/session.py module; tools.py builds the resume commands; run.py decides fresh vs resume) - keeps session state and the token check in one place, keeps run.py (432 lines) well under 600, and keeps read roles out structurally. Needs 2 files added to scope: the module list and layer order in .omi/rules/omi-modules.md, and the `--fresh` usage line in src/omi/app/cli.py.
+> OPTIONS: A: one owner for the session cache, easy to test / adds a module, so 2 files join the scope; B: no new module (resume commands in tools.py, cache and clean in docker.py, all decisions in run.py ~530 lines) / stays inside scope, but run.py's nested attempt() grows further and session logic is split over 3 files; C: keep the whole /home/node per task / simplest, but it stores .codex/auth.json and Claude credentials, so it fails the "no auth token" criterion: rejected.
+> [... truncated ...]
+> ```
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read | verdict |
+|---|---|---|---|---|---|---|---|---|
+| omi-agent-architect | claude-opus-5-5 | high | 18 | 8176 | 379460 | 91s | - | n/a |
