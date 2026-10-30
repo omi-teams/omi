@@ -1,7 +1,7 @@
 ---
 id: TASK-117
 title: Bump omi to 0.5.0
-status: in-progress
+status: done
 depends: TASK-116, TASK-119
 plan: PLAN-006
 scope: pyproject.toml, README.md, tests/test_omi.py, tests/test_upgrade.py, .omi/version, src/omi/template_shas.json
@@ -13,7 +13,7 @@ model: haiku
 effort: low
 step_settings:
 workflow: omi-flow-feature
-step: review
+step: accept
 ---
 ## Goal
 Release prep for PLAN-006, as in TASK-102.
@@ -43,6 +43,9 @@ Next: Coordinator runs the Windows host test and the skipped checks if available
 - build started 2026-10-30 22:14
 - build done 2026-10-30 22:14
 - review started 2026-10-30 22:14
+- review done 2026-10-30 22:22
+- accept started 2026-10-30 22:22
+- PO approval accept: "Nghiệm thu" (2026-10-30)
 
 ## Reports
 2026-10-30 21:56 omi-agent-engineer (claude):
