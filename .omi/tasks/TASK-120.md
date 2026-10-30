@@ -27,6 +27,7 @@ On a fix round, `omi run` continues the engineer's previous CLI session (`claude
 - [ ] The omi-task skill (template copy) describes the resume behaviour; tests cover resume, fresh fallback and read-role exclusion; all tests pass.
 
 ## Checkpoint
+Round 6 done: `scrub` also parses a JSON secret and, when it has a `tokens` object (codex ChatGPT auth.json), adds every non-empty `*_token` string (except the `omi-no-refresh` placeholder) as raw and JSON-escaped needles; it skips symlinks (`f.is_symlink()`), and rglob does not recurse into linked dirs. run.py `attempt()` runs the scrub (and the `Session:` line removal) in a `finally` around the container run, so Ctrl-C, a container exception and the NameTaken exit are covered. Tests: access_token alone and id_token alone wiped, placeholder/account_id not flagged, planted symlink to a host file holding the token neither followed nor deleted, a KeyboardInterrupt from the container run still drops the token transcript. python3 tests/test_omi.py passed (pip/playwright skipped). Next: Coordinator review and commit.
 Review round 5 FAIL (security):
 - src/omi/worker/session.py scrub: with a codex ChatGPT login `value` is the whole slim auth.json blob (creds.py:97), so a transcript holding only `tokens.access_token` (or id_token / refresh_token) is not flagged. When the secret is that blob, parse it and add every token string inside it as needles (raw and JSON-escaped). Test: transcript with the access token alone is wiped.
 - src/omi/worker/run.py: scrub runs only after a normal return; Ctrl-C, a container exception or the NameTaken `sys.exit` skip it. Run scrub for write roles in a `finally` around the container run.
@@ -435,6 +436,63 @@ Next: Coordinator review and commit.
 > UNVERIFIED: the container can put symlinks in /sessions, and `scrub`'s `is_file()`/`read_bytes()` follow them on the host (huge file -> memory use; only a bool comes back, so no data leak); confirm by planting a symlink to a large host file and running scrub -> skip `f.is_symlink()`
 > UNVERIFIED: the `codex exec resume` flag order was not checked against a real CLI here (no network); round-4 review says it was checked with `--help`. python3 tests/test_omi.py ended `ok` (pip/playwright skipped)
 > ```
+2026-10-31 06:15 omi-agent-engineer (claude):
+> DONE. I fixed all three round-5 security findings, and the full `python3 tests/test_omi.py` passed (it printed `ok`). The pip/wheel and playwright checks were skipped because those tools aren't installed here.
+> 
+> - **Files changed:** `src/omi/worker/session.py`, `src/omi/worker/run.py`, `tests/test_worker.py`, `.omi/tasks/TASK-120.md` (checkpoint).
+> - **Codex login tokens:** with a codex ChatGPT login, the secret is the whole `auth.json` blob. `scrub` now also checks for each token in it on its own (`access_token`, `id_token`, `refresh_token`), in both raw and JSON-escaped form. It skips the `omi-no-refresh` placeholder and `account_id`, since those are not secrets.
+> - **Interrupted runs:** `run.py` now runs the scrub, and removes the `Session:` line, in a `finally` around the container run. So Ctrl-C, a container error or the second name-in-use exit still clean the cache.
+> - **Symlinks:** `scrub` skips symlinks, so it never follows a link the container planted to a host file.
+> - **New tests:** a transcript holding only the access token or only the id token is wiped, while the placeholder and `account_id` are not flagged. A planted symlink is neither followed nor deleted. A run interrupted with Ctrl-C still drops a transcript containing the token. The symlink check prints a skip line if symlinks can't be created (Windows); that branch didn't run here.
+> - **Commit:** `fix(worker): scrub codex token parts, symlink-safe and on interrupted runs`
+> - **Open issues:** none new. The cleanup problem on Linux hosts with uid ≠ 1000 is still the known issue the task file records.
+2026-10-31 06:20 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -451,3 +509,4 @@ Next: Coordinator review and commit.
 | omi-agent-engineer | claude-opus-5-5 | high | 30 | 6454 | 607664 | 432s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 14 | 5324 | 433067 | 358s | - | PASS 9d5f47f |
 | omi-agent-security-reviewer | claude-opus-5-5 | high | 22 | 5874 | 509415 | 433s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL 9d5f47f |
+| omi-agent-engineer | claude-opus-5-5 | high | 30 | 7881 | 660168 | 19335s | 1/1 omi-skill-lean-implementation | - |

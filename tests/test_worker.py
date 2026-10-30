@@ -400,6 +400,41 @@ def test_session_resume():
             assert not sess.scrub(repo, "TASK-001", "codex", "") and not sess.scrub(repo, "TASK-404", "codex", "tok")
             (mounted / "x.jsonl").write_text(json.dumps({"out": '{"access_token":"a"}'}))  # JSON-escaped in the transcript
             assert sess.scrub(repo, "TASK-001", "codex", '{"access_token":"a"}') and not mounted.exists()
+            # a codex ChatGPT login: the secret is the whole auth.json, a transcript holding one token alone is wiped too
+            blob = json.dumps({"auth_mode": "chatgpt", "tokens": {"access_token": "eyJ.acc.sig", "id_token": "eyJ.id.sig",
+                                                                   "account_id": "acct", "refresh_token": "omi-no-refresh"}})
+            mounted.mkdir(parents=True)
+            (mounted / "x.jsonl").write_text('{"out":"omi-no-refresh acct"}')
+            assert not sess.scrub(repo, "TASK-001", "codex", blob) and mounted.exists()
+            (mounted / "x.jsonl").write_text('{"out":"eyJ.acc.sig"}')
+            assert sess.scrub(repo, "TASK-001", "codex", blob) and not mounted.exists()
+            mounted.mkdir(parents=True)
+            (mounted / "x.jsonl").write_text('{"out":"eyJ.id.sig"}')
+            assert sess.scrub(repo, "TASK-001", "codex", blob) and not mounted.exists()
+            # a symlink the container planted is never followed on the host
+            mounted.mkdir(parents=True)
+            host = Path(d) / "host-secret.txt"
+            host.write_text("tok")
+            try:
+                (mounted / "link.jsonl").symlink_to(host)
+            except OSError:  # no symlink privilege (Windows)
+                print("skip scrub symlink check: cannot create symlinks", file=saved)
+            else:
+                assert not sess.scrub(repo, "TASK-001", "claude", "tok") and mounted.exists() and host.exists()
+            # an interrupted run (Ctrl-C, container error) still scrubs the cache
+            (mounted / "S3.jsonl").write_text('{"tool_result":"tok"}')
+            real_p = P.__init__
+            def interrupted(s, cmd, **kw):
+                raise KeyboardInterrupt
+            P.__init__ = interrupted
+            try:
+                go()
+                assert False, "no interrupt"
+            except KeyboardInterrupt:
+                pass
+            finally:
+                P.__init__ = real_p
+            assert not (sess.root(repo) / "TASK-001").exists() and buf.getvalue().count("SESSION DROPPED: token found in transcript") == 1
             # omi clean removes the cache
             omi.worker.session.clear(repo)
             assert not omi.worker.session.root(repo).exists()

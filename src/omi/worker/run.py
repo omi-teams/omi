@@ -279,14 +279,19 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
                 raise docker.NameTaken(name)
             return r
 
-        for salt in ("", secrets.token_hex(1)):  # a name in use: one retry with a random 2-char suffix
-            try:
-                r = run_once(docker.container_name(docker.repo_label(main), role, task.stem, t, mdl, eff, salt=salt))
-                break
-            except docker.NameTaken:
-                continue
-        else:
-            sys.exit(f"container name in use again for {role} ({t}). Nothing changed.")
+        try:
+            for salt in ("", secrets.token_hex(1)):  # a name in use: one retry with a random 2-char suffix
+                try:
+                    r = run_once(docker.container_name(docker.repo_label(main), role, task.stem, t, mdl, eff, salt=salt))
+                    break
+                except docker.NameTaken:
+                    continue
+            else:
+                sys.exit(f"container name in use again for {role} ({t}). Nothing changed.")
+        finally:  # Ctrl-C, a container error and the exit above included: no token may stay in the host cache
+            dropped = not read and session.scrub(repo, task.stem, t, value)
+            if dropped and task.exists():  # token in a transcript: forget the session, next run is fresh
+                task.write_text(session.LINE.sub("", task.read_text(encoding="utf-8")), encoding="utf-8")
         result, *nums = tools.parse_usage(t, r.stdout)
         done = skills_read(catalog, ids, tools.opened_files(t, r.stdout))
         verdict = (tools.verdict_of(result) or "n/a") if read else "-"
@@ -295,10 +300,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             verdict += " " + head
         if tools.quota_hit(t, r.stdout, r.returncode):
             verdict = f"QUOTA->{'codex' if t == 'claude' else 'claude'}"
-        if not read and session.scrub(repo, task.stem, t, value):  # token in a transcript: forget the session, next run is fresh
-            if task.exists():
-                task.write_text(session.LINE.sub("", task.read_text(encoding="utf-8")), encoding="utf-8")
-        elif not read and (sid := session.session_id(t, r.stdout)) and task.exists():
+        if not read and not dropped and (sid := session.session_id(t, r.stdout)) and task.exists():
             task.write_text(session.with_session(task.read_text(encoding="utf-8"), t, sid), encoding="utf-8")
         tasks.record_usage(task, role, models[t] + (" (codex)" if t == "codex" else ""), efforts[t], nums,
                      time.monotonic() - t0, skills_cell(ids, done), verdict)

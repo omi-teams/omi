@@ -86,9 +86,18 @@ def scrub(repo, tid, tool, secret_value):
     if not secret_value:
         return False
     d = root(repo) / tid
-    # the raw value and its JSON-escaped form (transcripts are JSON lines; a codex auth.json value has quotes)
-    needles = {secret_value.encode(), json.dumps(secret_value)[1:-1].encode()}
-    if d.is_dir() and any(f.is_file() and any(n in f.read_bytes() for n in needles) for f in d.rglob("*")):
+    values = [secret_value]
+    try:
+        blob = json.loads(secret_value)
+    except ValueError:
+        blob = None
+    tokens = blob.get("tokens") if isinstance(blob, dict) else None
+    if isinstance(tokens, dict):  # a codex ChatGPT login is the whole auth.json (creds.codex_login): each token alone is a secret too
+        values += [v for k, v in tokens.items() if k.endswith("_token") and isinstance(v, str) and v and v != "omi-no-refresh"]
+    # the raw values and their JSON-escaped forms (transcripts are JSON lines; a codex auth.json value has quotes)
+    needles = {n for v in values for n in (v.encode(), json.dumps(v)[1:-1].encode())}
+    # never follow a link the container planted in /sessions to a host file
+    if d.is_dir() and any(not f.is_symlink() and f.is_file() and any(n in f.read_bytes() for n in needles) for f in d.rglob("*")):
         shutil.rmtree(d, ignore_errors=True)
         print("SESSION DROPPED: token found in transcript")
         return True
