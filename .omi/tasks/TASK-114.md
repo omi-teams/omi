@@ -1,7 +1,7 @@
 ---
 id: TASK-114
 title: omi board server and CLI
-status: in-progress
+status: done
 depends: TASK-113
 plan: PLAN-006
 scope: src/omi/board/server.py, src/omi/app/cli.py, tests/test_board_server.py, tests/test_omi.py, .omi/tasks/TASK-114.md, .omi/rules/omi-modules.md, tests/test_cli.py
@@ -13,16 +13,16 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature-sensitive
-step: build
+step: review
 ---
 ## Goal
 `omi board [--port N] [--no-open]` serves the data layer as JSON and the static frontend on 127.0.0.1 only.
 
 ## Acceptance criteria
-- [ ] Binds 127.0.0.1 (default port 8765), opens the browser unless `--no-open`, pulls state once at start like `omi status`, then serves `/api/projects`, `/api/projects/<name>`, `/api/projects/<name>/tasks/<id>` as JSON read fresh per request.
-- [ ] Static files only from `board/web/`; `../`, encoded traversal, absolute paths and unknown routes return 404; only GET; no write to state or code repo.
-- [ ] Responses set `Content-Type`, `X-Content-Type-Options: nosniff` and a CSP of `default-src 'self'`.
-- [ ] Unit tests start the server on a free port against a temporary state and cover each route, traversal and method refusal; all tests pass.
+- [x] Binds 127.0.0.1 (default port 8765), opens the browser unless `--no-open`, pulls state once at start like `omi status`, then serves `/api/projects`, `/api/projects/<name>`, `/api/projects/<name>/tasks/<id>` as JSON read fresh per request.
+- [x] Static files only from `board/web/`; `../`, encoded traversal, absolute paths and unknown routes return 404; only GET; no write to state or code repo.
+- [x] Responses set `Content-Type`, `X-Content-Type-Options: nosniff` and a CSP of `default-src 'self'`.
+- [x] Unit tests start the server on a free port against a temporary state and cover each route, traversal and method refusal; all tests pass.
 
 ## Checkpoint
 Fix round 1 done and verified: cli.py catches OSError/OverflowError around make_server; server.py catches OSError/UnicodeError and answers via self.send; test_board_cli and test_unreadable_task added. `python3 tests/test_omi.py` ran in full and printed `ok`.
@@ -47,6 +47,8 @@ Next: review and commit.
 - review started 2026-10-30 09:25
 - review failed 2026-10-30 09:39
 - build started 2026-10-30 09:39
+- build done 2026-10-30 12:43
+- review started 2026-10-30 12:43
 
 ## Reports
 2026-10-30 08:59 omi-agent-architect (claude):
@@ -231,6 +233,17 @@ Next: review and commit.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-30 12:49 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/app/cli.py:298 `"²".isdigit()` is True but `int("²")` raises `ValueError`, so `--port ²` gives a raw traceback instead of the usage error. This is minor. -> Validate with `port.isascii() and port.isdigit()`.
+> - src/omi/app/cli.py:298 Ports above 65535 aren't rejected up front. They do reach the bind-error path and give a clean `StateError`, so behaviour is acceptable. No fix needed.
+> 
+> AC: Binds 127.0.0.1 (default 8765), opens the browser unless `--no-open`, pulls once, serves the three JSON routes fresh per request ✓ `make_server` binds `("127.0.0.1", port)` and `test_server` asserts that address. `test_board_cli` now checks the default port 8765, one `pull` call, `webbrowser.open` called by default and not called with `--no-open`. The three routes return the expected JSON in `test_server`.
+> AC: Static files only from `board/web/`; `../`, encoded traversal, absolute paths and unknown routes give 404; GET only; no writes ✓ 18 bad paths all return 404 with `nosniff` set. POST, PUT, DELETE, PATCH, HEAD and OPTIONS return 405 with `Allow: GET`. The handler has no write path.
+> AC: Responses set `Content-Type`, `X-Content-Type-Options: nosniff` and CSP `default-src 'self'` ✓ Asserted on 200 and 404 responses. `test_unreadable_task` asserts the CSP header on a 500, and the 405 path sets the same headers.
+> AC: Unit tests start the server on a free port against a temporary state and cover each route, traversal and method refusal; all tests pass ✓ `python3 tests/test_omi.py` ran in full and printed `ok`. `python3 tests/test_board_server.py` also ran on its own and exited 0.
+> 
+> Scope: every changed file is listed in the task's `scope`. The round-1 fixes are present: the bind error becomes `StateError`, `OSError`/`UnicodeError` go through `self.send`, and `test_board_cli` and `test_unreadable_task` were added.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -240,3 +253,4 @@ Next: review and commit.
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 1757 | 215020 | 352s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 2822 | 203639 | 590s | - | PASS ed54d6d |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 16 | 1808 | 209280 | 367s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 1860 | 182917 | 247s | - | PASS a30e091 |
