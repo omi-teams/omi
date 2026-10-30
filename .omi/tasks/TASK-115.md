@@ -6,9 +6,9 @@ depends: TASK-114
 plan: PLAN-006
 scope: src/omi/board/web/**, pyproject.toml, tests/test_board_web.py, tests/test_omi.py, .omi/tasks/TASK-115.md
 role: omi-agent-engineer
-skills: []
+skills: [omi-skill-ui-direction]
 refs: []
-tool: claude
+tool: codex
 model: sonnet
 effort: medium
 step_settings:
