@@ -25,6 +25,12 @@ Every board refresh shows exactly what is on `origin/main` of the GitHub omi-sta
 - [ ] Tests with a local bare repo as origin cover: a pushed change appears, a local unpushed change does not, fetch failure gives `stale: true`, and no response contains the state dir path; all tests pass.
 
 ## Checkpoint
+Review round 3 FAIL (PO 2026-10-30: wait for TASK-120 to merge, then rebase on development, widen scope and fix all five in one round, Codex sol/medium):
+- src/omi/app/cli.py:190 `omi board` still runs `state_sync.pull(project)` at startup; remove it (criterion 1) and update tests/test_board_server.py::test_board_cli.
+- src/omi/board/web/app.js:525 header text is hard-coded; build it from `source.repo` (scheme stripped) + sha7.
+- src/omi/board/data.py:136 `sync` is fabricated (ahead 0 / behind 0 / clean); drop it and its UI, show only the origin/main sha.
+- src/omi/board/source.py redaction replaces only `str(self.home)`; also redact the resolved path and its posix/backslash forms; add a test.
+- .omi/rules/omi-modules.md: add `board/source.py` and its layer (below board.data, above state.resolve).
 Done: Review round 2 fixed in tests/test_board.py. Both snapshot symlink creation calls catch OSError and print "skip board snapshot symlink: symlink creation unavailable". Path validation still runs before the optional checks; assertions and unrelated errors remain unguarded. Added test_snapshot_symlink_unavailable to exercise denied symlink creation without requiring Windows privileges.
 Done: Existing tests cover pushed origin/main changes, ignored dirty/unpushed local changes, shared 10-second fetch throttling, fetch failure/recovery, unchanged checkout, source metadata, path redaction, header and stale warning.
 Not done: Criterion 1 remains incomplete end to end: src/omi/app/cli.py:190 still calls state_sync.pull(project) at board startup. That file remains outside scope and is deferred to TASK-120. Checked affected existing tests: tests/test_board_server.py::test_board_cli expects one pull; tests/test_cli.py::test_cli_characterization covers CLI dispatch.
@@ -39,6 +45,10 @@ Next: Coordinator reviews this scoped fix and extends scope to src/omi/app/cli.p
 - review started 2026-10-30 22:58
 - review failed 2026-10-30 23:01
 - build started 2026-10-30 23:01
+- build done 2026-10-30 23:27
+- review started 2026-10-30 23:27
+- review failed 2026-10-30 23:36
+- build started 2026-10-30 23:36
 
 ## Reports
 2026-10-30 22:53 omi-agent-engineer (codex):
@@ -205,6 +215,19 @@ Next: Coordinator reviews this scoped fix and extends scope to src/omi/app/cli.p
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-30 23:36 omi-agent-reviewer (claude):
+> ```
+> VERDICT: FAIL
+> - src/omi/app/cli.py:190 `omi board` still calls state_sync.pull(project) at startup, so criterion 1 ("never pulls ... or changes the local working tree") is not met -> remove the pull and update tests/test_board_server.py::test_board_cli. The checkpoint defers this to TASK-120, so it needs a scope extension.
+> - src/omi/board/web/app.js:525 The header "github.com/omi-teams/omi-state @ sha7" is hard-coded and ignores source.repo -> build it from source.repo (strip the scheme) plus the sha.
+> - src/omi/board/data.py:136 The `sync` object is fabricated as ahead 0 / behind 0 / dirty False, so the UI shows "✓ Sạch" without checking anything -> drop the field and its UI, or show only the origin/main sha.
+> - src/omi/board/source.py:455 Path redaction only replaces the literal str(self.home), so differently spelled paths in state documents would not be redacted. This is plausible but not reproduced. -> also redact the resolved path and its posix/backslash forms.
+> - .omi/rules/omi-modules.md Not updated for the new board/source.py module or for its place in the layer order. The file is outside scope -> update it in a follow-up.
+> AC: Fetch before each API read (at most once per 10 s, shared), read from origin/main, never pull/commit/push/touch the working tree ✗ The board data layer does this: it uses fetch, ls-tree and show, throttled to 10 s, and test_shared_fetch passes. But cli.py:190 still pulls at board startup.
+> AC: Response carries source {repo, sha, fetched_at, stale}; on fetch failure serve the last fetched origin/main with stale: true and show the Vietnamese stale warning ✓ Covered by test_views and the stale case in the JS test. test_omi.py exited 0.
+> AC: No local path in any API response or page; header shows "github.com/omi-teams/omi-state @ <sha7>" ✓ Covered by the path-redaction assertions in test_board.py, test_board_server.py and the JS DOM test. Caveat: the header text is hard-coded (finding 2).
+> [... truncated ...]
+> ```
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -212,3 +235,4 @@ Next: Coordinator reviews this scoped fix and extends scope to src/omi/app/cli.p
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1862645 | 13715 | 1792768 | 457s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 990160 | 3031 | 920320 | 366s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1245068 | 4678 | 1167232 | 336s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 3021 | 220503 | 366s | - | FAIL 6404eaa |
