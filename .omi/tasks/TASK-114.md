@@ -4,7 +4,7 @@ title: omi board server and CLI
 status: in-progress
 depends: TASK-113
 plan: PLAN-006
-scope: src/omi/board/server.py, src/omi/app/cli.py, tests/test_board_server.py, tests/test_omi.py, .omi/tasks/TASK-114.md, .omi/rules/omi-modules.md
+scope: src/omi/board/server.py, src/omi/app/cli.py, tests/test_board_server.py, tests/test_omi.py, .omi/tasks/TASK-114.md, .omi/rules/omi-modules.md, tests/test_cli.py
 role: omi-agent-engineer
 skills: []
 refs: []
