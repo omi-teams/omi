@@ -197,12 +197,14 @@ async function route() {
   current = hash;
   if (changed) seen = null;
   const ticket = ++request;
+  const abort = new AbortController();
+  const limit = setTimeout(() => abort.abort(), 10000);
   try {
     const m = hash.match(/^#\/p\/([^/]+)(?:\/t\/([^/]+))?$/);
     const name = m ? decodeURIComponent(m[1]) : null;
     const id = m?.[2] ? decodeURIComponent(m[2]) : null;
     const path = name ? `/api/projects/${enc(name)}${id ? "/tasks/" + enc(id) : ""}` : "/api/projects";
-    const response = await fetch(path, {cache: "no-store"});
+    const response = await fetch(path, {cache: "no-store", signal: abort.signal});
     if (!response.ok) throw new Error(String(response.status));
     const text = await response.text();
     if (ticket !== request) return;
@@ -220,8 +222,9 @@ async function route() {
     if (ticket !== request) return;
     const retry = el("button", "Thử lại", {type: "button", class: "btn"});
     retry.addEventListener("click", route);
-    err.replaceChildren(el("span", `Không tải được dữ liệu (${e.message}). `), retry);
+    err.replaceChildren(el("span", `Không tải được dữ liệu (${e.name === "AbortError" ? "quá thời gian chờ" : e.message}). `), retry);
   } finally {
+    clearTimeout(limit);
     if (ticket === request) schedule();
   }
 }

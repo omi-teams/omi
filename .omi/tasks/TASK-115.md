@@ -32,6 +32,9 @@ Review round 4 FAIL (codex quota -> claude-opus-5-5/medium): countdown ✓. PO 2
 - Fix only: src/omi/board/web/app.js route() clears the timer before fetch and fetch has no timeout; a hung request freezes the countdown at "0 giây" and stops auto-refresh. Abort the fetch after 10 s (AbortController) so the catch shows the existing error/retry UI and finally -> schedule() always runs. Add a Node test with a never-resolving fetch.
 - Host: `python tests/test_board_web.py` -> ok, wheel test ran (no skip line); only the Playwright browser test skipped (qa step).
 
+### Fetch timeout fix (2026-10-30)
+Done: route() aborts the fetch after 10 s (AbortController), the catch shows the error/retry UI ("quá thời gian chờ"), finally clears the timeout and schedule() runs. Node test with a never-resolving fetch added. Tests: test_board_web.py exit 0; wheel and Playwright tests skipped (pip/Playwright missing). Full `python3 tests/test_omi.py` exit 0, printed ok. Next: review, then qa.
+
 ### Countdown build (2026-10-30)
 Done: implemented only the round-3 countdown gap. The header groups the toggle and countdown, with a compact stacked arrangement on phones. The countdown uses textContent, is aria-hidden and outside live regions, and keeps the toggle's “30 giây” label. One-second ticks use a timestamp deadline without re-rendering the view or changing focus/status. Completed manual, automatic, retry and route refreshes restart the 30-second deadline, including unchanged responses and failures. Polling pauses during an active request and while hidden; off shows “Đã tắt”, hidden shows “Tạm dừng”, and returning to a visible tab refreshes when enabled.
 Not done: real-browser layout/keyboard checks and a new installed-package check cannot run here (Playwright and pip missing). Existing host wheel/install evidence and the qa handoff remain applicable; no additional scope is needed.
@@ -364,6 +367,61 @@ QUOTA: codex hit its usage limit; omi-agent-reviewer continued with claude on th
 > AC: State text via textContent only, no innerHTML; no external script/font/CDN ✓ el() sets textContent only (app.js:21); test_files_safe passed (no innerHTML/outerHTML/eval, no external URL/@import/@font-face, no inline script/style)
 > [... truncated ...]
 > I found no code bug in the countdown work other than the hanging-request case above. The FAIL comes from the review rule: four criteria depend on tests that were skipped in this container. The wheel test needs pip; the mockup, sticky-header and 360 px/keyboard checks need Playwright. None of these criteria names the host, so the HOST exception doesn't apply. All changed files are within the task's scope, and I made no edits.
+2026-10-30 19:08 omi-agent-engineer (claude):
+> DONE: `route()` now aborts the fetch after 10 s, so a hung request can no longer freeze the countdown or stop auto-refresh.
+> - **Fix:** an `AbortController` aborts the fetch after 10 s. The existing error/retry UI then shows "quá thời gian chờ". `finally` clears the timeout, and `schedule()` still runs.
+> - **Files changed:** `src/omi/board/web/app.js`, `tests/test_board_web.py`, `.omi/tasks/TASK-115.md` (checkpoint).
+> - **Suggested commit:** `fix(board): abort hung refresh requests after 10 s` (plus the `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>` line).
+> - **Tests that ran:** `python3 tests/test_board_web.py` exited 0. A new Node test uses a never-resolving fetch: it checks the 10 s abort, the error and retry text, the countdown resetting to 30 s, and recovery on the next poll. `node --check app.js` passed. `python3 tests/test_omi.py` exited 0 and printed `ok`.
+> - **Skipped:** the wheel/install test (pip missing) and the Playwright browser test (Playwright missing).
+> - **Open:** none. No commit was made.
+2026-10-30 19:13 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -379,3 +437,4 @@ QUOTA: codex hit its usage limit; omi-agent-reviewer continued with claude on th
 | omi-agent-engineer | gpt-6-astra (codex) | high | 2914956 | 12126 | 2848896 | 1129s | 2/2 omi-skill-ui-direction omi-skill-lean-implementation | - |
 | omi-agent-reviewer | gpt-6-astra (codex) | medium | n/a | n/a | n/a | 29s | - | QUOTA->claude |
 | omi-agent-reviewer | claude-opus-5-5 | medium | 20 | 3769 | 310930 | 414s | - | FAIL 8c6c0f8 |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 24 | 3976 | 487241 | 389s | 2/2 omi-skill-ui-direction omi-skill-lean-implementation | - |

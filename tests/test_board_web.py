@@ -163,13 +163,15 @@ const window={listeners:{},addEventListener(k,f){this.listeners[k]=f;}};
 const location={hash:'#/'};
 """ + API_FIXTURES + r"""
 let data=[summary];
-async function fetch(path) {
+let timeouts=[];
+async function fetch(path,opts) {
   calls++;
-  if(pending) return pending(path);
+  if(pending) return pending(path,opts);
   if(fail) throw Error('offline');
   return {ok:true,text:async()=>JSON.stringify(data)};
 }
-const context=vm.createContext({document,localStorage,window,location,fetch,console,Date:Clock,
+const context=vm.createContext({document,localStorage,window,location,fetch,console,Date:Clock,AbortController,
+  setTimeout:(f,ms)=>{const t={f,ms};timeouts.push(t);return t;},clearTimeout:t=>{timeouts=timeouts.filter(x=>x!==t);},
   setInterval:(f,ms)=>{interval=f;intervalMs=ms;return 1;},clearInterval:()=>{interval=null;}});
 const source=fs.readFileSync(process.argv[1],'utf8');
 vm.runInContext(source,context);
@@ -242,6 +244,14 @@ const countdown=()=>elements.countdown.textContent;
   assert.equal(countdown(),'Làm mới sau 30 giây');
   await advance(29);assert.equal(calls,before+3);
   await advance(1);assert.equal(calls,before+4);
+  // A request that never settles is aborted after 10 s, then the error UI shows and polling resumes.
+  pending=(path,opts)=>new Promise((_,reject)=>opts.signal.addEventListener('abort',()=>reject(Object.assign(Error('aborted'),{name:'AbortError'}))));
+  const hung=elements.refresh.listeners.click();await flush();
+  assert.equal(timeouts.length,1);assert.equal(timeouts[0].ms,10000);
+  timeouts[0].f();await hung;
+  assert(elements.err.textContent.includes('quá thời gian chờ'));assert(elements.err.textContent.includes('Thử lại'));
+  assert.equal(timeouts.length,0);assert.equal(countdown(),'Làm mới sau 30 giây');assert.equal(intervalMs,1000);
+  pending=null;await advance(30);assert.equal(elements.err.textContent,'');
   // Delayed timer callbacks use elapsed time rather than counting callbacks.
   now+=5000;interval();await flush();assert.equal(countdown(),'Làm mới sau 25 giây');
   localStorage.setItem=()=>{throw Error('blocked');};elements.auto.listeners.change();
