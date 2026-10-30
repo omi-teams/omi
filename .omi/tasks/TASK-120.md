@@ -27,6 +27,12 @@ On a fix round, `omi run` continues the engineer's previous CLI session (`claude
 - [ ] The omi-task skill (template copy) describes the resume behaviour; tests cover resume, fresh fallback and read-role exclusion; all tests pass.
 
 ## Checkpoint
+Review round 1 FAIL (security):
+- src/omi/worker/session.py:28 cache is world-writable (0o777 leaf under 0755 parents): another local user can plant `*<sid>*` transcripts (prompt injection into an engineer that runs with bypassed permissions) or read them. Create `root(repo)` and parents with mode 0o700; do not chmod the leaf 0o777: run the container as the host uid (`--user`) where the platform allows, else at most 0o770; add a test that asserts the modes.
+- src/omi/worker/session.py:58 `recorded()` accepts any `\S+`: validate with the same strict pattern as `session_id()` (reject leading `-`), and `available()` must match the exact transcript file name, not a glob `*{sid}*`. Tests for `--x` and `*` ids.
+- run.py hook-fix retry: print one line when the resumed attempt itself returns non-zero (quota or error), then report the hook failure as today; test with a mocked non-zero retry.
+- docker mount: `type=bind,src={d},...` breaks on a comma in the path; reject or avoid it.
+Host: `codex exec resume --help` (codex-cli 0.164.0) -> lists -c, -m, --dangerously-bypass-approvals-and-sandbox, --json: the resume argv flags are supported.
 Done: worker/session.py (cache, Session line), resume cmds in tools.py, run.py resume/--fresh/fallback/hook retry, docker clean + --mount, cli usage, omi-modules rule, omi-task skill (+template, sha), tests.
 Not done: nothing known.
 Tests: python3 tests/test_omi.py passed (pip/playwright tests skipped).
@@ -38,6 +44,12 @@ Next: Coordinator review and commit.
 - architect started 2026-10-30 22:39
 - architect done 2026-10-30 22:44
 - build started 2026-10-30 22:44
+- build done 2026-10-30 23:01
+- review started 2026-10-30 23:01
+- review done 2026-10-30 23:11
+- security started 2026-10-30 23:11
+- security failed 2026-10-30 23:20
+- build started 2026-10-30 23:20
 
 ## Reports
 2026-10-30 22:43 omi-agent-architect (claude):
@@ -114,9 +126,29 @@ Next: Coordinator review and commit.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-30 23:10 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/worker/session.py:373-375 The cache dir is `chmod 0o777`, but the comment says the per-user dir above it "stays private". `mkdir(parents=True)` uses the default umask (usually 755), so on a multi-user host other users can read or write the transcripts. -> `chmod 0o700` on `root(repo)` and the parents, or set `mode=0o700` on the mkdir. Only the leaf then needs to be writable by uid 1000.
+> - src/omi/worker/session.py:376 The mount string `type=bind,src={d},dst=/sessions` breaks if `XDG_CACHE_HOME` or the repo label contains a comma. -> Use `-v {d}:/sessions` instead, or reject commas in the path.
+> - src/omi/worker/run.py:331 The hook-fix retry ignores the attempt's result. If the resumed engineer run hits a quota limit or errors, the hook is rerun anyway and nothing is reported. -> Print a line when that attempt returns non-zero.
+> - src/omi/worker/tools.py:465 The flag order `codex exec resume <id> -c … -m … --json <prompt>` has only been checked against mocks. The engineer's report says the same. -> Run `codex exec resume --help` on a host that has the CLI.
+> 
+> AC: `omi run` records the engineer's session id per tool in the task file after each write-role run ✓ `run.py:294` writes `Session: <tool> <id>` under `## Checkpoint` via `with_session`. The test asserts `Session: claude S2` after a run.
+> [... truncated ...]
+> AC: The omi-task skill (template copy) describes the resume behaviour; tests cover resume, fresh fallback and read-role exclusion; all tests pass ✓ The skill and its template copy are updated, and the sha entry in `template_shas.json` is updated to match. `python3 tests/test_omi.py` ended `ok`. Two checks were skipped for missing tools, `test_wheel_ships_web` (pip) and `test_browser_layout_and_keyboard` (playwright), and neither relates to this task.
+2026-10-30 23:19 omi-agent-security-reviewer (claude):
+> ```
+> VERDICT: FAIL
+> - src/omi/worker/session.py:28 The per-task session cache is world-writable (0777), and the directories above it are 0755 | why: any other local user can place `*<sid>*.jsonl` there or read the transcripts. `available()` then reports the session as present, and `claude --resume` / `codex exec resume` loads the planted transcript into an engineer that runs with bypassed permissions and has the token in its env. That is a prompt injection across users, and the transcripts (code, test output) leak. The earlier reviewer flagged this and it is still unfixed | verified: ran `mount_args` with umask 022 and got a 0777 leaf under 0755 parents. A plain file `x` made `available(...,'*')` return True -> create `root(repo)` and its parents with mode 0o700. Don't chmod the leaf to 0777: chown it or pass `--user` to match the host uid, or at least use 0o770.
+> - src/omi/worker/session.py:58 `recorded()` accepts any `\S+` from the task file, but `session_id()` only accepts `[\w-]+` | why: whatever the task file says (the engineer can edit it) goes straight into `--resume <sid>` / `resume <sid>` in argv, for example `--dangerously-x`. It is also used as a glob in `rglob(f"*{sid}*")`, so `Session: claude *` matches any file in the cache | verified: `recorded('Session: claude --dangerously-x')` returned it unchanged, and the `*` sid matched a planted file -> apply the same `[\w-]+` check in `recorded()` (or in `LINE`) and match on the exact file name instead of a glob.
+> UNVERIFIED: the codex `exec resume <id> -c … -m … --dangerously-bypass… --json` argument order has not been checked against a real CLI; `codex exec resume --help` would confirm it. Also unchecked: whether a hook-fix retry that hits a quota or error goes unreported (run.py:378 ignores its result), which a test with a mocked non-zero retry would show.
+> ```
+> `python3 tests/test_omi.py` passed; the pip/wheel and playwright checks were skipped because those tools are not installed here.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-architect | claude-opus-5-5 | high | 18 | 8176 | 379460 | 91s | - | n/a |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 38 | 21678 | 1166841 | 647s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 3522 | 146869 | 397s | - | PASS 9f18f7e |
+| omi-agent-security-reviewer | claude-opus-5-5 | high | 14 | 5662 | 216655 | 360s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL 9f18f7e |
