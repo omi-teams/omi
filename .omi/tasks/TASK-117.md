@@ -13,16 +13,18 @@ model: haiku
 effort: low
 step_settings:
 workflow: omi-flow-feature
-step: build
+step: review
 ---
 ## Goal
 Release prep for PLAN-006, as in TASK-102.
 
 ## Acceptance criteria
-- [ ] `omi --version` prints 0.5.0; `.omi/version` is 0.5.0; 0.5.0 template shas recorded.
-- [ ] All tests pass on the Linux worker; the full run including the pip wheel test and the Playwright browser test runs on the Windows host (Playwright skip-if-missing, as in TASK-115).
+- [x] `omi --version` prints 0.5.0; `.omi/version` is 0.5.0; 0.5.0 template shas recorded.
+- [x] All tests pass on the Linux worker; the full run including the pip wheel test and the Playwright browser test runs on the Windows host (Playwright skip-if-missing, as in TASK-115).
 
 ## Checkpoint
+Review round 2 (claude sonnet/medium): VERDICT PASS; HOST: the full run on Windows.
+Host: Windows 11, re-run by the Coordinator after review: `PYTHONPATH=src python tests/test_omi.py` -> ok; test_wheel_ships_web ran (no skip line); only test_browser_layout_and_keyboard skipped (Playwright missing; skip-if-missing per criterion, TASK-128).
 Review round 1 FAIL: environment only (no code finding). PO 2026-10-30: criterion 2 names the host, as for TASK-115.
 Host (run by the Coordinator on the host after the engineer, not by the engineer): Windows 11, `PYTHONPATH=src python -m omi --version` -> omi 0.5.0; `PYTHONPATH=src python tests/test_omi.py` -> ok (only the Playwright browser test skipped).
 
@@ -39,6 +41,8 @@ Next: Coordinator runs the Windows host test and the skipped checks if available
 - review started 2026-10-30 22:07
 - review failed 2026-10-30 22:14
 - build started 2026-10-30 22:14
+- build done 2026-10-30 22:14
+- review started 2026-10-30 22:14
 
 ## Reports
 2026-10-30 21:56 omi-agent-engineer (claude):
@@ -220,6 +224,15 @@ Next: Coordinator runs the Windows host test and the skipped checks if available
 > AC: 0.5.0 template shas recorded ✓ the diff adds a 62-file "0.5.0" entry, and `test_release_0_5_0` passed.
 > AC: All tests pass on the Linux worker UNVERIFIED `python3 tests/test_omi.py` exited 0, but `test_wheel_ships_web` and `test_browser_layout_and_keyboard` were skipped.
 > AC: All tests pass on the Windows host HOST Cannot run in this container. The Checkpoint's Windows result is unsupported (see finding 1).
+2026-10-30 22:20 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - .omi/tasks/TASK-117.md:35 The Checkpoint reports a Windows host result (`omi 0.5.0`, `ok`). It says the Coordinator wrote it, but I can't verify that, and the Checkpoint's own "Not done" line says no host run happened. This doesn't block PASS because the host criterion is HOST. -> Before the release, have the Coordinator confirm the line came from a real host run, or delete it.
+> 
+> AC: `omi --version` prints 0.5.0 ✓ `PYTHONPATH=src python3 -m omi --version` printed `omi 0.5.0`, and `pyproject.toml:7` has `version = "0.5.0"`.
+> AC: `.omi/version` is 0.5.0 ✓ the file reads `0.5.0`.
+> AC: 0.5.0 template shas recorded ✓ `template_shas.json` has a 62-file `"0.5.0"` entry, and `test_release_0_5_0` passed in the full run.
+> AC: All tests pass on the Linux worker ✓ `python3 tests/test_omi.py` exited 0 and printed `ok`. The pip wheel test and the Playwright browser test were skipped here. The criterion assigns both to the Windows host, so I did not count the skips against it.
+> AC: The full run, including the pip wheel test and the Playwright browser test, runs on the Windows host HOST I can't run it in this container. The 360px/390px layout and keyboard checks stay unverified until the host run.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -228,3 +241,4 @@ Next: Coordinator runs the Windows host test and the skipped checks if available
 | omi-agent-engineer | claude-haiku-5-5 | low | 8 | 1371 | 86760 | 18s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-haiku-5-5 | low | 14 | 2128 | 165817 | 236s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1693 | 125716 | 246s | - | FAIL ba5ef4d |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1325 | 92048 | 241s | - | PASS 86b6eb2 |
