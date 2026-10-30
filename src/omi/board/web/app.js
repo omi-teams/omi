@@ -63,7 +63,7 @@ function home(items) {
   const cards = items.map((p) => {
     const card = link(null, projectHref(p.name), "pc");
     card.append(box("row", [box("stack", [el("span", p.name, {class: "pn"}),
-      el("span", p.path || "—", {class: "mono muted", title: "Thư mục trạng thái dự án"})]),
+      el("span", "origin/main", {class: "mono muted"})]),
       chip(p.po_waiting_count ? `${num(p.po_waiting_count)} chờ PO` : "Không chờ PO", p.po_waiting_count ? "warn" : "")]),
     ...(p.plans.length ? p.plans.map((plan) => box("stack", [
       box("row small", [el("span", `${plan.id} ${plan.title || ""}`), el("span", `${plan.done}/${plan.total}`, {class: "muted"})]),
@@ -129,7 +129,7 @@ function dashboard(name, d) {
   });
   const u = d.usage;
   return [box("heading", [box("stack", [heading(name),
-    el("span", d.path || "—", {class: "project-path muted small mono", title: "Thư mục trạng thái dự án"})]), syncView(d.sync, d.branch)]),
+    el("span", "origin/main", {class: "muted small mono"})]), syncView(d.sync, d.branch)]),
     section(`Chờ PO (${num(d.po_waiting_count)})`, waiting.length ? waiting : [empty("Không có việc chờ PO.")], "Những việc cần anh/chị quyết", "po"),
     box("stats", stats.map(([n, label], i) => box("stat", [el("div", num(n), {class: "n"}, i === 3 ? [el("span", ` / ${num(Object.values(count).reduce((a, b) => a + b, 0))}`, {class: "denom"})] : []), el("div", label, {class: "l"})]))),
     section("Kế hoạch", [box("", d.plans.length ? d.plans.map(planRow) : [empty("Chưa có kế hoạch.")])], `${num(d.plans.length)} kế hoạch · ${num(d.plans.filter((p) => p.status === "active").length)} đang chạy`),
@@ -185,8 +185,10 @@ function taskPage(name, id, d) {
       d.usage.rows.map((r) => [r.role, /^\d+$/.test(r.output) ? num(r.output) : r.output, r.duration]), "Bảng sử dụng của task")],
       `${num(d.usage.runs)} lượt · ${num(d.usage.review_rounds)} vòng review`)])])];
 }
-function updated() {
+function updated(source) {
   err.replaceChildren();
+  document.getElementById("source").textContent = `github.com/omi-teams/omi-state @ ${source.sha.slice(0, 7)}`;
+  if (source.stale) err.append(el("span", `Dữ liệu cũ - không kết nối được GitHub (lúc ${source.fetched_at ? new Date(source.fetched_at).toLocaleTimeString("vi-VN", {hour12: false}) : "chưa rõ"})`));
   status.replaceChildren(el("span", "Cập nhật lần cuối ", {class: "update-label"}),
     el("span", new Date().toLocaleTimeString("vi-VN", {hour12: false})));
 }
@@ -208,15 +210,15 @@ async function route() {
     if (!response.ok) throw new Error(String(response.status));
     const text = await response.text();
     if (ticket !== request) return;
-    if (text === seen) { updated(); return; }
     const data = JSON.parse(text);
+    if (text === seen) { updated(data.source); return; }
     // Render off the page, and only cache a response after its view succeeds.
-    const nodes = name ? id ? taskPage(name, id, data) : dashboard(name, data) : home(data);
+    const nodes = name ? id ? taskPage(name, id, data) : dashboard(name, data) : home(data.projects);
     view.replaceChildren(...nodes);
     setNav(name ? id ? [[name, projectHref(name)], [id]] : [[name]] : []);
     document.title = `${id || name || "Dự án"} — omi board`;
     seen = text;
-    updated();
+    updated(data.source);
     if (changed || document.activeElement === document.body) document.getElementById("title").focus();
   } catch (e) {
     if (ticket !== request) return;
