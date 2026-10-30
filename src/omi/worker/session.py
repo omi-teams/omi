@@ -10,6 +10,7 @@ from pathlib import Path
 # where each CLI keeps its transcripts under $HOME; only these directories reach the cache, never the auth files
 TRANSCRIPTS = {"claude": ".claude/projects", "codex": ".codex/sessions"}
 LINE = re.compile(r"^Session: (claude|codex) (\S+)\n?", re.M)
+SID = re.compile(r"\w[\w-]*")  # no leading '-': the id goes into argv
 
 
 def root(repo):
@@ -24,8 +25,13 @@ def task_dir(repo, tid, tool):
 def mount_args(repo, tid, tool):
     """`docker run` args binding this task's transcript cache (rw) at /sessions."""
     d = task_dir(repo, tid, tool)
+    if "," in str(d):
+        raise SystemExit(f"Cannot mount the session cache at {d}: the path contains a comma. Set XDG_CACHE_HOME to a path without one.")
     d.mkdir(parents=True, exist_ok=True)
-    d.chmod(0o777)  # ponytail: the container user (uid 1000) must write; per-user cache dir above it stays private
+    for p in (*d.parents[:d.parents.index(root(repo)) + 3], d):  # task dir, repo dir and the omi cache dirs above it: owner only
+        p.chmod(0o700)
+    # ponytail: the container user is uid 1000; any other host uid needs the leaf open, which the 0700 parents keep unreachable
+    d.chmod(0o770 if os.getuid() == 1000 else 0o777)
     return ["--mount", f"type=bind,src={d},dst=/sessions"]
 
 
@@ -47,14 +53,14 @@ def session_id(tool, out):
         if isinstance(ev, dict):
             sid = ev.get("thread_id") if tool == "codex" and ev.get("type") == "thread.started" else \
                 ev.get("session_id") if tool == "claude" else None
-            found = sid if isinstance(sid, str) and re.fullmatch(r"[\w-]+", sid) else found
+            found = sid if isinstance(sid, str) and SID.fullmatch(sid) else found
     return found
 
 
 def recorded(text, tool):
     """The session id the task file records for this tool, or None (no line, or the last run used the other tool)."""
     m = LINE.search(text or "")
-    return m[2] if m and m[1] == tool else None
+    return m[2] if m and m[1] == tool and SID.fullmatch(m[2]) else None
 
 
 def with_session(text, tool, sid):
@@ -70,7 +76,7 @@ def with_session(text, tool, sid):
 def available(repo, tid, tool, sid):
     """True when the cache still holds the transcript of this session."""
     d = task_dir(repo, tid, tool)
-    return d.is_dir() and any(d.rglob(f"*{sid}*"))
+    return bool(SID.fullmatch(sid)) and d.is_dir() and any(f.name == f"{sid}.jsonl" or f.name.endswith(f"-{sid}.jsonl") for f in d.rglob("*.jsonl"))
 
 
 def clear(repo):

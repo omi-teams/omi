@@ -320,6 +320,13 @@ def test_session_resume():
             assert "Session: claude S2" in task.read_text(encoding="utf-8") and "tok" not in " ".join(argv)
             mounted = omi.worker.session.task_dir(repo, "TASK-001", "claude")
             assert mounted.is_dir() and str(mounted).startswith(os.environ["XDG_CACHE_HOME"])
+            assert all(p.stat().st_mode & 0o077 == 0 for p in (sess.root(repo), sess.root(repo).parent, sess.root(repo).parent.parent))
+            assert mounted.stat().st_mode & 0o777 == (0o770 if os.getuid() == 1000 else 0o777)
+            assert sess.recorded("Session: claude --x", "claude") is None and sess.recorded("Session: claude *", "claude") is None
+            (mounted / "planted.jsonl").write_text("{}")
+            assert not sess.available(repo, "TASK-001", "claude", "*") and not sess.available(repo, "TASK-001", "claude", "--x")
+            assert not sess.available(repo, "TASK-001", "claude", "plant") and sess.available(repo, "TASK-001", "claude", "planted")
+            (mounted / "planted.jsonl").unlink()
             # recorded but no transcript in the cache: one RESUME FAILED line, fresh run
             argv = go()
             assert "--resume" not in argv and buf.getvalue().count("RESUME FAILED:") == 1
@@ -354,7 +361,16 @@ def test_session_resume():
             state["hook"] = [1, 0]
             go()
             assert len(calls) == 2 and "--resume" in calls[1] and "hook says no" in calls[1][calls[1].index("-p") + 1], calls
-            assert "hook post-run passed" in buf.getvalue() and "retry" not in buf.getvalue()
+            assert "hook post-run passed" in buf.getvalue() and "exited with code" not in buf.getvalue()
+            # the resumed fix attempt itself fails: one line, the hook failure is reported as before
+            state["hook"] = [1, 1]
+            real_p = P.__init__
+            def failing(s, cmd, **kw):
+                real_p(s, cmd, **kw); s.returncode = 1 if len(calls) == 2 else 0  # only the hook-fix attempt
+            P.__init__ = failing
+            go()
+            P.__init__ = real_p
+            assert "hook-fix attempt exited with code 1" in buf.getvalue() and "hook post-run FAILED" in buf.getvalue()
             state["hook"] = [1, 1, 1]
             go()
             assert len(calls) == 2 and "hook post-run FAILED" in buf.getvalue() and state["hook"] == [1], "single retry"
