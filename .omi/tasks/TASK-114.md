@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature-sensitive
-step: review
+step: build
 ---
 ## Goal
 `omi board [--port N] [--no-open]` serves the data layer as JSON and the static frontend on 127.0.0.1 only.
@@ -25,6 +25,8 @@ step: review
 - [ ] Unit tests start the server on a free port against a temporary state and cover each route, traversal and method refusal; all tests pass.
 
 ## Checkpoint
+Paused 2026-10-30 by PO during fix round 1 build: engineer stopped mid-run; uncommitted partial edits left in the worktree (cli.py, server.py, test_board_server.py), unverified.
+Next: rerun `python -m omi run omi-agent-engineer TASK-114` (it continues from the worktree), commit, `omi step TASK-114 done` + `next`, then reviewer round 2.
 Review round 1 PASS with findings, PO asked for one fix round:
 - cli.py: catch OSError/OverflowError around make_server (port in use, >65535) and raise state.StateError("cannot bind 127.0.0.1:<port>: ...").
 - server.py: also catch OSError and UnicodeError from data.*; answer via self.send (404 or 500) so CSP/nosniff are always set.
@@ -43,6 +45,8 @@ Next: review and commit.
 - build started 2026-10-30 08:59
 - build done 2026-10-30 09:25
 - review started 2026-10-30 09:25
+- review failed 2026-10-30 09:39
+- build started 2026-10-30 09:39
 
 ## Reports
 2026-10-30 08:59 omi-agent-architect (claude):
