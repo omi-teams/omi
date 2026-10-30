@@ -3,8 +3,10 @@
 import contextlib
 import json
 import sys
+import webbrowser
 from pathlib import Path
 
+from ..board import server
 from ..setup import attach, install, upgrade
 from ..project import catalogs, github, scope, tasks, workflows
 from ..common import core
@@ -21,6 +23,7 @@ USAGE = """usage: omi <command>
   version      print the omi version and how to check for a newer one (also --version)
   status       show tasks, checkpoints and the next suggested task
   sync         pull, commit leftover detached state changes and push
+  board [--port N] [--no-open]   serve the read-only task board on 127.0.0.1 (default port 8765)
   guard        Claude Code PreToolUse hook: block writes outside task scope
   github       set up branches and rulesets: squad merges to development, only the PO to staging/main
   clean [--all]   remove this repo's worker containers and old worker images (--all: the current image too)
@@ -169,6 +172,27 @@ def dispatch(argv: list[str] | None = None) -> None:
         sys.exit(state_sync.sync(project))
     elif cmd == "status":
         status(*rest[:1])
+    elif cmd == "board":
+        port = core.flag(rest, "--port")
+        if not set(rest) <= {"--port", "--no-open", port} or ("--port" in rest and not ((port or "").isascii() and (port or "").isdigit())):
+            raise state.StateError("usage: omi board [--port N] [--no-open]")
+        project = state.resolve()
+        if project.detached:
+            state_sync.pull(project)
+        try:
+            httpd = server.make_server(int(port) if port else 8765)
+        except (OSError, OverflowError) as exc:
+            raise state.StateError(f"cannot bind 127.0.0.1:{port or 8765}: {exc}") from exc
+        url = f"http://127.0.0.1:{httpd.server_port}/"
+        print(f"omi board: {url} (Ctrl+C to stop)")
+        if "--no-open" not in rest:
+            webbrowser.open(url)
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            httpd.server_close()
     elif cmd == "github":
         project = state.resolve()
         with contextlib.chdir(project.code if project.detached else Path.cwd()):

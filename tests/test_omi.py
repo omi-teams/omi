@@ -14,6 +14,7 @@ import test_attach
 import test_detached
 import test_install
 import test_board
+import test_board_server
 
 
 if __name__ == "__main__":
@@ -31,4 +32,5 @@ if __name__ == "__main__":
     test_detached.main()
     test_install.main()
     test_board.main()
+    test_board_server.main()
     print("ok")
