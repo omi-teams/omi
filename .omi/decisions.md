@@ -105,3 +105,5 @@
 - 2026-10-30 | task PR stays draft until every review-type workflow step has passed, then becomes ready; a later FAIL turns it back to draft | PO correction (not tied to PO accept) | TASK-119
 - 2026-10-30 | plan TASK-120: engineer fix rounds resume the previous CLI session (claude --resume / codex exec resume); reviewer stays fresh | PO wants direct agent communication; resume is the cheapest form | TASK-120
 - 2026-10-30 | Coordinator proposes tool, model and effort per task; the PO only approves (other tool shown as alternative); applies to omi itself, not just this project | PO: "tôi chỉ xem và duyệt thôi", "áp dụng cho omi" | TASK-121
+- 2026-10-30 | PO decisions about the process apply to omi itself: they go into src/omi/template via a task, not only this repo | PO: "áp dụng cho cả omi chứ không chỉ riêng cho project này" | TASK-121, TASK-122
+- 2026-10-30 | UI tasks: designer delivers HTML mockups, PO approves them before build; build gets omi-skill-ui-direction; review and qa check against the mockup | TASK-115 first build was bare, PO approved a mockup and asked for a rebuild | TASK-122
