@@ -27,6 +27,10 @@ On a fix round, `omi run` continues the engineer's previous CLI session (`claude
 - [ ] The omi-task skill (template copy) describes the resume behaviour; tests cover resume, fresh fallback and read-role exclusion; all tests pass.
 
 ## Checkpoint
+Review round 5 FAIL (security):
+- src/omi/worker/session.py scrub: with a codex ChatGPT login `value` is the whole slim auth.json blob (creds.py:97), so a transcript holding only `tokens.access_token` (or id_token / refresh_token) is not flagged. When the secret is that blob, parse it and add every token string inside it as needles (raw and JSON-escaped). Test: transcript with the access token alone is wiped.
+- src/omi/worker/run.py: scrub runs only after a normal return; Ctrl-C, a container exception or the NameTaken `sys.exit` skip it. Run scrub for write roles in a `finally` around the container run.
+- scrub must skip symlinks (`f.is_symlink()`) and never follow them on the host.
 Review round 4 FAIL (security UNVERIFIED, criterion 4 "holds no auth token"):
 - Transcripts store tool output, so an engineer that runs `env`/`printenv` writes the token value into the host session cache. Add `session.scrub(repo, tid, tool, secret_value)` called by run.py after every write-role run (incl. the hook-fix retry): if the token value (non-empty) appears in any file under the task's cache dir, delete that task's cache dir, print one `SESSION DROPPED: token found in transcript` line, and do not record/resume that session (next run is fresh). Test: a planted transcript containing the token is wiped and the next run has no `--resume`; a clean transcript is kept.
 - Known issue, no change: on a Linux host with uid != 1000, files the container creates may not be removable by `omi clean`; documented in the PR, not fixed here.
@@ -64,6 +68,12 @@ Next: Coordinator review and commit.
 - security started 2026-10-31 00:12
 - security failed 2026-10-31 00:20
 - build started 2026-10-31 00:20
+- build done 2026-10-31 00:34
+- review started 2026-10-31 00:34
+- review done 2026-10-31 00:43
+- security started 2026-10-31 00:43
+- security failed 2026-10-31 00:53
+- build started 2026-10-31 00:53
 
 ## Reports
 2026-10-30 22:43 omi-agent-architect (claude):
@@ -403,6 +413,28 @@ Next: Coordinator review and commit.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-31 00:43 omi-agent-reviewer (claude):
+> ```
+> VERDICT: PASS
+> - src/omi/worker/run.py:376 The hook-fix retry ignores a quota hit and a lost session. It prints only `hook-fix attempt exited with code N`, with no QUOTA fallback and no `RESUME FAILED:` line, then reruns the hook. -> Optional: reuse the quota and fallback handling for the retry.
+> - src/omi/worker/session.py:750 `clear()` uses `rmtree(ignore_errors=True)`, so on a Linux host with uid != 1000 `omi clean` can leave container-created transcripts without saying so. The task file already records this as a known issue, so it does not block. -> Optional: print a line when files remain.
+> 
+> AC: `omi run` records the engineer's session id per tool in the task file after each write-role run ✓ run.py:598 calls `with_session`, which writes `Session: <tool> <id>` under `## Checkpoint`. test_session_resume asserts `Session: claude S2`.
+> AC: A later write-role run resumes the session with a short prompt; `--fresh` forces a new session; a tool switch starts fresh ✓ run.py:607 passes `resume` only when the recorded tool matches and `--fresh` is not set. The tests cover resume, `--fresh`, a codex-to-claude switch, and a quota fallback that runs fresh. I checked the codex argument order (`exec resume [OPTIONS] [SESSION_ID] [PROMPT]` accepts `-c`, `-m`, `--json` and the bypass flag) against `codex exec resume --help` in this container.
+> AC: Read roles (reviewer, security, qa) never resume ✓ `read` skips the session lookup and the cache mount. The test asserts the reviewer gets no `--resume` and no `--mount`.
+> AC: Session data lives only in a per-task cache outside the repo, holds no auth token, and `omi clean` removes it; a missing or expired session falls back with one `RESUME FAILED:` line ✓
+> - The cache is under `XDG_CACHE_HOME/omi/sessions/<repo>/<task>/<tool>`, and only the transcript directory is mounted.
+> - `scrub()` deletes the task's cache dir, and the next run is fresh, when the token value (raw or JSON-escaped) appears in any cached file. Tests cover this.
+> [... truncated ...]
+> ```
+2026-10-31 00:52 omi-agent-security-reviewer (claude):
+> ```
+> VERDICT: FAIL
+> - src/omi/worker/session.py:316 With a codex ChatGPT login, `scrub` misses the access token on its own | why: `value` is the whole slim `auth.json` blob (creds.py:97), so `needles` only match the exact blob. If the engineer runs `jq -r .tokens.access_token ~/.codex/auth.json`, the bearer JWT lands in the host transcript unflagged, which breaks criterion 4 ("holds no auth token") | verified: ran scrub with the blob as secret; a transcript with only the access_token returned False, and a pretty-printed auth.json also returned False -> when `env_name == creds.CODEX_AUTH_ENV`, also use `tokens.access_token` and `tokens.id_token` from the blob as needles (raw and JSON-escaped); add a test with the token alone
+> - src/omi/worker/run.py:298 `scrub` runs only after `attempt` returns normally | why: Ctrl-C, a container exception or the `sys.exit` on a second NameTaken skips it, so a transcript holding the token stays in the host cache until the next run or `omi clean` | verified: code read, no try/finally around run_once…scrub -> run the scrub in a `finally` (for write roles) around the container run
+> UNVERIFIED: the container can put symlinks in /sessions, and `scrub`'s `is_file()`/`read_bytes()` follow them on the host (huge file -> memory use; only a bool comes back, so no data leak); confirm by planting a symlink to a large host file and running scrub -> skip `f.is_symlink()`
+> UNVERIFIED: the `codex exec resume` flag order was not checked against a real CLI here (no network); round-4 review says it was checked with `--help`. python3 tests/test_omi.py ended `ok` (pip/playwright skipped)
+> ```
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -417,3 +449,5 @@ Next: Coordinator review and commit.
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 3541 | 314898 | 325s | - | PASS 7f1d5e0 |
 | omi-agent-security-reviewer | claude-opus-5-5 | high | 18 | 5636 | 371258 | 328s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS 7f1d5e0 |
 | omi-agent-engineer | claude-opus-5-5 | high | 30 | 6454 | 607664 | 432s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 14 | 5324 | 433067 | 358s | - | PASS 9d5f47f |
+| omi-agent-security-reviewer | claude-opus-5-5 | high | 22 | 5874 | 509415 | 433s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL 9d5f47f |
