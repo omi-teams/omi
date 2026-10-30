@@ -13,7 +13,7 @@ model: opus
 effort: high
 step_settings:
 workflow: omi-flow-feature-sensitive
-step: build
+step: review
 ---
 ## Goal
 On a fix round, `omi run` continues the engineer's previous CLI session (`claude -p --resume <id>`, `codex exec resume <id>`) with only the new findings, instead of starting a fresh agent that rereads everything; the reviewer stays a fresh instance.
@@ -75,6 +75,8 @@ Next: Coordinator review and commit.
 - security started 2026-10-31 00:43
 - security failed 2026-10-31 00:53
 - build started 2026-10-31 00:53
+- build done 2026-10-31 06:20
+- review started 2026-10-31 06:20
 
 ## Reports
 2026-10-30 22:43 omi-agent-architect (claude):
