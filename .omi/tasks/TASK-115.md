@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature-ui
-step: build
+step: review
 ---
 ## Goal
 Plain HTML/CSS/JS pages for home, project dashboard and task detail, in Vietnamese, calling the JSON API.
@@ -44,6 +44,8 @@ Tests: `python3 tests/test_board_web.py` ok (wheel test skipped: no pip). Full t
 - design started 2026-10-30 14:35
 - design done 2026-10-30 14:39
 - build started 2026-10-30 14:39
+- build done 2026-10-30 15:02
+- review started 2026-10-30 15:02
 
 ## Reports
 2026-10-30 14:38 omi-agent-designer-ui (claude):
@@ -163,6 +165,16 @@ Tests: `python3 tests/test_board_web.py` ok (wheel test skipped: no pip). Full t
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-30 15:10 omi-agent-reviewer (claude):
+> VERDICT: FAIL
+> - src/omi/board/web/app.js:370 After a failed poll, a later successful poll with unchanged JSON returns early and never clears the error. The old text is still in `seen[path]`, so `get()` throws UNCHANGED and the handler returns before `err.replaceChildren()`. The "Không tải được dữ liệu" message and the "Thử lại" button stay on screen after the server recovers. -> Clear `err` in the UNCHANGED branch, or delete `seen[path]` when a fetch fails.
+> - src/omi/board/web/app.js:290 `seen[path]` is set before the view renders. If a render function throws, for example on a missing field, every later poll and "Thử lại" click gets UNCHANGED and returns silently, so the page stays broken with no error. -> Set `seen[path]` only after the render succeeds, or clear it in the catch block.
+> - tests/test_board_web.py:473 The wheel test prints "skip: pip missing" here, so nothing was built and criterion 3 was never checked against a real package. -> Run it where pip is available. This is UNVERIFIED, not ✓.
+> - The page was not opened in a browser, so the 360 px layout, keyboard navigation and the 30 s auto-refresh are unchecked. The task file also still says "Full test_omi.py not run", which is wrong because the engineer's later report says it passed.
+> 
+> AC: Home, dashboard (PO-waiting, plans, kanban, activity, decisions, usage, sync) and task detail render from the API; auto-refresh every 30 s with a toggle. ✗ UNVERIFIED in a browser. The JSON field names in `app.js` match `data.py`, and the 30 s `setInterval`, the toggle and the pause-when-hidden logic are in the code. The stale-error bug above means the recovery path is not correct.
+> [... truncated ...]
+> AC: Readable at 360 px width and keyboard navigable; all tests pass. UNVERIFIED for 360 px and keyboard use, since it was not opened in a browser. The CSS is one column below 768 px, and the page has a skip link and focus styles. `python3 tests/test_omi.py` exited 0 and printed `ok`.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -170,3 +182,4 @@ Tests: `python3 tests/test_board_web.py` ok (wheel test skipped: no pip). Full t
 | omi-agent-designer-ui | claude-sonnet-5-5 | medium | 8 | 2698 | 87795 | 30s | 2/2 omi-skill-ui-direction omi-skill-ui-a11y-review | n/a |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 26 | 8533 | 386404 | 301s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 6 | 235 | 63674 | 288s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 16 | 3095 | 294311 | 368s | - | FAIL 1ed62b0 |
