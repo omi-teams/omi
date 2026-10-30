@@ -25,14 +25,11 @@ Every board refresh shows exactly what is on `origin/main` of the GitHub omi-sta
 - [ ] Tests with a local bare repo as origin cover: a pushed change appears, a local unpushed change does not, fetch failure gives `stale: true`, and no response contains the state dir path; all tests pass.
 
 ## Checkpoint
-Review round 2 FAIL:
-- Host tests (Windows, no symlink privilege) crash in tests/test_board.py (new tests around lines 207-215) with `OSError: [WinError 1314]` from `target.symlink_to(...)`. Guard like the existing tests on development (tests/test_board.py:125-145): wrap the symlink creation in `try/except OSError`, print `skip board snapshot symlink: symlink creation unavailable` and skip only that check. Round 1 drive-path fix is verified on the host.
-- Still out of this round: the `state_sync.pull` removal in src/omi/app/cli.py (cli.py is in TASK-120's scope; widened after TASK-120 merges).
-Done: Review round 1 Windows path leak fixed in src/omi/board/source.py::_repo: a drive letter followed by :/ or :\ returns an empty repo value before scp-like remote parsing. Added C:\x\y and C:/x/y regression cases in tests/test_board.py; credential sanitization and valid remote cases remain covered.
-Done: Existing tests cover fetched origin/main data, pushed changes, ignored local dirty/unpushed changes, concurrent 10-second fetch throttling, failed fetch and recovery, unchanged checkout, API path redaction, source metadata, header and stale warning.
-Not done: Criterion 1 remains incomplete end to end because src/omi/app/cli.py:190 still calls state_sync.pull(project) at board startup. The task explicitly defers that file to parallel TASK-120; it was not modified. Checked affected tests: tests/test_board_server.py::test_board_cli expects one pull and must change alongside removal; tests/test_cli.py::test_cli_characterization covers board dispatch.
-Tests: python3 tests/test_omi.py executed and exited 0 with final "ok", including board data/server tests, both Windows drive path cases and JavaScript DOM/runtime checks. Skipped: test_wheel_ships_web (pip missing); test_browser_layout_and_keyboard (Playwright missing). Windows host execution was not available; Windows path strings were tested on this container.
-Next: Coordinator reviews the scoped fix, extends scope to src/omi/app/cli.py after TASK-120 merges, removes the board startup pull, updates the existing CLI assertion, and reruns python3 tests/test_omi.py. No commit made.
+Done: Review round 2 fixed in tests/test_board.py. Both snapshot symlink creation calls catch OSError and print "skip board snapshot symlink: symlink creation unavailable". Path validation still runs before the optional checks; assertions and unrelated errors remain unguarded. Added test_snapshot_symlink_unavailable to exercise denied symlink creation without requiring Windows privileges.
+Done: Existing tests cover pushed origin/main changes, ignored dirty/unpushed local changes, shared 10-second fetch throttling, fetch failure/recovery, unchanged checkout, source metadata, path redaction, header and stale warning.
+Not done: Criterion 1 remains incomplete end to end: src/omi/app/cli.py:190 still calls state_sync.pull(project) at board startup. That file remains outside scope and is deferred to TASK-120. Checked affected existing tests: tests/test_board_server.py::test_board_cli expects one pull; tests/test_cli.py::test_cli_characterization covers CLI dispatch.
+Tests: python3 tests/test_board.py executed and exited 0, including real symlink checks and the simulated symlink permission failure regression. python3 tests/test_omi.py executed and exited 0 with final "ok", including board data/server tests and JavaScript DOM/runtime checks. Skipped: test_wheel_ships_web (pip missing); test_browser_layout_and_keyboard (Playwright missing). Windows host execution unavailable; denied symlink creation was simulated in the regression test.
+Next: Coordinator reviews this scoped fix and extends scope to src/omi/app/cli.py after TASK-120 merges so the startup pull and existing CLI test expectation can be updated. No commit made.
 
 ## Steps
 - plan started 2026-10-30 22:45
@@ -153,9 +150,65 @@ Next: Coordinator reviews the scoped fix, extends scope to src/omi/app/cli.py af
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-30 23:19 omi-agent-engineer (codex):
+> NEEDS SCOPE: src/omi/app/cli.py - remove startup pull; affected CLI tests identified in checkpoint.
+> Changed: tests/test_board.py, .omi/tasks/TASK-137.md.
+> Fixed symlink permission handling; added regression coverage.
+> Suggested commit: `test(board): guard unavailable snapshot symlinks`
+> Tests: `python3 tests/test_omi.py` and `python3 tests/test_board.py` exited 0.
+> Skipped: wheel test (pip missing), browser layout/keyboard test (Playwright missing).
+> Open issues: startup pull remains; Windows host execution unavailable. No commit made.
+2026-10-30 23:24 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1862645 | 13715 | 1792768 | 457s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 990160 | 3031 | 920320 | 366s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1245068 | 4678 | 1167232 | 336s | 1/1 omi-skill-lean-implementation | - |

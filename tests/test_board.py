@@ -206,14 +206,30 @@ def test_path_refusal():
             refuses(call)
         # Tracked symlinks are never followed; local symlinks cannot affect the snapshot.
         target = root / ".omi/tasks/TASK-escape.md"
-        target.symlink_to(home / "secret")
+        try:
+            target.symlink_to(home / "secret")
+        except OSError:
+            print("skip board snapshot symlink: symlink creation unavailable")
+            return
         write(home / "secret", "must never be served")
         publish(home)
         assert "must never be served" not in json.dumps(data.project("sample"))
         target = root / ".omi/tasks/TASK-002.md"
         target.unlink()
-        target.symlink_to(home / "secret")
+        try:
+            target.symlink_to(home / "secret")
+        except OSError:
+            print("skip board snapshot symlink: symlink creation unavailable")
+            return
         assert data.task("sample", "TASK-002")["goal"] == "Ship it"
+
+
+def test_snapshot_symlink_unavailable():
+    with patch.object(Path, "symlink_to", side_effect=OSError("symlink creation unavailable")) as symlink, \
+            patch("builtins.print") as printed:
+        test_path_refusal()
+    symlink.assert_called_once()
+    printed.assert_called_once_with("skip board snapshot symlink: symlink creation unavailable")
 
 
 def refuses(call):
@@ -247,6 +263,7 @@ def main():
     test_unavailable_snapshot()
     test_workflow_detail()
     test_path_refusal()
+    test_snapshot_symlink_unavailable()
     test_empty_and_layer()
 
 
