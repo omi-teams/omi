@@ -27,6 +27,7 @@ On a fix round, `omi run` continues the engineer's previous CLI session (`claude
 - [ ] The omi-task skill (template copy) describes the resume behaviour; tests cover resume, fresh fallback and read-role exclusion; all tests pass.
 
 ## Checkpoint
+Round 4 done: in test_session_resume every POSIX-mode assertion (and the `del os.getuid` check) now runs only when `os.name != "nt"`; on Windows the test still calls `mount_args` and prints `skip session cache modes: no POSIX modes on Windows` to the real stdout. Linux mode checks unchanged. python3 tests/test_omi.py passed on Linux (pip/playwright skipped); the Windows branch was not run here. Next: Coordinator review and commit.
 Review round 3 FAIL (host; PO: round 3 on opus/high):
 - On the Windows host tests/test_worker.py:323 fails: `st_mode & 0o077 == 0` cannot hold on Windows (chmod only toggles read-only; st_mode reports 0o777/0o666). The code fix is right; make every POSIX-mode assertion in the session tests run only when `os.name != "nt"` and print one `skip session cache modes: no POSIX modes on Windows` line otherwise. Run the full `python3 tests/test_omi.py`; keep the Linux mode checks intact.
 Round 3 done: session.py uses `getattr(os, "getuid", None)`; without it the leaf stays 0700 (not 0777); test patches out `os.getuid` and checks mount_args. python3 tests/test_omi.py passed (pip/playwright skipped). Next: Coordinator review and commit.
@@ -260,6 +261,61 @@ Next: Coordinator review and commit.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-30 23:57 omi-agent-engineer (claude):
+> DONE: the session test no longer checks POSIX file modes on Windows.
+> 
+> - **Files changed:** `tests/test_worker.py` and `.omi/tasks/TASK-120.md` (checkpoint).
+> - **Fix:** in `test_session_resume`, all the POSIX-mode assertions, including the check that removes `os.getuid`, now run only when `os.name != "nt"`. On Windows the test still calls `mount_args` and prints `skip session cache modes: no POSIX modes on Windows`. It prints to the real stdout, since the test captures stdout. The Linux checks are unchanged.
+> - **Test result:** the full `python3 tests/test_omi.py` passed on Linux (`ok`). The pip/wheel and playwright checks were skipped because those tools aren't installed here. I couldn't run the Windows branch in this container.
+> - **Suggested commit:** `test(worker): skip session cache mode checks on Windows`
+> - **Open issues:** none new. The codex resume flag order still hasn't been checked against a real codex CLI.
+2026-10-31 00:01 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -270,3 +326,4 @@ Next: Coordinator review and commit.
 | omi-agent-security-reviewer | claude-opus-5-5 | high | 14 | 5662 | 216655 | 360s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL 9f18f7e |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 26 | 6419 | 487013 | 680s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 2196 | 263119 | 371s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-engineer | claude-opus-5-5 | high | 18 | 2718 | 273851 | 374s | 1/1 omi-skill-lean-implementation | - |
