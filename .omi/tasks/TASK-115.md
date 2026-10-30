@@ -4,7 +4,7 @@ title: omi board frontend
 status: in-progress
 depends: TASK-114
 plan: PLAN-006
-scope: src/omi/board/web/**, pyproject.toml, tests/test_board_web.py, tests/test_omi.py, .omi/tasks/TASK-115.md, .omi/tasks/TASK-115-mockup/**
+scope: src/omi/board/web/**, src/omi/board/data.py, tests/test_board.py, pyproject.toml, tests/test_board_web.py, tests/test_omi.py, .omi/tasks/TASK-115.md, .omi/tasks/TASK-115-mockup/**
 role: omi-agent-engineer
 skills: [omi-skill-ui-direction]
 refs: []
@@ -13,7 +13,7 @@ model: opus
 effort: high
 step_settings:
 workflow: omi-flow-feature-ui
-step: review
+step: build
 ---
 ## Goal
 Plain HTML/CSS/JS pages for home, project dashboard and task detail, in Vietnamese, calling the JSON API.
@@ -27,10 +27,11 @@ Plain HTML/CSS/JS pages for home, project dashboard and task detail, in Vietname
 - [ ] Readable at 360 px width and keyboard navigable; all tests pass.
 
 ## Checkpoint
-Done: rebuilt the Home project cards, dashboard PO panel/stat tiles/plan progress/kanban/activity/decisions/usage/sync chips, and task workflow/checklist/reports/sidebar from the approved mockup structure and CSS. Added responsive 360/390 px rules, dark palette, keyboard focus styles, local favicon, and safe text-only API rendering. Polling retains the old view on failure, clears recovered errors even for unchanged JSON, caches only successful renders, ignores stale requests, pauses while hidden, and persists the toggle defensively.
-Not done: browser visual/keyboard verification and installed-package verification cannot run in this worker (no browser/Playwright or pip; registry policy blocks Playwright download). No fabricated path/branch values are shown when the API does not provide them. The current API provides no workflow definition, so task pages show the current-step chip; a supplied workflow_steps list renders the stepper.
-Tests: `python3 tests/test_board_web.py` exited 0: static safety/package-data/layout checks and Node DOM behavior tests ran. Wheel build/install test explicitly skipped (pip missing); real-browser 360/390/1280 px, dark-mode, CSP and keyboard tests explicitly skipped (Playwright missing). `python3 tests/test_omi.py` exited 0 and printed `ok`, including the board DOM/safety tests (wheel skipped: pip missing). The final standalone board run also exercised the added browser-test entry point and explicitly reported its Playwright skip. `node --check src/omi/board/web/app.js` exited 0 (syntax check only).
-Next: Coordinator runs the retained wheel/install test and browser test on a host with pip and Playwright/Chromium, and compares Home/Main/Task/Phone against the approved mockups.
+Done: addressed the round-2 frontend gaps within scope. Task detail and dashboard task records now expose workflow_steps from the project workflow file (with path validation) plus current_step; the task page renders the definition's steps, PO gates and “Bước N/M” (six steps in the regression fixture). Home and dashboard show API-provided project path, branch and sync chips. Kanban shows two cards per column with a native keyboard-operable “+ N task khác” disclosure for the rest. Below 768 px, usage becomes a one-line total and empty Review/Blocked columns merge into one row; populated columns remain separate. The header is sticky, phone breadcrumbs stay on one compact line, the skip link stays reachable while scrolled, and root scroll-padding-top clears the header.
+Data semantics: path is the actual detached project directory; branch and sync describe its state repository. The portable project registry stores only remote identities, so no local code checkout path or code branch is invented. UI tooltips identify the state directory and branch. Workflow files retain the state path/symlink boundary checks; missing definitions remain an explicit empty list with a current-step fallback.
+Not done: real-browser visual/keyboard verification and installed-package verification cannot execute in this worker because Playwright and pip are absent. The review records a prior host wheel/install pass; this run does not claim a new installed-package verification.
+Tests: `python3 tests/test_board.py` exited 0 (API metadata, workflow definitions/defaults/refresh, read-only behavior and path refusal). `python3 tests/test_board_web.py` exited 0 (static safety/package-data/layout checks and Node DOM behavior tests); wheel/install explicitly skipped: pip missing; browser explicitly skipped: Playwright missing. Browser tests retained and extended for 360/390/768/1280 px, sticky-header/anchor clearance, compact phone header, merged empty columns, usage summary and keyboard overflow disclosure. `node --check src/omi/board/web/app.js` exited 0 (syntax only). `python3 tests/test_omi.py` exited 0 and printed `ok`, including the board API/static/Node tests; wheel/install and browser tests explicitly skipped for missing pip and Playwright.
+Next: RESUME (session stopped by PO 2026-10-30 after build round 3). Build round 3 (codex gpt-6-astra/high) committed. Host: `python tests/test_board.py` and `python tests/test_board_web.py` -> pass, wheel test ran (no skip). Playwright missing on host and worker. Resume: `python -m omi step TASK-115 next` (review), run a fresh `omi-agent-reviewer`; on FAIL (would be the 3rd) ask the PO before another build (workflow rule: rescope, change approach or drop). On PASS: qa step (omi-agent-qa-tester, browser screenshots vs `.omi/tasks/TASK-115-mockup/`), then PO accept, PR, CI, merge.
 
 ### Approved direction
 PO 2026-10-30 approved `.omi/tasks/TASK-115-mockup/*.dc.html` and defaults: header "omi board", teal #0f6e6e, dark mode via prefers-color-scheme, Vietnamese date/number format, evergreen browsers.
@@ -55,6 +56,8 @@ Review round 2 FAIL:
 - build started 2026-10-30 15:11
 - build done 2026-10-30 15:29
 - review started 2026-10-30 15:29
+- review failed 2026-10-30 15:44
+- build started 2026-10-30 15:44
 
 ## Reports
 2026-10-30 14:38 omi-agent-designer-ui (claude):
@@ -249,6 +252,60 @@ Review round 2 FAIL:
 > AC: Home, dashboard (PO-waiting, plans, kanban, activity, decisions, usage, sync) and task detail render from the API; 30 s auto-refresh with a toggle ✓ in code and in the Node fake-DOM test (30000 ms interval, toggle, hidden pause, recovery). Field names match `data.py`. Not seen in a real browser.
 > [... truncated ...]
 > AC: Readable at 360 px and keyboard navigable; all tests pass: tests pass ✓ (`python3 tests/test_omi.py` exit 0, "ok"). The 360 px and keyboard parts are UNVERIFIED (Playwright skipped). The code has a skip link, focus styles and `max-width:767px` rules.
+2026-10-30 15:52 omi-agent-engineer (codex):
+> DONE — implemented round-2 changes and updated checkpoint.
+> Files: `src/omi/board/{data.py,web/app.js,web/app.css}`, `tests/{test_board.py,test_board_web.py}`, `.omi/tasks/TASK-115.md`.
+> Suggested commit: `feat(board): add workflow metadata and responsive dashboard controls`
+> Tests: board API, frontend static/DOM, and full `python3 tests/test_omi.py` passed.
+> Skipped: wheel/install (pip missing); browser checks (Playwright missing).
+> Open: QA visual/keyboard verification; displayed path and branch describe detached state.
+2026-10-30 15:56 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -259,3 +316,4 @@ Review round 2 FAIL:
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 16 | 3095 | 294311 | 368s | - | FAIL 1ed62b0 |
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1548711 | 20265 | 1486720 | 616s | 2/2 omi-skill-ui-direction omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 2883 | 302266 | 316s | - | FAIL 1cfb48d |
+| omi-agent-engineer | gpt-6-astra (codex) | high | 1622113 | 13573 | 1555328 | 509s | 2/2 omi-skill-ui-direction omi-skill-lean-implementation | - |

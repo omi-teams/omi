@@ -1,13 +1,15 @@
 :root{--bg:#f6f6f4;--fg:#1f2421;--surface:#fff;--line:#e4e3df;--muted:#5f6661;--accent:#0f6e6e;--accent-hover:#0a5252;--control:#c9c8c3;--border:#d3d2cd;--chip:#efeeea;--chip-text:#3e4541;--track:#ecebe7;--divider:#f0efeb;--column:#f1f0ec;--empty:#6b716d;--po:#e8f2f1;--po-border:#bcd9d6;--po-line:#d4e6e4;--code:#f8f8f6;--code-text:#2b302d;color-scheme:light dark}
 @media (prefers-color-scheme: dark){:root{--bg:#191e1c;--fg:#e3e9e5;--surface:#232a26;--line:#3b443e;--muted:#a9b6ad;--accent:#78c9c2;--accent-hover:#a1e1db;--control:#637168;--border:#58665d;--chip:#354139;--chip-text:#d3dfd6;--track:#3b4840;--divider:#303c34;--column:#202822;--empty:#a7b7ac;--po:#203c37;--po-border:#41665c;--po-line:#38584f;--code:#1c241f;--code-text:#d6e1d9;}}
+html{scroll-padding-top:10rem}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-variant-numeric:tabular-nums}
 a{color:var(--accent);text-decoration:none}a:hover{color:var(--accent-hover);text-decoration:underline}
 a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .mono{font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;font-size:12.5px}
-.top{background:var(--surface);border-bottom:1px solid var(--line)}
+.top{position:sticky;top:0;z-index:1;background:var(--surface);border-bottom:1px solid var(--line)}
 .bar{max-width:1200px;margin:0 auto;padding:10px 24px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 24px}
 .brand{display:flex;align-items:center;gap:8px;font-weight:650;color:var(--fg);font-size:16px}
-.crumb{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:14px}
+.crumb{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:14px;min-width:0;max-width:100%}
+.crumb>a,.crumb>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tools{margin-left:auto;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 .updated{font-size:13px;color:var(--muted)}
 .switch{display:flex;align-items:center;gap:8px;font-size:14px;min-height:44px}
@@ -78,7 +80,7 @@ h1,h2{text-wrap:balance}
 a,button,input,summary{transition:color 200ms ease,border-color 200ms ease,background-color 200ms ease}
 button:active{transform:scale(.98)}
 :focus-visible{outline:2px solid var(--accent);outline-offset:3px}
-.skip{position:absolute;left:-9999px;z-index:2}
+.skip{position:fixed;left:-9999px;z-index:2}
 .skip:focus{left:16px;top:8px;padding:12px;background:var(--surface)}
 .brand-mark{color:var(--accent);flex:none}
 #view{display:flex;flex-direction:column;gap:20px;min-width:0}
@@ -114,6 +116,12 @@ progress::-moz-progress-bar{background:var(--accent);border-radius:3px}
 .dot.blocked{background:#b42318}
 .dot.done{background:#3f7d3a}
 .kanban .in-progress.card{border-color:var(--po-border)}
+.merged-empty,.usage-summary{display:none}
+.more{padding:0;border:0}
+.more summary{color:var(--accent);font-weight:400;padding:2px 4px;list-style:none}
+.more summary::-webkit-details-marker{display:none}
+.more summary:hover{text-decoration:underline}
+.more .card{margin-top:8px}
 .scroll{overflow-x:auto;min-width:0}
 caption{text-align:left;padding:0 12px 8px;color:var(--muted);font-size:13px}
 .layout{display:grid;grid-template-columns:minmax(0,1fr) 300px}
@@ -131,7 +139,7 @@ caption{text-align:left;padding:0 12px 8px;color:var(--muted);font-size:13px}
 @media (min-width: 768px){.kanban{grid-template-columns:repeat(5,minmax(0,1fr))}}
 @media (max-width:767px){
  .bar{padding:8px 16px;display:grid;grid-template-columns:1fr auto;gap:4px 12px}
- .brand{min-height:44px}.crumb{grid-row:3;grid-column:1/-1;flex-wrap:wrap}
+ .brand{min-height:44px}.crumb{grid-row:3;grid-column:1/-1;flex-wrap:nowrap}
  .tools{display:contents}.tools .btn{grid-column:2;grid-row:1;min-height:44px;min-width:44px;padding:0 12px}
  .refresh-text{display:none}.switch{grid-row:2;grid-column:1}.updated{grid-row:2;grid-column:2;font-size:12px}
  .update-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
@@ -144,7 +152,12 @@ caption{text-align:left;padding:0 12px 8px;color:var(--muted);font-size:13px}
  .plan .track{grid-column:1/-1;grid-row:3}.plan .r{grid-column:2;grid-row:1/3}
  .plan>span:nth-child(2){grid-column:1;grid-row:2}
  .kanban,.grid2,.layout{grid-template-columns:minmax(0,1fr)}
- .col{min-height:0}.col:has(.in-progress){order:-1}
+ .col{min-height:0;order:1}.col-in-progress{order:0}.col-done{order:2}
+ .empty-pair{display:none}.merged-empty{display:flex}
+ .usage{display:grid;grid-template-columns:auto 1fr;align-items:center}
+ .usage .scroll,.usage .ph .small{display:none}
+ .usage-summary{display:block;text-align:right}
+ .project-path,.last-commit{display:none}
  .fi{grid-template-columns:48px minmax(0,1fr);gap:10px}
  .chip{white-space:normal}.ph{flex-wrap:wrap}
  .pc{padding:16px}.counts span{font-size:11px}

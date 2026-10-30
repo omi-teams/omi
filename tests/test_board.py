@@ -62,7 +62,9 @@ def test_views():
         assert view["usage"]["models"]["model-a"] == {"runs": 10, "input": 50, "output": 10, "cache": 15, "review_rounds": 5}
         assert view["sync"]["ahead"] == view["sync"]["behind"] == 0
         assert view["sync"]["dirty"] is False and "initial state" in view["sync"]["last_commit"]
-        assert data.projects() == [{"name": "sample", "plans": view["plans"], "task_counts": view["task_counts"], "po_waiting_count": 3}]
+        assert view["path"] == str(root.resolve()) and view["branch"] == "main"
+        assert data.projects() == [{"name": "sample", "path": view["path"], "branch": "main", "sync": view["sync"],
+                                    "plans": view["plans"], "task_counts": view["task_counts"], "po_waiting_count": 3}]
         json.dumps(view)
         assert before == {f: f.read_bytes() for f in root.rglob("*") if f.is_file()}
         path = root / ".omi/tasks/TASK-002.md"
@@ -78,6 +80,28 @@ def test_views():
         assert data.project("sample")["sync"]["dirty"] is True
         root.rename(root.with_name("sample.repo"))
         assert data.projects()[0]["name"] == "sample.repo"
+
+
+def test_workflow_detail():
+    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+        root = fixture(Path(directory))
+        steps = [{"id": id, "gate": "po" if id == "accept" else "none"}
+                 for id in ("plan", "design", "build", "review", "accept", "qa")]
+        definition = "---\nsteps:\n" + "".join(f"- id: {s['id']} | gate: {s['gate']}\n" for s in steps) + "---\n"
+        write(root / ".omi/workflows/feature.md", definition)
+        detail = data.task("sample", "TASK-002")
+        assert detail["workflow_steps"] == steps and detail["current_step"] == "accept"
+        assert data.project("sample")["kanban"]["in-progress"][0] == detail
+        # Default, missing and changed definitions are read from state, never inferred from history.
+        assert data.task("sample", "TASK-001")["workflow_steps"] == []
+        write(root / ".omi/workflows/omi-flow-feature.md", definition)
+        assert data.task("sample", "TASK-001")["workflow_steps"] == steps
+        assert data.task("sample", "TASK-001")["current_step"] is None
+        write(root / ".omi/workflows/feature.md", "---\nsteps:\n- id: custom | gate: po\n---\n")
+        assert data.task("sample", "TASK-002")["workflow_steps"] == [{"id": "custom", "gate": "po"}]
+        path = root / ".omi/tasks/TASK-002.md"
+        write(path, path.read_text(encoding="utf-8").replace("workflow: feature", "workflow: ../../escape"))
+        refuses(lambda: data.task("sample", "TASK-002"))
 
 
 def test_path_refusal():
@@ -101,6 +125,8 @@ def test_path_refusal():
                 print("skip board symlink refusal: symlink creation unavailable")
                 return
             refuses(lambda: data.project("sample"))
+            if relative == ".omi/workflows/feature.md":
+                refuses(lambda: data.task("sample", "TASK-002"))
             target.unlink()
         try:
             (home / "projects/escape").symlink_to(outside, target_is_directory=True)
@@ -135,6 +161,8 @@ def test_empty_and_layer():
         assert view["plans"] == view["po_waiting"] == view["activity"] == view["decisions"] == []
         assert view["usage"]["totals"]["runs"] == 0
         assert view["sync"]["ahead"] is None
+        assert view["path"] == str(Path(directory).resolve() / "projects/empty")
+        assert view["branch"] is None and view["sync"]["dirty"] is None
     rule = (Path(__file__).parents[1] / ".omi/rules/omi-modules.md").read_text(encoding="utf-8")
     order = next(line for line in rule.splitlines() if "module layer order" in line)
     assert order.index("app.cli") < order.index("board.data") < order.index("project.tasks") < order.index("state.resolve")
@@ -142,6 +170,7 @@ def test_empty_and_layer():
 
 def main():
     test_views()
+    test_workflow_detail()
     test_path_refusal()
     test_empty_and_layer()
 

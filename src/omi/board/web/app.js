@@ -60,23 +60,31 @@ function setNav(parts) {
 function home(items) {
   const cards = items.map((p) => {
     const card = link(null, projectHref(p.name), "pc");
-    card.append(box("row", [el("span", p.name, {class: "pn"}),
+    card.append(box("row", [box("stack", [el("span", p.name, {class: "pn"}),
+      el("span", p.path || "—", {class: "mono muted", title: "Thư mục trạng thái dự án"})]),
       chip(p.po_waiting_count ? `${num(p.po_waiting_count)} chờ PO` : "Không chờ PO", p.po_waiting_count ? "warn" : "")]),
     ...(p.plans.length ? p.plans.map((plan) => box("stack", [
       box("row small", [el("span", `${plan.id} ${plan.title || ""}`), el("span", `${plan.done}/${plan.total}`, {class: "muted"})]),
       progress(plan.done, plan.total)])) : [empty("Chưa có kế hoạch")]),
-    box("counts", Object.keys(STATUS).map((s) => box("", [el("b", num(p.task_counts[s])), el("span", STATUS[s])]))));
+    box("counts", Object.keys(STATUS).map((s) => box("", [el("b", num(p.task_counts[s])), el("span", STATUS[s])]))),
+    box("chips", [branchChip(p.branch), syncChip(p.sync || {})]));
     return card;
   });
   return [box("heading", [heading("Dự án"), el("span", `${num(items.length)} dự án · ${num(items.reduce((n, p) => n + p.po_waiting_count, 0))} việc chờ PO`, {class: "muted small"})]),
     box("projects", cards.length ? cards : [empty("Chưa có dự án.")])];
 }
-function syncView(s) {
+function branchChip(branch) {
+  return el("span", branch || "Nhánh: Chưa rõ", {class: "chip", title: "Nhánh kho trạng thái"});
+}
+function syncChip(s) {
+  return chip(s.dirty === false ? "✓ Sạch" : s.dirty === true ? "Có thay đổi chưa commit" : "Đồng bộ: Chưa rõ",
+    s.dirty === false ? "good" : "");
+}
+function syncView(s, branch) {
   const known = (v) => v === null || v === undefined ? "—" : num(v);
   return el("div", null, {class: "sync", "aria-label": "Đồng bộ git"}, [
-    chip(`Trước ${known(s.ahead)} · Sau ${known(s.behind)}`),
-    chip(s.dirty === null ? "Đồng bộ: Chưa rõ" : s.dirty ? "Có thay đổi chưa commit" : "✓ Không có thay đổi chưa commit", s.dirty === false ? "good" : ""),
-    chip(`Commit cuối ${s.last_commit ? s.last_commit.split(" ")[0].slice(0, 7) : "—"}`)]);
+    branchChip(branch), chip(`Trước ${known(s.ahead)} · Sau ${known(s.behind)}`), syncChip(s),
+    chip(`Commit cuối ${s.last_commit ? s.last_commit.split(" ")[0].slice(0, 7) : "—"}`, "last-commit")]);
 }
 function dashboard(name, d) {
   const tasks = Object.values(d.kanban).flat();
@@ -87,17 +95,28 @@ function dashboard(name, d) {
   });
   const count = d.task_counts;
   const stats = [[d.po_waiting_count, "Chờ PO"], [count["in-progress"], "Đang làm"], [count.planned, "Kế hoạch"], [count.done, "Task đã xong"]];
-  const board = box("kanban", Object.entries(d.kanban).map(([s, items]) => box("col", [
-    box("colh", [el("span", null, {}, [el("span", "", {class: `dot ${s}`, "aria-hidden": "true"}),
-      el("span", ` ${GLYPH[s] || "○"} ${STATUS[s] || s}`)]), el("span", num(items.length), {class: "muted"})]),
-    ...(items.length ? items.map((t) => {
+  const label = (s) => el("span", null, {}, [el("span", "", {class: `dot ${s}`, "aria-hidden": "true"}),
+    el("span", ` ${GLYPH[s] || "○"} ${STATUS[s] || s}`)]);
+  const mergeEmpty = !d.kanban.review?.length && !d.kanban.blocked?.length;
+  const columns = Object.entries(d.kanban).map(([s, items]) => {
+    const cards = items.map((t) => {
       const f = t.frontmatter;
       const card = link(null, taskHref(name, t.id), `card ${s}`);
       card.append(el("span", t.id, {class: "mono muted"}), el("span", f.title || "—", {class: "t"}));
       const chips = [f.step, [f.model, f.effort].filter(Boolean).join(" · ")].filter(Boolean);
       if (chips.length) card.append(box("chips", chips.map((c) => chip(c))));
       return card;
-    }) : [empty()])])));
+    });
+    const more = cards.length > 2 ? el("details", null, {class: "more"}, [
+      el("summary", `+ ${num(cards.length - 2)} task khác`, {class: "small", "aria-label": `Hiện thêm ${num(cards.length - 2)} task · ${STATUS[s] || s}`}),
+      ...cards.slice(2)]) : null;
+    return box(`col col-${s}${mergeEmpty && (s === "review" || s === "blocked") ? " empty-pair" : ""}`, [
+      box("colh", [label(s), el("span", num(items.length), {class: "muted"})]),
+      ...(cards.length ? cards.slice(0, 2) : [empty()]), ...(more ? [more] : [])]);
+  });
+  if (mergeEmpty) columns.push(box("col merged-empty", [box("colh", [
+    box("chips", [label("review"), el("span", "·"), label("blocked")]), el("span", "0", {class: "muted"})])]));
+  const board = box("kanban", columns);
   const activity = d.activity.slice(0, 30).map((a) => box("fi", [el("span", a.time ? a.time.slice(11, 16) : "—", {class: "muted small"}),
     el("span", null, {}, [link(a.id, taskHref(name, a.id), "mono"), el("span", ` ${a.text}`)])]));
   const decisions = d.decisions.slice(0, 20).map((x) => {
@@ -107,31 +126,33 @@ function dashboard(name, d) {
       el("span", date ? text.slice(10).replace(/^[: ]+/, "") : text)]);
   });
   const u = d.usage;
-  return [box("heading", [heading(name), syncView(d.sync)]),
+  return [box("heading", [box("stack", [heading(name),
+    el("span", d.path || "—", {class: "project-path muted small mono", title: "Thư mục trạng thái dự án"})]), syncView(d.sync, d.branch)]),
     section(`Chờ PO (${num(d.po_waiting_count)})`, waiting.length ? waiting : [empty("Không có việc chờ PO.")], "Những việc cần anh/chị quyết", "po"),
     box("stats", stats.map(([n, label], i) => box("stat", [el("div", num(n), {class: "n"}, i === 3 ? [el("span", ` / ${num(Object.values(count).reduce((a, b) => a + b, 0))}`, {class: "denom"})] : []), el("div", label, {class: "l"})]))),
     section("Kế hoạch", [box("", d.plans.length ? d.plans.map(planRow) : [empty("Chưa có kế hoạch.")])], `${num(d.plans.length)} kế hoạch · ${num(d.plans.filter((p) => p.status === "active").length)} đang chạy`),
     section("Kanban", [board]),
     box("grid2", [section("Hoạt động", [box("feed", activity.length ? activity : [empty("Chưa có hoạt động.")])]),
       section("Quyết định", [box("feed", decisions.length ? decisions : [empty("Chưa có quyết định.")])])]),
-    section("Sử dụng", [table(["Model", "Lượt", "Input", "Output", "Cache"],
+    section("Sử dụng", [el("p", `${num(u.totals.runs)} lượt · ${num(u.totals.output)} output`, {class: "usage-summary muted small"}),
+      table(["Model", "Lượt", "Input", "Output", "Cache"],
       [...Object.entries(u.models), ["Tổng", u.totals]].map(([m, r]) => [m, num(r.runs), num(r.input), num(r.output), num(r.cache)]),
-      "Bảng sử dụng token")], `Vòng review: ${num(u.totals.review_rounds)}`)];
+      "Bảng sử dụng token")], `Vòng review: ${num(u.totals.review_rounds)}`, "panel usage")];
 }
 function workflow(d) {
   const f = d.frontmatter;
-  // The API currently supplies step history, not a workflow definition. Do not infer future steps.
   const steps = d.workflow_steps;
+  const currentStep = d.current_step || f.step;
+  const at = Array.isArray(steps) ? steps.findIndex((s) => (typeof s === "string" ? s : s.id) === currentStep) : -1;
   const list = Array.isArray(steps) && steps.length ? el("ol", null, {class: "steps"}, steps.map((s, i) => {
     const id = typeof s === "string" ? s : s.id;
-    const current = id === f.step;
-    const at = steps.findIndex((x) => (typeof x === "string" ? x : x.id) === f.step);
+    const current = id === currentStep;
     const done = at >= 0 && i < at;
     return el("li", null, current ? {"aria-current": "step"} : {}, [
       el("span", done ? "✓" : String(i + 1), {class: `sn ${current ? "current" : done ? "done" : ""}`}),
       el("span", `${id}${s.gate === "po" ? " · PO" : ""}`)]);
-  })) : box("chips", [chip(f.step || "Chưa có bước", "active")]);
-  return section(`Quy trình${f.workflow ? " · " + f.workflow : ""}`, [list]);
+  })) : box("chips", [chip(currentStep || "Chưa có bước", "active")]);
+  return section(`Quy trình${f.workflow ? " · " + f.workflow : ""}`, [list], at >= 0 ? `Bước ${at + 1}/${steps.length}` : null);
 }
 function taskPage(name, id, d) {
   const f = d.frontmatter;
