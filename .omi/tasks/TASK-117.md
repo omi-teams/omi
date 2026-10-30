@@ -2,7 +2,7 @@
 id: TASK-117
 title: Bump omi to 0.5.0
 status: planned
-depends: TASK-116
+depends: TASK-116, TASK-119
 plan: PLAN-006
 scope: pyproject.toml, README.md, tests/test_omi.py, .omi/version, src/omi/template_shas.json
 role: omi-agent-engineer

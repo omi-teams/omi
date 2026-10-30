@@ -100,3 +100,4 @@
 - 2026-10-29 | TASK-108 and TASK-109 run in parallel: per-area test files, README moved to TASK-110, TASK-109 reuses --why so cli.py stays with TASK-108 | PO asked for parallel work, Codex quota preferred | TASK-118
 - 2026-10-29 | TASK-110 README-only and TASK-112 refactor run in parallel; cli usage line moves to TASK-111 (bump after both) | keep parallel lanes free of shared files | TASK-110
 - 2026-10-29 | follow-up G10: parallel workers can collide (container name / port 8080 seen in TASK-118, test runs hanging in TASK-110 while TASK-112 ran); plan a fix before more parallel batches | engineer reports during parallel runs | TASK-110
+- 2026-10-30 | PR titles start with the task ID ([TASK-NNN] <type>(<area>): <summary>) and PR bodies use fixed sections; never gh pr create --fill | PO: PR #119 title and body were opaque | TASK-119
