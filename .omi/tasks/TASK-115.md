@@ -19,15 +19,22 @@ step: review
 Plain HTML/CSS/JS pages for home, project dashboard and task detail, in Vietnamese, calling the JSON API.
 
 ## Acceptance criteria
-- [ ] Home, dashboard (PO-waiting, plans, kanban, activity, decisions, usage, sync) and task detail render from the API; auto-refresh every 30 s with a toggle.
-- [ ] State text is inserted with `textContent` only, never `innerHTML`; no external script, font or CDN.
-- [ ] `pip install .` ships `board/web/*` (package data); a test checks the files are in the installed package (wheel/install part runs on the host, where pip exists).
-- [ ] Pages match the PO-approved mockup in `.omi/tasks/TASK-115-mockup/` (Main = dashboard, Home, Task, Phone = 390 px dashboard): same layout, sections, header controls, cards, chips, progress bars, kanban columns, workflow stepper and colours (visual comparison on the host in a real browser).
-- [ ] The header stays pinned at the top while scrolling (sticky), with `scroll-padding-top` so focused or anchored elements are never hidden under it (in-browser check on the host).
-- [ ] Next to the auto-refresh toggle a countdown shows the seconds to the next refresh ("Làm mới sau 25 giây"), resets after every refresh (auto or manual), shows "Đã tắt" when the toggle is off and "Tạm dừng" while the tab is hidden; it updates once per second without re-rendering the view and is not announced every second (outside any live region, e.g. aria-hidden, with the toggle label still saying 30 giây).
-- [ ] Readable at 360 px width and keyboard navigable (checked on the host in a real browser); all tests pass.
+- [x] Home, dashboard (PO-waiting, plans, kanban, activity, decisions, usage, sync) and task detail render from the API; auto-refresh every 30 s with a toggle.
+- [x] State text is inserted with `textContent` only, never `innerHTML`; no external script, font or CDN.
+- [x] `pip install .` ships `board/web/*` (package data); a test checks the files are in the installed package (wheel/install part runs on the host, where pip exists).
+- [x] Pages match the PO-approved mockup in `.omi/tasks/TASK-115-mockup/` (Main = dashboard, Home, Task, Phone = 390 px dashboard): same layout, sections, header controls, cards, chips, progress bars, kanban columns, workflow stepper and colours (visual comparison on the host in a real browser).
+- [x] The header stays pinned at the top while scrolling (sticky), with `scroll-padding-top` so focused or anchored elements are never hidden under it (in-browser check on the host).
+- [x] Next to the auto-refresh toggle a countdown shows the seconds to the next refresh ("Làm mới sau 25 giây"), resets after every refresh (auto or manual), shows "Đã tắt" when the toggle is off and "Tạm dừng" while the tab is hidden; it updates once per second without re-rendering the view and is not announced every second (outside any live region, e.g. aria-hidden, with the toggle label still saying 30 giây).
+- [x] Readable at 360 px width and keyboard navigable (checked on the host in a real browser); all tests pass.
 
 ## Checkpoint
+Review round 6 (claude sonnet/medium): VERDICT PASS; HOST items: pip install, mockup match, sticky header, 360 px/keyboard.
+Host: `python tests/test_board_web.py` -> ok, test_wheel_ships_web ran on the host (no skip line).
+Host: real Chrome (Claude in Chrome), `omi board` from the task branch on 127.0.0.1:8799, project omi-pilot-splitbill -> dashboard, home and task pages match the Main/Home/Task mockups at 1280 px; same-origin iframes at 360/390/768 px match Phone.dc.html (compact header, usage one-line, merged empty Review/Blocked row), no horizontal overflow.
+Host: real Chrome -> header stays at top=0 after scrolling 800 px at 1280/390/360 px; scroll-padding-top 160 px clears the 65 px (desktop) and 136 px (phone) header.
+Host: real Chrome keyboard -> Tab/Shift+Tab reach skip link, logo, breadcrumb, auto-refresh toggle, refresh button and every kanban/task link, all with a visible solid outline; countdown ticks 18 -> 16 s, "Đã tắt" when off, back to 30 s on re-enable, aria-hidden.
+QA notes (non-blocking): a done task shows its last step (accept) as current instead of ✓; the narrow Usage table on the task page scrolls horizontally inside its card.
+
 Review round 4 FAIL (codex quota -> claude-opus-5-5/medium): countdown ✓. PO 2026-10-30 approved one small fix round with claude sonnet/medium.
 - Fix only: src/omi/board/web/app.js route() clears the timer before fetch and fetch has no timeout; a hung request freezes the countdown at "0 giây" and stops auto-refresh. Abort the fetch after 10 s (AbortController) so the catch shows the existing error/retry UI and finally -> schedule() always runs. Add a Node test with a never-resolving fetch.
 - Host: `python tests/test_board_web.py` -> ok, wheel test ran (no skip line); only the Playwright browser test skipped (qa step).
@@ -445,6 +452,16 @@ QUOTA: codex hit its usage limit; omi-agent-reviewer continued with claude on th
 > AC: State text via `textContent` only, no `innerHTML`; no external script, font or CDN ✓ The static safety tests pass, and `el()` sets `textContent`.
 > [... truncated ...]
 > AC: Readable at 360 px and keyboard navigable; all tests pass UNVERIFIED All tests pass (`test_omi.py` exit 0, `ok`). The 360 px and keyboard parts were not run because Playwright is missing.
+2026-10-30 19:35 omi-agent-reviewer (claude):
+> ```
+> VERDICT: PASS
+> AC: Home, dashboard (PO-waiting, plans, kanban, activity, decisions, usage, sync) and task detail render from the API; auto-refresh every 30 s with a toggle ✓ The Node DOM tests in tests/test_board_web.py print "ok: API views, mockup DOM, … polling, recovery". app.js:235-243 sets the 30 s deadline with a 1 s tick, and the #auto toggle is stored in localStorage. The fetch timeout works: app.js:200-201 aborts after 10000 ms, :225 shows "quá thời gian chờ" with the "Thử lại" button, and :226-228 clears the timer and calls schedule(). The never-resolving-fetch test at tests/test_board_web.py:247-252 checks the 10 s abort. I did not run the page in a browser.
+> AC: State text is inserted with textContent only, never innerHTML; no external script, font or CDN ✓ el() at app.js:21 only sets textContent. The static safety test passed, and its checks include no innerHTML/outerHTML/eval, no external URL, @import or @font-face, and no inline script or style.
+> AC: pip install . ships board/web/* (package data); a test checks the files are in the installed package HOST The pyproject.toml package-data glob "board/web/*" is present, and the static package-data check passed. test_wheel_ships_web printed "skip: pip missing" here. The checkpoint records that it ran on the host with no skip line.
+> AC: Pages match the PO-approved mockup (Main, Home, Task, Phone) HOST The visual comparison in a real browser is a host check. The static mockup DOM and structure checks passed in the Node test.
+> AC: Header stays pinned (sticky) with scroll-padding-top HOST app.css has `.top{position:sticky;top:0}` and `html{scroll-padding-top:10rem}`. The in-browser clearance check is a host check.
+> [... truncated ...]
+> All changed files are inside the task's `scope`. I found no code defects in the 10 s abort/timeout change.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -462,3 +479,4 @@ QUOTA: codex hit its usage limit; omi-agent-reviewer continued with claude on th
 | omi-agent-reviewer | claude-opus-5-5 | medium | 20 | 3769 | 310930 | 414s | - | FAIL 8c6c0f8 |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 24 | 3976 | 487241 | 389s | 2/2 omi-skill-ui-direction omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 2169 | 326601 | 310s | - | FAIL 277c46d |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 14 | 2669 | 520818 | 385s | - | PASS f0dae80 |
