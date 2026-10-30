@@ -9,8 +9,8 @@ role: omi-agent-engineer
 skills: []
 refs: []
 tool: claude
-model: sonnet
-effort: medium
+model: opus
+effort: high
 step_settings:
 workflow: omi-flow-feature-sensitive
 step:
