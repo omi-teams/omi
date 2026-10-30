@@ -4,13 +4,13 @@ title: omi board frontend
 status: in-progress
 depends: TASK-114
 plan: PLAN-006
-scope: src/omi/board/web/**, pyproject.toml, tests/test_board_web.py, tests/test_omi.py, .omi/tasks/TASK-115.md, .omi/tasks/TASK-115-mockup/**
+scope: src/omi/board/web/**, src/omi/board/data.py, tests/test_board.py, pyproject.toml, tests/test_board_web.py, tests/test_omi.py, .omi/tasks/TASK-115.md, .omi/tasks/TASK-115-mockup/**
 role: omi-agent-engineer
 skills: [omi-skill-ui-direction]
 refs: []
 tool: codex
-model: sonnet
-effort: medium
+model: opus
+effort: high
 step_settings:
 workflow: omi-flow-feature-ui
 step:
