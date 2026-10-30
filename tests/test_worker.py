@@ -421,6 +421,22 @@ def test_session_resume():
                 print("skip scrub symlink check: cannot create symlinks", file=saved)
             else:
                 assert not sess.scrub(repo, "TASK-001", "claude", "tok") and mounted.exists() and host.exists()
+            # fail closed: an unreadable transcript (or dir) counts as a hit, scrub never raises
+            if os.name == "nt" or os.getuid() == 0:
+                print("skip scrub unreadable check: no POSIX modes on Windows or running as root", file=saved)
+            else:
+                locked = mounted / "x.jsonl"
+                locked.write_text('{"out":"tok"}')
+                locked.chmod(0)
+                assert sess.scrub(repo, "TASK-001", "claude", "tok") and not mounted.exists()
+                assert buf.getvalue().count("SESSION DROPPED: cannot read the session cache") == 1
+                (mounted / "sub").mkdir(parents=True)
+                (mounted / "sub").chmod(0)
+                assert sess.scrub(repo, "TASK-001", "claude", "other") and buf.getvalue().count("SESSION DROPPED: cannot read") == 2
+                if mounted.exists():
+                    (mounted / "sub").chmod(0o700)
+                    shutil.rmtree(mounted)
+                mounted.mkdir(parents=True)
             # an interrupted run (Ctrl-C, container error) still scrubs the cache
             (mounted / "S3.jsonl").write_text('{"tool_result":"tok"}')
             real_p = P.__init__

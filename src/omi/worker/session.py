@@ -96,12 +96,34 @@ def scrub(repo, tid, tool, secret_value):
         values += [v for k, v in tokens.items() if k.endswith("_token") and isinstance(v, str) and v and v != "omi-no-refresh"]
     # the raw values and their JSON-escaped forms (transcripts are JSON lines; a codex auth.json value has quotes)
     needles = {n for v in values for n in (v.encode(), json.dumps(v)[1:-1].encode())}
-    # never follow a link the container planted in /sessions to a host file
-    if d.is_dir() and any(not f.is_symlink() and f.is_file() and any(n in f.read_bytes() for n in needles) for f in d.rglob("*")):
+    if not d.is_dir():
+        return False
+    try:
+        why = _search(d, needles)
+    except Exception:  # fail closed: scrub runs in run.py's finally and must never raise out of it
+        why = "cannot read the session cache"
+    if why:
         shutil.rmtree(d, ignore_errors=True)
-        print("SESSION DROPPED: token found in transcript")
+        print(f"SESSION DROPPED: {why}")
         return True
     return False
+
+
+def _search(d, needles):
+    """Why the cache under d must go (a token hit, or an entry that cannot be checked), or None."""
+    def unreadable(err):
+        raise err
+    # os.walk never descends into linked dirs; a linked file the container planted is skipped, never followed to the host
+    for top, _, names in os.walk(d, onerror=unreadable):
+        for name in names:
+            f = Path(top) / name
+            if f.is_symlink():
+                continue
+            if not f.is_file():  # fifo, socket, device: cannot be checked
+                return "cannot read the session cache"
+            if any(n in f.read_bytes() for n in needles):
+                return "token found in transcript"
+    return None
 
 
 def clear(repo):

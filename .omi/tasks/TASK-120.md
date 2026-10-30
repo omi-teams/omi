@@ -29,6 +29,7 @@ On a fix round, `omi run` continues the engineer's previous CLI session (`claude
 ## Checkpoint
 Review round 6 FAIL (security):
 - src/omi/worker/session.py scrub: `f.read_bytes()` raises on an unreadable file (e.g. the engineer writes the token to /sessions/x.jsonl and `chmod 000`), the exception escapes `attempt`'s `finally`, the post-run hook and the OUT OF SCOPE check never run, and the token stays in the host cache. Fail closed: any OSError while walking or reading, or any entry that is not a readable regular file (other than a skipped symlink), counts as a hit: rmtree the task cache dir, print `SESSION DROPPED`, return True. scrub itself must never raise out of `attempt`. Test with a mode-0 transcript (POSIX only; skip line on Windows).
+Round 7 done: `scrub` fails closed. It walks with `os.walk(onerror=raise)` (linked dirs are never entered, linked files skipped). An unreadable dir, a non-regular file (fifo/socket/device) or any exception while searching counts as a hit: the task cache dir is rmtree'd, `SESSION DROPPED: cannot read the session cache` is printed, and it returns True. scrub never raises out of `attempt`. Tests: a mode-0 transcript and a mode-0 subdir are both dropped (skip line on Windows/root); a fifo was checked by hand. python3 tests/test_omi.py passed (pip/playwright skipped). Open: rmtree(ignore_errors) cannot empty a mode-0 subdir that still holds files, so such files can stay on disk (the session is still not resumed). Next: Coordinator review and commit.
 Round 6 done: `scrub` also parses a JSON secret and, when it has a `tokens` object (codex ChatGPT auth.json), adds every non-empty `*_token` string (except the `omi-no-refresh` placeholder) as raw and JSON-escaped needles; it skips symlinks (`f.is_symlink()`), and rglob does not recurse into linked dirs. run.py `attempt()` runs the scrub (and the `Session:` line removal) in a `finally` around the container run, so Ctrl-C, a container exception and the NameTaken exit are covered. Tests: access_token alone and id_token alone wiped, placeholder/account_id not flagged, planted symlink to a host file holding the token neither followed nor deleted, a KeyboardInterrupt from the container run still drops the token transcript. python3 tests/test_omi.py passed (pip/playwright skipped). Next: Coordinator review and commit.
 Review round 5 FAIL (security):
 - src/omi/worker/session.py scrub: with a codex ChatGPT login `value` is the whole slim auth.json blob (creds.py:97), so a transcript holding only `tokens.access_token` (or id_token / refresh_token) is not flagged. When the secret is that blob, parse it and add every token string inside it as needles (raw and JSON-escaped). Test: transcript with the access token alone is wiped.
@@ -527,6 +528,59 @@ Next: Coordinator review and commit.
 > UNVERIFIED: on a Linux host with uid != 1000, files the CLI writes as 0600 (owner uid 1000) would make every engineer run hit the crash above. Running real `claude -p` in the container and checking the transcript mode would confirm it.
 > UNVERIFIED: between the `is_symlink()` check and `read_bytes()` (session.py:100), the container could swap a file for a symlink if it is still running after Ctrl-C. Only a True/False comes out, so the risk is memory use or blocking on a huge or special file. An interrupt test with a live `docker run` would confirm it.
 > Checked: `python3 tests/test_omi.py` ended `ok` (pip/playwright checks skipped). `rglob` on Python 3.13 does not follow symlinked dirs. `repo_label` and the session ids are sanitised. Read roles get no mount and no resume.
+2026-10-31 06:51 omi-agent-engineer (claude):
+> DONE: `scrub` now fails closed and never raises out of `attempt`. An unreadable file or folder, a special file (such as a pipe), or any error while searching counts as a hit: it deletes the task's cache folder, prints `SESSION DROPPED: cannot read the session cache` and returns True.
+> - **Files changed:** `src/omi/worker/session.py` (scrub plus a new `_search` helper; it walks with `os.walk`, never enters linked folders and skips linked files), `tests/test_worker.py`, `.omi/tasks/TASK-120.md` (Checkpoint).
+> - **Suggested commit:** `fix(worker): fail closed when the session cache cannot be scrubbed`
+> - **Tests:** `python3 tests/test_omi.py` ended `ok`, including the new checks that a mode-0 transcript and a mode-0 folder are both dropped. `test_wheel_ships_web` (pip missing) and `test_browser_layout_and_keyboard` (playwright missing) were skipped, and the Windows/root skip branch did not run here. I checked the special-file case by hand with a named pipe (fifo), not in a test.
+> - **Open issue:** `rmtree(ignore_errors=True)` cannot empty a mode-0 folder that still holds files, so those files (and any token in them) can stay on disk. The session is still not resumed.
+2026-10-31 06:56 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -548,3 +602,4 @@ Next: Coordinator review and commit.
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 2876 | 159414 | 253s | - | n/a |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 3935 | 242681 | 257s | - | PASS 47d0458 |
 | omi-agent-security-reviewer | claude-opus-5-5 | high | 20 | 7043 | 607723 | 323s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL 47d0458 |
+| omi-agent-engineer | claude-opus-5-5 | high | 22 | 5912 | 332575 | 524s | 1/1 omi-skill-lean-implementation | - |
