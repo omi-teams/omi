@@ -388,6 +388,18 @@ def test_session_resume():
             assert len(calls) == 2 and "hook post-run FAILED" in buf.getvalue() and state["hook"] == [1], "single retry"
             usage = [l for l in task.read_text(encoding="utf-8").splitlines() if l.startswith("| omi-agent-engineer")]
             assert len(usage) >= 8, usage  # the retries are recorded like any run
+            # a clean transcript is kept; one holding the token value drops the task's cache and the Session line
+            state["hook"] = []
+            task.write_text(sess.with_session(task.read_text(encoding="utf-8"), "claude", "S2"), encoding="utf-8")
+            assert "--resume" in go() and (mounted / "-work" / "S2.jsonl").exists() and "SESSION DROPPED" not in buf.getvalue()
+            (mounted / "-work" / "S2.jsonl").write_text('{"tool_result":"CLAUDE_CODE_OAUTH_TOKEN=tok"}')
+            assert "--resume" in go() and buf.getvalue().count("SESSION DROPPED: token found in transcript") == 1
+            assert not (sess.root(repo) / "TASK-001").exists() and "Session:" not in task.read_text(encoding="utf-8")
+            argv = go()
+            assert "--resume" not in argv and "RESUME FAILED" not in buf.getvalue()
+            assert not sess.scrub(repo, "TASK-001", "codex", "") and not sess.scrub(repo, "TASK-404", "codex", "tok")
+            (mounted / "x.jsonl").write_text(json.dumps({"out": '{"access_token":"a"}'}))  # JSON-escaped in the transcript
+            assert sess.scrub(repo, "TASK-001", "codex", '{"access_token":"a"}') and not mounted.exists()
             # omi clean removes the cache
             omi.worker.session.clear(repo)
             assert not omi.worker.session.root(repo).exists()

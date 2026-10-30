@@ -295,7 +295,10 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             verdict += " " + head
         if tools.quota_hit(t, r.stdout, r.returncode):
             verdict = f"QUOTA->{'codex' if t == 'claude' else 'claude'}"
-        if not read and (sid := session.session_id(t, r.stdout)) and task.exists():
+        if not read and session.scrub(repo, task.stem, t, value):  # token in a transcript: forget the session, next run is fresh
+            if task.exists():
+                task.write_text(session.LINE.sub("", task.read_text(encoding="utf-8")), encoding="utf-8")
+        elif not read and (sid := session.session_id(t, r.stdout)) and task.exists():
             task.write_text(session.with_session(task.read_text(encoding="utf-8"), t, sid), encoding="utf-8")
         tasks.record_usage(task, role, models[t] + (" (codex)" if t == "codex" else ""), efforts[t], nums,
                      time.monotonic() - t0, skills_cell(ids, done), verdict)

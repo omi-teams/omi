@@ -81,5 +81,19 @@ def available(repo, tid, tool, sid):
     return bool(SID.fullmatch(sid)) and d.is_dir() and any(f.name == f"{sid}.jsonl" or f.name.endswith(f"-{sid}.jsonl") for f in d.rglob("*.jsonl"))
 
 
+def scrub(repo, tid, tool, secret_value):
+    """True (and the task's cache dir deleted) when the token value appears in any cached file, e.g. after `env`."""
+    if not secret_value:
+        return False
+    d = root(repo) / tid
+    # the raw value and its JSON-escaped form (transcripts are JSON lines; a codex auth.json value has quotes)
+    needles = {secret_value.encode(), json.dumps(secret_value)[1:-1].encode()}
+    if d.is_dir() and any(f.is_file() and any(n in f.read_bytes() for n in needles) for f in d.rglob("*")):
+        shutil.rmtree(d, ignore_errors=True)
+        print("SESSION DROPPED: token found in transcript")
+        return True
+    return False
+
+
 def clear(repo):
     shutil.rmtree(root(repo), ignore_errors=True)
