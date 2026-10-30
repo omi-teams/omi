@@ -24,6 +24,7 @@ The board looks livelier, draws the workflow as a diagram and lists tasks as a t
 - [ ] The task page draws the workflow as a diagram (steps as nodes with arrows, PO gates marked, current step highlighted, done steps marked) from the API's workflow steps; it stays readable at 360 px.
 - [ ] The dashboard has a tree view of tasks: expand/collapse per parent (native, keyboard operable), type badge, derived status chip and a done/total progress bar per parent, from the TASK-124 API fields.
 - [ ] Kanban columns follow the TASK-134 phases (Chưa bắt đầu, Lên kế hoạch, Thiết kế, Đang làm, Đang review, Đang QA, Chờ PO, Bị chặn, Xong); each card shows a phase chip, `bước N/M` and the review round; empty columns collapse.
+- [ ] From TASK-115 QA: a done task shows every workflow step as done (✓), including the last one; the Usage table on the task page fits its card without horizontal scrolling (e.g. a stacked layout).
 - [ ] State text still goes in via `textContent` only; no external script, font or CDN; all tests pass.
 
 ## Checkpoint
