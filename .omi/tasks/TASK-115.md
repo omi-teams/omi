@@ -6,9 +6,9 @@ depends: TASK-114
 plan: PLAN-006
 scope: src/omi/board/web/**, pyproject.toml, tests/test_board_web.py, tests/test_omi.py, .omi/tasks/TASK-115.md
 role: omi-agent-engineer
-skills: []
+skills: [omi-skill-ui-direction]
 refs: []
-tool: claude
+tool: codex
 model: sonnet
 effort: medium
 step_settings:
@@ -22,6 +22,7 @@ Plain HTML/CSS/JS pages for home, project dashboard and task detail, in Vietname
 - [ ] Home, dashboard (PO-waiting, plans, kanban, activity, decisions, usage, sync) and task detail render from the API; auto-refresh every 30 s with a toggle.
 - [ ] State text is inserted with `textContent` only, never `innerHTML`; no external script, font or CDN.
 - [ ] `pip install .` ships `board/web/*` (package data); a test checks the files are in the installed package.
+- [ ] Pages match the PO-approved mockup in `.omi/tasks/TASK-115-mockup/` (Main = dashboard, Home, Task, Phone = 390 px dashboard): same layout, sections, header controls, cards, chips, progress bars, kanban columns, workflow stepper and colours.
 - [ ] Readable at 360 px width and keyboard navigable; all tests pass.
 
 ## Checkpoint
@@ -37,6 +38,19 @@ Coordinator check round 1 FAIL:
 
 Round 2: done: test_omi.py runs test_board_web; wheel test added (skips here, pip missing); app.js gaps a-f (inline error + Thử lại, re-render only on changed JSON, status region, Làm mới button, pause when hidden, localStorage toggle).
 Tests: `python3 tests/test_board_web.py` ok (wheel test skipped: no pip). Full test_omi.py not run. Browser behavior unchecked.
+
+Review round 1 FAIL:
+- app.js: after a failed poll, an unchanged successful poll returns early (UNCHANGED) and never clears the error; clear `err` on UNCHANGED too.
+- app.js: `seen[path]` is set before render; a render error makes every later poll silently UNCHANGED. Set it only after the render succeeds.
+- Wheel test skipped (no pip in worker); the Coordinator runs it on the host. Keep it.
+- Checkpoint text is stale; rewrite it.
+
+PO 2026-10-30: first build "thực sự là không có chút UIUX nào", wants a truly professional board. PO approved the mockup in `.omi/tasks/TASK-115-mockup/*.dc.html` and moved the task to Codex.
+Rebuild instructions:
+- Rework app.css/app.js/index.html to reproduce the mockup. The `.dc.html` files are design files: copy their `<helmet><style>` CSS into app.css (merge into one stylesheet, keep the class names) and the markup structure into the DOM that app.js builds. Ignore `<x-dc>`, `<helmet>`, `support.js`, `data-dc-script` and the inline `style=` attributes: move those styles into classes, since the CSP forbids inline styles.
+- Add dark-mode tokens (prefers-color-scheme) for the same palette; keep system fonts only.
+- Map API data to mockup parts: stat tiles from task_counts/po_waiting_count; plan rows with progress bars; kanban cards with id, title and chips; workflow stepper on the task page from the workflow steps plus the current `step` (if the API lacks the step list, show the current step chip only; do not change the API, it is out of scope); criteria as a checklist; reports in <details>.
+- The mockup files themselves stay as they are.
 
 ## Steps
 - plan started 2026-10-30 14:35
