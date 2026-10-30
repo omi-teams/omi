@@ -25,6 +25,9 @@ Every board refresh shows exactly what is on `origin/main` of the GitHub omi-sta
 - [ ] Tests with a local bare repo as origin cover: a pushed change appears, a local unpushed change does not, fetch failure gives `stale: true`, and no response contains the state dir path; all tests pass.
 
 ## Checkpoint
+Review round 2 FAIL:
+- Host tests (Windows, no symlink privilege) crash in tests/test_board.py (new tests around lines 207-215) with `OSError: [WinError 1314]` from `target.symlink_to(...)`. Guard like the existing tests on development (tests/test_board.py:125-145): wrap the symlink creation in `try/except OSError`, print `skip board snapshot symlink: symlink creation unavailable` and skip only that check. Round 1 drive-path fix is verified on the host.
+- Still out of this round: the `state_sync.pull` removal in src/omi/app/cli.py (cli.py is in TASK-120's scope; widened after TASK-120 merges).
 Done: Review round 1 Windows path leak fixed in src/omi/board/source.py::_repo: a drive letter followed by :/ or :\ returns an empty repo value before scp-like remote parsing. Added C:\x\y and C:/x/y regression cases in tests/test_board.py; credential sanitization and valid remote cases remain covered.
 Done: Existing tests cover fetched origin/main data, pushed changes, ignored local dirty/unpushed changes, concurrent 10-second fetch throttling, failed fetch and recovery, unchanged checkout, API path redaction, source metadata, header and stale warning.
 Not done: Criterion 1 remains incomplete end to end because src/omi/app/cli.py:190 still calls state_sync.pull(project) at board startup. The task explicitly defers that file to parallel TASK-120; it was not modified. Checked affected tests: tests/test_board_server.py::test_board_cli expects one pull and must change alongside removal; tests/test_cli.py::test_cli_characterization covers board dispatch.
