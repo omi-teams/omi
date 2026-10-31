@@ -79,6 +79,8 @@ def test_hooks():
         def __init__(s, out=b"", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
 
     def run(cmd, **kw):
+        if cmd[:2] == ["docker", "run"] and ("chmod" in cmd or "grep" in cmd):
+            return R(rc=1 if "grep" in cmd else 0)
         if "--git-common-dir" in cmd:
             return R(str(Path(cmd[2]) / "shared.git"))
         calls.append((cmd, kw))
@@ -283,6 +285,8 @@ def test_run_read_role():
         def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
 
     def run(cmd, **kw):
+        if cmd[:2] == ["docker", "run"] and ("chmod" in cmd or "grep" in cmd):
+            return R(rc=1 if "grep" in cmd else 0)
         if "--git-common-dir" in cmd:
             return R(str(Path(cmd[2]) / "shared.git"))
         calls.append((cmd, kw))
@@ -445,6 +449,8 @@ def test_review_round_flow():
         def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
 
     def run(cmd, **kw):
+        if cmd[:2] == ["docker", "run"] and ("chmod" in cmd or "grep" in cmd):
+            return R(rc=1 if "grep" in cmd else 0)
         if "--git-common-dir" in cmd:
             return R(str(Path(cmd[2]) / "shared.git"))
         if cmd[:2] == ["docker", "run"]:
@@ -487,7 +493,7 @@ def test_review_round_flow():
             assert seen["files"] == ["diff.patch"] and "Incremental" not in seen["prompt"]
             # usage but no result: the raw output is printed, never None
             run_raw = json.dumps({"usage": {"input_tokens": 1, "output_tokens": 2}})
-            subprocess.run = lambda cmd, **kw: R(run_raw) if cmd[:2] == ["docker", "run"] else run(cmd, **kw)
+            subprocess.run = lambda cmd, **kw: R(run_raw) if cmd[:2] == ["docker", "run"] and "grep" not in cmd and "chmod" not in cmd else run(cmd, **kw)
             sys.stdout = io.StringIO()
             omi.worker.run.run_role("omi-agent-engineer", wt, task)
             printed = sys.stdout.getvalue()

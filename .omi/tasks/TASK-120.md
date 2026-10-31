@@ -4,7 +4,7 @@ title: Resume the engineer session on fix rounds
 status: in-progress
 depends:
 plan:
-scope: src/omi/worker/**, src/omi/app/cli.py, .omi/rules/omi-modules.md, src/omi/template/**, src/omi/template_shas.json, .claude/skills/omi-task/SKILL.md, tests/test_worker.py, .omi/tasks/TASK-120.md
+scope: src/omi/worker/**, src/omi/app/cli.py, .omi/rules/omi-modules.md, src/omi/template/**, src/omi/template_shas.json, .claude/skills/omi-task/SKILL.md, tests/test_worker.py, tests/test_creds.py, tests/test_tools.py, tests/test_hooks.py, tests/test_content.py, .omi/tasks/TASK-120.md
 role: omi-agent-engineer
 skills: []
 refs: []
@@ -27,6 +27,7 @@ On a fix round, `omi run` continues the engineer's previous CLI session (`claude
 - [ ] The omi-task skill (template copy) describes the resume behaviour; tests cover resume, fresh fallback and read-role exclusion; all tests pass.
 
 ## Checkpoint
+Round 8b done: applied the mock lines to tests/test_creds.py (3 mocks), test_tools.py (1), test_hooks.py (3, plus the `R(run_raw)` lambda) and test_content.py (1). T2: the omi-task skill and its template copy now say "transcripts in a per-task Docker volume, never on the host, removed by `omi clean`; a token found in it drops the session". The 0.5.0 hash in template_shas.json is updated. No host-cache wording is left. The full `python3 tests/test_omi.py` printed `ok` (pip/playwright skipped). Docker was not run for real; the UNVERIFIED items below still stand. Next: Coordinator review and commit.
 Round 8 (redesign) NEEDS SCOPE: done inside scope. The session cache is now a Docker named volume `omi-sess-<repo>-<TID>-<tool>` (labels omi-worker=1, omi-repo, omi-task, omi-session=1) mounted with `type=volume` at /sessions. The host never reads, chmods or deletes transcripts. All host scrub/chmod/uid/comma/Windows-skip code and its tests are removed.
 - New volume: `docker volume create`, then a one-shot `chmod 0777 /s` (`--user 0 --cap-drop ALL --network none --read-only --security-opt no-new-privileges`). `--fresh`, a tool switch and every fresh fallback (RESUME FAILED, quota switch) recreate the volume; resume and the hook-fix retry reuse it.
 - Scan after every write run (in `attempt`'s finally): `grep -rqF -f - /s` as node, no network, ro rootfs, volume `readonly`; tokens go in on stdin (raw + JSON-escaped, codex blob tokens; multi-line/empty needles never go in). Only rc 1 keeps the volume. rc 0 -> `SESSION DROPPED: token found in transcript`; any other rc, an OSError or a 300 s timeout -> `SESSION DROPPED: cannot scan the session volume`. Either way the volume is removed and the `Session:` line goes. A refused rm prints `SESSION CACHE NOT REMOVED: <vol>`.
@@ -678,6 +679,61 @@ Next: Coordinator review and commit.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > AssertionError
+2026-10-31 07:45 omi-agent-engineer (claude):
+> DONE: round 8b finished. The test mocks are fixed and the skill text now matches the new design.
+> 
+> - **Test mocks:** in `tests/test_creds.py`, `test_tools.py`, `test_hooks.py` and `test_content.py`, each mocked `docker run` now answers the volume `chmod` helper with rc 0 and the token scan (`grep`) with rc 1 ("no token found"). In `test_hooks.py` the `R(run_raw)` lambda skips both helper commands.
+> - **Skill text:** `.claude/skills/omi-task/SKILL.md` and its template copy now say transcripts live in a per-task Docker volume, never on the host, removed by `omi clean`, and that a token found in it drops the session. The 0.5.0 hash in `src/omi/template_shas.json` is updated and matches. No host-cache wording is left. The task file `## Checkpoint` is updated.
+> - **Tests:** I ran the full `python3 tests/test_omi.py` twice; the second run came after all edits and exited 0 with `ok`. Two checks were skipped: the wheel check (pip missing) and the browser layout check (playwright missing).
+> - **Not verified:** nothing ran against real Docker here. Four Docker behaviours from the checkpoint are still unconfirmed: grep `-r` skipping fifos and devices, the CLI transcript paths through the symlink, removing a volume a Ctrl-C'd agent still holds, and the root `chmod` under rootless Docker.
+> - **Suggested commit:** `feat(worker): resume the engineer session from a per-task Docker volume`
+2026-10-31 07:49 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -704,3 +760,4 @@ Next: Coordinator review and commit.
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 16 | 5339 | 545390 | 330s | - | FAIL a37d894 |
 | omi-agent-architect | claude-opus-5-5 | high | 12 | 11597 | 183899 | 163s | - | n/a |
 | omi-agent-engineer | claude-opus-5-5 | high | 68 | 33178 | 2410750 | 976s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-engineer | claude-opus-5-5 | high | 36 | 4597 | 619658 | 709s | 1/1 omi-skill-lean-implementation | - |
