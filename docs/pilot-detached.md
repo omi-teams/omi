@@ -143,20 +143,72 @@ hiện trên board như mọi dự án khác. Phương án đã chọn (architec
 `.omi/**`, `AGENTS.md`, `.claude/**`, `docker/**` khỏi repo code; bản sao
 `src/omi/template/**` giữ nguyên; phát triển omi qua `omi install-user`.
 
-Bằng chứng được chép từ checkpoint T1 của Coordinator (chạy trên host); docs-writer không
-chạy lại các lệnh, và checkpoint không lưu stdout đầy đủ.
+Đầu ra dưới đây là stdout thật do Coordinator chạy trên Windows host ngày 2026-10-31.
 
 ### Lệnh và kết quả (T1, trên host)
 
-| Bước | Lệnh hoặc thao tác | Kết quả được ghi nhận |
-|---|---|---|
-| 1 | `python -m omi install-user` | `installed omi user integration`; `~/.claude/settings.json` có `-m omi guard` (PreToolUse) và `-m omi session-start` |
-| 2 | `omi status` (lưu làm "trước") | Đầu ra gốc để so sánh |
-| 3 | `python -m omi attach` | `attached: ~/.omi/state/projects/omi (pushed seed 01db044)` |
-| 4 | Chép `.omi/{agents,config.json,decisions.md,hooks,plans,references,rules,skills,tasks,version,workflows}` và `docker/` đè lên seed, sinh lại catalog | 19 skills, 9 roles, 11 workflows, 6 rules, 2 references, 8 plans |
-| 5 | Commit và push omi-state | `2eb37d5` "omi: import state from omi-teams/omi@17712ff; history: git log -- .omi AGENTS.md .claude" (159 file) |
-| 6 | `omi status` (lưu làm "sau"), so với "trước" | Chỉ khác một dòng thêm: `WARN: in-repo omi files ignored (detached): .omi/, AGENTS.md, .claude/` |
-| 7 | Clone mới omi-state, `OMI_STATE=<thư mục tạm>`, mở board | Dự án `['omi', 'omi-pilot-splitbill']`; omi có plan active `PLAN-007 3/16`, 8 plan |
+```
+$ python -m omi install-user
+installed omi user integration
+$ grep -n "omi guard" ~/.claude/settings.json
+89:            "command": "C:\\Users\\Admin\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe -m omi guard"
+```
+
+`omi status` trước khi attach (6 dòng đầu):
+
+```
+$ python -m omi status
+branch: development
+omi 0.5.0 (project 0.5.0)
+no `test` command in .omi/config.json; set one, e.g. "test": "python3 -m pytest -q"
+PLAN-007 omi 0.6.0 - professional omi board: done 3/16
+done plans: PLAN-002, PLAN-003, PLAN-004, PLAN-005, PLAN-006
+done: 124/142
+```
+
+```
+$ python -m omi attach        (4 dòng cuối)
+wrote C:\Users\Admin\.omi\state\projects\omi\.omi\plans\CATALOG.md (1 plans)
+tools: git ok, gh ok, docker ok, claude ok, codex ok
+attached: C:\Users\Admin\.omi\state\projects\omi
+WARN: in-repo omi files ignored (detached): .omi/, AGENTS.md, .claude/
+```
+
+Chép `.omi/{agents,config.json,decisions.md,hooks,plans,references,rules,skills,tasks,version,workflows}` và `docker/` đè lên seed, rồi sinh lại catalog:
+
+```
+wrote C:\Users\Admin\.omi\state\projects\omi\.omi\skills\CATALOG.md (19 skills)
+wrote C:\Users\Admin\.omi\state\projects\omi\.omi\agents\CATALOG.md (9 roles)
+wrote C:\Users\Admin\.omi\state\projects\omi\.omi\workflows\CATALOG.md (11 workflows)
+wrote C:\Users\Admin\.omi\state\projects\omi\.omi\rules\CATALOG.md (6 rules)
+wrote C:\Users\Admin\.omi\state\projects\omi\.omi\references\CATALOG.md (2 references)
+wrote C:\Users\Admin\.omi\state\projects\omi\.omi\plans\CATALOG.md (8 plans)
+$ git -C ~/.omi/state log --oneline -2
+2eb37d5 omi: import state from omi-teams/omi@17712ff; history: git log -- .omi AGENTS.md .claude
+01db044 omi: attach omi
+$ git -C ~/.omi/state show --stat --oneline 2eb37d5 | tail -1
+ 159 files changed, 16224 insertions(+), 20 deletions(-)
+```
+
+So sánh `omi status` trước và sau (chỉ thêm dòng WARN, vì file in-repo vẫn còn cho tới khi PR gỡ merge):
+
+```
+$ diff status_before.txt status_after.txt
+0a1
+> WARN: in-repo omi files ignored (detached): .omi/, AGENTS.md, .claude/
+```
+
+Clone mới omi-state vào thư mục tạm và đọc dữ liệu board:
+
+```
+$ git clone https://github.com/omi-teams/omi-state.git <tmp>
+$ OMI_STATE=<tmp> python -c "from omi.board import data; ..."
+['omi', 'omi-pilot-splitbill']
+[('PLAN-007', 'active', 3, 16)]
+8 plans; {'planned': 17, 'in-progress': 1, 'review': 0, 'blocked': 0, 'done': 124}
+$ curl -s http://127.0.0.1:8765/api/projects   (tên dự án)
+['omi', 'omi-pilot-splitbill']
+```
 
 Lịch sử trước khi import xem bằng `git log -- .omi AGENTS.md .claude` trong repo code
 (ghi trong commit message của omi-state).
@@ -165,9 +217,21 @@ Lịch sử trước khi import xem bằng `git log -- .omi AGENTS.md .claude` t
 
 Một PR duy nhất gỡ `.omi/**`, `AGENTS.md`, `.claude/**`, `docker/**` khỏi repo code.
 Test đổi theo: `tests/test_cli.py:16`, `tests/test_content.py:137,252` chỉ đọc TEMPLATE;
-`tests/test_board.py:297` bỏ kiểm tra text `omi-modules.md`. Sau PR, `omi status` không
-còn dòng `WARN: in-repo omi files ignored`. Kết quả (SHA PR, đầu ra `omi status`) do
-Coordinator ghi sau khi merge; mục này chưa có số liệu đó.
+`tests/test_board.py:297` bỏ kiểm tra text `omi-modules.md`. Trước khi merge, kiểm tra trên worktree đã gỡ file (không in dòng WARN):
+
+```
+$ python -c "from pathlib import Path; from omi.setup import attach; attach.warn_in_repo_files(Path('../omi.wt/TASK-135'))"
+$
+```
+
+### Sau khi merge
+
+```
+$ git log --oneline -1
+(Coordinator điền sau khi merge)
+$ python -m omi status
+(Coordinator điền sau khi merge)
+```
 
 ### Rollback
 
