@@ -79,6 +79,7 @@ PO round override 3: Thêm 1 vòng, quy tắc gọn
 - security done 2026-10-31 16:18
 - accept started 2026-10-31 16:18
 PO approval accept: các quyết định merge không cần hỏi khi review đã passed (2026-10-31 standing rule; review and security PASS)
+- accept done 2026-10-31 16:18
 
 ## Reports
 2026-10-31 13:43 omi-agent-engineer (codex):
