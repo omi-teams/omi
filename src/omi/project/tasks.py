@@ -26,6 +26,14 @@ def po_approved(text, sid):
     return bool(sep) and re.search(rf"^(?:- )?PO approval {re.escape(sid)}: *\S", current, re.M) is not None
 
 
+def last_verdict(text, role):
+    """PASS or FAIL of the role's latest row in `## Usage`, else empty."""
+    rows = [[c.strip() for c in l.strip().strip("|").split("|")] for l in text.partition("\n## Usage")[2].split("\n## ", 1)[0].splitlines()
+            if l.startswith("|") and not l.startswith("|---") and not l.startswith("| role")]
+    last = [r[-1].split()[0] for r in rows if r[0] == role and r[-1][:4] in ("PASS", "FAIL")]
+    return last[-1] if last else ""
+
+
 def plan_status(stored: str, statuses: list[str]) -> str:
     """Shown plan status: `done` when it has tasks and all are done, else the stored one."""
     return "done" if statuses and all(st == "done" for st in statuses) else stored
@@ -224,11 +232,14 @@ def step(root, tid, action, why=None, now=None):
             sys.exit(f"{tid}: step {cur} is a po gate; tick the reviewed acceptance criteria first:\n"
                      + "\n".join(unticked(text)) + "\nNothing changed.")
         if steps[at]["gate"] == "review":
-            rows = [[c.strip() for c in l.strip().strip("|").split("|")] for l in text.partition("\n## Usage")[2].split("\n## ", 1)[0].splitlines()
-                    if l.startswith("|") and not l.startswith("|---") and not l.startswith("| role")]
-            last = [r[-1].split()[0] for r in rows if r[0] == steps[at]["role"] and r[-1][:4] in ("PASS", "FAIL")]
-            if last and last[-1] == "FAIL":
+            if last_verdict(text, steps[at]["role"]) == "FAIL":
                 sys.exit(f"{tid}: the last {steps[at]['role']} verdict is FAIL; run `omi step {tid} back`. Nothing changed.")
+        if steps[at]["gate"] == "auto":
+            prev = next((s for s in reversed(steps[:at]) if s["gate"] == "review"), None)
+            if not po_approved(text, cur):  # an explicit PO approval line also passes
+                if not prev or last_verdict(text, prev["role"]) != "PASS":
+                    sys.exit(f"{tid}: step {cur} is an auto gate; it needs a {prev['role'] if prev else 'review'} verdict PASS. Nothing changed.")
+                text = add_step_log(text, "Auto accept: review PASS")
         text, msg = add_step_log(text, f"- {cur} done {stamp}"), f"{tid}: step {cur} done"
     elif action == "skip":
         if not (why or "").strip():

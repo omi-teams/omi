@@ -11,7 +11,7 @@ from ..common import core
 WORKFLOW_TOKENS = 2000  # per workflow file (bytes/4)
 DEFAULT_WORKFLOW = "omi-flow-feature"
 STEP_KEYS = ("id", "role", "skills", "input", "output", "gate", "stop")
-GATES = ("none", "review", "po")
+GATES = ("none", "review", "auto", "po")
 COORDINATOR = "coordinator"  # a step the Coordinator does itself (plan, PO acceptance); no role file
 
 
