@@ -4,7 +4,7 @@ title: install-user also installs the omi guard edit hook
 status: in-progress
 depends:
 plan: PLAN-007
-scope: src/omi/setup/install.py, tests/test_install.py, .omi/tasks/TASK-143.md
+scope: src/omi/setup/install.py, src/omi/project/scope.py, tests/test_install.py, tests/test_init.py, tests/test_detached.py, .omi/tasks/TASK-143.md
 role: omi-agent-engineer
 skills: []
 refs: []
