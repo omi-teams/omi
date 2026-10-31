@@ -1,7 +1,7 @@
 ---
 id: TASK-136
 title: Plans whose tasks are all done show as done
-status: in-progress
+status: done
 depends:
 plan: PLAN-007
 scope: src/omi/board/**, src/omi/project/tasks.py, src/omi/app/cli.py, tests/test_board.py, tests/test_tasks.py, tests/test_content.py, .omi/tasks/TASK-136.md
@@ -13,16 +13,16 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature
-step: build
+step: accept
 ---
 ## Goal
 A plan with at least one task and every task `done` is shown as done in `omi status` and on the board, instead of `active`, without editing the plan file.
 
 ## Acceptance criteria
-- [ ] One function derives a plan's shown status: `done` when it has tasks and all are `done`; otherwise the stored `status:`. The plan file is never rewritten.
-- [ ] `omi status` lists done plans after active ones (or folds them into one `done plans: PLAN-002..006` line); the board's project list shows only plans that are not done, and the project view marks done plans.
-- [ ] A plan with no tasks keeps its stored status.
-- [ ] Tests cover all done, partly done, no tasks and a stored `status: done`; all tests pass.
+- [x] One function derives a plan's shown status: `done` when it has tasks and all are `done`; otherwise the stored `status:`. The plan file is never rewritten.
+- [x] `omi status` lists done plans after active ones (or folds them into one `done plans: PLAN-002..006` line); the board's project list shows only plans that are not done, and the project view marks done plans.
+- [x] A plan with no tasks keeps its stored status.
+- [x] Tests cover all done, partly done, no tasks and a stored `status: done`; all tests pass.
 
 ## Checkpoint
 Done: tasks.plan_status; cli status folds done plans into `done plans:` line; board plans use derived status, projects list hides done plans; tests in test_board.py/test_tasks.py.
@@ -35,6 +35,11 @@ Session: claude 5640203b-f68c-4132-9836-f944982d74b6
 - plan started 2026-10-31 12:27
 - plan done 2026-10-31 12:27
 - build started 2026-10-31 12:27
+- build done 2026-10-31 12:54
+- review started 2026-10-31 12:54
+- review done 2026-10-31 13:06
+- accept started 2026-10-31 13:06
+PO approval accept: Accept, merge
 
 ## Reports
 2026-10-31 12:34 omi-agent-engineer (claude):
@@ -149,6 +154,16 @@ Session: claude 5640203b-f68c-4132-9836-f944982d74b6
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-31 13:06 omi-agent-reviewer (claude):
+> ```
+> VERDICT: PASS
+> - src/omi/app/cli.py:180 Plans with a stored `status: done` are left out of `omi status`, while derived-done plans are folded into the `done plans:` line. test_content.py:172 expects this, and it reads as a deliberate choice -> optional: list stored-done plans in the line too, and update that assertion.
+> - tests/test_tasks.py:273 No test covers the `omi status` `done plans:` line. The new tests cover only `plan_status` and the board data -> optional: add a status-output assertion.
+> AC: One function derives a plan's shown status; the plan file is never rewritten ✓ `tasks.plan_status` in tasks.py:29 is used by cli.py and board/data.py. test_plan_status_derived asserts the plan file still has `status: active`.
+> AC: `omi status` lists done plans after active ones or folds them into one line; the board project list hides done plans; the project view marks done plans ✓ `PYTHONPATH=src python3 -m omi status` printed `done plans: PLAN-002, PLAN-003, PLAN-004, PLAN-005, PLAN-006`. The board test shows `projects()` returning only PLAN-002 and PLAN-003. `app.js:45` marks plans with `status === "done"` as completed, and that status is now derived.
+> AC: A plan with no tasks keeps its stored status ✓ test_plan_status asserts this, and test_plan_status_derived covers PLAN-003 (stored active, no tasks) and PLAN-004 (stored done).
+> AC: Tests cover all done, partly done, no tasks and a stored `status: done`; all tests pass ✓ `python3 tests/test_omi.py` ended with `ok`. The wheel and playwright checks were skipped, and they are not part of this criterion.
+> ```
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -156,3 +171,4 @@ Session: claude 5640203b-f68c-4132-9836-f944982d74b6
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 30 | 5073 | 471003 | 409s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 6 | 1069 | 119899 | 356s | 0/1 | - |
 | omi-agent-engineer | claude-sonnet-5-5 | medium | 8 | 448 | 168092 | 12s | 0/1 | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 14 | 2398 | 206088 | 570s | - | PASS 1d47b2a |
