@@ -1,7 +1,7 @@
 ---
 id: TASK-143
 title: install-user also installs the omi guard edit hook
-status: in-progress
+status: done
 depends:
 plan: PLAN-007
 scope: src/omi/setup/install.py, src/omi/project/scope.py, src/omi/app/cli.py, tests/test_attach.py, tests/test_install.py, tests/test_init.py, tests/test_detached.py, .omi/tasks/TASK-143.md
@@ -13,7 +13,7 @@ model: opus
 effort: high
 step_settings:
 workflow: omi-flow-feature-sensitive
-step: build
+step: accept
 ---
 ## Goal
 A detached repo keeps the Coordinator's edit guard: `omi install-user` adds the `PreToolUse` hook `python -m omi guard` (matcher `Edit|Write|MultiEdit|NotebookEdit`) to the user's Claude Code settings next to the SessionStart hook, so removing `.claude/settings.json` from a code repo (TASK-135) does not drop the guard.
@@ -72,6 +72,13 @@ Session: claude f30b7a25-bccd-4e10-9347-ff7a2ee169b7
 PO round override 3: Thêm 1 vòng, quy tắc gọn
 - security failed 2026-10-31 15:55
 - build started 2026-10-31 15:55
+- build done 2026-10-31 16:04
+- review started 2026-10-31 16:04
+- review done 2026-10-31 16:10
+- security started 2026-10-31 16:10
+- security done 2026-10-31 16:18
+- accept started 2026-10-31 16:18
+PO approval accept: các quyết định merge không cần hỏi khi review đã passed (2026-10-31 standing rule; review and security PASS)
 
 ## Reports
 2026-10-31 13:43 omi-agent-engineer (codex):
@@ -379,6 +386,22 @@ PO round override 3: Thêm 1 vòng, quy tắc gọn
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-31 16:10 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/project/scope.py:62 With an unreadable registry, a detached project (no in-repo `.omi/`) counts as non-omi for non-engineer agents, so the guard prints a warning and allows the edit. PO override 3 specifies this and the tests assert it, so it is not a defect. It is a real fail-open path, so the Coordinator should know about it. -> No change needed.
+> 
+> AC: `omi install-user` adds the guard hook once, idempotently, keeps other hooks, and records it like the SessionStart hook ✓ `test_install_user_guard_fresh` and `test_install_user_guard_existing_hooks` pass in the full suite. They cover a fresh install, a rerun with an unchanged snapshot, an existing identical entry and a user hook kept. `test_install_user_recorded_interpreter` checks the `guard_hook`, `guard_added` and `pretool_created` fields in the manifest.
+> AC: `--remove` removes only the guard entry, and the `PreToolUse` list only if install-user created it; the backup rule stays as today ✓ `install.py` gates removal on `guard_added` and `pretool_created`. `test_install_user_removal_preserves_edits` keeps a user's `PreToolUse` entry, and the existing-hooks test restores the original bytes and removes the backup.
+> AC: A non-list `hooks.PreToolUse` fails with a `StateError` in the SessionStart style and changes nothing ✓ `test_install_user_guard_malformed_pretool` covers install and remove for `{}`, `None`, a string and `1`. It checks the message and an unchanged file snapshot. `test_install_user_invalid_input` adds the same case.
+> [... truncated ...]
+> AC: Changes stay within the task's declared scope ✓ The diff touches only `install.py`, `scope.py`, `cli.py`, `test_attach.py`, `test_install.py`, `test_init.py`, `test_detached.py` and the task file.
+2026-10-31 16:18 omi-agent-security-reviewer (claude):
+> ```
+> VERDICT: PASS
+> - src/omi/project/scope.py:58-61 With an unreadable registry, a detached project (no in-repo `.omi/`) counts as non-omi for non-engineer agents. The guard prints a warning, returns 0, and skips the `.claude/settings*.json` block. | why: this is a fail-open path, but PO override 3 specifies it and `test_invalid_registry_cli` and `test_guard_invalid_registry_cli` assert it, so it is not a defect | verified: read scope.py and resolve.py:62-74 and the new tests; `python3 tests/test_omi.py` exits 0 (wheel packaging and Playwright checks skipped) -> no change needed.
+> - install.py, cli.py: the PreToolUse handling matches the acceptance criteria (guard added once, removed only when `guard_added` is set, `PreToolUse` dropped only when `pretool_created` is set, a non-list `PreToolUse` raises the `StateError`). Skipping the registry precheck for `guard` in `main()` is safe, because `guard()` catches `StateError` itself.
+> UNVERIFIED: a corrupt registry now silently disables the guard for non-engineer sessions in detached projects. Run `omi guard` in a detached project with a bad `~/.omi/state` manifest and confirm that the Coordinator sees the one-line warning.
+> ```
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -395,3 +418,5 @@ PO round override 3: Thêm 1 vòng, quy tắc gọn
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 2386 | 188499 | 484s | - | PASS e5b0c3b |
 | omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 14 | 2182 | 391011 | 297s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL e5b0c3b |
 | omi-agent-engineer | claude-opus-5-5 | high | 18 | 6322 | 502970 | 302s | 0/1 | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 2712 | 210224 | 249s | - | PASS 13ca264 |
+| omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 16 | 2366 | 514437 | 342s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS 13ca264 |
