@@ -395,12 +395,6 @@ def test_model_catalog_and_task_start():
                 assert f"- {alias}: {model}; fits: {note['fits']}; avoid: {note['avoid']}" in catalog
             for effort, note in cfg["model_notes"][tool]["efforts"].items():
                 assert f"- effort {effort}; fits: {note['fits']}; avoid: {note['avoid']}" in catalog
-    for path in (root / "AGENTS.md", omi.common.core.TEMPLATE / "AGENTS.md",
-                 root / ".claude/skills/omi-task/SKILL.md", omi.common.core.TEMPLATE / "dot-claude/skills/omi-task/SKILL.md"):
-        text = path.read_text(encoding="utf-8").split("## Task-start tool choice", 1)[1]
-        for phrase in ("every task-start pick-list", "Start with Claude Code", "Start with Codex",
-                       "exactly one option Recommended", "task-specific reason", "PO chooses", "model>/<effort>"):
-            assert phrase in text, (path, phrase)
     with tempfile.TemporaryDirectory() as d:
         target = Path(d)
         omi.setup.upgrade.init(target)
@@ -469,7 +463,53 @@ def test_model_catalog_and_task_start():
         assert omi.worker.tools.resolve_effort("ultra", "codex") == "ultra"
 
 
+
+def task_start_sections() -> list[str]:
+    root = Path(__file__).parents[1]
+    return [path.read_text(encoding="utf-8").split("## Task-start tool choice\n", 1)[1].split("\n## ", 1)[0]
+            for path in (root / "AGENTS.md", omi.common.core.TEMPLATE / "AGENTS.md",
+                         root / ".claude/skills/omi-task/SKILL.md",
+                         omi.common.core.TEMPLATE / "dot-claude/skills/omi-task/SKILL.md")]
+
+
+def test_task_start_proposal():
+    for text in task_start_sections():
+        for phrase in ("every task-start pick-list", "the Coordinator decides the tool, concrete model and effort",
+                       "quota rules", "## Models", "`models` and `codex_models`",
+                       "one proposal first", "other tool as the alternative",
+                       "Approve: <tool> (<model>/<effort>) — <task-specific reason>",
+                       "Alternative: <other tool> (<model>/<effort>) — <task-specific reason>",
+                       "The PO approves", "record the approved choice as `tool`, model alias and explicit `effort`",
+                       "in the task before starting"):
+            assert phrase in text, phrase
+        assert text.index("- Approve:") < text.index("- Alternative:")
+        for old in ("offer both tools and wait for the PO to choose", "PO chooses", "option Recommended"):
+            assert old not in text, old
+
+
+def test_task_start_tool_only():
+    for text in task_start_sections():
+        for phrase in ("When the PO names only a tool", "Coordinator chooses model and effort itself",
+                       "states both, without another question", "Never use `codex-default` or an omitted effort"):
+            assert phrase in text, phrase
+
+
+def test_task_start_copies_match():
+    sections = task_start_sections()
+    assert all(text == sections[0] for text in sections)
+    root = Path(__file__).parents[1]
+    assert (root / ".claude/skills/omi-task/SKILL.md").read_text(encoding="utf-8") == (
+        omi.common.core.TEMPLATE / "dot-claude/skills/omi-task/SKILL.md").read_text(encoding="utf-8")
+    for path in (root / "AGENTS.md", omi.common.core.TEMPLATE / "AGENTS.md"):
+        text = path.read_text(encoding="utf-8")
+        assert "set them only at task start from the approved proposal or alternative" in text
+        assert "from the PO's pick" not in text
+
+
 def main():
+    test_task_start_proposal()
+    test_task_start_tool_only()
+    test_task_start_copies_match()
     test_model_catalog_and_task_start()
     test_tool_choice_and_quota_switch()
 
