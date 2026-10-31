@@ -51,6 +51,7 @@ PO approval accept: Accept + sửa nốt
 - review done 2026-10-31 13:18
 - accept started 2026-10-31 13:18
 PO approval accept: review passed thì merge và start task tiếp theo
+- accept done 2026-10-31 13:18
 
 ## Reports
 2026-10-31 12:32 omi-agent-engineer (codex):
