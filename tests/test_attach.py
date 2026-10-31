@@ -317,17 +317,26 @@ def test_invalid_registry_cli():
         for data in (b"{", b"[]", b'{"remote":""}', b'{"remote":"https://[invalid"}', b'\xff', b'{"remote":"https://example.org/team/sample.git"}'):
             duplicate.write_bytes(data)
             for args in commands:
-                out = io.StringIO()
-                with contextlib.chdir(code), contextlib.redirect_stdout(out):
+                out, err = io.TextIOWrapper(io.BytesIO(), encoding="utf-8"), io.StringIO()  # dispatch reconfigures stdout
+                payload = io.TextIOWrapper(io.BytesIO(json.dumps(
+                    {"cwd": str(code), "tool_input": {"file_path": str(code / "app.py")}}).encode()))
+                with contextlib.chdir(code), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), \
+                        patch.object(sys, "stdin", payload):
                     try:
                         omi.app.cli.main(args)
                     except SystemExit as exc:
-                        message = str(exc.code)
-                        assert len(message.splitlines()) == 1 and message.startswith("OMI: "), (args, message)
+                        if args == ["guard"]:  # no in-repo .omi/, not an engineer: skipped with a warning, never exit 1
+                            message = err.getvalue()
+                            assert exc.code == 0 and message.startswith("OMI: warning: cannot read omi state for "), message
+                            assert message.endswith("); guard skipped.\n") and len(message.splitlines()) == 1, message
+                        else:
+                            message = str(exc.code)
+                            assert len(message.splitlines()) == 1 and message.startswith("OMI: "), (args, message)
                         assert str(duplicate) in message, (args, message)
                     else:
                         raise AssertionError(f"invalid registry accepted by {args}")
-                assert not out.getvalue(), (args, out.getvalue())
+                out.flush()
+                assert not out.buffer.getvalue(), (args, out.buffer.getvalue())
             result = subprocess.run([sys.executable, "-m", "omi", "status"], cwd=code,
                                     capture_output=True, encoding="utf-8", errors="replace")
             assert result.returncode == 1 and result.stdout == "", result

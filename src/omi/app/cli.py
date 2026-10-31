@@ -123,9 +123,10 @@ def status(cwd="."):
 
 def main(argv: list[str] | None = None) -> None:
     try:
-        state.registry()
         args = sys.argv[1:] if argv is None else argv
         cmd = args[0] if args else "help"
+        if cmd != "guard":  # guard handles StateError itself and must exit 2 (blocking), not 1
+            state.registry()
         mutates = cmd in {"init", "upgrade", "skills", "rules", "plans", "references", "agents",
                           "workflows", "step", "run", "hook", "worker"}
         target = args[1] if cmd == "init" and len(args) > 1 else "."

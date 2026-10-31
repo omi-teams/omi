@@ -12,13 +12,15 @@ from ..common import core
 from ..state import resolve as state
 
 
-def _hook() -> dict:
+def _hook(command: str = "session-start") -> dict:
     executable = (subprocess.list2cmdline([sys.executable]) if sys.platform == "win32"
                   else shlex.quote(sys.executable))
-    return {"hooks": [{"type": "command", "command": executable + " -m omi session-start"}]}
+    return {"hooks": [{"type": "command", "command": executable + " -m omi " + command}]}
 
 
 HOOK = _hook()
+GUARD_MATCHER = "Edit|Write|MultiEdit|NotebookEdit"
+GUARD_HOOK = {"matcher": GUARD_MATCHER, **_hook("guard")}
 LEGACY_HOOK = {"hooks": [{"type": "command", "command": "python -m omi session-start"}]}
 START, END = "<!-- omi -->", "<!-- /omi -->"
 
@@ -102,11 +104,21 @@ def _validate_manifest(record: dict, manifest: Path) -> None:
             if (path.is_absolute() or ".." in path.parts or not path.parts
                     or path.parts[0] not in (".claude", ".codex", ".omi")):
                 raise ValueError("invalid directory path")
-        if "hook" in record:
-            hook = record["hook"]
-            if (not isinstance(hook, dict) or set(hook) != {"hooks"}
+        if any(key in record for key in ("guard_hook", "guard_added", "pretool_created")):
+            if (not isinstance(record.get("guard_added"), bool)
+                    or not isinstance(record.get("pretool_created"), bool)
+                    or "guard_hook" not in record):
+                raise ValueError("invalid guard fields")
+        for key in ("hook", "guard_hook"):
+            if key not in record:
+                continue
+            hook = record[key]
+            expected = {"hooks", "matcher"} if key == "guard_hook" else {"hooks"}
+            if (not isinstance(hook, dict) or set(hook) != expected
                     or not isinstance(hook["hooks"], list) or len(hook["hooks"]) != 1):
                 raise ValueError("invalid hook")
+            if key == "guard_hook" and hook["matcher"] != GUARD_MATCHER:
+                raise ValueError("invalid guard matcher")
             command = hook["hooks"][0]
             if (not isinstance(command, dict) or set(command) != {"type", "command"}
                     or command["type"] != "command" or not isinstance(command["command"], str)
@@ -126,10 +138,13 @@ def install_user(remove: bool = False) -> None:
     if manifest.exists():
         _validate_manifest(record, manifest)
     hook = record.get("hook", LEGACY_HOOK) if record else _hook()
+    guard_hook = record.get("guard_hook", {"matcher": GUARD_MATCHER, **_hook("guard")})
     config = _object(settings)
     hooks = config.get("hooks", {})
     if not isinstance(hooks, dict) or not isinstance(hooks.get("SessionStart", []), list):
         raise state.StateError(f"{settings}: expected hooks object and SessionStart list")
+    if not isinstance(hooks.get("PreToolUse", []), list):
+        raise state.StateError(f"{settings}: expected hooks object and PreToolUse list")
     text = agents.read_bytes().decode("utf-8") if agents.exists() else ""
     old_block = _block(text)
     if remove:
@@ -149,6 +164,10 @@ def install_user(remove: bool = False) -> None:
             hooks["SessionStart"].remove(hook)
         if record["session_created"] and not hooks.get("SessionStart"):
             hooks.pop("SessionStart", None)
+        if record.get("guard_added") and guard_hook in hooks.get("PreToolUse", []):
+            hooks["PreToolUse"].remove(guard_hook)
+        if record.get("pretool_created") and not hooks.get("PreToolUse"):
+            hooks.pop("PreToolUse", None)
         if record["hooks_created"] and not hooks:
             config.pop("hooks", None)
         if record["settings_created"] and not config:
@@ -187,7 +206,13 @@ def install_user(remove: bool = False) -> None:
                   "hook": hook, "hook_added": hook not in hooks.get("SessionStart", []), "block_before": old_block,
                   "prefix": "" if old_block or not text else "\n\n", "directories": [],
                   "settings_before": base64.b64encode(settings.read_bytes()).decode("ascii") if settings.exists() else None,
-                  "backup_created": settings.exists() and not settings.with_name("settings.json.omi-bak").exists() and hook not in hooks.get("SessionStart", [])}
+                  "backup_created": False}
+    if "guard_hook" not in record:
+        record.update({"guard_hook": guard_hook, "guard_added": guard_hook not in hooks.get("PreToolUse", []),
+                       "pretool_created": "PreToolUse" not in hooks})
+    if (settings.exists() and not settings.with_name("settings.json.omi-bak").exists()
+            and (hook not in hooks.get("SessionStart", []) or guard_hook not in hooks.get("PreToolUse", []))):
+        record["backup_created"] = True
     # Read all originals before writing anything, including on an upgrade.
     for rel, data in payloads.items():
         path = home / rel
@@ -208,9 +233,12 @@ def install_user(remove: bool = False) -> None:
     _json(manifest, record)  # Persist undo data before the first integration write.
     for rel, data in payloads.items():
         _write(home / rel, data)
-    updated = {**config, "hooks": {**hooks, "SessionStart": [*hooks.get("SessionStart", [])]}}
+    updated = {**config, "hooks": {**hooks, "SessionStart": [*hooks.get("SessionStart", [])],
+                                 "PreToolUse": [*hooks.get("PreToolUse", [])]}}
     if hook not in updated["hooks"]["SessionStart"]:
         updated["hooks"]["SessionStart"].append(hook)
+    if guard_hook not in updated["hooks"]["PreToolUse"]:
+        updated["hooks"]["PreToolUse"].append(guard_hook)
     if updated != config:
         backup = settings.with_name("settings.json.omi-bak")
         if settings.exists() and not backup.exists():

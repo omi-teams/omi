@@ -25,6 +25,14 @@ def git_hint(paths):
 
 
 def guard(stdin=None):
+    try:
+        return _guard(stdin)
+    except state.StateError as exc:
+        print(f"OMI: omi state registry is invalid ({exc}); fix ~/.omi/state before editing.", file=sys.stderr)
+        return 2
+
+
+def _guard(stdin=None):
     data = json.loads((stdin or sys.stdin.buffer).read())
     tool_input = data.get("tool_input", {})
     raw = tool_input.get("file_path") or tool_input.get("notebook_path")
@@ -39,6 +47,21 @@ def guard(stdin=None):
     engineer = data.get("agent_type") == "omi-agent-engineer"  # subagents share the session cwd; only the payload tells
     top = core.git(d, "rev-parse", "--show-toplevel")
     root = Path(top).resolve() if top else None
+    session_top = core.git(data.get("cwd", "."), "rev-parse", "--show-toplevel")
+    session_root = Path(session_top).resolve() if session_top else None
+    omi_session = False
+    for repo in dict.fromkeys(p for p in (root, session_root) if p is not None):
+        in_repo = (repo / ".omi").is_dir()
+        try:
+            project = state.resolve(repo)
+        except state.StateError as exc:
+            if in_repo or engineer:
+                raise  # fail closed: guard() blocks with the registry message
+            print(f"OMI: warning: cannot read omi state for {repo} ({exc}); guard skipped.", file=sys.stderr)
+            continue
+        omi_session = omi_session or in_repo or project.detached or (project.code / ".omi").is_dir()
+    if not engineer and not omi_session:
+        return 0
     branch = (core.git(d, "rev-parse", "--abbrev-ref", "HEAD") or "") if top else ""
     try:
         rel = PurePosixPath(path.resolve().relative_to(root).as_posix())
