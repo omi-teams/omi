@@ -12,8 +12,8 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature
-step: build
-status: in-progress
+status: done
+step: accept
 ---
 ## Goal
 In every omi project, the Coordinator picks the fitting tool, model and effort for a task itself and presents it as one proposal for the PO to approve, with the other tool as the alternative; the PO no longer works out model or effort.
@@ -46,6 +46,11 @@ PO approval accept: Accept + sửa nốt
 - review failed 2026-10-31 12:50
 - accept failed 2026-10-31 12:50
 - build started 2026-10-31 12:50
+- build done 2026-10-31 13:03
+- review started 2026-10-31 13:03
+- review done 2026-10-31 13:18
+- accept started 2026-10-31 13:18
+PO approval accept: review passed thì merge và start task tiếp theo
 
 ## Reports
 2026-10-31 12:32 omi-agent-engineer (codex):
@@ -165,6 +170,19 @@ PO approval accept: Accept + sửa nốt
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-31 13:09 omi-agent-reviewer (claude):
+> (no report)
+> exit code 137
+2026-10-31 13:17 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - No blocking problems. `tests/test_tools.py` and `tests/test_omi.py` both exit 0, and every changed file is inside the task `scope`.
+> - `.omi/tasks/TASK-121.md` Usage table: the last reviewer row shows "exit code 137", so the earlier review run had no report. This is a process note only, not a code defect.
+> 
+> AC: Task-start section in the template `AGENTS.md` and the omi-task skill copy says the Coordinator decides tool, model and effort, shows "Approve: …" first and "Alternative: …" second, and records the approved choice in the task. "Offer both tools and wait for the PO to choose" is gone. ✓ I read it in the diff. `test_task_start_proposal` asserts the new phrases and the absence of "PO chooses", and `test_tools.py` passes.
+> AC: When the PO names only a tool, the Coordinator picks model and effort itself and states both without another question. It never uses `codex-default` or an omitted effort. ✓ The sentence is in all four copies, `test_task_start_tool_only` checks it, and the test passes.
+> AC: The repo's own `AGENTS.md` and omi-task skill match the template, and `template_shas.json` is updated. ✓ `sha256sum` shows the repo and template copies are byte-identical (AGENTS.md `b73de622…`, omi-task `0a8006fe…`, omi-idea `253a188d…`). The 0.5.0 entries at lines 387, 390 and 444 of `template_shas.json` match those hashes. Entries for older versions are unchanged. `grep` finds no remaining "PO's pick" or "PO chooses" in `AGENTS.md`, `.claude` or the template.
+> [... truncated ...]
+> AC (fix round: the omi-idea "PO's pick" wording) ✓ Both omi-idea copies now say "from the approved proposal or alternative". `test_task_start_copies_match` checks both copies and the `AGENTS.md` wording, and passes.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -172,3 +190,5 @@ PO approval accept: Accept + sửa nốt
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1709470 | 6081 | 1622528 | 409s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 1639 | 145690 | 487s | - | PASS 47a01a6 |
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 3083795 | 9005 | 2973568 | 405s | 0/1 | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | n/a | n/a | n/a | 200s | - | n/a |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 1810 | 221272 | 358s | - | PASS 252ef33 |
