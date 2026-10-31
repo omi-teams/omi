@@ -149,7 +149,7 @@ function workflow(d) {
 function taskPage(name, id, d) {
   const f = d.frontmatter;
   const criteria = el("ul", null, {class: "crit"}, d.criteria.map((c) => el("li", null, {}, [
-    el("span", c.checked ? "✓" : "", {class: `ck ${c.checked ? "checked" : ""}`, "aria-label": c.checked ? "Xong" : "Chưa"}), el("span", c.text)])));
+    el("span", c.checked ? "✓" : "", {class: `ck ${c.checked ? "checked" : ""}`, role: "img", "aria-label": c.checked ? "Xong" : "Chưa"}), el("span", c.text)])));
   const reports = d.reports.split(/\n(?=\d{4}-\d\d-\d\d[^\n]*:)/).filter(Boolean).map((r, i) => {
     const [summary, ...body] = r.split("\n");
     return el("details", null, i === 0 ? {open: ""} : {}, [el("summary", summary), pre(body.join("\n").replace(/^> ?/gm, ""))]);
