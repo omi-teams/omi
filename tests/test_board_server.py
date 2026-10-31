@@ -10,7 +10,7 @@ from unittest.mock import patch
 import helpers  # noqa: F401
 from helpers import omi
 from omi.board import server
-from test_board import fixture, write
+from test_board import fixture, write, remote
 
 
 def request(port, method, path, host=None):
@@ -27,6 +27,7 @@ def test_server():
         home = Path(directory) / "state"
         web = Path(directory) / "web"
         fixture(home)
+        remote(home)
         write(web / "index.html", "<h1>board</h1>")
         write(web / "app.js", "1")
         write(Path(directory) / "secret.txt", "secret")
@@ -37,8 +38,13 @@ def test_server():
         try:
             assert httpd.server_address[0] == "127.0.0.1"
             status, res, body = request(port, "GET", "/api/projects")
-            assert status == 200 and json.loads(body)[0]["name"] == "sample"
+            assert status == 200 and json.loads(body)["projects"][0]["name"] == "sample"
             assert res.getheader("Content-Type") == "application/json"
+            assert json.loads(body)["source"]["stale"] is False
+            for path in ("/api/projects", "/api/projects/sample", "/api/projects/sample/tasks/TASK-002"):
+                response = request(port, "GET", path)[2]
+                assert str(home).encode() not in response
+                assert "source" in json.loads(response)
             assert res.getheader("X-Content-Type-Options") == "nosniff"
             assert res.getheader("Content-Security-Policy") == "default-src 'self'"
             assert json.loads(request(port, "GET", "/api/projects/sample")[2])["name"] == "sample"
@@ -78,9 +84,13 @@ def test_board_cli():
             return pull, make, opened
 
     pull, make, opened = board()
-    assert make.call_args.args == (8765,) and pull.call_count == 1 and opened.call_count == 1
+    assert make.call_args.args == (8765,) and not pull.called and opened.call_count == 1
     pull, make, opened = board("--port", "9000", "--no-open")
-    assert make.call_args.args == (9000,) and not opened.called
+    assert make.call_args.args == (9000,) and not pull.called and not opened.called
+    with patch("omi.state.resolve.registry"), patch("omi.board.server.make_server"), \
+            patch("omi.app.cli.state_sync") as sync:
+        omi.app.cli.main(["board", "--no-open"])
+        assert not sync.mock_calls
     for bad in (["--port"], ["--port", "x"], ["--bogus"], ["--port", "-1"], ["--port", "\u00b2"]):
         try:
             board(*bad)
