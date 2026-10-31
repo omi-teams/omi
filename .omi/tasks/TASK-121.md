@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature
-step: build
+step: accept
 ---
 ## Goal
 In every omi project, the Coordinator picks the fitting tool, model and effort for a task itself and presents it as one proposal for the PO to approve, with the other tool as the alternative; the PO no longer works out model or effort.
@@ -25,6 +25,7 @@ In every omi project, the Coordinator picks the fitting tool, model and effort f
 - [x] `tests/test_tools.py` checks the new wording instead of "PO chooses"; all tests pass.
 
 ## Checkpoint
+Review round 1 PASS with a nit; PO: Accept + sửa nốt. Fix: `.claude/skills/omi-idea/SKILL.md:10` and `src/omi/template/dot-claude/skills/omi-idea/SKILL.md` still say "set only at task start from the PO's pick" -> "from the approved proposal or alternative"; update that template hash in `src/omi/template_shas.json`; extend the tests/test_tools.py check to the omi-idea copies. Nothing else.
 Done: Updated task-start proposal and tool-only rules in template/local AGENTS.md and omi-task skill; updated quota wording, template hashes and acceptance tests.
 Not done: None.
 Tests: python3 tests/test_tools.py passed (exit 0); python3 tests/test_omi.py passed (exit 0, final "ok"). All task-specific tests ran. Suite skips: test_wheel_ships_web (pip missing); test_browser_layout_and_keyboard (Playwright missing; 360px/390px visual and keyboard checks unverified).
@@ -35,6 +36,10 @@ Session: codex 01a1906b-d90b-7c82-9971-540ac0bc3613
 - plan started 2026-10-31 12:25
 - plan done 2026-10-31 12:25
 - build started 2026-10-31 12:25
+- build done 2026-10-31 12:38
+- review started 2026-10-31 12:38
+- review done 2026-10-31 12:49
+- accept started 2026-10-31 12:49
 
 ## Reports
 2026-10-31 12:32 omi-agent-engineer (codex):
@@ -91,8 +96,18 @@ Session: codex 01a1906b-d90b-7c82-9971-540ac0bc3613
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-31 12:49 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - .claude/skills/omi-idea/SKILL.md:10 (and `src/omi/template/dot-claude/skills/omi-idea/SKILL.md`) The text still says "set only at task start from the PO's pick". This contradicts the new approve-a-proposal flow. AGENTS.md was fixed but this skill, which is in scope, was not. -> Change it to "from the approved proposal or alternative". Update the `template_shas.json` hash for the template copy.
+> - `.omi/decisions.md:63` The 2026-10-26 entry still says "PO chooses". No new decision records this change. -> Add a decision entry. It sits outside the task's `scope`, so the Coordinator should do it.
+> 
+> AC: The `## Task-start tool choice` section in the template AGENTS.md and the omi-task skill copy has the Coordinator decide tool, model and effort, with "Approve: …" first, the alternative second, and the choice recorded in the task. The old "offer both tools and wait for the PO to choose" wording is gone. ✓ I read the diff, and the new tests assert these phrases and the absence of the old ones.
+> AC: When the PO names only a tool, the Coordinator chooses model and effort itself and states both, without another question, and never uses `codex-default` or an omitted effort. ✓ The sentence is in all four copies and `test_task_start_tool_only` checks it.
+> AC: The repo's `AGENTS.md` and omi-task skill match the template, and the `template_shas.json` hashes are updated. ✓ `sha256sum` shows the copies are identical, and the new hashes at lines 390 and 444 match them.
+> AC: `tests/test_tools.py` checks the new wording instead of "PO chooses", and all tests pass. ✓ `test_tools.py` and `test_omi.py` both exit 0. `test_omi.py` skipped the playwright browser test, which is unrelated to this criterion.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1709470 | 6081 | 1622528 | 409s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 1639 | 145690 | 487s | - | PASS 47a01a6 |
