@@ -26,6 +26,11 @@ def po_approved(text, sid):
     return bool(sep) and re.search(rf"^(?:- )?PO approval {re.escape(sid)}: *\S", current, re.M) is not None
 
 
+def plan_status(stored: str, statuses: list[str]) -> str:
+    """Shown plan status: `done` when it has tasks and all are done, else the stored one."""
+    return "done" if statuses and all(st == "done" for st in statuses) else stored
+
+
 def unticked(text):
     """Unticked `- [ ]` lines of the `## Acceptance criteria` section."""
     sec = text.partition("\n## Acceptance criteria\n")[2].split("\n## ", 1)[0]

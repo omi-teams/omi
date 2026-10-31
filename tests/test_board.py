@@ -132,6 +132,22 @@ def test_views():
             assert data.task("sample", "TASK-002")["source"]["stale"] is False
 
 
+def test_plan_status_derived():
+    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+        home = Path(directory)
+        root = home / "projects" / "sample"
+        for pid, stored in (("PLAN-001", "active"), ("PLAN-002", "active"), ("PLAN-003", "active"), ("PLAN-004", "done")):
+            write(root / f".omi/plans/{pid}.md", f"---\nid: {pid}\ntitle: P\nstatus: {stored}\n---\n")
+        for tid, plan, status in (("TASK-001", "PLAN-001", "done"), ("TASK-002", "PLAN-001", "done"),
+                                  ("TASK-003", "PLAN-002", "done"), ("TASK-004", "PLAN-002", "planned")):
+            write(root / f".omi/tasks/{tid}.md", f"---\nid: {tid}\ntitle: T\nstatus: {status}\nplan: {plan}\n---\n")
+        remote(home)
+        shown = {p["id"]: p["status"] for p in data.project("sample")["plans"]}
+        assert shown == {"PLAN-001": "done", "PLAN-002": "active", "PLAN-003": "active", "PLAN-004": "done"}
+        assert [p["id"] for p in data.projects()["projects"][0]["plans"]] == ["PLAN-002", "PLAN-003"]
+        assert "status: active" in (root / ".omi/plans/PLAN-001.md").read_text(encoding="utf-8")
+
+
 def test_shared_fetch():
     with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
         home = Path(directory)
@@ -285,6 +301,7 @@ def test_empty_and_layer():
 
 def main():
     test_views()
+    test_plan_status_derived()
     test_shared_fetch()
     test_path_redaction()
     test_unavailable_snapshot()

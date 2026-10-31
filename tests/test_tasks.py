@@ -7,6 +7,14 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 from helpers import omi, git
+from omi.project import tasks
+
+
+def test_plan_status():
+    assert tasks.plan_status("active", ["done", "done"]) == "done"
+    assert tasks.plan_status("active", ["done", "planned"]) == "active"
+    assert tasks.plan_status("active", []) == "active"
+    assert tasks.plan_status("done", []) == "done"
 
 
 def test_roles():
@@ -514,6 +522,7 @@ def test_parallel():
 
 
 def main():
+    test_plan_status()
     test_step_approve_reopen()
     test_reopen_last_write_step()
     test_task_skill_step_commands()
