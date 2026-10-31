@@ -12,6 +12,8 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      OMI_BROWSER_REQUIRED: "1"
     steps:
       - uses: actions/checkout@v6
 
@@ -19,8 +21,27 @@ jobs:
         with:
           python-version: "3.13"
 
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24.11.0"
+
+      - name: Install Browser QA
+        run: |
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx --no-install playwright install --with-deps --only-shell chromium
+
       - name: Install package
         run: pip install .
 
       - name: Run tests
+        env:
+          OMI_BOARD_SCREENS: ${{ runner.temp }}/board-screens
         run: python tests/test_omi.py
+
+      - name: Upload board screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: board-screens
+          path: ${{ runner.temp }}/board-screens
+          if-no-files-found: error

@@ -1,5 +1,7 @@
 """Board frontend: no innerHTML or external resources, files ship as package data."""
 import fnmatch
+import hashlib
+import os
 import re
 import shutil
 import subprocess
@@ -8,12 +10,54 @@ import tempfile
 import tomllib
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 import helpers  # noqa: F401
 
 ROOT = Path(__file__).resolve().parent.parent
 WEB = ROOT / "src" / "omi" / "board" / "web"
 FILES = ("index.html", "app.css", "app.js", "favicon.svg")
+AXE = ROOT / "tests" / "board_screens" / "vendor" / "axe-core-4.11.0"
+
+
+def test_browser_qa_config() -> None:
+    docker = (ROOT / "src/omi/template/docker/Dockerfile").read_text(encoding="utf-8")
+    ci = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    pins = [re.findall(r"playwright@(\d+\.\d+\.\d+)(?![\w.-])", text) for text in (docker, ci)]
+    assert pins[0] == pins[1] and len(pins[0]) == 1, pins
+    for text in (docker, ci):
+        assert "install --with-deps --only-shell chromium" in text
+    for line in ("ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright",
+                 "ENV NODE_PATH=/usr/local/lib/node_modules", "ENV OMI_BROWSER_REQUIRED=1",
+                 f"RUN npm install -g playwright@{pins[0][0]}"):
+        assert f"# {line}" in docker  # Opt-in; other projects keep their lean image.
+        assert docker.index(line) < docker.index("USER node")
+    assert 'OMI_BROWSER_REQUIRED: "1"' in ci
+    assert 'node-version: "24.11.0"' in ci
+    # This workflow uses two-space indentation: job env is at four spaces,
+    # whereas step env is deeper. The runner context is unavailable in job env.
+    job_envs = re.findall(r"(?m)^    env:[^\n]*(?:\n(?: {6}[^\n]*|[ \t]*$))*", ci)
+    for env in job_envs:
+        assert not re.search(r"\$\{\{[^}]*\brunner\s*\.", env), env
+    test_step = ci.split("      - name: Run tests\n", 1)[1].split("\n      - ", 1)[0]
+    assert "        env:\n          OMI_BOARD_SCREENS: ${{ runner.temp }}/board-screens" in test_step
+    assert "if: always()" in ci and "uses: actions/upload-artifact@" in ci
+    assert "path: ${{ runner.temp }}/board-screens" in ci
+    assert "if-no-files-found: error" in ci
+
+
+def test_vendored_axe() -> None:
+    manifest = AXE / "SHA256SUMS"
+    assert manifest.is_file(), f"Missing pinned axe-core vendor files: {AXE}"
+    hashes = dict(line.split()[::-1] for line in manifest.read_text(encoding="utf-8").splitlines())
+    assert set(hashes) == {"axe.min.js", "LICENSE"}
+    for name, expected in hashes.items():
+        assert re.fullmatch(r"[0-9a-f]{64}", expected), name
+        assert hashlib.sha256((AXE / name).read_bytes()).hexdigest() == expected, name
+    assert re.search(r'''version\s*[:=]\s*["']4\.11\.0["']''',
+                     (AXE / "axe.min.js").read_text(encoding="utf-8"))
+    license_text = (AXE / "LICENSE").read_text(encoding="utf-8")
+    assert "Mozilla Public License" in license_text and "2.0" in license_text
 
 
 def test_files_safe() -> None:
@@ -87,6 +131,21 @@ def test_mockup_layout() -> None:
     assert 'class="skip"' in html and 'href="#main"' in html and '<main ' in html
 
 
+def test_empty_column_contrast() -> None:
+    def luminance(value: str) -> float:
+        rgb = [int(value[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+        linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in rgb]
+        return sum(c * weight for c, weight in zip(linear, (0.2126, 0.7152, 0.0722)))
+
+    css = (WEB / "app.css").read_text(encoding="utf-8")
+    themes = re.findall(r":root\{([^}]+)", css)
+    assert len(themes) == 2  # Light and dark themes.
+    for theme in themes:
+        colors = dict(re.findall(r"--(empty|column):#([0-9a-f]{6})", theme))
+        dark, light = sorted(luminance(colors[key]) for key in ("empty", "column"))
+        assert (light + 0.05) / (dark + 0.05) >= 4.5, colors
+
+
 def test_runtime() -> None:
     node = shutil.which("node")
     if not node:
@@ -100,11 +159,68 @@ def test_runtime() -> None:
 def test_browser_layout_and_keyboard() -> None:
     node = shutil.which("node")
     if not node:
+        assert not os.environ.get("OMI_BROWSER_REQUIRED"), "Browser QA required: node missing"
         print("skip test_browser_layout_and_keyboard: node missing")
         return
-    run = subprocess.run([node, "-e", BROWSER_TEST, str(WEB)], cwd=ROOT, capture_output=True, text=True)
+    # Hook checkouts can be read-only; use the system temp directory for screenshots.
+    with tempfile.TemporaryDirectory() as tmp:
+        env = {**os.environ, "OMI_BOARD_SCREENS": os.environ.get("OMI_BOARD_SCREENS") or tmp}
+        run = subprocess.run([node, "-e", BROWSER_TEST, str(WEB), str(AXE)],
+                             cwd=ROOT, env=env, capture_output=True, text=True)
     assert run.returncode == 0, run.stdout + run.stderr
     print(run.stdout.strip())
+
+
+def test_browser_screenshot_directory() -> None:
+    for configured in ("", "/ci/board-screens"):
+        with patch.dict(os.environ, {"OMI_BOARD_SCREENS": configured}), \
+                patch("shutil.which", return_value="node"), patch("subprocess.run") as run:
+            run.return_value = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+            test_browser_layout_and_keyboard()
+            destination = Path(run.call_args.kwargs["env"]["OMI_BOARD_SCREENS"])
+            if configured:
+                assert destination == Path(configured)
+            else:
+                assert not destination.is_relative_to(ROOT), destination
+                assert not destination.exists()  # Temporary screenshots are cleaned up.
+
+
+def test_browser_dependency_policy() -> None:
+    with patch("shutil.which", return_value=None), patch.dict(os.environ, {"OMI_BROWSER_REQUIRED": "1"}):
+        try:
+            test_browser_layout_and_keyboard()
+        except AssertionError as exc:
+            assert "node missing" in str(exc)
+        else:
+            raise AssertionError("Required browser checks must fail without node")
+    with patch("shutil.which", return_value=None), patch.dict(os.environ, {"OMI_BROWSER_REQUIRED": ""}), patch("builtins.print") as output:
+        test_browser_layout_and_keyboard()
+        output.assert_called_once_with("skip test_browser_layout_and_keyboard: node missing")
+    node = shutil.which("node")
+    if not node:
+        print("skip test_browser_dependency_policy JS cases: node missing")
+        return
+    # Simulate unavailable dependencies even on CI workers where they are installed.
+    stub = r"""
+const Module = require('node:module');
+const load = Module._load;
+Module._load = function(name, ...args) {
+  if(name === 'playwright') {
+    if(process.env.OMI_TEST_MISSING === 'chromium')
+      return {chromium:{launch:async()=>{throw Error('chromium missing');}}};
+    throw Object.assign(Error("Cannot find module '"+process.env.OMI_TEST_MISSING+"'"), {code:'MODULE_NOT_FOUND'});
+  }
+  return load.call(this, name, ...args);
+};
+"""
+    for missing, required, fails in (("playwright", "", False), ("playwright", "1", True),
+                                     ("nested-dependency", "", True), ("chromium", "", True)):
+        env = {**os.environ, "OMI_BROWSER_REQUIRED": required, "OMI_TEST_MISSING": missing}
+        run = subprocess.run([node, "-e", stub + BROWSER_TEST, str(WEB), str(AXE)],
+                             cwd=ROOT, env=env, capture_output=True, text=True)
+        assert (run.returncode != 0) == fails, run.stdout + run.stderr
+        assert ("skip test_browser" in run.stdout) == (not fails), run.stdout + run.stderr
+        assert missing in run.stdout + run.stderr
 
 
 def main() -> None:
@@ -113,7 +229,13 @@ def main() -> None:
     test_wheel_ships_web()
     test_app_js_behaviors()
     test_mockup_layout()
+    test_empty_column_contrast()
+    test_browser_qa_config()
+    test_browser_screenshot_directory()
+    test_browser_dependency_policy()
     test_runtime()
+    # Check the pinned auditor's integrity before evaluating it in the browser.
+    test_vendored_axe()
     test_browser_layout_and_keyboard()
 
 
@@ -332,8 +454,9 @@ const path = require('node:path');
 let chromium;
 try { ({chromium}=require('playwright')); }
 catch(e) {
-  if(e.code!=='MODULE_NOT_FOUND') throw e;
-  console.log('skip test_browser_layout_and_keyboard: playwright missing (360px/390px visual and keyboard checks unverified)');
+  if(process.env.OMI_BROWSER_REQUIRED || e.code!=='MODULE_NOT_FOUND' ||
+     !e.message.startsWith("Cannot find module 'playwright'")) throw e;
+  console.log('skip test_browser_layout_and_keyboard: playwright missing (layout, keyboard, axe and print unverified)');
   process.exit(0);
 }
 """ + API_FIXTURES + r"""
@@ -341,11 +464,31 @@ catch(e) {
   // If Playwright is installed, a missing browser is a test failure, not a silent skip.
   const browser=await chromium.launch({headless:true});
   try {
-    const page=await browser.newPage();
+    const page=await browser.newPage({colorScheme:'light'});
+    const axeSource=fs.readFileSync(path.join(process.argv[2],'axe.min.js'),'utf8');
+    const screens=process.env.OMI_BOARD_SCREENS;
+    if(screens) fs.mkdirSync(screens,{recursive:true});
+    async function audit(label) {
+      // Theme changes transition link colors/backgrounds for 200ms. Audit the
+      // settled theme rather than a mixture of old and new palette values.
+      await page.evaluate(()=>Promise.all(document.getAnimations().map(animation=>animation.finished)));
+      const violations=await page.evaluate(async()=>{
+        const results=await axe.run(document,{resultTypes:['violations']});
+        return results.violations.filter(v=>['serious','critical'].includes(v.impact));
+      });
+      // Finish the page/width matrix so CI also retains evidence for later pages
+      // when an accessibility violation is found on an earlier page.
+      for(const violation of violations)
+        errors.push(`axe ${label}: ${violation.id} (${violation.impact}): ${violation.nodes.map(n=>n.html).join(', ')}`);
+    }
     const errors=[];page.on('pageerror', e=>errors.push(e.message));
     page.on('console', msg=>{if(msg.type()==='error') errors.push(msg.text());});
-    await page.route('http://omi.test/**',async route=>{
+    await page.route('**/*',async route=>{
       const url=new URL(route.request().url());
+      if(url.origin!=='http://omi.test' || route.request().method()!=='GET') {
+        errors.push(`Unexpected request: ${route.request().method()} ${url}`);
+        return route.abort();
+      }
       if(url.pathname.startsWith('/api/')) {
         const data=url.pathname.endsWith('/tasks/TASK-115')?workflowDetail:url.pathname==='/api/projects/omi'?crowded:{projects:[summary],source:remoteSource};
         return route.fulfill({json:data});
@@ -365,6 +508,11 @@ catch(e) {
         assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`overflow ${width} ${hash}`);
         assert.equal(await page.locator('[style]').count(),0);
         assert.equal(await page.locator('#view script, #view img').count(),0);
+        const pageName=hash==='#/'?'projects':hash.includes('/t/')?'task':'dashboard';
+        if(screens) await page.screenshot({path:path.join(screens,`${pageName}-${width}.png`),fullPage:true});
+        // Inject the vendored auditor through automation; the app still uses its strict CSP.
+        await page.evaluate(axeSource);
+        await audit(`${pageName} ${width} light`);
         const header=await page.locator('.top').boundingBox();
         assert(await page.locator('#countdown').isVisible());
         assert.equal(await page.locator('#countdown').getAttribute('aria-hidden'),'true');
@@ -378,7 +526,8 @@ catch(e) {
         assert(countdownBox.y+countdownBox.height<=header.y+header.height);
         assert.equal(await page.locator('.top').evaluate(n=>getComputedStyle(n).position),'sticky');
         assert(await page.locator('html').evaluate(n=>parseFloat(getComputedStyle(n).scrollPaddingTop))>header.height);
-        if(width<768) assert(header.height<150,'compact phone header');
+        // The countdown adds a second line beneath the phone's refresh switch.
+        if(width<768) assert(header.height<160,`compact phone header ${width} ${hash}: ${header.height}px`);
         if(hash==='#/p/omi') {
           const columns=await page.locator('.col:visible').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().x));
           assert.equal(new Set(columns).size,width<768?1:5);
@@ -412,8 +561,11 @@ catch(e) {
         const initial=await page.locator('body').evaluate(n=>getComputedStyle(n).backgroundColor);
         await page.emulateMedia({colorScheme:'dark'});
         assert.notEqual(await page.locator('body').evaluate(n=>getComputedStyle(n).backgroundColor),initial);
+        await audit(`${pageName} ${width} dark`);
         await page.emulateMedia({colorScheme:'light'});
         if(hash.includes('/t/')) {
+          assert.equal(await page.getByRole('img',{name:'Xong',exact:true}).count(),1);
+          assert.equal(await page.getByRole('img',{name:'Chưa',exact:true}).count(),1);
           assert.equal(await page.locator('.steps li').count(),6);
           assert.deepEqual(await page.locator('.steps [aria-current="step"] span').allTextContents(),['4','review']);
           assert(await page.locator('#view').innerText().then(text=>text.includes('Bước 4/6')));
@@ -421,10 +573,25 @@ catch(e) {
           await page.locator('summary').focus();await page.keyboard.press('Enter');
           assert.equal(await page.locator('details').first().getAttribute('open'),null);
         }
+        if(pageName!=='projects') {
+          assert(await page.locator('#refresh').isVisible());
+          await page.emulateMedia({media:'print'});
+          for(const selector of ['.tools','#refresh','#auto','#countdown','#status','.skip'])
+            assert.equal(await page.locator(selector).isVisible(),false,`print ${pageName} ${width} ${selector}`);
+          assert.equal(await page.locator('.top').evaluate(n=>getComputedStyle(n).position),'static');
+          assert(await page.locator('h1').isVisible());
+          assert(await page.locator('#view').innerText().then(text=>text.includes(frontmatter.title)));
+          await page.emulateMedia({media:'screen'});
+          assert(await page.locator('#refresh').isVisible());
+        }
       }
     }
+    if(screens) {
+      for(const name of ['projects','dashboard','task']) for(const width of [360,390,768,1280])
+        assert(fs.statSync(path.join(screens,`${name}-${width}.png`)).size>0);
+    }
     assert.deepEqual(errors,[]);
-    console.log('ok: browser layouts at 360/390/768/1280px, sticky header, phone summaries, overflow disclosure, dark mode, CSP, keyboard controls');
+    console.log('ok: browser layouts at 360/390/768/1280px, sticky header, phone summaries, overflow disclosure, dark mode, CSP, keyboard controls, axe (light/dark), print, GET-only requests');
   } finally { await browser.close(); }
 })().catch(e=>{console.error(e);process.exitCode=1;});
 """
