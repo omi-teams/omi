@@ -1,33 +1,800 @@
 ---
 id: TASK-120
 title: Resume the engineer session on fix rounds
-status: in-progress
+status: done
 depends:
 plan:
-scope: src/omi/worker/**, src/omi/app/cli.py, .omi/rules/omi-modules.md, src/omi/template/**, src/omi/template_shas.json, .claude/skills/omi-task/SKILL.md, tests/test_worker.py, .omi/tasks/TASK-120.md
+scope: src/omi/worker/**, src/omi/app/cli.py, .omi/rules/omi-modules.md, src/omi/template/**, src/omi/template_shas.json, .claude/skills/omi-task/SKILL.md, tests/test_worker.py, tests/test_creds.py, tests/test_tools.py, tests/test_hooks.py, tests/test_content.py, .omi/tasks/TASK-120.md
 role: omi-agent-engineer
 skills: []
 refs: []
 tool: claude
-model: sonnet
-effort: medium
+model: opus
+effort: high
 step_settings:
 workflow: omi-flow-feature-sensitive
-step:
+step: accept
 ---
 ## Goal
 On a fix round, `omi run` continues the engineer's previous CLI session (`claude -p --resume <id>`, `codex exec resume <id>`) with only the new findings, instead of starting a fresh agent that rereads everything; the reviewer stays a fresh instance.
 
 ## Acceptance criteria
-- [ ] `omi run` records the engineer's session id per tool in the task file (e.g. under `## Checkpoint` or `## Usage`) after each write-role run.
-- [ ] A later write-role run on the same task, same tool, resumes that session and sends a short prompt pointing at the new `## Checkpoint` findings; `--fresh` forces a new session; a tool switch (quota fallback or PO pick) starts fresh.
-- [ ] Read roles (reviewer, security, qa) never resume.
-- [ ] Session data kept between runs lives only in a per-task cache outside the repo, holds no auth token, and `omi clean` removes it; a missing or expired session falls back to a fresh run with one `RESUME FAILED:` line.
-- [ ] When the `post-run` hook fails, `omi run` sends the hook's failing output (tail) into the resumed engineer session once to fix it, reruns the hook, and stops after that single retry with the hook failure reported as today; the retry's usage is recorded like any run.
-- [ ] The omi-task skill (template copy) describes the resume behaviour; tests cover resume, fresh fallback and read-role exclusion; all tests pass.
+- [x] `omi run` records the engineer's session id per tool in the task file (e.g. under `## Checkpoint` or `## Usage`) after each write-role run.
+- [x] A later write-role run on the same task, same tool, resumes that session and sends a short prompt pointing at the new `## Checkpoint` findings; `--fresh` forces a new session; a tool switch (quota fallback or PO pick) starts fresh.
+- [x] Read roles (reviewer, security, qa) never resume.
+- [x] Session data kept between runs lives only in a per-task cache outside the repo, holds no auth token, and `omi clean` removes it; a missing or expired session falls back to a fresh run with one `RESUME FAILED:` line.
+- [x] When the `post-run` hook fails, `omi run` sends the hook's failing output (tail) into the resumed engineer session once to fix it, reruns the hook, and stops after that single retry with the hook failure reported as today; the retry's usage is recorded like any run.
+- [x] The omi-task skill (template copy) describes the resume behaviour; tests cover resume, fresh fallback and read-role exclusion; all tests pass.
 
 ## Checkpoint
-Done:
-Not done:
-Tests:
-Next:
+Host: `codex exec resume --help` (codex-cli 0.164.0) -> -c, -m, --dangerously-bypass-approvals-and-sandbox, --json all accepted after `resume`: pass
+Host: Docker Desktop (Windows) volume probe: `docker volume create` + root helper `chmod 0777 /s` (no caps, no network, ro rootfs) -> ok; node (uid 1000) writes /s/a.jsonl -> ok; `grep -rqF -f - /s` ro mount -> rc 0 with token, rc 1 without; `docker volume rm` -> removed: pass
+Host: FIFO in the volume -> `grep -rqF` rc 1, no hang: pass
+Host: `python tests/test_omi.py` on Windows -> ok (playwright skipped): pass
+Known issues (follow-up): a refused `docker volume rm` lets a --fresh run reuse the old volume (review note); two repos with the same folder name share volume names (security note); Ctrl-C during the scan can leave the volume until the next scan; real `claude -p --resume` in the container not exercised yet (first real use is the next fix round after merge).
+Round 8b done: applied the mock lines to tests/test_creds.py (3 mocks), test_tools.py (1), test_hooks.py (3, plus the `R(run_raw)` lambda) and test_content.py (1). T2: the omi-task skill and its template copy now say "transcripts in a per-task Docker volume, never on the host, removed by `omi clean`; a token found in it drops the session". The 0.5.0 hash in template_shas.json is updated. No host-cache wording is left. The full `python3 tests/test_omi.py` printed `ok` (pip/playwright skipped). Docker was not run for real; the UNVERIFIED items below still stand. Next: Coordinator review and commit.
+Round 8 (redesign) NEEDS SCOPE: done inside scope. The session cache is now a Docker named volume `omi-sess-<repo>-<TID>-<tool>` (labels omi-worker=1, omi-repo, omi-task, omi-session=1) mounted with `type=volume` at /sessions. The host never reads, chmods or deletes transcripts. All host scrub/chmod/uid/comma/Windows-skip code and its tests are removed.
+- New volume: `docker volume create`, then a one-shot `chmod 0777 /s` (`--user 0 --cap-drop ALL --network none --read-only --security-opt no-new-privileges`). `--fresh`, a tool switch and every fresh fallback (RESUME FAILED, quota switch) recreate the volume; resume and the hook-fix retry reuse it.
+- Scan after every write run (in `attempt`'s finally): `grep -rqF -f - /s` as node, no network, ro rootfs, volume `readonly`; tokens go in on stdin (raw + JSON-escaped, codex blob tokens; multi-line/empty needles never go in). Only rc 1 keeps the volume. rc 0 -> `SESSION DROPPED: token found in transcript`; any other rc, an OSError or a 300 s timeout -> `SESSION DROPPED: cannot scan the session volume`. Either way the volume is removed and the `Session:` line goes. A refused rm prints `SESSION CACHE NOT REMOVED: <vol>`.
+- `available()` = id valid and the volume exists (missing -> `RESUME FAILED: ... has no session volume`); a lost transcript inside an existing volume falls to the existing "could not be resumed" fallback.
+- `omi clean` runs `docker volume ls` (omi-session=1, omi-repo) and `docker volume rm` after removing containers, and prints `N session volume(s)`.
+- Trust boundaries: the agent container writes the volume (untrusted); only Docker helper containers read it; the host sees only grep's exit code. UNVERIFIED (no real docker here): GNU grep `-r` skipping fifos/devices in the trixie image; the CLI transcript paths under the symlinked dir; the rm while a Ctrl-C'd agent still holds the volume (expected: NOT REMOVED line, next run's scan drops it again); root-in-container chmod under rootless/userns Docker.
+- NEEDS SCOPE: tests/test_creds.py, tests/test_tools.py, tests/test_hooks.py, tests/test_content.py mock every `docker run` with rc 0 and take the first one, so the chmod helper (first) and the scan (rc 0 = hit) break them. Fix: first line of each mock `run` (creds 185/338/460, tools 49, hooks 81/285/447, content 59): `if cmd[:2] == ["docker", "run"] and ("chmod" in cmd or "grep" in cmd): return R(rc=1 if "grep" in cmd else 0)`, and in test_hooks.py the `R(run_raw)` lambda adds `and "grep" not in cmd and "chmod" not in cmd`. With these in a scratch copy the full `python3 tests/test_omi.py` printed `ok`.
+Next: scope now includes tests/test_creds.py, test_tools.py, test_hooks.py, test_content.py (Coordinator does not edit code): apply the mock lines above yourself and run the full `python3 tests/test_omi.py`. Also finish T2: describe "per-task Docker volume, removed by `omi clean`" in .claude/skills/omi-task/SKILL.md, its template copy and template_shas.json, and drop any host-cache wording there.
+Re-plan (PO 2026-10-31: stop patching, architect redesigns): 7 rounds failed because the session cache is a host directory the untrusted container writes, so the host must scan, chmod and delete hostile files (0777, lone tokens, Ctrl-C, symlinks, unreadable files, undeletable dirs, Windows uid/modes). Architect: redesign the cache as a per-task Docker named volume (e.g. `omi-sess-<repo>-<TID>-<tool>`) mounted at the CLI transcript dir only, so transcripts never touch the host filesystem; `omi clean` runs `docker volume rm`; a token found in the volume (checked inside a container, or by not persisting the env at all) drops the volume. Remove host-side scrub/chmod/uid code and their tests. Keep the rest (session id parsing, `Session:` line, resume argv, `--fresh`, `RESUME FAILED:`, read roles never resume, hook-fix retry). Name the trust boundaries and what remains UNVERIFIED.
+Review round 7 FAIL (review):
+- src/omi/worker/session.py scrub (and clear): `shutil.rmtree(d, ignore_errors=True)` cannot delete a mode-0 or read-only subdir, so the token file stays while `SESSION DROPPED` is printed (reproduced). Use an error handler that chmods the entry and its parent u+rwx and retries; if anything is still left, print `SESSION CACHE NOT REMOVED: <path>`. Test: token file in a mode-0 `sub/` is gone after scrub (POSIX only; skip line on Windows).
+Review round 6 FAIL (security):
+- src/omi/worker/session.py scrub: `f.read_bytes()` raises on an unreadable file (e.g. the engineer writes the token to /sessions/x.jsonl and `chmod 000`), the exception escapes `attempt`'s `finally`, the post-run hook and the OUT OF SCOPE check never run, and the token stays in the host cache. Fail closed: any OSError while walking or reading, or any entry that is not a readable regular file (other than a skipped symlink), counts as a hit: rmtree the task cache dir, print `SESSION DROPPED`, return True. scrub itself must never raise out of `attempt`. Test with a mode-0 transcript (POSIX only; skip line on Windows).
+Round 7 done: `scrub` fails closed. It walks with `os.walk(onerror=raise)` (linked dirs are never entered, linked files skipped). An unreadable dir, a non-regular file (fifo/socket/device) or any exception while searching counts as a hit: the task cache dir is rmtree'd, `SESSION DROPPED: cannot read the session cache` is printed, and it returns True. scrub never raises out of `attempt`. Tests: a mode-0 transcript and a mode-0 subdir are both dropped (skip line on Windows/root); a fifo was checked by hand. python3 tests/test_omi.py passed (pip/playwright skipped). Open: rmtree(ignore_errors) cannot empty a mode-0 subdir that still holds files, so such files can stay on disk (the session is still not resumed). Next: Coordinator review and commit.
+Round 6 done: `scrub` also parses a JSON secret and, when it has a `tokens` object (codex ChatGPT auth.json), adds every non-empty `*_token` string (except the `omi-no-refresh` placeholder) as raw and JSON-escaped needles; it skips symlinks (`f.is_symlink()`), and rglob does not recurse into linked dirs. run.py `attempt()` runs the scrub (and the `Session:` line removal) in a `finally` around the container run, so Ctrl-C, a container exception and the NameTaken exit are covered. Tests: access_token alone and id_token alone wiped, placeholder/account_id not flagged, planted symlink to a host file holding the token neither followed nor deleted, a KeyboardInterrupt from the container run still drops the token transcript. python3 tests/test_omi.py passed (pip/playwright skipped). Next: Coordinator review and commit.
+Review round 5 FAIL (security):
+- src/omi/worker/session.py scrub: with a codex ChatGPT login `value` is the whole slim auth.json blob (creds.py:97), so a transcript holding only `tokens.access_token` (or id_token / refresh_token) is not flagged. When the secret is that blob, parse it and add every token string inside it as needles (raw and JSON-escaped). Test: transcript with the access token alone is wiped.
+- src/omi/worker/run.py: scrub runs only after a normal return; Ctrl-C, a container exception or the NameTaken `sys.exit` skip it. Run scrub for write roles in a `finally` around the container run.
+- scrub must skip symlinks (`f.is_symlink()`) and never follow them on the host.
+Review round 4 FAIL (security UNVERIFIED, criterion 4 "holds no auth token"):
+- Transcripts store tool output, so an engineer that runs `env`/`printenv` writes the token value into the host session cache. Add `session.scrub(repo, tid, tool, secret_value)` called by run.py after every write-role run (incl. the hook-fix retry): if the token value (non-empty) appears in any file under the task's cache dir, delete that task's cache dir, print one `SESSION DROPPED: token found in transcript` line, and do not record/resume that session (next run is fresh). Test: a planted transcript containing the token is wiped and the next run has no `--resume`; a clean transcript is kept.
+- Known issue, no change: on a Linux host with uid != 1000, files the container creates may not be removable by `omi clean`; documented in the PR, not fixed here.
+Round 5 done: `session.scrub(repo, tid, tool, secret_value)` searches every file under `<cache>/<repo>/<tid>` for the token value and its JSON-escaped form (transcripts are JSON lines; the codex auth.json value contains quotes). On a hit it deletes that dir and prints `SESSION DROPPED: token found in transcript`. run.py `attempt()` calls it after every write-role run (the hook-fix retry included); on a drop it removes the task's `Session:` line instead of recording one, so the next run is fresh with no `RESUME FAILED`. Tests: a clean transcript is kept, a planted token transcript is wiped and the next run has no `--resume`, empty secret / missing dir, JSON-escaped match. python3 tests/test_omi.py passed (pip/playwright skipped). Skill text not changed (checkpoint did not ask; would need template_shas). Next: Coordinator review and commit.
+Round 4 done: in test_session_resume every POSIX-mode assertion (and the `del os.getuid` check) now runs only when `os.name != "nt"`; on Windows the test still calls `mount_args` and prints `skip session cache modes: no POSIX modes on Windows` to the real stdout. Linux mode checks unchanged. python3 tests/test_omi.py passed on Linux (pip/playwright skipped); the Windows branch was not run here. Next: Coordinator review and commit.
+Review round 3 FAIL (host; PO: round 3 on opus/high):
+- On the Windows host tests/test_worker.py:323 fails: `st_mode & 0o077 == 0` cannot hold on Windows (chmod only toggles read-only; st_mode reports 0o777/0o666). The code fix is right; make every POSIX-mode assertion in the session tests run only when `os.name != "nt"` and print one `skip session cache modes: no POSIX modes on Windows` line otherwise. Run the full `python3 tests/test_omi.py`; keep the Linux mode checks intact.
+Round 3 done: session.py uses `getattr(os, "getuid", None)`; without it the leaf stays 0700 (not 0777); test patches out `os.getuid` and checks mount_args. python3 tests/test_omi.py passed (pip/playwright skipped). Next: Coordinator review and commit.
+Review round 2 FAIL (host):
+- On the Windows host `python tests/test_omi.py` crashes: src/omi/worker/session.py:34 `os.getuid()` -> AttributeError (Windows has no getuid). `omi run` runs on the host, so every engineer run on Windows would crash. Use `getattr(os, "getuid", None)`; on Windows (no getuid, Docker Desktop maps bind mounts itself) keep the 0700 parents and do not open the leaf to 0777. Add a test that patches out `os.getuid` (as on Windows) and asserts mount_args works and the leaf is not 0777.
+Round 2 fixes done: session cache root, its parents and the task dirs are 0700, leaf 0770 (host uid 1000) else 0777 under the private parents; comma in the cache path is rejected; `recorded()`/`session_id()` require `\w[\w-]*`; `available()` matches the exact transcript name (`<sid>.jsonl` or `*-<sid>.jsonl`), not a glob; a non-zero hook-fix attempt prints one line; tests for modes, `--x`/`*` ids, failing retry.
+Not done: `--user` host uid not used (container user stays `node`).
+Tests: python3 tests/test_omi.py passed (pip/playwright tests skipped).
+Next: Coordinator review and commit.
+
+## Steps
+- plan started 2026-10-30 22:39
+- plan done 2026-10-30 22:39
+- architect started 2026-10-30 22:39
+- architect done 2026-10-30 22:44
+- build started 2026-10-30 22:44
+- build done 2026-10-30 23:01
+- review started 2026-10-30 23:01
+- review done 2026-10-30 23:11
+- security started 2026-10-30 23:11
+- security failed 2026-10-30 23:20
+- build started 2026-10-30 23:20
+- build done 2026-10-30 23:37
+- review started 2026-10-30 23:37
+- review failed 2026-10-30 23:37
+- build started 2026-10-30 23:37
+- build done 2026-10-31 00:03
+- review started 2026-10-31 00:03
+- review done 2026-10-31 00:12
+- security started 2026-10-31 00:12
+- security failed 2026-10-31 00:20
+- build started 2026-10-31 00:20
+- build done 2026-10-31 00:34
+- review started 2026-10-31 00:34
+- review done 2026-10-31 00:43
+- security started 2026-10-31 00:43
+- security failed 2026-10-31 00:53
+- build started 2026-10-31 00:53
+- build done 2026-10-31 06:20
+- review started 2026-10-31 06:20
+- review done 2026-10-31 06:22
+- security started 2026-10-31 06:22
+- security failed 2026-10-31 06:42
+- build started 2026-10-31 06:42
+- build done 2026-10-31 06:58
+- review started 2026-10-31 06:58
+- review failed 2026-10-31 07:02
+- build started 2026-10-31 07:02
+- build done 2026-10-31 07:52
+- review started 2026-10-31 07:52
+- review done 2026-10-31 07:59
+- security started 2026-10-31 07:59
+- security done 2026-10-31 08:07
+- accept started 2026-10-31 08:07
+PO approval accept: PO: nếu có question nào cần tôi chọn hãy tự chọn option được đề xuất mà không cần PO gate, 137 done thì dừng phiên
+- accept done 2026-10-31 08:07
+
+## Reports
+2026-10-30 22:43 omi-agent-architect (claude):
+> I'm not escalating: nothing in the brief conflicts and no approved decision changes. Option A does need the task scope widened by two files, which the Coordinator should confirm.
+> 
+> ```
+> RECOMMEND: A (new worker/session.py module; tools.py builds the resume commands; run.py decides fresh vs resume) - keeps session state and the token check in one place, keeps run.py (432 lines) well under 600, and keeps read roles out structurally. Needs 2 files added to scope: the module list and layer order in .omi/rules/omi-modules.md, and the `--fresh` usage line in src/omi/app/cli.py.
+> OPTIONS: A: one owner for the session cache, easy to test / adds a module, so 2 files join the scope; B: no new module (resume commands in tools.py, cache and clean in docker.py, all decisions in run.py ~530 lines) / stays inside scope, but run.py's nested attempt() grows further and session logic is split over 3 files; C: keep the whole /home/node per task / simplest, but it stores .codex/auth.json and Claude credentials, so it fails the "no auth token" criterion: rejected.
+> [... truncated ...]
+> ```
+2026-10-30 22:55 omi-agent-engineer (claude):
+> DONE. Fix rounds now resume the engineer's session, and the full `python3 tests/test_omi.py` passes. The pip/wheel and playwright browser checks were skipped, and it did not run against a real `claude` or `codex` CLI.
+> 
+> - **Files changed:** `src/omi/worker/session.py` (new), `tools.py`, `run.py`, `docker.py`, `src/omi/app/cli.py` (`--fresh` usage), `.omi/rules/omi-modules.md`, `.claude/skills/omi-task/SKILL.md`, its template copy, `src/omi/template_shas.json`, `tests/test_worker.py` (new `test_session_resume`) and the task file.
+> - **Behaviour:**
+>   - The session id is written as `Session: <tool> <id>` under `## Checkpoint`.
+>   - Transcripts go to a per-task cache outside the repo (`$XDG_CACHE_HOME/omi/sessions/<repo>/<task>/<tool>`). Only the transcript directory is mounted, so no auth file lands there; `omi clean` removes it.
+>   - A tool switch or `--fresh` starts fresh.
+>   - A missing transcript, or a resume that fails without a result, prints one `RESUME FAILED:` line and runs fresh.
+>   - Read roles never resume.
+>   - If the `post-run` hook fails, the engineer is resumed once with the hook's last 20 lines, the hook reruns, and usage is recorded as usual.
+> - **Test coverage:** the new test covers resume, fresh fallback, read-role exclusion, tool switch, the single hook retry and cache clearing.
+> - **Template hash:** I updated the `0.5.0` entry for `omi-task/SKILL.md` in `template_shas.json`, because the template copy changed and `test_release_0_5_0` checks that hash.
+> - **Open issues:**
+>   - The `codex exec resume <id> -m … -c … --json` flag order is untested against a real codex CLI.
+>   - If the engineer rewrites `## Checkpoint` and drops the `Session:` line, the next run starts fresh.
+>   - The cache directory is `chmod 0o777` so the container user can write to it.
+> 
+> Suggested commit: `feat(worker): resume the engineer session on fix rounds`
+2026-10-30 23:00 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
+2026-10-30 23:10 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/worker/session.py:373-375 The cache dir is `chmod 0o777`, but the comment says the per-user dir above it "stays private". `mkdir(parents=True)` uses the default umask (usually 755), so on a multi-user host other users can read or write the transcripts. -> `chmod 0o700` on `root(repo)` and the parents, or set `mode=0o700` on the mkdir. Only the leaf then needs to be writable by uid 1000.
+> - src/omi/worker/session.py:376 The mount string `type=bind,src={d},dst=/sessions` breaks if `XDG_CACHE_HOME` or the repo label contains a comma. -> Use `-v {d}:/sessions` instead, or reject commas in the path.
+> - src/omi/worker/run.py:331 The hook-fix retry ignores the attempt's result. If the resumed engineer run hits a quota limit or errors, the hook is rerun anyway and nothing is reported. -> Print a line when that attempt returns non-zero.
+> - src/omi/worker/tools.py:465 The flag order `codex exec resume <id> -c … -m … --json <prompt>` has only been checked against mocks. The engineer's report says the same. -> Run `codex exec resume --help` on a host that has the CLI.
+> 
+> AC: `omi run` records the engineer's session id per tool in the task file after each write-role run ✓ `run.py:294` writes `Session: <tool> <id>` under `## Checkpoint` via `with_session`. The test asserts `Session: claude S2` after a run.
+> [... truncated ...]
+> AC: The omi-task skill (template copy) describes the resume behaviour; tests cover resume, fresh fallback and read-role exclusion; all tests pass ✓ The skill and its template copy are updated, and the sha entry in `template_shas.json` is updated to match. `python3 tests/test_omi.py` ended `ok`. Two checks were skipped for missing tools, `test_wheel_ships_web` (pip) and `test_browser_layout_and_keyboard` (playwright), and neither relates to this task.
+2026-10-30 23:19 omi-agent-security-reviewer (claude):
+> ```
+> VERDICT: FAIL
+> - src/omi/worker/session.py:28 The per-task session cache is world-writable (0777), and the directories above it are 0755 | why: any other local user can place `*<sid>*.jsonl` there or read the transcripts. `available()` then reports the session as present, and `claude --resume` / `codex exec resume` loads the planted transcript into an engineer that runs with bypassed permissions and has the token in its env. That is a prompt injection across users, and the transcripts (code, test output) leak. The earlier reviewer flagged this and it is still unfixed | verified: ran `mount_args` with umask 022 and got a 0777 leaf under 0755 parents. A plain file `x` made `available(...,'*')` return True -> create `root(repo)` and its parents with mode 0o700. Don't chmod the leaf to 0777: chown it or pass `--user` to match the host uid, or at least use 0o770.
+> - src/omi/worker/session.py:58 `recorded()` accepts any `\S+` from the task file, but `session_id()` only accepts `[\w-]+` | why: whatever the task file says (the engineer can edit it) goes straight into `--resume <sid>` / `resume <sid>` in argv, for example `--dangerously-x`. It is also used as a glob in `rglob(f"*{sid}*")`, so `Session: claude *` matches any file in the cache | verified: `recorded('Session: claude --dangerously-x')` returned it unchanged, and the `*` sid matched a planted file -> apply the same `[\w-]+` check in `recorded()` (or in `LINE`) and match on the exact file name instead of a glob.
+> UNVERIFIED: the codex `exec resume <id> -c … -m … --dangerously-bypass… --json` argument order has not been checked against a real CLI; `codex exec resume --help` would confirm it. Also unchecked: whether a hook-fix retry that hits a quota or error goes unreported (run.py:378 ignores its result), which a test with a mocked non-zero retry would show.
+> ```
+> `python3 tests/test_omi.py` passed; the pip/wheel and playwright checks were skipped because those tools are not installed here.
+2026-10-30 23:31 omi-agent-engineer (claude):
+> DONE. All four review findings are fixed. `python3 tests/test_omi.py` ended `ok`, but the pip/wheel and playwright checks were skipped (those tools are missing here).
+> 
+> - **Files changed:** `src/omi/worker/session.py`, `src/omi/worker/run.py`, `tests/test_worker.py`, `.omi/tasks/TASK-120.md`.
+> - **Cache modes:** the cache root and the two directories above it are now 0700, as are the task directories. The leaf is 0770 when the host uid is 1000. For any other host uid it stays 0777, because the container user `node` (uid 1000) has to write there. Other local users still can't reach it through the 0700 parents. I did not switch the container to the host uid with `--user`, so you may prefer a different trade-off.
+> - **Session ids:** `recorded()` and `session_id()` now reject ids with a leading `-`. `available()` matches the exact transcript name (`<sid>.jsonl` or `*-<sid>.jsonl`), not a glob.
+> - **Docker mount:** a comma in the cache path now exits with an error that tells the user to set `XDG_CACHE_HOME` elsewhere.
+> - **Hook-fix retry:** if the resumed attempt returns non-zero, it prints one `hook-fix attempt exited with code N` line, then the hook failure is reported as before.
+> - **Tests:** `test_session_resume` now covers the directory modes, the `--x` and `*` ids, and a hook-fix attempt that exits non-zero.
+> 
+> Suggested commit: `fix(worker): lock down the session cache and validate session ids`
+2026-10-30 23:36 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
+2026-10-30 23:44 omi-agent-engineer (claude):
+> DONE. `mount_args` no longer crashes on Windows, where `os.getuid` doesn't exist.
+> - **Files changed:** `src/omi/worker/session.py`, `tests/test_worker.py`, `.omi/tasks/TASK-120.md`.
+> - **Fix:** `session.py` now looks up `os.getuid` with `getattr`. Without it, the leaf directory stays 0700 and is never opened to 0777. The 0700 parents are unchanged.
+> - **Test:** `test_session_resume` now deletes `os.getuid`, calls `mount_args`, and asserts the leaf mode is 0700. This runs on Linux only, so I haven't run it on a real Windows host.
+> - **Test result:** `python3 tests/test_omi.py` ended `ok`. The pip/wheel and playwright checks were skipped (those tools are missing here).
+> - **Open issues:** none new. The codex flag order is still untested against a real CLI.
+> - **Suggested commit:** `fix(worker): keep the session cache mount working without os.getuid on Windows`
+2026-10-30 23:48 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
+2026-10-30 23:57 omi-agent-engineer (claude):
+> DONE: the session test no longer checks POSIX file modes on Windows.
+> 
+> - **Files changed:** `tests/test_worker.py` and `.omi/tasks/TASK-120.md` (checkpoint).
+> - **Fix:** in `test_session_resume`, all the POSIX-mode assertions, including the check that removes `os.getuid`, now run only when `os.name != "nt"`. On Windows the test still calls `mount_args` and prints `skip session cache modes: no POSIX modes on Windows`. It prints to the real stdout, since the test captures stdout. The Linux checks are unchanged.
+> - **Test result:** the full `python3 tests/test_omi.py` passed on Linux (`ok`). The pip/wheel and playwright checks were skipped because those tools aren't installed here. I couldn't run the Windows branch in this container.
+> - **Suggested commit:** `test(worker): skip session cache mode checks on Windows`
+> - **Open issues:** none new. The codex resume flag order still hasn't been checked against a real codex CLI.
+2026-10-31 00:01 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
+2026-10-31 00:11 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/worker/tools.py:684 The `codex exec resume <id> -c … -m … --dangerously-bypass… --json <prompt>` flag order has only been checked against mocks. -> Run `codex exec resume --help` on a host that has the CLI.
+> - src/omi/worker/run.py:376 The hook-fix attempt ignores a quota hit or a failed resume (it only prints the exit code), and a lost session there gets no `RESUME FAILED:` line. -> Optional: reuse the quota and fallback handling, or print the line.
+> 
+> AC: `omi run` records the engineer's session id per tool in the task file after each write-role run ✓ run.py:298 calls `session.with_session`, which writes `Session: <tool> <id>` under `## Checkpoint`. The test asserts `Session: claude S2`.
+> AC: A later write-role run on the same task and tool resumes that session with a short findings prompt; `--fresh` forces a new session; a tool switch starts fresh ✓ run.py:329 passes `resume` only when the recorded tool matches, and `resume_prompt` points at `## Checkpoint`. The test covers resume, `--fresh`, a codex-then-claude switch, and the quota fallback, which runs without `resume`.
+> AC: Read roles (reviewer, security, qa) never resume ✓ `read` skips both the session lookup and the cache mount. The test asserts no `--resume` and no `--mount` for the reviewer.
+> AC: Cache lives outside the repo with no auth token, and `omi clean` removes it; a missing or expired session falls back to a fresh run with one `RESUME FAILED:` line ✓ The cache is under `XDG_CACHE_HOME/omi/sessions/<repo>/<task>/<tool>`. Only the transcript directory is linked in, so no auth file lands there. `docker.clean` calls `session.clear`. The test covers a missing transcript, an expired-session failure, and the clear. The 0700 parent modes are asserted on Linux. The Windows branch skips them and was not run here.
+> [... truncated ...]
+> AC: Changes stay within `scope` ✓ All changed files are listed in `scope`.
+2026-10-31 00:19 omi-agent-security-reviewer (claude):
+> ```
+> VERDICT: PASS
+> UNVERIFIED: if the host uid is not 1000 (Linux), the container's uid 1000 creates `-work/` inside the 0777 leaf as 0755. The host user then can't delete the files in it, and `session.clear` (`rmtree(..., ignore_errors=True)`, session.py:657) leaves transcripts behind without saying so, which breaks the "`omi clean` removes it" criterion. A real `docker run` as uid 1000 followed by `omi clean` as uid 1001 would confirm it.
+> UNVERIFIED: the token goes in by name only, and the auth files stay outside `/sessions`. But the transcripts store tool output, so an agent that runs `env`/`printenv` would write the token into the host cache. Grepping a real transcript after such a command would confirm it.
+> UNVERIFIED: the `codex exec resume <id> -c … -m … --json <prompt>` argument order (tools.py:698) has only been checked against mocks. `codex exec resume --help` on a host that has the CLI would confirm it.
+> ```
+> 
+> - **Earlier findings:** both are fixed. With umask 022 the cache parents come out 0700 and the leaf 0770 (uid 1000). `recorded()`, `session_id()` and `available()` all require `\w[\w-]*`, so ids like `--x`, `*` and `../x` are rejected.
+> - **Hook retry:** the out-of-scope check (run.py, after `finally`) still runs after the hook-fix retry. Read roles get no cache mount and no resume.
+> - **Tests:** `python3 tests/test_omi.py` ended `ok`; the pip/wheel and playwright checks were skipped because those tools aren't installed here.
+2026-10-31 00:27 omi-agent-engineer (claude):
+> DONE. If a session transcript in the cache contains the auth token, it is now deleted, and the next run starts a fresh session.
+> - **Files:** `src/omi/worker/session.py` (new `scrub()`), `src/omi/worker/run.py`, `tests/test_worker.py`, `.omi/tasks/TASK-120.md`.
+> - **Behaviour:** after every engineer run, including the hook-fix retry, `scrub()` looks for the token value and its JSON-escaped form in every file of the task's cache. On a hit it deletes the cache, prints `SESSION DROPPED: token found in transcript` and removes the task's `Session:` line, so the next run starts fresh without a `RESUME FAILED` line.
+> - **I added the JSON-escaped check myself:** transcripts are JSON lines, and the codex login value contains quotes, so the raw value alone would never match.
+> - **Tests:** `python3 tests/test_omi.py` passed (`ok`); the pip/wheel and playwright checks were skipped because those tools aren't installed here. New checks: a clean transcript is kept; a transcript containing the token is wiped and the next run has no `--resume`; an empty token or missing cache is ignored; the JSON-escaped token is caught.
+> - **Commit:** `fix(worker): drop the cached engineer session when a transcript contains the token`
+> - **Open issues:** the omi-task skill text doesn't mention the dropped session (not asked for, and changing it would mean updating `template_shas.json`). The codex resume flag order is still unchecked against a real codex CLI.
+2026-10-31 00:32 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
+2026-10-31 00:43 omi-agent-reviewer (claude):
+> ```
+> VERDICT: PASS
+> - src/omi/worker/run.py:376 The hook-fix retry ignores a quota hit and a lost session. It prints only `hook-fix attempt exited with code N`, with no QUOTA fallback and no `RESUME FAILED:` line, then reruns the hook. -> Optional: reuse the quota and fallback handling for the retry.
+> - src/omi/worker/session.py:750 `clear()` uses `rmtree(ignore_errors=True)`, so on a Linux host with uid != 1000 `omi clean` can leave container-created transcripts without saying so. The task file already records this as a known issue, so it does not block. -> Optional: print a line when files remain.
+> 
+> AC: `omi run` records the engineer's session id per tool in the task file after each write-role run ✓ run.py:598 calls `with_session`, which writes `Session: <tool> <id>` under `## Checkpoint`. test_session_resume asserts `Session: claude S2`.
+> AC: A later write-role run resumes the session with a short prompt; `--fresh` forces a new session; a tool switch starts fresh ✓ run.py:607 passes `resume` only when the recorded tool matches and `--fresh` is not set. The tests cover resume, `--fresh`, a codex-to-claude switch, and a quota fallback that runs fresh. I checked the codex argument order (`exec resume [OPTIONS] [SESSION_ID] [PROMPT]` accepts `-c`, `-m`, `--json` and the bypass flag) against `codex exec resume --help` in this container.
+> AC: Read roles (reviewer, security, qa) never resume ✓ `read` skips the session lookup and the cache mount. The test asserts the reviewer gets no `--resume` and no `--mount`.
+> AC: Session data lives only in a per-task cache outside the repo, holds no auth token, and `omi clean` removes it; a missing or expired session falls back with one `RESUME FAILED:` line ✓
+> - The cache is under `XDG_CACHE_HOME/omi/sessions/<repo>/<task>/<tool>`, and only the transcript directory is mounted.
+> - `scrub()` deletes the task's cache dir, and the next run is fresh, when the token value (raw or JSON-escaped) appears in any cached file. Tests cover this.
+> [... truncated ...]
+> ```
+2026-10-31 00:52 omi-agent-security-reviewer (claude):
+> ```
+> VERDICT: FAIL
+> - src/omi/worker/session.py:316 With a codex ChatGPT login, `scrub` misses the access token on its own | why: `value` is the whole slim `auth.json` blob (creds.py:97), so `needles` only match the exact blob. If the engineer runs `jq -r .tokens.access_token ~/.codex/auth.json`, the bearer JWT lands in the host transcript unflagged, which breaks criterion 4 ("holds no auth token") | verified: ran scrub with the blob as secret; a transcript with only the access_token returned False, and a pretty-printed auth.json also returned False -> when `env_name == creds.CODEX_AUTH_ENV`, also use `tokens.access_token` and `tokens.id_token` from the blob as needles (raw and JSON-escaped); add a test with the token alone
+> - src/omi/worker/run.py:298 `scrub` runs only after `attempt` returns normally | why: Ctrl-C, a container exception or the `sys.exit` on a second NameTaken skips it, so a transcript holding the token stays in the host cache until the next run or `omi clean` | verified: code read, no try/finally around run_once…scrub -> run the scrub in a `finally` (for write roles) around the container run
+> UNVERIFIED: the container can put symlinks in /sessions, and `scrub`'s `is_file()`/`read_bytes()` follow them on the host (huge file -> memory use; only a bool comes back, so no data leak); confirm by planting a symlink to a large host file and running scrub -> skip `f.is_symlink()`
+> UNVERIFIED: the `codex exec resume` flag order was not checked against a real CLI here (no network); round-4 review says it was checked with `--help`. python3 tests/test_omi.py ended `ok` (pip/playwright skipped)
+> ```
+2026-10-31 06:15 omi-agent-engineer (claude):
+> DONE. I fixed all three round-5 security findings, and the full `python3 tests/test_omi.py` passed (it printed `ok`). The pip/wheel and playwright checks were skipped because those tools aren't installed here.
+> 
+> - **Files changed:** `src/omi/worker/session.py`, `src/omi/worker/run.py`, `tests/test_worker.py`, `.omi/tasks/TASK-120.md` (checkpoint).
+> - **Codex login tokens:** with a codex ChatGPT login, the secret is the whole `auth.json` blob. `scrub` now also checks for each token in it on its own (`access_token`, `id_token`, `refresh_token`), in both raw and JSON-escaped form. It skips the `omi-no-refresh` placeholder and `account_id`, since those are not secrets.
+> - **Interrupted runs:** `run.py` now runs the scrub, and removes the `Session:` line, in a `finally` around the container run. So Ctrl-C, a container error or the second name-in-use exit still clean the cache.
+> - **Symlinks:** `scrub` skips symlinks, so it never follows a link the container planted to a host file.
+> - **New tests:** a transcript holding only the access token or only the id token is wiped, while the placeholder and `account_id` are not flagged. A planted symlink is neither followed nor deleted. A run interrupted with Ctrl-C still drops a transcript containing the token. The symlink check prints a skip line if symlinks can't be created (Windows); that branch didn't run here.
+> - **Commit:** `fix(worker): scrub codex token parts, symlink-safe and on interrupted runs`
+> - **Open issues:** none new. The cleanup problem on Linux hosts with uid ≠ 1000 is still the known issue the task file records.
+2026-10-31 06:20 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
+2026-10-31 06:27 omi-agent-reviewer (claude):
+> Failed to authenticate: OAuth token revoked. Please log in again or contact your administrator.
+> ERROR: Failed to authenticate: OAuth token revoked. Please log in again or contact your administrator.
+> exit code 1
+2026-10-31 06:28 omi-agent-reviewer (claude):
+> Failed to authenticate: OAuth token revoked. Please log in again or contact your administrator.
+> ERROR: Failed to authenticate: OAuth token revoked. Please log in again or contact your administrator.
+> exit code 1
+2026-10-31 06:35 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/worker/run.py:764 The hook-fix retry ignores a quota hit and prints no `RESUME FAILED:` line if the resumed session is lost. It only prints `hook-fix attempt exited with code N`, then reruns the hook. -> Optional: reuse the quota and fallback handling for the retry.
+> - src/omi/worker/session.py:889 `clear()` uses `rmtree(ignore_errors=True)`, so on a Linux host with uid != 1000 `omi clean` can silently leave container-created transcripts. The task file records this as a known issue with no change wanted. -> Optional: print a line when files remain.
+> - UNVERIFIED (no Docker or real CLIs here, only mocks): the `ln -s /sessions $HOME/.claude/projects` link, and that the `claude --resume` / `codex exec resume` flags behave as the tests assume.
+> 
+> `python3 tests/test_omi.py` ended `ok`. The pip/wheel and playwright checks were skipped because those tools are missing. The `omi-task` skill copies match the sha in `template_shas.json`. All changed files are within `scope`.
+> 
+> AC: `omi run` records the engineer's session id per tool in the task file after each write-role run ✓ `run.py:727` calls `with_session`, which writes `Session: <tool> <id>` under `## Checkpoint`. `test_session_resume` asserts `Session: claude S2`.
+> AC: A later write-role run on the same task and tool resumes that session with a short prompt pointing at `## Checkpoint`; `--fresh` forces a new session; a tool switch starts fresh ✓ `run.py:737` passes `resume` only when the recorded tool matches and `--fresh` is not set. `tools.resume_prompt` builds the short prompt. The tests cover resume, `--fresh`, a codex-then-claude switch, and the quota fallback, which runs fresh.
+> [... truncated ...]
+> AC: The omi-task skill (template copy) describes the resume behaviour; tests cover resume, fresh fallback and read-role exclusion; all tests pass ✓ The skill text is in both copies, the sha matches, and the suite ended `ok`.
+2026-10-31 06:42 omi-agent-security-reviewer (claude):
+> VERDICT: FAIL
+> - src/omi/worker/session.py:100 (call site run.py:292) | problem: `scrub` crashes when a cached file can't be read, and the crash lets the token check fail open | why: `f.read_bytes()` has no `OSError` handling, and it runs in `attempt`'s `finally` with nothing catching it. So the `PermissionError` leaves `run_role`, and the post-run hook (run.py:379) and the `OUT OF SCOPE` / exit-3 check (run.py:400-402) never run. The file holding the token stays in the host cache, so criterion 4 is broken. The engineer can trigger this on purpose inside the container (write the token to `/sessions/x.jsonl`, then `chmod 000`; same uid 1000, so the host can't read it either). | verified: called `session.scrub` on a mode-0 file holding the token and got `PermissionError: [Errno 13]`; traced the code from the call site to the scope check -> on any `OSError` while reading (or any entry that isn't a readable regular file), treat it as a hit: rmtree the dir, print `SESSION DROPPED`, return True. Also stop scrub errors from escaping `attempt`. Add a test with a mode-0 transcript.
+> UNVERIFIED: on a Linux host with uid != 1000, files the CLI writes as 0600 (owner uid 1000) would make every engineer run hit the crash above. Running real `claude -p` in the container and checking the transcript mode would confirm it.
+> UNVERIFIED: between the `is_symlink()` check and `read_bytes()` (session.py:100), the container could swap a file for a symlink if it is still running after Ctrl-C. Only a True/False comes out, so the risk is memory use or blocking on a huge or special file. An interrupt test with a live `docker run` would confirm it.
+> Checked: `python3 tests/test_omi.py` ended `ok` (pip/playwright checks skipped). `rglob` on Python 3.13 does not follow symlinked dirs. `repo_label` and the session ids are sanitised. Read roles get no mount and no resume.
+2026-10-31 06:51 omi-agent-engineer (claude):
+> DONE: `scrub` now fails closed and never raises out of `attempt`. An unreadable file or folder, a special file (such as a pipe), or any error while searching counts as a hit: it deletes the task's cache folder, prints `SESSION DROPPED: cannot read the session cache` and returns True.
+> - **Files changed:** `src/omi/worker/session.py` (scrub plus a new `_search` helper; it walks with `os.walk`, never enters linked folders and skips linked files), `tests/test_worker.py`, `.omi/tasks/TASK-120.md` (Checkpoint).
+> - **Suggested commit:** `fix(worker): fail closed when the session cache cannot be scrubbed`
+> - **Tests:** `python3 tests/test_omi.py` ended `ok`, including the new checks that a mode-0 transcript and a mode-0 folder are both dropped. `test_wheel_ships_web` (pip missing) and `test_browser_layout_and_keyboard` (playwright missing) were skipped, and the Windows/root skip branch did not run here. I checked the special-file case by hand with a named pipe (fifo), not in a test.
+> - **Open issue:** `rmtree(ignore_errors=True)` cannot empty a mode-0 folder that still holds files, so those files (and any token in them) can stay on disk. The session is still not resumed.
+2026-10-31 06:56 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
+2026-10-31 07:01 omi-agent-reviewer (codex):
+> VERDICT: FAIL
+> - src/omi/worker/session.py:106 `rmtree(ignore_errors=True)` can leave token-containing files inside a mode-000 directory while reporting `SESSION DROPPED`; `clear()` also silently leaves them. The test permits this and manually cleans up afterward. -> Restore directory access without following symlinks, retry deletion, verify removal, and test a locked directory containing a token.
+> 
+> AC: Record engineer session IDs ✓ `test_session_resume` passed; asserts the task contains `Session: claude S2`.
+> AC: Resume with checkpoint prompt; fresh on `--fresh` or tool switch ✓ Focused tests exercise these command paths.
+> AC: Read roles never resume ✓ Read-role branch excludes both resume and cache mounts; reviewer test passed.
+> AC: Per-task external cache, no auth tokens, clean removal, missing/expired fallback ✗ External paths and fallback tests passed; failed deletion can retain tokens and survive `omi clean`.
+> AC: One resumed hook-fix retry, hook rerun, usage recorded ✓ Focused tests cover output forwarding, retry limit, hook failure reporting, and usage rows.
+> AC: Skill documents resume; required test coverage ✓ Template updated; resume, fallback, and read-role tests passed.
+> AC: All tests pass UNVERIFIED `python3 tests/test_omi.py` exited 0 with `ok`, but wheel and browser tests were skipped because pip and Playwright are missing.
+2026-10-31 07:05 omi-agent-reviewer (claude):
+> VERDICT: FAIL
+> - src/omi/worker/session.py:968 `scrub` calls `shutil.rmtree(d, ignore_errors=True)`, which cannot delete a mode-0 or read-only subdir. The token file stays on disk while `SESSION DROPPED` is printed. I reproduced it: a token file in a mode-0 `sub/` was still there after `scrub` returned True. The task's own Round 7 note lists this as open. -> Use an `onerror` handler that chmods the entry and its parent u+rwx and retries. Print a distinct warning with the path if anything is left. Add a test that the dir is gone after a mode-0 subdir.
+> - src/omi/worker/run.py:845 The hook-fix retry ignores a quota hit and a lost session. It only prints `hook-fix attempt exited with code N`, then reruns the hook on unchanged code. Minor, does not break an acceptance criterion. -> Optional: reuse the quota and `RESUME FAILED:` handling.
+> 
+> AC: `omi run` records the engineer's session id per tool in the task file after each write-role run ✓ `run.py` writes `Session: <tool> <id>` via `with_session`; `test_session_resume` asserts `Session: claude S2`.
+> AC: Later write-role run resumes with a short prompt pointing at `## Checkpoint`; `--fresh` forces a new session; a tool switch starts fresh ✓ the test covers resume, `--fresh`, a codex-then-claude switch, and the quota fallback running without `resume`.
+> AC: Read roles never resume ✓ the test asserts the reviewer gets no `--resume` and no `--mount`.
+> AC: Session data lives only in a per-task cache outside the repo, holds no auth token, and `omi clean` removes it; a missing or expired session falls back to a fresh run with one `RESUME FAILED:` line ✗ The cache location, `omi clean`, and `RESUME FAILED:` parts pass in the test. "Holds no auth token" fails for the mode-0 subdir case in the first finding. A clean-transcript, token-hit, symlink, and mode-0 file case all behave correctly.
+> [... truncated ...]
+> All changed files are within `scope`.
+2026-10-31 07:13 omi-agent-architect (claude):
+> RECOMMEND: A. Keep each task's transcripts in a per-task, per-tool Docker named volume, and run every check and delete through Docker. The host never reads, chmods or deletes a transcript file, so the 0777 / mode-0 / symlink / fifo / uid / Windows problems from rounds 2–7 go away instead of being patched again.
+> OPTIONS: A: volume `omi-sess-<repo>-<TID>-<tool>` (labels `omi-worker=1, omi-repo, omi-task, omi-session=1`) mounted at `/sessions`, with the existing `wrap()` symlink `~/.claude/projects` or `~/.codex/sessions` -> `/sessions`. A new volume gets a one-shot `chmod 0777 /s` run as `--user 0 --cap-drop ALL --network none` (no caps added). After each write run, a scan container (`--user node --read-only --network none --cap-drop ALL`, volume mounted `:ro`) runs `grep -rqF -f - /s` with the token strings on stdin. Pro: one boundary, works with any image. Con: two short helper runs, and root-in-container for the chmod. B: no scan, relying on the env never being persisted. Rejected: codex's `~/.codex/auth.json` is readable by the agent, and Claude's subprocess env scrub is UNVERIFIED. C: a node-owned `/sessions` in the Dockerfile instead of the chmod step. Con: the image hash changes, and projects with their own `docker/Dockerfile` get a root-owned, unwritable volume until they upgrade.
+> [... truncated ...]
+> TASKS: T1 (engineer, opus/high): scope `src/omi/worker/session.py`, `docker.py`, `run.py`, `tests/test_worker.py`. Make the switch above and delete the host-cache code and its mode/uid/symlink/fifo/mode-0/Windows-skip tests. New tests with subprocess mocked: the mount argv is `type=volume`; the token never appears in any argv; scan rc 0, 2 and 125 drop the volume and remove the `Session:` line while rc 1 keeps it; a failed rm prints `SESSION CACHE NOT REMOVED`; `--fresh` and a tool switch recrea
+2026-10-31 07:30 omi-agent-engineer (claude):
+> NEEDS SCOPE: tests/test_creds.py, tests/test_tools.py, tests/test_hooks.py, tests/test_content.py. Their mocks treat every `docker run` as the agent run and return rc 0. The new chmod helper (it runs first) and the token scan (rc 0 means "token found") break them. The guard lines that fix them are in `## Checkpoint`.
+> 
+> - **Files changed:** `src/omi/worker/session.py` (rewritten), `src/omi/worker/run.py`, `src/omi/worker/docker.py`, `src/omi/app/cli.py` (help line for `clean`), `.omi/rules/omi-modules.md`, `tests/test_worker.py`, `.omi/tasks/TASK-120.md`.
+> - **What changed:** transcripts now live in a Docker named volume per task and tool, `omi-sess-<repo>-<TID>-<tool>`, so the host never reads, chmods or deletes them. A short helper container scans the volume for the token after every engineer run; anything but a clean result removes the volume and the `Session:` line. `omi clean` removes the volumes, and all the old host-side scrub/chmod/uid code and its tests are gone.
+> - **Suggested commit:** `refactor(worker): keep engineer sessions in per-task Docker volumes`
+> - **Tests:** `test_worker.main()` passed. The full `python3 tests/test_omi.py` fails at `test_creds.py:382`, for the reason above. With the guard lines applied in a scratch copy outside the repo, the full suite printed `ok`. The playwright browser check was skipped (not installed).
+> - **Unverified (no real Docker or CLI here):** whether GNU grep `-r` skips pipes and devices in the image, whether the CLIs really write transcripts into the volume, and what happens when a Ctrl-C'd agent still holds the volume. The chmod helper runs as root in a container; I left the omi-task skill text unchanged.
+2026-10-31 07:32 hook post-run FAILED (exit 1):
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> AssertionError
+2026-10-31 07:45 omi-agent-engineer (claude):
+> DONE: round 8b finished. The test mocks are fixed and the skill text now matches the new design.
+> 
+> - **Test mocks:** in `tests/test_creds.py`, `test_tools.py`, `test_hooks.py` and `test_content.py`, each mocked `docker run` now answers the volume `chmod` helper with rc 0 and the token scan (`grep`) with rc 1 ("no token found"). In `test_hooks.py` the `R(run_raw)` lambda skips both helper commands.
+> - **Skill text:** `.claude/skills/omi-task/SKILL.md` and its template copy now say transcripts live in a per-task Docker volume, never on the host, removed by `omi clean`, and that a token found in it drops the session. The 0.5.0 hash in `src/omi/template_shas.json` is updated and matches. No host-cache wording is left. The task file `## Checkpoint` is updated.
+> - **Tests:** I ran the full `python3 tests/test_omi.py` twice; the second run came after all edits and exited 0 with `ok`. Two checks were skipped: the wheel check (pip missing) and the browser layout check (playwright missing).
+> - **Not verified:** nothing ran against real Docker here. Four Docker behaviours from the checkpoint are still unconfirmed: grep `-r` skipping fifos and devices, the CLI transcript paths through the symlink, removing a volume a Ctrl-C'd agent still holds, and the root `chmod` under rootless Docker.
+> - **Suggested commit:** `feat(worker): resume the engineer session from a per-task Docker volume`
+2026-10-31 07:49 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
+2026-10-31 07:59 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/worker/session.py:1094 `mount_args(fresh=True)` ignores a refused `docker volume rm` (it only prints `SESSION CACHE NOT REMOVED`), then sees the volume still exists and reuses it. A `--fresh` run or fallback then starts on the old transcripts, which may hold a token that was found earlier. -> Have `mount_args` abort, or use a new volume name, when `drop(vol)` returns False.
+> - src/omi/worker/run.py:1027 The hook-fix retry has no quota or `RESUME FAILED:` handling. A resumed attempt that fails prints only `hook-fix attempt exited with code N`, then the hook is rerun. This was noted as optional in earlier rounds, and the criterion only asks for a single retry. -> Optional: reuse the fallback logic.
+> - UNVERIFIED: no Docker runs here, so these were not exercised against a real daemon:
+>   - the `chmod` helper and the `grep -rqF -f -` scan
+>   - the `ln -s /sessions ~/.claude/projects` symlink for both CLIs
+>   - the `codex exec resume` flag order
+>   - `grep -r` on fifos
+> 
+>   These are mock-tested only; the task file lists them as open.
+> 
+> AC: `omi run` records the engineer's session id per tool in the task file after each write-role run ✓ run.py:993 writes `Session: <tool> <id>` via `with_session`. `test_session_resume` asserts `Session: claude S2`.
+> AC: A later write-role run resumes the session with a short prompt pointing at the new `## Checkpoint` findings; `--fresh` forces a new session; a tool switch starts fresh ✓ run.py:335 passes `resume` only for the recorded tool and without `--fresh`. `resume_prompt` points at `## Checkpoint`. The test covers resume, `--fresh`, a codex-then-claude switch, and a quota fallback that runs fresh.
+> [... truncated ...]
+> AC: Changes stay within `scope` ✓ Every file in the diff is listed in `scope`. run.py is 457 lines and session.py is 132, both under the 600-line limit.
+2026-10-31 08:06 omi-agent-security-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/worker/session.py:22 Two repos whose main checkout folders have the same name (e.g. two clones called `app`) get the same `omi-sess-<repo>-<TID>-<tool>` volume. | why: `docker.repo_label` uses only `main.name.lower()`. So if repo B has a `Session:` line and repo A last wrote that volume, B's engineer container mounts A's transcripts. Also, `omi clean` in one repo deletes the other repo's volumes. | verified: code read of docker.py:131-132, plus `exists`/`available` and the `clear` label filter. Containers already share this naming, so the impact is low (same user). -> Add a short hash of the main checkout's resolved path to the volume name and the `omi-repo` label (or a new `omi-repo-path` label).
+> - Checked with no issue found: the session id is only passed as an argv list item and must match `\w[\w-]*`. Tokens reach `grep` on stdin, not in argv. The scan fails closed: only grep's "no match" exit (rc 1) keeps the volume. It runs in `attempt`'s finally, so Ctrl-C, container errors and the name-conflict exit are covered. Read roles get no volume and are never scanned. The scan covers the claude token, the codex API key and each `*_token` in the codex auth.json. The helper containers run with no network, no capabilities and a read-only root filesystem. The image has no ENTRYPOINT, so the helper commands run as written. `python3 tests/test_omi.py` printed `ok`; the pip and playwright checks were skipped.
+> [... truncated ...]
+> UNVERIFIED: (1) Ctrl-C during the scan: KeyboardInterrupt escapes the finally before the volume is dropped, and on the 300 s timeout `subprocess.run` kills only the docker client while the `--rm` scan container keeps running. A token-bearing volume could then outlive the run until the next scan. A real docker run would confirm it. (2) Whether `codex exec resume <id>` accepts the `-c/-m/--json` flags after the subcommand, which needs a real codex CLI. (3) Whether GNU grep `-r` skips FIFOs in the 
+
+## Usage
+| role | model | effort | input | output | cache | duration | skills read | verdict |
+|---|---|---|---|---|---|---|---|---|
+| omi-agent-architect | claude-opus-5-5 | high | 18 | 8176 | 379460 | 91s | - | n/a |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 38 | 21678 | 1166841 | 647s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 3522 | 146869 | 397s | - | PASS 9f18f7e |
+| omi-agent-security-reviewer | claude-opus-5-5 | high | 14 | 5662 | 216655 | 360s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL 9f18f7e |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 26 | 6419 | 487013 | 680s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 18 | 2196 | 263119 | 371s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-engineer | claude-opus-5-5 | high | 18 | 2718 | 273851 | 374s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 3541 | 314898 | 325s | - | PASS 7f1d5e0 |
+| omi-agent-security-reviewer | claude-opus-5-5 | high | 18 | 5636 | 371258 | 328s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS 7f1d5e0 |
+| omi-agent-engineer | claude-opus-5-5 | high | 30 | 6454 | 607664 | 432s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 14 | 5324 | 433067 | 358s | - | PASS 9d5f47f |
+| omi-agent-security-reviewer | claude-opus-5-5 | high | 22 | 5874 | 509415 | 433s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL 9d5f47f |
+| omi-agent-engineer | claude-opus-5-5 | high | 30 | 7881 | 660168 | 19335s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 1712 | 234596 | 295s | - | n/a |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 2876 | 159414 | 253s | - | n/a |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 3935 | 242681 | 257s | - | PASS 47d0458 |
+| omi-agent-security-reviewer | claude-opus-5-5 | high | 20 | 7043 | 607723 | 323s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL 47d0458 |
+| omi-agent-engineer | claude-opus-5-5 | high | 22 | 5912 | 332575 | 524s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 1674057 | 4438 | 1609216 | 295s | - | FAIL a37d894 |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 16 | 5339 | 545390 | 330s | - | FAIL a37d894 |
+| omi-agent-architect | claude-opus-5-5 | high | 12 | 11597 | 183899 | 163s | - | n/a |
+| omi-agent-engineer | claude-opus-5-5 | high | 68 | 33178 | 2410750 | 976s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-engineer | claude-opus-5-5 | high | 36 | 4597 | 619658 | 709s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 6543 | 388317 | 334s | - | PASS de1b445 |
+| omi-agent-security-reviewer | claude-opus-5-5 | high | 18 | 6973 | 318529 | 311s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS de1b445 |

@@ -170,7 +170,7 @@ def test_worker():
             assert "OUT OF SCOPE: .gitattributes" in out.getvalue() and "src/a.py" not in out.getvalue()
             assert "OUT OF SCOPE: .github/x.yml" in out.getvalue()
             assert omi.project.scope.GIT_HINT in out.getvalue()
-            argv, kw = next(c for c in calls if c[0][:2] == ["docker", "run"])
+            argv, kw = next(c for c in calls if c[0][:2] == ["docker", "run"] and "--name" in c[0])
             assert not any("tok-SECRET" in a for a in argv), "token in argv"
             assert argv[argv.index("-e") + 1] == omi.worker.creds.TOKEN_ENV and kw["env"][omi.worker.creds.TOKEN_ENV] == "tok-SECRET"
             assert kw["stdin"] is subprocess.DEVNULL
@@ -190,7 +190,7 @@ def test_worker():
                 assert f"{k}={v}" in lab, lab
             assert any(l.startswith("omi-started=") for l in lab) and "omi-worker=1" in lab
             go(effort="high")
-            argv = next(c[0] for c in calls if c[0][:2] == ["docker", "run"])
+            argv = next(c[0] for c in calls if c[0][:2] == ["docker", "run"] and "--name" in c[0])
             assert argv[argv.index("--effort") + 1] == "high"
             # alias map from .omi/config.json; unknown alias fails before docker
             (wt / ".omi").mkdir(exist_ok=True)
@@ -204,7 +204,7 @@ def test_worker():
                 raise AssertionError("unknown alias accepted")
             go_model = lambda m: (calls.clear(), omi.worker.run.worker(wt, task, model=m, effort="low"))
             go_model("fast")
-            argv = next(c[0] for c in calls if c[0][:2] == ["docker", "run"])
+            argv = next(c[0] for c in calls if c[0][:2] == ["docker", "run"] and "--name" in c[0])
             assert argv[argv.index("--model") + 1] == "claude-haiku-5-5" and "-claude-haiku-5.5-low-" in argv[argv.index("--name") + 1]
             (wt / ".omi" / "config.json").unlink()
             # build log: silent on success, shown (stderr) on failure
@@ -253,6 +253,222 @@ def test_worker():
             os.environ.pop(omi.worker.creds.TOKEN_ENV, None)
             if tok is not None:
                 os.environ[omi.worker.creds.TOKEN_ENV] = tok
+
+
+def test_session_resume():
+    sess, tools = omi.worker.session, omi.worker.tools
+    out = '{"type":"system","session_id":"S1"}\n{"type":"result","session_id":"S2","result":"DONE","usage":{}}\n'
+    assert sess.session_id("claude", out) == "S2" and sess.session_id("codex", '{"type":"thread.started","thread_id":"T1"}') == "T1"
+    assert sess.session_id("claude", "junk") is None and sess.session_id("codex", out) is None
+    text = sess.with_session("---\na: b\n---\n## Checkpoint\nDone:\n\n## Usage\nrow\n", "claude", "S1")
+    assert text == "---\na: b\n---\n\n## Checkpoint\nDone:\nSession: claude S1\n\n## Usage\nrow\n".replace("---\n\n", "---\n"), text
+    again = sess.with_session(text, "codex", "T9")
+    assert again.count("Session:") == 1 and sess.recorded(again, "codex") == "T9" and sess.recorded(again, "claude") is None
+    c = tools.engineer_cmd("---\n---\nbody", "t.md", "m", "low", "", "S1", "boom")
+    assert c[c.index("--resume") + 1] == "S1" and "boom" in c[2] and "body" not in c[2]
+    x = tools.codex_cmd("---\n---\nbody", "t.md", "m", "low", "", "T1")
+    assert x[:4] == ["codex", "exec", "resume", "T1"] and "Checkpoint" in x[-1] and "body" not in x[-1]
+    assert "resume" not in tools.codex_cmd("---\n---\nbody", "t.md", "m", "low") and "--resume" not in tools.engineer_cmd("---\n---\nbody", "t.md")
+
+    calls, runs, scans, vols = [], [], [], set()
+    state = {"stdout": out, "hook": [1, 0], "scan": [], "rm_rc": 0}
+
+    class R:
+        def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
+
+    def run(cmd, **kw):
+        if "--git-common-dir" in cmd:
+            return R(str(Path(cmd[2]) / "shared.git"))
+        if "show" in cmd:
+            return R("---\nscope: src/**\n---\n")
+        if "status" in cmd:
+            return R(" M src/a.py\0")
+        if cmd[:2] == ["docker", "volume"]:
+            runs.append(cmd)
+            if cmd[2] == "inspect":
+                return R(rc=0 if cmd[3] in vols else 1)
+            if cmd[2] == "create":
+                vols.add(cmd[-1])
+            if cmd[2] == "rm":
+                if state["rm_rc"]:
+                    return R(rc=state["rm_rc"])
+                vols.discard(cmd[3])
+            if cmd[2] == "ls":
+                return R("\n".join(sorted(vols)))
+            return R()
+        if cmd[:2] == ["docker", "run"] and "grep" in cmd:  # the token scan
+            runs.append(cmd)
+            scans.append((cmd, kw.get("input")))
+            if state.get("scan_raise"):
+                raise state["scan_raise"]
+            return R(rc=state["scan"].pop(0) if state["scan"] else 1)
+        if cmd[:2] == ["docker", "run"] and "chmod" in cmd:  # opens a new volume to the container user
+            runs.append(cmd)
+            return R()
+        if cmd[:2] == ["docker", "run"]:  # the post-run hook
+            return R(b"hook says no\n", state["hook"].pop(0)) if state["hook"] else R(b"", 0)
+        return R()
+
+    class P:
+        def __init__(s, cmd, **kw):
+            calls.append(cmd)
+            s.stdout, s.stderr, s.returncode = io.StringIO(state["stdout"]), io.StringIO(""), 0
+        def __enter__(s): return s
+        def __exit__(s, *a): pass
+        def wait(s): pass
+
+    real = subprocess.run, subprocess.Popen, shutil.which, omi.common.core.main_checkout, omi.common.core.WINDOWS, omi.worker.docker.ensure_image
+    old_tok = os.environ.get(omi.worker.creds.TOKEN_ENV)
+    os.environ[omi.worker.creds.TOKEN_ENV] = "tok"
+    with tempfile.TemporaryDirectory() as d:
+        wt = Path(d).resolve()
+        (wt / ".git").write_text("gitdir: /x")
+        task = wt / ".omi" / "tasks" / "TASK-001.md"
+        task.parent.mkdir(parents=True)
+        task.write_text("---\nid: TASK-001\nscope: src/**\nrole: omi-agent-engineer\n---\n## Checkpoint\nDone:\n\n## Usage\n", encoding="utf-8")
+        subprocess.run, subprocess.Popen, shutil.which = run, P, lambda _: "docker"
+        omi.common.core.main_checkout, omi.common.core.WINDOWS, omi.worker.docker.ensure_image = (lambda _: wt), False, lambda m: "img"
+        repo, saved, buf = omi.worker.docker.repo_label(wt), sys.stdout, io.StringIO()
+        vol = sess.volume(repo, "TASK-001", "claude")
+        sys.stdout = buf
+
+        def go(role="omi-agent-engineer", **kw):
+            calls.clear(); runs.clear(); scans.clear()
+            buf.truncate(0); buf.seek(0)
+            omi.worker.run.run_role(role, wt, task, effort="low", **kw)
+            return calls[0] if calls else None
+
+        def recreated():
+            return [c[:3] for c in runs if c[2] in ("rm", "create")] == [["docker", "volume", "rm"], ["docker", "volume", "create"]]
+
+        try:
+            assert vol == f"omi-sess-{repo}-TASK-001-claude" and re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]+", vol)
+            argv = go()
+            assert "--resume" not in argv and argv[argv.index("--mount") + 1] == f"type=volume,src={vol},dst=/sessions"
+            assert not any("type=bind" in a for a in argv) and vol in vols
+            create = next(c for c in runs if c[2] == "create")
+            assert all(f"{k}" in create for k in ("omi-worker=1", f"omi-repo={repo}", "omi-task=TASK-001", "omi-session=1")), create
+            chmod = next(c for c in runs if "chmod" in c)
+            assert chmod[chmod.index("--user") + 1] == "0" and chmod[chmod.index("--cap-drop") + 1] == "ALL" and "--read-only" in chmod
+            assert chmod[chmod.index("--network") + 1] == "none" and f"type=volume,src={vol},dst=/s" in chmod and "--privileged" not in chmod
+            assert "Session: claude S2" in task.read_text(encoding="utf-8")
+            # the scan: node, no network, volume ro, the token on stdin only
+            (scan, given), = scans
+            assert scan[scan.index("--user") + 1] == "node" and scan[scan.index("--network") + 1] == "none" and "--read-only" in scan
+            assert f"type=volume,src={vol},dst=/s,readonly" in scan and scan[-5:] == ["grep", "-rqF", "-f", "-", "/s"]
+            assert given.splitlines() == ["tok"], given
+            assert not any("tok" in a.split("=")[-1] for c in [*calls, *runs] for a in c if a != "omi-task=TASK-001"), "token in argv"
+            assert sess.recorded("Session: claude --x", "claude") is None and sess.recorded("Session: claude *", "claude") is None
+            assert not sess.available(repo, "TASK-001", "claude", "--x") and sess.available(repo, "TASK-001", "claude", "S2")
+            # a later run resumes the session in the kept volume
+            argv = go()
+            assert argv[argv.index("--resume") + 1] == "S2" and "RESUME FAILED" not in buf.getvalue() and not recreated()
+            assert "new findings" in argv[argv.index("-p") + 1] and "--append-system-prompt" in argv
+            # --fresh: a new session in a new volume
+            assert "--resume" not in go(fresh=True) and recreated()
+            # recorded but the volume is gone: one RESUME FAILED line, fresh run
+            vols.clear()
+            argv = go()
+            assert "--resume" not in argv and buf.getvalue().count("RESUME FAILED:") == 1 and vol in vols
+            # an expired session (the CLI fails without a result) falls back to a fresh run
+            state["stdout"] = ""
+            real_p = P.__init__
+            def failing(s, cmd, **kw):
+                real_p(s, cmd, **kw); s.returncode = 1 if "--resume" in cmd else 0
+            P.__init__ = failing
+            go()
+            assert [("--resume" in c) for c in calls] == [True, False] and buf.getvalue().count("RESUME FAILED:") == 1 and recreated()
+            P.__init__ = real_p
+            state["stdout"] = out
+            # read roles never resume, mount nor scan a session volume
+            argv = go("omi-agent-reviewer")
+            assert "--resume" not in argv and "--mount" not in argv and not runs
+            # the other tool as the last one: fresh, silent, a new volume
+            task.write_text(sess.with_session(task.read_text(encoding="utf-8"), "codex", "T1"), encoding="utf-8")
+            argv = go()
+            assert "--resume" not in argv and "RESUME FAILED" not in buf.getvalue() and recreated()
+            # a failing post-run hook: one resumed retry with the hook output, then the hook reruns
+            hooks = wt / ".omi" / "hooks"
+            hooks.mkdir()
+            (hooks / "post-run.sh").write_text("exit 1\n")
+            task.write_text(sess.with_session(task.read_text(encoding="utf-8"), "claude", "S2"), encoding="utf-8")
+            state["hook"] = [1, 0]
+            go()
+            assert len(calls) == 2 and "--resume" in calls[1] and "hook says no" in calls[1][calls[1].index("-p") + 1], calls
+            assert "hook post-run passed" in buf.getvalue() and "exited with code" not in buf.getvalue() and len(scans) == 2
+            # the resumed fix attempt itself fails: one line, the hook failure is reported as before
+            state["hook"] = [1, 1]
+            real_p = P.__init__
+            def failing(s, cmd, **kw):
+                real_p(s, cmd, **kw); s.returncode = 1 if len(calls) == 2 else 0  # only the hook-fix attempt
+            P.__init__ = failing
+            go()
+            P.__init__ = real_p
+            assert "hook-fix attempt exited with code 1" in buf.getvalue() and "hook post-run FAILED" in buf.getvalue()
+            state["hook"] = [1, 1, 1]
+            go()
+            assert len(calls) == 2 and "hook post-run FAILED" in buf.getvalue() and state["hook"] == [1], "single retry"
+            usage = [l for l in task.read_text(encoding="utf-8").splitlines() if l.startswith("| omi-agent-engineer")]
+            assert len(usage) >= 8, usage  # the retries are recorded like any run
+            (hooks / "post-run.sh").unlink()
+            state["hook"] = []
+            # scan rc 0 (token), 2 (unreadable entry) and 125 (docker error) drop the volume and the Session line; 1 keeps both
+            for rc, why in ((0, "token found in transcript"), (2, "cannot scan the session volume"), (125, "cannot scan the session volume")):
+                task.write_text(sess.with_session(task.read_text(encoding="utf-8"), "claude", "S2"), encoding="utf-8")
+                state["scan"] = [rc]
+                assert "--resume" in go() and buf.getvalue().count(f"SESSION DROPPED: {why}") == 1, (rc, buf.getvalue())
+                assert vol not in vols and "Session:" not in task.read_text(encoding="utf-8"), rc
+                assert "--resume" not in go() and "RESUME FAILED" not in buf.getvalue() and vol in vols
+            assert "SESSION DROPPED" not in buf.getvalue() and "Session: claude S2" in task.read_text(encoding="utf-8")
+            # a scan that cannot start or times out fails closed too
+            for exc in (OSError("no docker"), subprocess.TimeoutExpired("docker", 1)):
+                state["scan_raise"] = exc
+                assert sess.scrub(repo, "TASK-001", "claude", "img", "tok") and vol not in vols
+                vols.add(vol)
+            state.pop("scan_raise")
+            # docker refuses the rm: the leftover volume is named
+            state["scan"], state["rm_rc"] = [0], 1
+            buf.truncate(0); buf.seek(0)
+            assert sess.scrub(repo, "TASK-001", "claude", "img", "tok") and f"SESSION CACHE NOT REMOVED: {vol}" in buf.getvalue()
+            state["rm_rc"] = 0
+            # needles: no secret, no scan; a JSON value also in its escaped form; a codex ChatGPT login adds each token alone
+            scans.clear()
+            assert not sess.scrub(repo, "TASK-001", "codex", "img", "") and not scans
+            sess.scrub(repo, "TASK-001", "codex", "img", '{"access_token":"a"}')
+            assert scans[-1][1].splitlines() == ['{"access_token":"a"}', '{\\"access_token\\":\\"a\\"}']
+            blob = json.dumps({"auth_mode": "chatgpt", "tokens": {"access_token": "eyJ.acc.sig", "id_token": "eyJ.id.sig",
+                                                                   "account_id": "acct", "refresh_token": "omi-no-refresh"}}, indent=1)
+            sess.scrub(repo, "TASK-001", "codex", "img", blob)
+            lines = scans[-1][1].splitlines()
+            assert "eyJ.acc.sig" in lines and "eyJ.id.sig" in lines and "acct" not in lines and "omi-no-refresh" not in lines
+            assert "" not in lines and json.dumps(blob)[1:-1] in lines and not any(l in ("{", "}") for l in lines), lines
+            assert sess.volume(repo, "TASK-001", "codex") in scans[-1][0][scans[-1][0].index("--mount") + 1]
+            # an interrupted run (Ctrl-C, container error) still scans the volume
+            task.write_text(sess.with_session(task.read_text(encoding="utf-8"), "claude", "S2"), encoding="utf-8")
+            state["scan"] = [0]
+            def interrupted(s, cmd, **kw):
+                raise KeyboardInterrupt
+            P.__init__ = interrupted
+            try:
+                go()
+                assert False, "no interrupt"
+            except KeyboardInterrupt:
+                pass
+            finally:
+                P.__init__ = real_p
+            assert len(scans) == 1 and vol not in vols and "SESSION DROPPED: token found in transcript" in buf.getvalue()
+            # omi clean removes this repo's session volumes
+            vols.update({vol, sess.volume(repo, "TASK-002", "codex")})
+            runs.clear()
+            assert sess.clear(repo) == 2 and not vols
+            ls = next(c for c in runs if c[2] == "ls")
+            assert "label=omi-session=1" in ls and f"label=omi-repo={repo}" in ls
+        finally:
+            sys.stdout = saved
+            subprocess.run, subprocess.Popen, shutil.which, omi.common.core.main_checkout, omi.common.core.WINDOWS, omi.worker.docker.ensure_image = real
+            os.environ.pop(omi.worker.creds.TOKEN_ENV, None)
+            if old_tok is not None:
+                os.environ[omi.worker.creds.TOKEN_ENV] = old_tok
 
 
 def test_prove_exit_and_hosts():
@@ -576,6 +792,8 @@ def test_clean_and_old_images():
                 return R(rc=1)
             if cmd[:3] == ["docker", "network", "ls"]:
                 return R("n1\n" if "label=omi-repo=my-repo" in cmd else "other\n")
+            if cmd[:3] == ["docker", "volume", "ls"]:
+                return R("omi-sess-my-repo-TASK-001-claude\n" if "label=omi-repo=my-repo" in cmd and "label=omi-session=1" in cmd else "other\n")
             return R()
 
         subprocess.run, omi.common.core.main_checkout = run, lambda _: main
@@ -583,6 +801,8 @@ def test_clean_and_old_images():
             omi.worker.docker.clean()
             assert ["docker", "rm", "-f", "c1", "c2"] in calls and not any("other" in c for c in calls if c[:2] == ["docker", "rm"])
             assert ["docker", "network", "rm", "n1"] in calls
+            vrm = calls.index(["docker", "volume", "rm", "omi-sess-my-repo-TASK-001-claude"])
+            assert calls.index(["docker", "rm", "-f", "c1", "c2"]) < vrm and ["docker", "volume", "rm", "other"] not in calls
             assert ["docker", "rmi", f"{repo}:old1"] in calls and ["docker", "rmi", f"{repo}:old2"] in calls
             assert ["docker", "rmi", cur] not in calls and ["docker", "rmi", "omi-worker-other:x"] not in calls
             ps = next(c for c in calls if c[:2] == ["docker", "ps"])
@@ -641,6 +861,7 @@ def main():
     test_download_cache_scope()
     test_download_cache_shared_exclude()
     test_worker()
+    test_session_resume()
     test_container_names()
     test_clip_report()
     test_network_allowlist()

@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 from ..common import core
-from . import creds
+from . import creds, session
 from ..state import resolve as state
 
 
@@ -146,7 +146,7 @@ def worker_sizes(main):
     return dict(zip(("cache_mb", "tmp_mb"), sizes))
 
 
-def worker_argv(wt, image, cmd, name=None, repo=None, labels=None, ro=False, mounts=(), env_names=(creds.TOKEN_ENV,), network=None, proxy=None, offline=False, cache_mb=2048, tmp_mb=512):
+def worker_argv(wt, image, cmd, name=None, repo=None, labels=None, ro=False, mounts=(), env_names=(creds.TOKEN_ENV,), network=None, proxy=None, offline=False, cache_mb=2048, tmp_mb=512, extra=()):
     """docker run argv: only the worktree is rw, its .git file ro, non-root, no caps, rootfs ro, no socket.
     The token goes in by name only (-e NAME); its value lives in the child env, never in argv.
     network/proxy: the internal network and the egress proxy container; HTTPS_PROXY is the only way out; offline: no network at all."""
@@ -164,7 +164,7 @@ def worker_argv(wt, image, cmd, name=None, repo=None, labels=None, ro=False, mou
             *[x for n in env_names for x in ("-e", n)], "-e", "HOME=/home/node",
             *[x for kv in CACHE_ENV for x in ("-e", kv)], *net,
             "-v", f"{wt}:/work{':ro' if ro else ''}", "-v", f"{wt / '.git'}:/work/.git:ro",
-            *[x for m in mounts for x in ("-v", f"{m}:ro")], "-w", "/work", image, *cmd]
+            *[x for m in mounts for x in ("-v", f"{m}:ro")], *extra, "-w", "/work", image, *cmd]
 
 
 def worker_labels(role, task, model, effort):
@@ -255,7 +255,7 @@ def ensure_image(main):
 
 
 def clean(cwd=".", all_images=False):
-    """Remove this repo's worker containers and every worker image except the current one (all_images: that too)."""
+    """Remove this repo's worker containers, engineer session volumes and every worker image except the current one (all_images: that too)."""
     main = state.resolve(core.main_checkout(cwd) or Path(cwd).resolve()).state
     r = subprocess.run(["docker", "ps", "-a", "-q", "--filter", "label=omi-worker=1",
                         "--filter", f"label=omi-repo={repo_label(main)}"],
@@ -263,6 +263,7 @@ def clean(cwd=".", all_images=False):
     ids = r.stdout.split()
     if ids:
         subprocess.run(["docker", "rm", "-f", *ids], capture_output=True)
+    vols = session.clear(repo_label(main))  # after the containers: a volume in use cannot go
     r = subprocess.run(["docker", "network", "ls", "-q", "--filter", f"label=omi-repo={repo_label(main)}"],
                        capture_output=True, encoding="utf-8", errors="replace")
     nets = r.stdout.split()
@@ -271,7 +272,7 @@ def clean(cwd=".", all_images=False):
     imgs = old_images(main, None if all_images else image_tag(main)[1])
     for i in imgs:
         subprocess.run(["docker", "rmi", i], capture_output=True)
-    print(f"removed {len(ids)} container(s), {len(nets)} network(s), {len(imgs)} image(s)")
+    print(f"removed {len(ids)} container(s), {len(nets)} network(s), {len(imgs)} image(s), {vols} session volume(s)")
 
 
 def need_docker():
