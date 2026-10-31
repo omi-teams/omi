@@ -1,17 +1,17 @@
 ---
 id: TASK-135
 title: Move the omi repo to detached mode on omi-state
-status: planned
+status: in-progress
 depends: TASK-137
 plan: PLAN-007
 scope: .omi/tasks/TASK-135.md, docs/**
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
-step_settings:
+tool: codex
+model: sonnet
+effort: medium
+step_settings: architect=claude/opus/high
 workflow: omi-flow-feature-sensitive
 step:
 ---
