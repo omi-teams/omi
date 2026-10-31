@@ -9,7 +9,7 @@ applies: src/omi/**/*.py, src/omi/*.py
 - `board/server.py`: GET-only localhost HTTP handler (route allowlist, static files from `board/web/`); imports only `board.data`; `app/cli.py` owns the pull, browser and serve loop.
 - `app/cli.py`: command dispatch and status presentation.
 - `setup/`: `install` handles user integration; `upgrade` handles init, template updates and hashes; `attach` registers detached projects and warns about in-repo files.
-- `worker/`: `run`, `hooks`, `docker` execute agents; `pr` posts step results as PR comments; `tools` builds/parses agent commands; `session` keeps the per-task engineer session cache and the task's `Session:` line; `creds` manages authentication.
+- `worker/`: `run`, `hooks`, `docker` execute agents; `pr` posts step results as PR comments; `tools` builds/parses agent commands; `session` keeps the per-task engineer session volume (Docker named volume) and the task's `Session:` line; `creds` manages authentication.
 - `project/`: `tasks`, `workflows`, `catalogs`, `scope`, `github` manage project content, task state, write boundaries and GitHub configuration.
 - `state/`: `resolve` locates project state and validates its registry; `sync` handles detached-state git transport.
 - `common/core.py`: shared paths, parsing, version and git helpers.

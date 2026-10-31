@@ -251,13 +251,14 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         chatgpt = env_name == creds.CODEX_AUTH_ENV
         if chatgpt:
             cmd = ["sh", "-c", creds.CODEX_AUTH_BOOT, "sh", *cmd]
+        sess = [] if read else session.mount_args(repo, task.stem, t, image, fresh=resume is None)  # a fresh session gets a new volume
         t0 = time.monotonic()
 
         def run_once(name):
             with docker.egress(main, name, image, docker.allow_for(main, t, chatgpt=chatgpt)) as (net, proxy):
                 with subprocess.Popen(docker.worker_argv(wt, image, cmd, name, docker.repo_label(main),
                                                   {**docker.worker_labels(role, task.stem, mdl, eff), **docker.compose_labels(name, "agent")}, ro=read,
-                                                  mounts=mounts, extra=[] if read else session.mount_args(repo, task.stem, t), env_names=(env_name,), network=net, proxy=proxy,
+                                                  mounts=mounts, extra=sess, env_names=(env_name,), network=net, proxy=proxy,
                                                   **docker.worker_sizes(main)),
                                       env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                       encoding="utf-8", errors="replace") as p:
@@ -288,8 +289,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
                     continue
             else:
                 sys.exit(f"container name in use again for {role} ({t}). Nothing changed.")
-        finally:  # Ctrl-C, a container error and the exit above included: no token may stay in the host cache
-            dropped = not read and session.scrub(repo, task.stem, t, value)
+        finally:  # Ctrl-C, a container error and the exit above included: no token may stay in the session volume
+            dropped = not read and session.scrub(repo, task.stem, t, image, value)
             if dropped and task.exists():  # token in a transcript: forget the session, next run is fresh
                 task.write_text(session.LINE.sub("", task.read_text(encoding="utf-8")), encoding="utf-8")
         result, *nums = tools.parse_usage(t, r.stdout)
@@ -333,7 +334,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         print(f"tool: {tool} ({models[tool]})")
         sid = None if read or fresh else session.recorded(before, tool)  # another tool last: no line for this one, fresh
         if sid and not session.available(repo, task.stem, tool, sid):
-            print(f"RESUME FAILED: session {sid} is not in the cache; starting a fresh session")
+            print(f"RESUME FAILED: session {sid} has no session volume; starting a fresh session")
             sid = None
         r, result, done = attempt(tool, secret, resume=sid)
         if sid and r.returncode and result is None and not tools.quota_hit(tool, r.stdout, r.returncode):

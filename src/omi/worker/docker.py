@@ -255,15 +255,15 @@ def ensure_image(main):
 
 
 def clean(cwd=".", all_images=False):
-    """Remove this repo's worker containers, cached engineer sessions and every worker image except the current one (all_images: that too)."""
+    """Remove this repo's worker containers, engineer session volumes and every worker image except the current one (all_images: that too)."""
     main = state.resolve(core.main_checkout(cwd) or Path(cwd).resolve()).state
-    session.clear(repo_label(main))
     r = subprocess.run(["docker", "ps", "-a", "-q", "--filter", "label=omi-worker=1",
                         "--filter", f"label=omi-repo={repo_label(main)}"],
                        capture_output=True, encoding="utf-8", errors="replace")
     ids = r.stdout.split()
     if ids:
         subprocess.run(["docker", "rm", "-f", *ids], capture_output=True)
+    vols = session.clear(repo_label(main))  # after the containers: a volume in use cannot go
     r = subprocess.run(["docker", "network", "ls", "-q", "--filter", f"label=omi-repo={repo_label(main)}"],
                        capture_output=True, encoding="utf-8", errors="replace")
     nets = r.stdout.split()
@@ -272,7 +272,7 @@ def clean(cwd=".", all_images=False):
     imgs = old_images(main, None if all_images else image_tag(main)[1])
     for i in imgs:
         subprocess.run(["docker", "rmi", i], capture_output=True)
-    print(f"removed {len(ids)} container(s), {len(nets)} network(s), {len(imgs)} image(s)")
+    print(f"removed {len(ids)} container(s), {len(nets)} network(s), {len(imgs)} image(s), {vols} session volume(s)")
 
 
 def need_docker():

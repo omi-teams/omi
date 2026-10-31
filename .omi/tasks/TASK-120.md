@@ -27,6 +27,14 @@ On a fix round, `omi run` continues the engineer's previous CLI session (`claude
 - [ ] The omi-task skill (template copy) describes the resume behaviour; tests cover resume, fresh fallback and read-role exclusion; all tests pass.
 
 ## Checkpoint
+Round 8 (redesign) NEEDS SCOPE: done inside scope. The session cache is now a Docker named volume `omi-sess-<repo>-<TID>-<tool>` (labels omi-worker=1, omi-repo, omi-task, omi-session=1) mounted with `type=volume` at /sessions. The host never reads, chmods or deletes transcripts. All host scrub/chmod/uid/comma/Windows-skip code and its tests are removed.
+- New volume: `docker volume create`, then a one-shot `chmod 0777 /s` (`--user 0 --cap-drop ALL --network none --read-only --security-opt no-new-privileges`). `--fresh`, a tool switch and every fresh fallback (RESUME FAILED, quota switch) recreate the volume; resume and the hook-fix retry reuse it.
+- Scan after every write run (in `attempt`'s finally): `grep -rqF -f - /s` as node, no network, ro rootfs, volume `readonly`; tokens go in on stdin (raw + JSON-escaped, codex blob tokens; multi-line/empty needles never go in). Only rc 1 keeps the volume. rc 0 -> `SESSION DROPPED: token found in transcript`; any other rc, an OSError or a 300 s timeout -> `SESSION DROPPED: cannot scan the session volume`. Either way the volume is removed and the `Session:` line goes. A refused rm prints `SESSION CACHE NOT REMOVED: <vol>`.
+- `available()` = id valid and the volume exists (missing -> `RESUME FAILED: ... has no session volume`); a lost transcript inside an existing volume falls to the existing "could not be resumed" fallback.
+- `omi clean` runs `docker volume ls` (omi-session=1, omi-repo) and `docker volume rm` after removing containers, and prints `N session volume(s)`.
+- Trust boundaries: the agent container writes the volume (untrusted); only Docker helper containers read it; the host sees only grep's exit code. UNVERIFIED (no real docker here): GNU grep `-r` skipping fifos/devices in the trixie image; the CLI transcript paths under the symlinked dir; the rm while a Ctrl-C'd agent still holds the volume (expected: NOT REMOVED line, next run's scan drops it again); root-in-container chmod under rootless/userns Docker.
+- NEEDS SCOPE: tests/test_creds.py, tests/test_tools.py, tests/test_hooks.py, tests/test_content.py mock every `docker run` with rc 0 and take the first one, so the chmod helper (first) and the scan (rc 0 = hit) break them. Fix: first line of each mock `run` (creds 185/338/460, tools 49, hooks 81/285/447, content 59): `if cmd[:2] == ["docker", "run"] and ("chmod" in cmd or "grep" in cmd): return R(rc=1 if "grep" in cmd else 0)`, and in test_hooks.py the `R(run_raw)` lambda adds `and "grep" not in cmd and "chmod" not in cmd`. With these in a scratch copy the full `python3 tests/test_omi.py` printed `ok`.
+Next: scope now includes tests/test_creds.py, test_tools.py, test_hooks.py, test_content.py (Coordinator does not edit code): apply the mock lines above yourself and run the full `python3 tests/test_omi.py`. Also finish T2: describe "per-task Docker volume, removed by `omi clean`" in .claude/skills/omi-task/SKILL.md, its template copy and template_shas.json, and drop any host-cache wording there.
 Re-plan (PO 2026-10-31: stop patching, architect redesigns): 7 rounds failed because the session cache is a host directory the untrusted container writes, so the host must scan, chmod and delete hostile files (0777, lone tokens, Ctrl-C, symlinks, unreadable files, undeletable dirs, Windows uid/modes). Architect: redesign the cache as a per-task Docker named volume (e.g. `omi-sess-<repo>-<TID>-<tool>`) mounted at the CLI transcript dir only, so transcripts never touch the host filesystem; `omi clean` runs `docker volume rm`; a token found in the volume (checked inside a container, or by not persisting the env at all) drops the volume. Remove host-side scrub/chmod/uid code and their tests. Keep the rest (session id parsing, `Session:` line, resume argv, `--fresh`, `RESUME FAILED:`, read roles never resume, hook-fix retry). Name the trust boundaries and what remains UNVERIFIED.
 Review round 7 FAIL (review):
 - src/omi/worker/session.py scrub (and clear): `shutil.rmtree(d, ignore_errors=True)` cannot delete a mode-0 or read-only subdir, so the token file stays while `SESSION DROPPED` is printed (reproduced). Use an error handler that chmods the entry and its parent u+rwx and retries; if anything is still left, print `SESSION CACHE NOT REMOVED: <path>`. Test: token file in a mode-0 `sub/` is gone after scrub (POSIX only; skip line on Windows).
@@ -615,6 +623,61 @@ Next: Coordinator review and commit.
 > OPTIONS: A: volume `omi-sess-<repo>-<TID>-<tool>` (labels `omi-worker=1, omi-repo, omi-task, omi-session=1`) mounted at `/sessions`, with the existing `wrap()` symlink `~/.claude/projects` or `~/.codex/sessions` -> `/sessions`. A new volume gets a one-shot `chmod 0777 /s` run as `--user 0 --cap-drop ALL --network none` (no caps added). After each write run, a scan container (`--user node --read-only --network none --cap-drop ALL`, volume mounted `:ro`) runs `grep -rqF -f - /s` with the token strings on stdin. Pro: one boundary, works with any image. Con: two short helper runs, and root-in-container for the chmod. B: no scan, relying on the env never being persisted. Rejected: codex's `~/.codex/auth.json` is readable by the agent, and Claude's subprocess env scrub is UNVERIFIED. C: a node-owned `/sessions` in the Dockerfile instead of the chmod step. Con: the image hash changes, and projects with their own `docker/Dockerfile` get a root-owned, unwritable volume until they upgrade.
 > [... truncated ...]
 > TASKS: T1 (engineer, opus/high): scope `src/omi/worker/session.py`, `docker.py`, `run.py`, `tests/test_worker.py`. Make the switch above and delete the host-cache code and its mode/uid/symlink/fifo/mode-0/Windows-skip tests. New tests with subprocess mocked: the mount argv is `type=volume`; the token never appears in any argv; scan rc 0, 2 and 125 drop the volume and remove the `Session:` line while rc 1 keeps it; a failed rm prints `SESSION CACHE NOT REMOVED`; `--fresh` and a tool switch recrea
+2026-10-31 07:30 omi-agent-engineer (claude):
+> NEEDS SCOPE: tests/test_creds.py, tests/test_tools.py, tests/test_hooks.py, tests/test_content.py. Their mocks treat every `docker run` as the agent run and return rc 0. The new chmod helper (it runs first) and the token scan (rc 0 means "token found") break them. The guard lines that fix them are in `## Checkpoint`.
+> 
+> - **Files changed:** `src/omi/worker/session.py` (rewritten), `src/omi/worker/run.py`, `src/omi/worker/docker.py`, `src/omi/app/cli.py` (help line for `clean`), `.omi/rules/omi-modules.md`, `tests/test_worker.py`, `.omi/tasks/TASK-120.md`.
+> - **What changed:** transcripts now live in a Docker named volume per task and tool, `omi-sess-<repo>-<TID>-<tool>`, so the host never reads, chmods or deletes them. A short helper container scans the volume for the token after every engineer run; anything but a clean result removes the volume and the `Session:` line. `omi clean` removes the volumes, and all the old host-side scrub/chmod/uid code and its tests are gone.
+> - **Suggested commit:** `refactor(worker): keep engineer sessions in per-task Docker volumes`
+> - **Tests:** `test_worker.main()` passed. The full `python3 tests/test_omi.py` fails at `test_creds.py:382`, for the reason above. With the guard lines applied in a scratch copy outside the repo, the full suite printed `ok`. The playwright browser check was skipped (not installed).
+> - **Unverified (no real Docker or CLI here):** whether GNU grep `-r` skips pipes and devices in the image, whether the CLIs really write transcripts into the volume, and what happens when a Ctrl-C'd agent still holds the volume. The chmod helper runs as root in a container; I left the omi-task skill text unchanged.
+2026-10-31 07:32 hook post-run FAILED (exit 1):
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> AssertionError
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -640,3 +703,4 @@ Next: Coordinator review and commit.
 | omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 1674057 | 4438 | 1609216 | 295s | - | FAIL a37d894 |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 16 | 5339 | 545390 | 330s | - | FAIL a37d894 |
 | omi-agent-architect | claude-opus-5-5 | high | 12 | 11597 | 183899 | 163s | - | n/a |
+| omi-agent-engineer | claude-opus-5-5 | high | 68 | 33178 | 2410750 | 976s | 1/1 omi-skill-lean-implementation | - |

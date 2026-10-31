@@ -26,7 +26,7 @@ USAGE = """usage: omi <command>
   board [--port N] [--no-open]   serve the read-only task board on 127.0.0.1 (default port 8765)
   guard        Claude Code PreToolUse hook: block writes outside task scope
   github       set up branches and rulesets: squad merges to development, only the PO to staging/main
-  clean [--all]   remove this repo's worker containers and old worker images (--all: the current image too)
+  clean [--all]   remove this repo's worker containers, engineer session volumes and old worker images (--all: the current image too)
   skills [check <task-file>]   write .omi/skills/CATALOG.md; or check a task's skills against the budget
   skills --check   validate every skill against the contract (parts, size, source, no widened permissions)
   token set [--tool claude|codex]   store the `claude setup-token` value (or the OpenAI API key) in Windows Credential Manager
