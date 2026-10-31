@@ -7,7 +7,7 @@ steps:
 - id: build | role: omi-agent-engineer | skills: omi-skill-lean-implementation | input: task file with UI spec | output: diff, tests passing, Checkpoint updated | gate: none | stop: every criterion has a passing test
 - id: review | role: omi-agent-reviewer | skills: | input: task file, diff | output: VERDICT PASS or FAIL | gate: review | stop: VERDICT PASS
 - id: qa | role: omi-agent-qa-tester | skills: omi-skill-web-qa | input: task file, running build | output: pass/fail per criterion with screenshots | gate: review | stop: all criteria pass
-- id: accept | role: coordinator | skills: | input: PASS verdict, QA report | output: `Auto accept: review PASS` line in ## Steps | gate: auto | stop: last review-type step passed
+- id: accept | role: coordinator | skills: | input: PASS verdict, QA report | output: `Auto accept: review PASS` line in ## Steps | gate: auto | stop: every review-type step passed or an explicit PO approval line
 ---
 # Feature with UI
 
@@ -26,4 +26,4 @@ steps:
 A FAIL at review or qa goes back to build with the findings. After 2 FAILs, bring in the architect (opus/high) or switch the engineer to opus. A third FAIL: stop and ask the PO (rescope, change approach, drop).
 
 ## PO gates
-`accept` is automatic: `omi step <ID> done` records `Auto accept: review PASS` under `## Steps` when the last review-type step passed, and refuses otherwise. Use `omi-flow-feature-sensitive` (PO gate) for security-sensitive work. Merge to staging/main stays with the PO.
+`accept` is automatic: `omi step <ID> done` records `Auto accept: review PASS` under `## Steps` when every review-type step passed (or an explicit `PO approval accept:` line exists), and refuses otherwise. Use `omi-flow-feature-sensitive` (PO gate) for security-sensitive work. Merge to staging/main stays with the PO.

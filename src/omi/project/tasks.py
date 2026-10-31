@@ -235,10 +235,11 @@ def step(root, tid, action, why=None, now=None):
             if last_verdict(text, steps[at]["role"]) == "FAIL":
                 sys.exit(f"{tid}: the last {steps[at]['role']} verdict is FAIL; run `omi step {tid} back`. Nothing changed.")
         if steps[at]["gate"] == "auto":
-            prev = next((s for s in reversed(steps[:at]) if s["gate"] == "review"), None)
+            gates = [s for s in steps[:at] if s["gate"] == "review"]
             if not po_approved(text, cur):  # an explicit PO approval line also passes
-                if not prev or last_verdict(text, prev["role"]) != "PASS":
-                    sys.exit(f"{tid}: step {cur} is an auto gate; it needs a {prev['role'] if prev else 'review'} verdict PASS. Nothing changed.")
+                bad = next((g for g in gates if last_verdict(text, g["role"]) != "PASS"), None)
+                if not gates or bad:
+                    sys.exit(f"{tid}: step {cur} is an auto gate; it needs a {(bad or {'role': 'review'})['role']} verdict PASS. Nothing changed.")
                 text = add_step_log(text, "Auto accept: review PASS")
         text, msg = add_step_log(text, f"- {cur} done {stamp}"), f"{tid}: step {cur} done"
     elif action == "skip":

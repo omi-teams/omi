@@ -531,11 +531,11 @@ def test_auto_accept():
         task = root / ".omi" / "tasks" / "TASK-110.md"
         with patch("omi.project.tasks.commit_task_file"), patch("omi.common.core.task_worktrees", return_value={}), \
                 patch("sys.stdout", io.StringIO()):
-            def run(wid, verdict):
-                usage = f"\n## Usage\n| role | model | tokens | verdict |\n|---|---|---|---|\n| omi-agent-reviewer | m | 1 | {verdict} |\n" if verdict else ""
+            def run(wid, verdict, extra=""):
+                done = "".join(f"- {st['id']} done 2026-10-31 10:00\n" for st in omi.project.workflows.get_workflow(root, wid)[:-1])
+                usage = f"\n## Usage\n| role | model | tokens | verdict |\n|---|---|---|---|\n| omi-agent-reviewer | m | 1 | {verdict} |\n{extra}" if verdict else ""
                 task.write_text(f"---\nid: TASK-110\nworkflow: {wid}\nstatus: in-progress\nstep: accept\n---\n"
-                                "## Acceptance criteria\n- [x] ok\n\n## Steps\n- plan done 2026-10-31 10:00\n- build done 2026-10-31 10:01\n"
-                                f"- review done 2026-10-31 10:02\n- accept started 2026-10-31 10:03\n{usage}", encoding="utf-8")
+                                "## Acceptance criteria\n- [x] ok\n\n## Steps\n" + done + f"- accept started 2026-10-31 10:03\n{usage}", encoding="utf-8")
                 return omi.project.tasks.step(root, "TASK-110", "done")
 
             for verdict in ("", "FAIL"):
@@ -545,6 +545,15 @@ def test_auto_accept():
                     assert "auto gate" in str(exc), str(exc)
                 else:
                     raise AssertionError("auto accept without PASS")
+            qa = lambda v: f"| omi-agent-qa-tester | m | 1 | {v} |\n"  # noqa: E731
+            for extra in ("", qa("FAIL")):  # feature-ui: a missing or failed qa blocks even with a reviewer PASS
+                try:
+                    run("omi-flow-feature-ui", "PASS", extra)
+                except SystemExit as exc:
+                    assert "omi-agent-qa-tester" in str(exc), str(exc)
+                else:
+                    raise AssertionError("auto accept despite qa")
+            assert run("omi-flow-feature-ui", "PASS", qa("PASS")) == 0
             assert run("omi-flow-feature", "PASS") == 0
             assert "Auto accept: review PASS\n- accept done" in task.read_text(encoding="utf-8")
         for wid in ("omi-flow-feature", "omi-flow-feature-ui", "omi-flow-bugfix", "omi-flow-refactor"):

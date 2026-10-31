@@ -6,7 +6,7 @@ steps:
 - id: reproduce | role: omi-agent-engineer | skills: omi-skill-lean-implementation | input: task file, worktree | output: failing test that shows the symptom, Checkpoint updated | gate: none | stop: test fails for the reported reason; if it cannot be reproduced, stop and report
 - id: fix | role: omi-agent-engineer | skills: omi-skill-debug-root-cause | input: task file, failing test | output: root-cause fix after grep of all callers, regression test, diff, tests passing | gate: none | stop: reproducing test passes, full suite green, no symptom-only patch
 - id: review | role: omi-agent-reviewer | skills: | input: task file, diff | output: VERDICT PASS or FAIL | gate: review | stop: VERDICT PASS
-- id: accept | role: coordinator | skills: | input: PASS verdict, diff summary | output: `Auto accept: review PASS` line in ## Steps | gate: auto | stop: last review-type step passed
+- id: accept | role: coordinator | skills: | input: PASS verdict, diff summary | output: `Auto accept: review PASS` line in ## Steps | gate: auto | stop: every review-type step passed or an explicit PO approval line
 ---
 # Bugfix
 
@@ -29,4 +29,4 @@ steps:
 Each FAIL goes back to fix with the findings. After 2 FAILs, run the next fix with the architect (opus/high) advising, or switch the engineer to opus. A third FAIL: stop and ask the PO (pick-list: rescope, change approach, drop).
 
 ## PO gates
-`accept` is automatic: `omi step <ID> done` records `Auto accept: review PASS` under `## Steps` when the last review-type step passed, and refuses otherwise. Use `omi-flow-feature-sensitive` (PO gate) for security-sensitive work. Merge to staging/main stays with the PO.
+`accept` is automatic: `omi step <ID> done` records `Auto accept: review PASS` under `## Steps` when every review-type step passed (or an explicit `PO approval accept:` line exists), and refuses otherwise. Use `omi-flow-feature-sensitive` (PO gate) for security-sensitive work. Merge to staging/main stays with the PO.
