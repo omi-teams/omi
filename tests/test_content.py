@@ -397,7 +397,133 @@ source_use: rewrite
     assert not ws.exists() or omi.project.catalogs.validate_skill(ws, 2000) == []
 
 
+def test_ui_mockup_contract() -> None:
+    template = omi.common.core.TEMPLATE / "dot-omi"
+    designer = omi.common.core.meta(template / "agents" / "omi-agent-designer-ui.md")
+    assert designer["access"] == "write"
+    text = designer["_text"]
+    for requirement in (
+        'add the acceptance criterion "pages match the PO-approved mockup in `.omi/tasks/<ID>-mockup/`"',
+        "plain self-contained `.html`", "one per screen plus a phone-width mockup",
+        "Use only what the target stack allows", "no CDN or web fonts unless the task explicitly allows them",
+        "no account, network or external tool", "repo files are the only source of truth",
+        "no Figma or hosted canvas", "Never edit app code", "In REVIEW mode, never edit files",
+        "PO approval before build", "fresh PO approval",
+    ):
+        assert requirement in text, requirement
+    workflow = (template / "workflows" / "omi-flow-feature-ui.md").read_text(encoding="utf-8")
+    assert 'adds the acceptance criterion "pages match the PO-approved mockup' in workflow
+    assert "PO approval approve-mockup:" in workflow
+
+
+def test_ui_mockup_review_contract() -> None:
+    agents = omi.common.core.TEMPLATE / "dot-omi" / "agents"
+    for role in ("reviewer", "qa-tester"):
+        agent = omi.common.core.meta(agents / f"omi-agent-{role}.md")
+        assert agent["access"] == "read"
+        for requirement in ("PO-approved repo HTML in `.omi/tasks/<ID>-mockup/`",
+                            "approval", "## Steps", "FAIL on clear mismatches in layout, components or colours",
+                            "cannot receive PASS"):
+            assert requirement in agent["_text"], (role, requirement)
+    qa = (agents / "omi-agent-qa-tester.md").read_text(encoding="utf-8")
+    assert "mockup and build screenshots side by side per screen at matching viewport sizes, including phone width" in qa
+    assert "name both files in the evidence" in qa
+
+
+def test_ui_mockup_workflow() -> None:
+    with tempfile.TemporaryDirectory() as d, contextlib.redirect_stdout(io.StringIO()):
+        root = Path(d).resolve()
+        omi.setup.upgrade.init(root)
+        steps = omi.project.workflows.get_workflow(root, "omi-flow-feature-ui")
+        assert [s["id"] for s in steps] == ["plan", "design", "approve-mockup", "build", "review", "qa", "accept"]
+        assert [s["id"] for s in steps if s["gate"] == "po"] == ["approve-mockup"]
+        assert ".omi/tasks/<ID>-mockup/" in steps[0]["output"]
+        assert steps[2]["role"] == "coordinator"
+        assert steps[-1]["gate"] == "auto"
+        assert omi.project.workflows.step_skill_ids(root, steps[3]) == [
+            "omi-skill-lean-implementation", "omi-skill-ui-direction"]
+        assert ".omi/tasks/<ID>-mockup/" in steps[3]["input"]
+        task = root / ".omi" / "tasks" / "TASK-122.md"
+        task.write_text("---\nid: TASK-122\nworkflow: omi-flow-feature-ui\nstep: design\n---\n"
+                        "## Steps\n- plan done 2026-10-31 10:00\n- design started 2026-10-31 10:00\n",
+                        encoding="utf-8")
+        step = lambda action, why=None: omi.project.tasks.step(root, "TASK-122", action, why)
+        step("done")
+        step("next")
+        assert omi.common.core.meta(task)["step"] == "approve-mockup"
+        for action, why, message in (("done", None, "PO approval approve-mockup:"),
+                                      ("skip", "skip design approval", "cannot be skipped"),
+                                      ("next", None, "is not done")):
+            before = task.read_text(encoding="utf-8")
+            try:
+                step(action, why)
+            except SystemExit as exc:
+                assert message in str(exc), str(exc)
+            else:
+                raise AssertionError(f"mockup gate allowed {action} without PO approval")
+            assert task.read_text(encoding="utf-8") == before
+        step("approve", "Approved screen.html and phone.html")
+        # Implementation criteria must remain open when the PO approves a design.
+        task.write_text(task.read_text(encoding="utf-8").replace(
+            "## Steps", "## Acceptance criteria\n- [ ] pages match the PO-approved mockup in `.omi/tasks/TASK-122-mockup/`\n\n## Steps"),
+            encoding="utf-8")
+        step("done")
+        step("next")
+        assert omi.common.core.meta(task)["step"] == "build"
+        assert omi.project.tasks.unticked(task.read_text(encoding="utf-8")) == [
+            "- [ ] pages match the PO-approved mockup in `.omi/tasks/TASK-122-mockup/`"]
+
+
+def test_final_po_gate_requires_completed_criteria() -> None:
+    with tempfile.TemporaryDirectory() as d, contextlib.redirect_stdout(io.StringIO()):
+        root = Path(d).resolve()
+        omi.setup.upgrade.init(root)
+        steps = omi.project.workflows.get_workflow(root, "omi-flow-feature-sensitive")
+        assert steps[-1]["id"] == "accept" and steps[-1]["gate"] == "po"
+        task = root / ".omi" / "tasks" / "TASK-122.md"
+        done = "".join(f"- {step['id']} done 2026-10-31 10:00\n" for step in steps[:-1])
+        for action, state in (("done", "started"), ("next", "done")):
+            text = ("---\nid: TASK-122\nworkflow: omi-flow-feature-sensitive\nstep: accept\n---\n"
+                    "## Acceptance criteria\n- [ ] implementation complete\n\n## Steps\n" + done
+                    + f"- accept {state} 2026-10-31 10:00\nPO approval accept: approved\n")
+            task.write_text(text, encoding="utf-8")
+            try:
+                omi.project.tasks.step(root, "TASK-122", action)
+            except SystemExit as exc:
+                assert "tick the reviewed acceptance criteria first" in str(exc), str(exc)
+            else:
+                raise AssertionError(f"final PO gate allowed {action} with unfinished criteria")
+            assert task.read_text(encoding="utf-8") == text
+
+
+def test_ui_mockup_generated_catalogs() -> None:
+    with tempfile.TemporaryDirectory() as d, contextlib.redirect_stdout(io.StringIO()):
+        root = Path(d).resolve()
+        omi.setup.upgrade.init(root)
+        omi.project.catalogs.agents_catalog(root)
+        omi.project.workflows.workflows_catalog(root)
+        omi.project.workflows.check_all_workflows(root)
+        agents = (root / ".omi" / "agents" / "CATALOG.md").read_text(encoding="utf-8")
+        workflows = (root / ".omi" / "workflows" / "CATALOG.md").read_text(encoding="utf-8")
+        assert "omi-agent-designer-ui (write, sonnet/medium): Creates a UI/UX spec and static HTML mockups" in agents
+        assert "[plan > design > approve-mockup > build > review > qa > accept]" in workflows
+        assert "PO-approved static HTML mockups first" in workflows
+        manifest = omi.setup.upgrade.read_manifest(root)
+        for relative in (".omi/workflows/omi-flow-feature-ui.md", ".omi/agents/omi-agent-designer-ui.md",
+                         ".omi/agents/omi-agent-reviewer.md", ".omi/agents/omi-agent-qa-tester.md"):
+            assert manifest[relative] == omi.setup.upgrade.template_shas()[relative]
+        template = omi.common.core.TEMPLATE / "dot-omi"
+        for kind in ("agents", "workflows"):
+            generated = (root / ".omi" / kind / "CATALOG.md").read_text(encoding="utf-8")
+            assert (template / kind / "CATALOG.md").read_text(encoding="utf-8") == generated, f"stale template {kind} catalog"
+
+
 def main():
+    test_ui_mockup_contract()
+    test_ui_mockup_review_contract()
+    test_ui_mockup_workflow()
+    test_ui_mockup_generated_catalogs()
+    test_final_po_gate_requires_completed_criteria()
     test_skills()
     test_rules()
     test_references()

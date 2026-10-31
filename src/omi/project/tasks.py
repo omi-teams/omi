@@ -186,7 +186,7 @@ def step(root, tid, action, why=None, now=None):
         if cur and steps[at]["gate"] == "po" and not po_approved(text, cur):
             sys.exit(f"{tid}: step {cur} is a po gate; add the line `PO approval {cur}: <PO's words>` under `## Steps` first. "
                      "Nothing changed.")
-        if cur and steps[at]["gate"] == "po" and unticked(text):
+        if cur and steps[at]["gate"] == "po" and at == len(ids) - 1 and unticked(text):
             sys.exit(f"{tid}: step {cur} is a po gate; tick the reviewed acceptance criteria first:\n"
                      + "\n".join(unticked(text)) + "\nNothing changed.")
         if at + 1 == len(ids):
@@ -228,7 +228,7 @@ def step(root, tid, action, why=None, now=None):
         if steps[at]["gate"] == "po" and not po_approved(text, cur):
             sys.exit(f"{tid}: step {cur} is a po gate; add the line `PO approval {cur}: <PO's words>` under `## Steps` first. "
                      "Nothing changed.")
-        if steps[at]["gate"] == "po" and unticked(text):
+        if steps[at]["gate"] == "po" and at == len(ids) - 1 and unticked(text):
             sys.exit(f"{tid}: step {cur} is a po gate; tick the reviewed acceptance criteria first:\n"
                      + "\n".join(unticked(text)) + "\nNothing changed.")
         if steps[at]["gate"] == "review":

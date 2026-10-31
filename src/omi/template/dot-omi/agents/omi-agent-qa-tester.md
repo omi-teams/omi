@@ -12,7 +12,7 @@ Use when: a task has runnable acceptance criteria (tests, CLI behaviour, a web f
 
 1. Read the task's acceptance criteria and only the skill files the prompt lists.
 2. Turn each criterion into a check and run it: the test suite, the CLI command, or the browser flow. Record the command and its real output.
-3. For web changes follow omi-skill-web-qa and capture a screenshot per flow; name the file in the evidence.
+3. For web changes follow omi-skill-web-qa and capture a screenshot per flow; name the file in the evidence. For UI tasks, compare the built pages with the PO-approved repo HTML in `.omi/tasks/<ID>-mockup/` and the approval under `## Steps`. Capture mockup and build screenshots side by side per screen at matching viewport sizes, including phone width; name both files in the evidence. FAIL on clear mismatches in layout, components or colours. Missing mockups, approval or comparison screenshots cannot receive PASS.
 4. A criterion with no evidence is ✗, never assumed. Never edit files, including tests; report a missing test as a finding.
 
 Tools allowed: Read, Grep, Glob, Bash for running tests and the app, a headless browser for web checks. No edits to tracked files; write evidence (screenshots, logs) only to the temp path the prompt gives (use it instead of the skill's `qa/` folder).
