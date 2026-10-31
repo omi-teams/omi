@@ -26,7 +26,7 @@ USAGE = """usage: omi <command>
   board [--port N] [--no-open]   serve the read-only task board on 127.0.0.1 (default port 8765)
   guard        Claude Code PreToolUse hook: block writes outside task scope
   github       set up branches and rulesets: squad merges to development, only the PO to staging/main
-  clean [--all]   remove this repo's worker containers and old worker images (--all: the current image too)
+  clean [--all]   remove this repo's worker containers, engineer session volumes and old worker images (--all: the current image too)
   skills [check <task-file>]   write .omi/skills/CATALOG.md; or check a task's skills against the budget
   skills --check   validate every skill against the contract (parts, size, source, no widened permissions)
   token set [--tool claude|codex]   store the `claude setup-token` value (or the OpenAI API key) in Windows Credential Manager
@@ -36,7 +36,7 @@ USAGE = """usage: omi <command>
   agents       write .omi/agents/CATALOG.md (one line per role)
   workflows [--check]   write .omi/workflows/CATALOG.md (one line per workflow); --check validates every workflow
   step <TASK-ID> next|done|back|skip|approve|reopen --why <reason>   record the task's workflow step (gates cannot be skipped)
-  run <role> <TASK-ID> [--model M] [--effort E] [--tool claude|codex]   run a role in Docker (read roles: ro worktree, after the deterministic checks)
+  run <role> <TASK-ID> [--model M] [--effort E] [--tool claude|codex] [--fresh]   run a role in Docker (--fresh: no engineer session resume; read roles: ro worktree, after the deterministic checks)
   hook pre-run|post-run|pre-merge <TASK-ID>   run .omi/hooks/<event> (from the main checkout) in Docker against the task worktree; exits with its code
   parallel <TASK-ID> <TASK-ID> [...]   check that tasks can run in parallel (depends, status, scope overlap)
   worker <wt> <task-file> [--model M] [--effort E]   run the engineer in the Docker worker

@@ -183,6 +183,8 @@ def test_usage():
     run_out = [claude]
 
     def run(cmd, **kw):
+        if cmd[:2] == ["docker", "run"] and ("chmod" in cmd or "grep" in cmd):
+            return R(rc=1 if "grep" in cmd else 0)
         if "--git-common-dir" in cmd:
             return R(str(Path(cmd[2]) / "shared.git"))
         if cmd[:2] == ["docker", "run"]:
@@ -336,6 +338,8 @@ def test_codex_chatgpt_run():
         def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
 
     def run(cmd, **kw):
+        if cmd[:2] == ["docker", "run"] and ("chmod" in cmd or "grep" in cmd):
+            return R(rc=1 if "grep" in cmd else 0)
         if "--git-common-dir" in cmd:
             return R(str(Path(cmd[2]) / "shared.git"))
         calls.append((cmd, kw))
@@ -458,6 +462,8 @@ def test_subprocess_text_encoding():
         def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
 
     def run(cmd, **kw):
+        if cmd[:2] == ["docker", "run"] and ("chmod" in cmd or "grep" in cmd):
+            return R(rc=1 if "grep" in cmd else 0)
         if "--git-common-dir" in cmd:
             return R(str(Path(cmd[2]) / "shared.git"))
         if cmd[:2] == ["docker", "info"]:

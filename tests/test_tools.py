@@ -47,6 +47,8 @@ def test_tool_choice_and_quota_switch():
                 self.stdout, self.stderr, self.returncode = out, err, rc
 
         def run(cmd, **kw):
+            if cmd[:2] == ["docker", "run"] and ("chmod" in cmd or "grep" in cmd):
+                return R(rc=1 if "grep" in cmd else 0)
             if "--git-common-dir" in cmd:
                 return R(str(Path(cmd[2]) / "shared.git"))
             if cmd[:2] == ["docker", "run"]:
