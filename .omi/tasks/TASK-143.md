@@ -13,7 +13,7 @@ model: opus
 effort: high
 step_settings:
 workflow: omi-flow-feature-sensitive
-step: security
+step: build
 ---
 ## Goal
 A detached repo keeps the Coordinator's edit guard: `omi install-user` adds the `PreToolUse` hook `python -m omi guard` (matcher `Edit|Write|MultiEdit|NotebookEdit`) to the user's Claude Code settings next to the SessionStart hook, so removing `.claude/settings.json` from a code repo (TASK-135) does not drop the guard.
@@ -42,8 +42,8 @@ Review round 1 FAIL (reviewer PASS on the criteria, Coordinator blocks: the user
 - Tests: non-omi repo on `task/TASK-1` edit allowed; ~/.claude/settings.json (outside any repo) allowed; non-omi repo `.claude/settings.json` allowed; omi project cases unchanged.
 Coordinator note for review/security: the guard is now user-wide, so `omi guard` runs in every repo on the machine. Check scope.py:27-80 for non-omi repos: blocks any `.claude/settings*.json` edit outside a task branch (also ~/.claude/settings.json?), and a non-omi repo on a `task/*` branch reaches `state.resolve`. Say whether that is acceptable or must be limited to omi projects.
 Done: Fix round 2 restricts bypass to non-engineers whose edited repository and session repository are both non-omi. scope.guard catches StateError and returns 2 with the requested diagnostic (resolve always runs, so even an in-repo omi repo fails closed). Regression tests: invalid registry (direct call), omi-session settings protection, engineer outside Git, nested non-omi repos.
-Done (fix round 3): cli.main() skips the state.registry() precheck for `guard`, so `python -m omi guard` exits 2 with the guard's registry message. test_invalid_registry_cli expects exit 2 plus that stderr message for ["guard"] (feeds a payload on stdin; stdout is a TextIOWrapper because dispatch reconfigures it). All other commands keep exit 1.
-Not done: nothing open.
+Done (fix round 4, PO override 3 rule): scope.guard wraps state.resolve per considered repo. A StateError re-raises (exit 2, registry message) only when the repo has an in-repo `.omi/` or the agent is omi-agent-engineer. Otherwise it prints `OMI: warning: cannot read omi state for <repo> (<error>); guard skipped.` and treats the repo as non-omi. cli.main() still skips the registry precheck for `guard`. Tests: test_guard_invalid_registry (corrupt manifest: in-repo omi -> 2, ordinary -> 0 + warning, engineer -> 2 in both; bad origin in a non-omi repo -> 0 + warning), test_guard_invalid_registry_cli (subprocess: omi 2, ordinary 0 + warning), test_invalid_registry_cli (detached code repo without in-repo .omi/ -> exit 0 + warning for guard; other commands still exit 1).
+Not done: nothing open. Note: under this rule a detached project with a corrupt registry is treated as non-omi for non-engineers (warning only), as specified.
 Tests: `python3 tests/test_omi.py` exit 0 (skipped: wheel packaging, pip missing; browser layout/keyboard, Playwright missing).
 Next: review.
 QUOTA: codex hit its usage limit; omi-agent-engineer continued with claude on the partial diff.
@@ -70,6 +70,8 @@ Session: claude f30b7a25-bccd-4e10-9347-ff7a2ee169b7
 - review done 2026-10-31 15:08
 - security started 2026-10-31 15:08
 PO round override 3: Thêm 1 vòng, quy tắc gọn
+- security failed 2026-10-31 15:55
+- build started 2026-10-31 15:55
 
 ## Reports
 2026-10-31 13:43 omi-agent-engineer (codex):
@@ -324,6 +326,59 @@ PO round override 3: Thêm 1 vòng, quy tắc gọn
 > NEEDS DECISION: should a corrupt manifest in `~/.omi/state` block edits in every non-omi repo on the machine? The task text says yes. The reviewer accepted it as a usability cost. A one-line decision from the Coordinator would settle it.
 > Other checks: `install.py` matches the acceptance criteria. `python3 tests/test_omi.py` exits 0 (wheel and Playwright checks skipped). The diff has no workflow files and no injection text.
 > ```
+2026-10-31 16:00 omi-agent-engineer (claude):
+> DONE: the guard now follows the round-3 rule for unreadable omi state (a corrupt registry or a bad `origin` URL). It blocks with exit 2 only when the repo has an in-repo `.omi/` or the agent is `omi-agent-engineer`. Otherwise it prints `OMI: warning: cannot read omi state for <repo> (<error>); guard skipped.` and treats the repo as non-omi.
+> Files changed: `src/omi/project/scope.py` (the check now runs per repo), plus `tests/test_init.py`, `tests/test_attach.py` and the Checkpoint in `.omi/tasks/TASK-143.md`.
+> Suggested commit: `fix(guard): install user-level edit guard and limit it to omi sessions`
+> Tests: `python3 tests/test_omi.py` exits 0. It covers each new case: a bad `origin` in a non-omi repo and a corrupt manifest with a non-omi repo give 0 plus the warning, and a corrupt manifest with an in-repo `.omi/` repo or with an engineer gives 2. It also checks a direct call and `python -m omi guard`, and other commands still exit 1 on a bad registry. Two checks were skipped: wheel packaging (pip missing) and the browser layout and keyboard checks (Playwright missing).
+> Open: with a corrupt registry, a detached project (no in-repo `.omi/`) counts as non-omi for agents other than the engineer, so their edits only get the warning and aren't blocked. That's what the rule says, and `test_invalid_registry_cli` now expects exit 0 there. The security reviewer should confirm this is acceptable.
+2026-10-31 16:04 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -339,3 +394,4 @@ PO round override 3: Thêm 1 vòng, quy tắc gọn
 | omi-agent-engineer | claude-opus-5-5 | high | 16 | 3700 | 372454 | 282s | 0/1 | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 2386 | 188499 | 484s | - | PASS e5b0c3b |
 | omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 14 | 2182 | 391011 | 297s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL e5b0c3b |
+| omi-agent-engineer | claude-opus-5-5 | high | 18 | 6322 | 502970 | 302s | 0/1 | - |

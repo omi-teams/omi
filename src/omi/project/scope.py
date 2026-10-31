@@ -52,7 +52,13 @@ def _guard(stdin=None):
     omi_session = False
     for repo in dict.fromkeys(p for p in (root, session_root) if p is not None):
         in_repo = (repo / ".omi").is_dir()
-        project = state.resolve(repo)
+        try:
+            project = state.resolve(repo)
+        except state.StateError as exc:
+            if in_repo or engineer:
+                raise  # fail closed: guard() blocks with the registry message
+            print(f"OMI: warning: cannot read omi state for {repo} ({exc}); guard skipped.", file=sys.stderr)
+            continue
         omi_session = omi_session or in_repo or project.detached or (project.code / ".omi").is_dir()
     if not engineer and not omi_session:
         return 0

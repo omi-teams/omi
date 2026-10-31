@@ -325,9 +325,10 @@ def test_invalid_registry_cli():
                     try:
                         omi.app.cli.main(args)
                     except SystemExit as exc:
-                        if args == ["guard"]:  # a blocking hook result, never the non-blocking exit 1
+                        if args == ["guard"]:  # no in-repo .omi/, not an engineer: skipped with a warning, never exit 1
                             message = err.getvalue()
-                            assert exc.code == 2 and message.startswith("OMI: omi state registry is invalid ("), message
+                            assert exc.code == 0 and message.startswith("OMI: warning: cannot read omi state for "), message
+                            assert message.endswith("); guard skipped.\n") and len(message.splitlines()) == 1, message
                         else:
                             message = str(exc.code)
                             assert len(message.splitlines()) == 1 and message.startswith("OMI: "), (args, message)

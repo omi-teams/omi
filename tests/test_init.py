@@ -228,21 +228,41 @@ def test_guard_invalid_registry():
             try:
                 omi.state.resolve.registry()
             except omi.state.resolve.StateError as exc:
+                error = exc
                 expected = f"OMI: omi state registry is invalid ({exc}); fix ~/.omi/state before editing.\n"
             else:
                 raise AssertionError("expected corrupt registry")
+            def guard(repo, target, agent=None):
+                output = io.StringIO()
+                with contextlib.redirect_stderr(output):
+                    result = omi.project.scope.guard(io.StringIO(json.dumps({
+                        "cwd": str(repo), "agent_type": agent, "tool_input": {"file_path": str(target)}})))
+                return result, output.getvalue()
+
             for name in ("omi", "ordinary"):
                 repo = base / name
                 repo.mkdir()
                 git(repo, "init", "-q", "-b", "main")
                 if name == "omi":
                     (repo / ".omi").mkdir()
+                warning = f"OMI: warning: cannot read omi state for {repo.resolve()} ({error}); guard skipped.\n"
                 for target in (repo / "app.py", repo / ".claude/settings.json"):
-                    output = io.StringIO()
-                    with contextlib.redirect_stderr(output):
-                        result = omi.project.scope.guard(io.StringIO(json.dumps({
-                            "cwd": str(repo), "tool_input": {"file_path": str(target)}})))
-                    assert (result, output.getvalue()) == (2, expected)
+                    # Only an omi repo or an engineer fails closed; an ordinary repo is skipped with a warning.
+                    assert guard(repo, target) == ((2, expected) if name == "omi" else (0, warning))
+                    assert guard(repo, target, "omi-agent-engineer") == (2, expected)
+        with patch.dict(os.environ, {"OMI_STATE": str(base / "empty-state")}):
+            repo = base / "bad-origin"
+            repo.mkdir()
+            git(repo, "init", "-q", "-b", "main")
+            git(repo, "remote", "add", "origin", "https://[invalid")
+            try:
+                omi.state.resolve.resolve(repo)
+            except omi.state.resolve.StateError as exc:
+                warning = f"OMI: warning: cannot read omi state for {repo.resolve()} ({exc}); guard skipped.\n"
+            else:
+                raise AssertionError("expected invalid origin")
+            for target in (repo / "app.py", repo / ".claude/settings.json"):
+                assert guard(repo, target) == (0, warning)
 
 
 def test_guard_invalid_registry_cli():
@@ -264,12 +284,14 @@ def test_guard_invalid_registry_cli():
                                     input=json.dumps({"cwd": str(repo), "tool_input": {"file_path": str(repo / "app.py")}}),
                                     capture_output=True, encoding="utf-8")
             results.append(result)
-        assert all(result.returncode == 2 for result in results), [(r.returncode, r.stderr) for r in results]
-        for result in results:
-            assert result.stdout == ""
-            assert result.stderr.startswith("OMI: omi state registry is invalid (")
-            assert str(manifest) in result.stderr
-            assert result.stderr.endswith("); fix ~/.omi/state before editing.\n")
+        assert [result.returncode for result in results] == [2, 0], [(r.returncode, r.stderr) for r in results]
+        blocked, skipped = results
+        assert blocked.stdout == skipped.stdout == ""
+        assert blocked.stderr.startswith("OMI: omi state registry is invalid (")
+        assert blocked.stderr.endswith("); fix ~/.omi/state before editing.\n")
+        assert skipped.stderr.startswith(f"OMI: warning: cannot read omi state for {(base / 'ordinary').resolve()} (")
+        assert skipped.stderr.endswith("); guard skipped.\n") and len(skipped.stderr.splitlines()) == 1
+        assert str(manifest) in blocked.stderr and str(manifest) in skipped.stderr
 
 
 def test_init_guard_status():
