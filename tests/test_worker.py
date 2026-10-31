@@ -270,7 +270,7 @@ def test_session_resume():
     assert x[:4] == ["codex", "exec", "resume", "T1"] and "Checkpoint" in x[-1] and "body" not in x[-1]
     assert "resume" not in tools.codex_cmd("---\n---\nbody", "t.md", "m", "low") and "--resume" not in tools.engineer_cmd("---\n---\nbody", "t.md")
 
-    calls, runs, scans, vols = [], [], [], set()
+    calls, runs, scans, vols, killed = [], [], [], set(), []
     state = {"stdout": out, "hook": [1, 0], "scan": [], "rm_rc": 0}
 
     class R:
@@ -295,6 +295,9 @@ def test_session_resume():
                 vols.discard(cmd[3])
             if cmd[2] == "ls":
                 return R("\n".join(sorted(vols)))
+            return R()
+        if cmd[:3] == ["docker", "rm", "-f"]:  # kills the scan container by name
+            killed.append(cmd)
             return R()
         if cmd[:2] == ["docker", "run"] and "grep" in cmd:  # the token scan
             runs.append(cmd)
@@ -328,7 +331,7 @@ def test_session_resume():
         task.write_text("---\nid: TASK-001\nscope: src/**\nrole: omi-agent-engineer\n---\n## Checkpoint\nDone:\n\n## Usage\n", encoding="utf-8")
         subprocess.run, subprocess.Popen, shutil.which = run, P, lambda _: "docker"
         omi.common.core.main_checkout, omi.common.core.WINDOWS, omi.worker.docker.ensure_image = (lambda _: wt), False, lambda m: "img"
-        repo, saved, buf = omi.worker.docker.repo_label(wt), sys.stdout, io.StringIO()
+        repo, saved, buf = omi.worker.docker.repo_key(wt), sys.stdout, io.StringIO()
         vol = sess.volume(repo, "TASK-001", "claude")
         sys.stdout = buf
 
@@ -343,6 +346,7 @@ def test_session_resume():
 
         try:
             assert vol == f"omi-sess-{repo}-TASK-001-claude" and re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]+", vol)
+            assert re.fullmatch(re.escape(omi.worker.docker.repo_label(wt)) + r"-[0-9a-f]{8}", repo), repo
             argv = go()
             assert "--resume" not in argv and argv[argv.index("--mount") + 1] == f"type=volume,src={vol},dst=/sessions"
             assert not any("type=bind" in a for a in argv) and vol in vols
@@ -356,6 +360,7 @@ def test_session_resume():
             (scan, given), = scans
             assert scan[scan.index("--user") + 1] == "node" and scan[scan.index("--network") + 1] == "none" and "--read-only" in scan
             assert f"type=volume,src={vol},dst=/s,readonly" in scan and scan[-5:] == ["grep", "-rqF", "-f", "-", "/s"]
+            assert scan[scan.index("--name") + 1] == f"{vol}-scan" and f"omi-repo={repo}" in scan and not killed
             assert given.splitlines() == ["tok"], given
             assert not any("tok" in a.split("=")[-1] for c in [*calls, *runs] for a in c if a != "omi-task=TASK-001"), "token in argv"
             assert sess.recorded("Session: claude --x", "claude") is None and sess.recorded("Session: claude *", "claude") is None
@@ -420,16 +425,31 @@ def test_session_resume():
                 assert vol not in vols and "Session:" not in task.read_text(encoding="utf-8"), rc
                 assert "--resume" not in go() and "RESUME FAILED" not in buf.getvalue() and vol in vols
             assert "SESSION DROPPED" not in buf.getvalue() and "Session: claude S2" in task.read_text(encoding="utf-8")
-            # a scan that cannot start or times out fails closed too
-            for exc in (OSError("no docker"), subprocess.TimeoutExpired("docker", 1)):
+            # a scan that cannot start, times out or is interrupted (Ctrl-C) fails closed too: its container is killed by name
+            for exc in (OSError("no docker"), subprocess.TimeoutExpired("docker", 1), KeyboardInterrupt()):
                 state["scan_raise"] = exc
-                assert sess.scrub(repo, "TASK-001", "claude", "img", "tok") and vol not in vols
+                killed.clear()
+                try:
+                    assert sess.scrub(repo, "TASK-001", "claude", "img", "tok") and not isinstance(exc, KeyboardInterrupt)
+                except KeyboardInterrupt:
+                    pass
+                assert vol not in vols and killed == [["docker", "rm", "-f", f"{vol}-scan"]], (exc, killed)
                 vols.add(vol)
             state.pop("scan_raise")
             # docker refuses the rm: the leftover volume is named
             state["scan"], state["rm_rc"] = [0], 1
+            killed.clear()
             buf.truncate(0); buf.seek(0)
             assert sess.scrub(repo, "TASK-001", "claude", "img", "tok") and f"SESSION CACHE NOT REMOVED: {vol}" in buf.getvalue()
+            # ... and the next fresh run (--fresh, or the fallback after RESUME FAILED) aborts instead of reusing it
+            assert vol in vols and not killed
+            try:
+                go(fresh=True)
+            except SystemExit as exc:
+                assert f"cannot remove the old session volume {vol}" in str(exc), exc
+            else:
+                raise AssertionError("a fresh run reused the old session volume")
+            assert not calls and not any(c[2] == "create" for c in runs if c[:2] == ["docker", "volume"])
             state["rm_rc"] = 0
             # needles: no secret, no scan; a JSON value also in its escaped form; a codex ChatGPT login adds each token alone
             scans.clear()
@@ -701,7 +721,7 @@ def test_network_allowlist():
     assert [c[1:3] for c in inside][:1] == [["network", "create"]] and inside[0][3] == "--internal"
     create = next(c for c in inside if c[1] == "create")
     assert create[-3:] == ["python3", "/proxy.py", "api.anthropic.com"] and "--read-only" in create and "--cap-drop" in create
-    assert not any("TOKEN" in a or ":/work" in a for a in create) and "omi-repo=my-repo" in create
+    assert not any("TOKEN" in a or ":/work" in a for a in create) and f"omi-repo={omi.worker.docker.repo_key(Path('/My Repo'))}" in create
     assert f"com.docker.compose.project={omi.worker.docker.compose_labels(long, 'proxy')['com.docker.compose.project']}" in create
     assert "com.docker.compose.service=proxy" in create
     assert [c[1] for c in inside if c[1] in ("create", "start")] == ["create", "start"]
@@ -779,21 +799,27 @@ def test_clean_and_old_images():
         main = Path(d) / "My Repo"
         main.mkdir()
         cur = omi.worker.docker.image_tag(main)[1]
-        repo = omi.worker.docker.image_repo(main)
-        assert repo == "omi-worker-my-repo"
+        repo, key = omi.worker.docker.image_repo(main), omi.worker.docker.repo_key(main)
+        assert repo == "omi-worker-my-repo" and re.fullmatch(r"my-repo-[0-9a-f]{8}", key)
+        # another repo with the same folder name: same image and container names, its own key, so its own labels and volumes
+        twin = Path(d) / "elsewhere" / "My Repo"
+        assert omi.worker.docker.repo_label(twin) == "my-repo" and omi.worker.docker.repo_key(twin) != key
+        assert omi.worker.session.volume(omi.worker.docker.repo_key(twin), "TASK-001", "claude") != omi.worker.session.volume(key, "TASK-001", "claude")
+        mine = f"label=omi-repo={key}"
+        inspect = {"rc": 1, "label": ""}
 
         def run(cmd, **kw):
             calls.append(cmd)
             if cmd[:2] == ["docker", "ps"]:
-                return R("c1\nc2\n" if "label=omi-repo=my-repo" in cmd else "other\n")
+                return R("c1\nc2\n" if mine in cmd else "other\n")
             if cmd[:2] == ["docker", "images"]:
-                return R(f"{cur}\n{repo}:old1\n{repo}:old2\n" + ("" if "label=omi-repo=my-repo" in cmd else "omi-worker-other:x\n"))
+                return R(f"{cur}\n{repo}:old1\n{repo}:old2\n" + ("" if mine in cmd else "omi-worker-other:x\n"))
             if cmd[:3] == ["docker", "image", "inspect"]:
-                return R(rc=1)
+                return R(inspect["label"] + "\n", inspect["rc"])
             if cmd[:3] == ["docker", "network", "ls"]:
-                return R("n1\n" if "label=omi-repo=my-repo" in cmd else "other\n")
+                return R("n1\n" if mine in cmd else "other\n")
             if cmd[:3] == ["docker", "volume", "ls"]:
-                return R("omi-sess-my-repo-TASK-001-claude\n" if "label=omi-repo=my-repo" in cmd and "label=omi-session=1" in cmd else "other\n")
+                return R("omi-sess-my-repo-TASK-001-claude\n" if mine in cmd and "label=omi-session=1" in cmd else "other\n")
             return R()
 
         subprocess.run, omi.common.core.main_checkout = run, lambda _: main
@@ -806,13 +832,22 @@ def test_clean_and_old_images():
             assert ["docker", "rmi", f"{repo}:old1"] in calls and ["docker", "rmi", f"{repo}:old2"] in calls
             assert ["docker", "rmi", cur] not in calls and ["docker", "rmi", "omi-worker-other:x"] not in calls
             ps = next(c for c in calls if c[:2] == ["docker", "ps"])
-            assert "label=omi-worker=1" in ps and "label=omi-repo=my-repo" in ps and not any(a.startswith("name=") for a in ps)
+            assert "label=omi-worker=1" in ps and mine in ps and not any(a.startswith("name=") for a in ps)
+            assert all(mine in c for c in calls if "--filter" in c and any(a.startswith("label=omi-repo=") for a in c))
             calls.clear()
             omi.worker.docker.clean(all_images=True)
             assert ["docker", "rmi", cur] in calls and ["docker", "rmi", "omi-worker-other:x"] not in calls
             calls.clear()
             assert omi.worker.docker.ensure_image(main) == cur
             assert ["docker", "rmi", f"{repo}:old1"] in calls and ["docker", "rmi", cur] not in calls
+            build = next(c for c in calls if c[:2] == ["docker", "build"])
+            assert build[build.index(f"omi-repo={key}") - 1] == "--label"
+            # the current image with the old plain label (or the twin's key) is rebuilt once; with this repo's key it is reused
+            for label, builds in (("my-repo", True), (omi.worker.docker.repo_key(twin), True), (key, False)):
+                inspect.update(rc=0, label=label)
+                calls.clear()
+                assert omi.worker.docker.ensure_image(main) == cur
+                assert any(c[:2] == ["docker", "build"] for c in calls) == builds, label
         finally:
             subprocess.run, omi.common.core.main_checkout = real, realmc
 

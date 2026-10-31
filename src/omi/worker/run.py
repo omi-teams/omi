@@ -236,7 +236,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
                  "with reporting those updates in your final response. /state is read-only.")
     tmp = tempfile.TemporaryDirectory() if read else None
 
-    repo = docker.repo_label(main)
+    repo = docker.repo_key(main)
 
     def attempt(t, secret, note="", resume=None, hook_tail=None):
         """One container run with tool t (resume: continue that session id); returns (process, report text, skills read)."""
@@ -256,7 +256,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
 
         def run_once(name):
             with docker.egress(main, name, image, docker.allow_for(main, t, chatgpt=chatgpt)) as (net, proxy):
-                with subprocess.Popen(docker.worker_argv(wt, image, cmd, name, docker.repo_label(main),
+                with subprocess.Popen(docker.worker_argv(wt, image, cmd, name, repo,
                                                   {**docker.worker_labels(role, task.stem, mdl, eff), **docker.compose_labels(name, "agent")}, ro=read,
                                                   mounts=mounts, extra=sess, env_names=(env_name,), network=net, proxy=proxy,
                                                   **docker.worker_sizes(main)),
@@ -429,7 +429,7 @@ def worker(wt, task_file=None, model=None, effort=None, prove=False):
         name = docker.container_name(docker.repo_label(main), "omi-agent-engineer", "prove", tm_tool, model, effort, salt=salt)
         try:
             with docker.egress(main, name, image, allow) as (net, proxy):
-                r = subprocess.run(docker.worker_argv(wt, image, ["sh", "-s"], name, docker.repo_label(main),
+                r = subprocess.run(docker.worker_argv(wt, image, ["sh", "-s"], name, docker.repo_key(main),
                                                {**docker.worker_labels("prove", None, None, None), **docker.compose_labels(name, "agent")},
                                                network=net, proxy=proxy,
                                                mounts=[f"{project.state}:/state"] if project.detached else (),

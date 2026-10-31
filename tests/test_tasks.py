@@ -1,4 +1,5 @@
 import contextlib
+import datetime
 import io
 import re
 import os
@@ -267,6 +268,50 @@ def test_reopen_last_write_step():
             else:
                 raise AssertionError("reopened workflow with no write step")
             assert task.read_text(encoding="utf-8") == text
+
+
+def test_step_back_to():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        task = root / ".omi/tasks/TASK-138.md"
+        task.parent.mkdir(parents=True)
+        steps = [{"id": sid, "role": role, "gate": gate} for sid, role, gate in (
+            ("plan", "coordinator", "none"), ("architect", "omi-agent-architect", "none"), ("build", "omi-agent-engineer", "none"),
+            ("review", "omi-agent-reviewer", "review"), ("accept", "coordinator", "po"))]
+        log = "- plan done 2026-10-31 10:00\n- architect done 2026-10-31 10:00\n- build started 2026-10-31 10:00\n"
+        text = f"---\nid: TASK-138\nstatus: in-progress\nstep: build\n---\n## Steps\n{log}\n## Checkpoint\nDone:\n"
+        task.write_text(text, encoding="utf-8")
+        project = omi.state.resolve.Project(root, root, True)
+        now = datetime.datetime(2026, 10, 31, 20, 30)
+        with patch("omi.project.workflows.get_workflow", return_value=steps), patch("sys.stdout", io.StringIO()):
+            def go(to, why="needs a new design"):
+                return omi.project.tasks.step(project, "TASK-138", "back", why=why, now=now, to=to)
+
+            for to, why, message in (("plan", "x", "not an agent step"), ("review", "x", "not an agent step"),
+                                     ("build", "x", "not an agent step"), ("nope", "x", "not an agent step"), ("architect", " ", "--why")):
+                try:
+                    go(to, why)
+                except SystemExit as exc:
+                    assert message in str(exc), str(exc)
+                else:
+                    raise AssertionError(f"back --to {to} should fail")
+                assert task.read_text(encoding="utf-8") == text
+            assert go("architect") == 0
+            new = task.read_text(encoding="utf-8")
+            assert omi.common.core.parse(new)["step"] == "architect"
+            assert "- workflow back to architect 2026-10-31 20:30: needs a new design\n- build failed 2026-10-31 20:30\n" \
+                   "- architect started 2026-10-31 20:30\n\n## Checkpoint" in new
+            assert omi.project.tasks.step_states(new) == {"plan": "done", "architect": "started", "build": "failed"}
+            # from the po gate: steps in between fail and the earlier PO approval no longer counts
+            task.write_text(text.replace("step: build", "step: accept").replace(
+                "- build started 2026-10-31 10:00\n", "- build done 2026-10-31 10:00\n- review done 2026-10-31 10:00\n"
+                "- accept started 2026-10-31 10:00\nPO approval accept: ok\n"), encoding="utf-8")
+            assert omi.project.tasks.po_approved(task.read_text(encoding="utf-8"), "accept")
+            go("architect")
+            new = task.read_text(encoding="utf-8")
+            assert omi.project.tasks.step_states(new) == {"plan": "done", "architect": "started", "build": "failed",
+                                                          "review": "failed", "accept": "failed"}
+            assert not omi.project.tasks.po_approved(new, "accept")
 
 
 def test_task_skill_step_commands():
@@ -566,6 +611,7 @@ def main():
     test_step_approve_reopen()
     test_auto_accept()
     test_reopen_last_write_step()
+    test_step_back_to()
     test_task_skill_step_commands()
     test_parallel()
     test_workflows()

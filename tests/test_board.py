@@ -1,6 +1,7 @@
 """Board data contracts, read-only behavior and state path boundaries."""
 import json
 import os
+import subprocess
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -153,19 +154,20 @@ def test_shared_fetch():
         home = Path(directory)
         fixture(home)
         remote(home)
-        real_git = source.core.git
-        with patch("omi.board.source.core.git", wraps=real_git) as calls, patch("omi.board.source.time.monotonic", return_value=100):
+        real_git, real_fetch = source.core.git, source._fetch
+        with patch("omi.board.source.core.git", wraps=real_git) as calls, patch("omi.board.source._fetch", wraps=real_fetch) as fetches, \
+                patch("omi.board.source.time.monotonic", return_value=100):
             with ThreadPoolExecutor(max_workers=6) as pool:
                 views = list(pool.map(lambda _: data.projects(), range(12)))
             assert all(v["source"] == views[0]["source"] for v in views)
-            assert sum(c.args[1] == "fetch" for c in calls.call_args_list) == 1
+            assert fetches.call_count == 1
             with patch("omi.board.source.time.monotonic", return_value=109):
                 data.projects()
-            assert sum(c.args[1] == "fetch" for c in calls.call_args_list) == 1
+            assert fetches.call_count == 1
             with patch("omi.board.source.time.monotonic", return_value=110):
                 data.projects()
-            assert sum(c.args[1] == "fetch" for c in calls.call_args_list) == 2
-            assert {c.args[1] for c in calls.call_args_list} <= {"fetch", "rev-parse", "remote", "ls-tree", "show"}
+            assert fetches.call_count == 2
+            assert {c.args[1] for c in calls.call_args_list} <= {"rev-parse", "remote", "ls-tree", "show"}
         for url, expected in (("https://user:token@github.com/omi-teams/omi-state?token=secret", "https://github.com/omi-teams/omi-state"),
                               ("git@github.com:omi-teams/omi-state.git", "github.com:omi-teams/omi-state.git"),
                               ("ssh://git@github.com:2222/omi-teams/omi-state.git", "ssh://github.com:2222/omi-teams/omi-state.git"),
@@ -200,7 +202,8 @@ def test_path_redaction() -> None:
 def test_unavailable_snapshot():
     with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
         source._CACHE.clear()
-        with patch("omi.board.source.core.git", return_value=None) as calls, patch("omi.board.source.time.monotonic", return_value=100):
+        with patch("omi.board.source.core.git", return_value=None), patch("omi.board.source._fetch", return_value=False) as fetches, \
+                patch("omi.board.source.time.monotonic", return_value=100):
             for _ in range(2):
                 try:
                     data.projects()
@@ -208,7 +211,28 @@ def test_unavailable_snapshot():
                     assert str(Path(directory)) not in str(exc)
                 else:
                     raise AssertionError("missing origin/main served local content")
-            assert sum(c.args[1] == "fetch" for c in calls.call_args_list) == 1
+            assert fetches.call_count == 1
+
+
+def test_fetch_timeout_serves_stale():
+    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+        home = Path(directory)
+        fixture(home)
+        remote(home)
+        fresh = data.projects()["source"]
+        seen, real_run = [], subprocess.run
+
+        def hang(argv, **kw):  # only the fetch hangs; other git calls still read the cache
+            if "fetch" not in argv:
+                return real_run(argv, **kw)
+            seen.append((argv, kw))
+            raise subprocess.TimeoutExpired(argv, kw["timeout"])
+        with patch("omi.board.source.subprocess.run", side_effect=hang), \
+                patch("omi.board.source.time.monotonic", return_value=source._CACHE[home][0] + 11):
+            stale = data.projects()["source"]
+        (argv, kw), = seen
+        assert "fetch" in argv and kw["env"]["GIT_TERMINAL_PROMPT"] == "0" and kw["timeout"] == source.FETCH_TIMEOUT
+        assert stale["stale"] is True and stale["sha"] == fresh["sha"] and stale["fetched_at"] == fresh["fetched_at"]
 
 
 def test_workflow_detail():
@@ -302,6 +326,7 @@ def main():
     test_shared_fetch()
     test_path_redaction()
     test_unavailable_snapshot()
+    test_fetch_timeout_serves_stale()
     test_workflow_detail()
     test_path_refusal()
     test_snapshot_symlink_unavailable()

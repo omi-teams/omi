@@ -22,7 +22,7 @@ def step_states(text):
 def po_approved(text, sid):
     """The Coordinator records the PO's words as a line `PO approval <step>: <text>` inside `## Steps`."""
     _, sep, rest = text.partition("\n## Steps\n")
-    current = re.split(r"^- workflow reopened .*", rest.split("\n## ", 1)[0], flags=re.M)[-1]
+    current = re.split(r"^- workflow (?:reopened|back to) .*", rest.split("\n## ", 1)[0], flags=re.M)[-1]
     return bool(sep) and re.search(rf"^(?:- )?PO approval {re.escape(sid)}: *\S", current, re.M) is not None
 
 
@@ -138,9 +138,10 @@ def sync_scope(wt, task, tid):
     print(f"SCOPE SYNCED: {core.parse(dev).get('scope')}")
 
 
-def step(root, tid, action, why=None, now=None):
+def step(root, tid, action, why=None, now=None, to=None):
     """Record a workflow step in the task file: `next` starts the following step, `done` closes the current one,
-    `skip` closes it with a reason, `back` fails a started review gate and restarts the nearest earlier write step.
+    `skip` closes it with a reason, `back` fails a started review gate and restarts the nearest earlier write step;
+    `back` with `to` restarts that earlier agent step (e.g. architect) from any current step, with a reason.
     `approve` records PO words; `reopen` restarts the last write step of a completed workflow.
     Gate steps cannot be skipped; a `po` gate needs the PO approval line."""
     if not re.fullmatch(r"[A-Za-z0-9_-]+", tid):
@@ -180,6 +181,20 @@ def step(root, tid, action, why=None, now=None):
         text = set_front(set_front(text, "step", prev["id"]), "status", "in-progress")
         text = add_step_log(text, f"- {prev['id']} started {stamp}")
         msg = f"{tid}: workflow reopened; back to {prev['id']} ({prev['role']})"
+    elif action == "back" and to is not None:
+        if not cur:
+            sys.exit(f"{tid}: no step started; run `omi step {tid} next`. Nothing changed.")
+        if to not in ids[:at] or steps[ids.index(to)]["role"] == workflows.COORDINATOR:
+            sys.exit(f"{tid}: `{to}` is not an agent step before {cur} in workflow {wid}. Nothing changed.")
+        if not (why or "").strip():
+            sys.exit(f"usage: omi step {tid} back --to <step> --why <reason>. Nothing changed.")
+        prev = steps[ids.index(to)]
+        text = add_step_log(text, f"- workflow back to {to} {stamp}: {' '.join(why.split())}")
+        for sid in ids[ids.index(to) + 1:at + 1]:
+            text = add_step_log(text, f"- {sid} failed {stamp}")
+        text = set_front(set_front(text, "step", to), "status", "in-progress")
+        text = add_step_log(text, f"- {to} started {stamp}")
+        msg = f"{tid}: step {cur} failed; back to {to} ({prev['role']}), then `omi step {tid} done` and `next`"
     elif action == "next":
         if cur and events.get(cur) not in ("done", "skipped"):
             sys.exit(f"{tid}: step {cur} is not done; run `omi step {tid} done` or `skip --why`. Nothing changed.")

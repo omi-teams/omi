@@ -31,7 +31,7 @@ def run_hook(wt, main, event, tid, image):
     env = dict(os.environ)
     env.pop(creds.TOKEN_ENV, None)
     name = docker.container_name(docker.repo_label(main), f"hook-{event}", tid)
-    argv = docker.worker_argv(wt, image, HOOK_RUNNERS[script.suffix], name, docker.repo_label(main), docker.worker_labels(f"hook-{event}", tid, None, None),
+    argv = docker.worker_argv(wt, image, HOOK_RUNNERS[script.suffix], name, docker.repo_key(main), docker.worker_labels(f"hook-{event}", tid, None, None),
                        ro=True, env_names=("OMI_PROJECT_STATE=/state",) if project.detached else (), offline=True,
                        mounts=[f"{project.state}:/state"] if project.detached else (),
                        **docker.worker_sizes(main))
