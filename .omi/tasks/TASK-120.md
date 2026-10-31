@@ -1,7 +1,7 @@
 ---
 id: TASK-120
 title: Resume the engineer session on fix rounds
-status: in-progress
+status: done
 depends:
 plan:
 scope: src/omi/worker/**, src/omi/app/cli.py, .omi/rules/omi-modules.md, src/omi/template/**, src/omi/template_shas.json, .claude/skills/omi-task/SKILL.md, tests/test_worker.py, tests/test_creds.py, tests/test_tools.py, tests/test_hooks.py, tests/test_content.py, .omi/tasks/TASK-120.md
@@ -13,20 +13,25 @@ model: opus
 effort: high
 step_settings:
 workflow: omi-flow-feature-sensitive
-step: build
+step: accept
 ---
 ## Goal
 On a fix round, `omi run` continues the engineer's previous CLI session (`claude -p --resume <id>`, `codex exec resume <id>`) with only the new findings, instead of starting a fresh agent that rereads everything; the reviewer stays a fresh instance.
 
 ## Acceptance criteria
-- [ ] `omi run` records the engineer's session id per tool in the task file (e.g. under `## Checkpoint` or `## Usage`) after each write-role run.
-- [ ] A later write-role run on the same task, same tool, resumes that session and sends a short prompt pointing at the new `## Checkpoint` findings; `--fresh` forces a new session; a tool switch (quota fallback or PO pick) starts fresh.
-- [ ] Read roles (reviewer, security, qa) never resume.
-- [ ] Session data kept between runs lives only in a per-task cache outside the repo, holds no auth token, and `omi clean` removes it; a missing or expired session falls back to a fresh run with one `RESUME FAILED:` line.
-- [ ] When the `post-run` hook fails, `omi run` sends the hook's failing output (tail) into the resumed engineer session once to fix it, reruns the hook, and stops after that single retry with the hook failure reported as today; the retry's usage is recorded like any run.
-- [ ] The omi-task skill (template copy) describes the resume behaviour; tests cover resume, fresh fallback and read-role exclusion; all tests pass.
+- [x] `omi run` records the engineer's session id per tool in the task file (e.g. under `## Checkpoint` or `## Usage`) after each write-role run.
+- [x] A later write-role run on the same task, same tool, resumes that session and sends a short prompt pointing at the new `## Checkpoint` findings; `--fresh` forces a new session; a tool switch (quota fallback or PO pick) starts fresh.
+- [x] Read roles (reviewer, security, qa) never resume.
+- [x] Session data kept between runs lives only in a per-task cache outside the repo, holds no auth token, and `omi clean` removes it; a missing or expired session falls back to a fresh run with one `RESUME FAILED:` line.
+- [x] When the `post-run` hook fails, `omi run` sends the hook's failing output (tail) into the resumed engineer session once to fix it, reruns the hook, and stops after that single retry with the hook failure reported as today; the retry's usage is recorded like any run.
+- [x] The omi-task skill (template copy) describes the resume behaviour; tests cover resume, fresh fallback and read-role exclusion; all tests pass.
 
 ## Checkpoint
+Host: `codex exec resume --help` (codex-cli 0.164.0) -> -c, -m, --dangerously-bypass-approvals-and-sandbox, --json all accepted after `resume`: pass
+Host: Docker Desktop (Windows) volume probe: `docker volume create` + root helper `chmod 0777 /s` (no caps, no network, ro rootfs) -> ok; node (uid 1000) writes /s/a.jsonl -> ok; `grep -rqF -f - /s` ro mount -> rc 0 with token, rc 1 without; `docker volume rm` -> removed: pass
+Host: FIFO in the volume -> `grep -rqF` rc 1, no hang: pass
+Host: `python tests/test_omi.py` on Windows -> ok (playwright skipped): pass
+Known issues (follow-up): a refused `docker volume rm` lets a --fresh run reuse the old volume (review note); two repos with the same folder name share volume names (security note); Ctrl-C during the scan can leave the volume until the next scan; real `claude -p --resume` in the container not exercised yet (first real use is the next fix round after merge).
 Round 8b done: applied the mock lines to tests/test_creds.py (3 mocks), test_tools.py (1), test_hooks.py (3, plus the `R(run_raw)` lambda) and test_content.py (1). T2: the omi-task skill and its template copy now say "transcripts in a per-task Docker volume, never on the host, removed by `omi clean`; a token found in it drops the session". The 0.5.0 hash in template_shas.json is updated. No host-cache wording is left. The full `python3 tests/test_omi.py` printed `ok` (pip/playwright skipped). Docker was not run for real; the UNVERIFIED items below still stand. Next: Coordinator review and commit.
 Round 8 (redesign) NEEDS SCOPE: done inside scope. The session cache is now a Docker named volume `omi-sess-<repo>-<TID>-<tool>` (labels omi-worker=1, omi-repo, omi-task, omi-session=1) mounted with `type=volume` at /sessions. The host never reads, chmods or deletes transcripts. All host scrub/chmod/uid/comma/Windows-skip code and its tests are removed.
 - New volume: `docker volume create`, then a one-shot `chmod 0777 /s` (`--user 0 --cap-drop ALL --network none --read-only --security-opt no-new-privileges`). `--fresh`, a tool switch and every fresh fallback (RESUME FAILED, quota switch) recreate the volume; resume and the hook-fix retry reuse it.
@@ -100,6 +105,14 @@ Next: Coordinator review and commit.
 - review started 2026-10-31 06:58
 - review failed 2026-10-31 07:02
 - build started 2026-10-31 07:02
+- build done 2026-10-31 07:52
+- review started 2026-10-31 07:52
+- review done 2026-10-31 07:59
+- security started 2026-10-31 07:59
+- security done 2026-10-31 08:07
+- accept started 2026-10-31 08:07
+PO approval accept: PO: nếu có question nào cần tôi chọn hãy tự chọn option được đề xuất mà không cần PO gate, 137 done thì dừng phiên
+- accept done 2026-10-31 08:07
 
 ## Reports
 2026-10-30 22:43 omi-agent-architect (claude):
@@ -734,6 +747,28 @@ Next: Coordinator review and commit.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-31 07:59 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/worker/session.py:1094 `mount_args(fresh=True)` ignores a refused `docker volume rm` (it only prints `SESSION CACHE NOT REMOVED`), then sees the volume still exists and reuses it. A `--fresh` run or fallback then starts on the old transcripts, which may hold a token that was found earlier. -> Have `mount_args` abort, or use a new volume name, when `drop(vol)` returns False.
+> - src/omi/worker/run.py:1027 The hook-fix retry has no quota or `RESUME FAILED:` handling. A resumed attempt that fails prints only `hook-fix attempt exited with code N`, then the hook is rerun. This was noted as optional in earlier rounds, and the criterion only asks for a single retry. -> Optional: reuse the fallback logic.
+> - UNVERIFIED: no Docker runs here, so these were not exercised against a real daemon:
+>   - the `chmod` helper and the `grep -rqF -f -` scan
+>   - the `ln -s /sessions ~/.claude/projects` symlink for both CLIs
+>   - the `codex exec resume` flag order
+>   - `grep -r` on fifos
+> 
+>   These are mock-tested only; the task file lists them as open.
+> 
+> AC: `omi run` records the engineer's session id per tool in the task file after each write-role run ✓ run.py:993 writes `Session: <tool> <id>` via `with_session`. `test_session_resume` asserts `Session: claude S2`.
+> AC: A later write-role run resumes the session with a short prompt pointing at the new `## Checkpoint` findings; `--fresh` forces a new session; a tool switch starts fresh ✓ run.py:335 passes `resume` only for the recorded tool and without `--fresh`. `resume_prompt` points at `## Checkpoint`. The test covers resume, `--fresh`, a codex-then-claude switch, and a quota fallback that runs fresh.
+> [... truncated ...]
+> AC: Changes stay within `scope` ✓ Every file in the diff is listed in `scope`. run.py is 457 lines and session.py is 132, both under the 600-line limit.
+2026-10-31 08:06 omi-agent-security-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/worker/session.py:22 Two repos whose main checkout folders have the same name (e.g. two clones called `app`) get the same `omi-sess-<repo>-<TID>-<tool>` volume. | why: `docker.repo_label` uses only `main.name.lower()`. So if repo B has a `Session:` line and repo A last wrote that volume, B's engineer container mounts A's transcripts. Also, `omi clean` in one repo deletes the other repo's volumes. | verified: code read of docker.py:131-132, plus `exists`/`available` and the `clear` label filter. Containers already share this naming, so the impact is low (same user). -> Add a short hash of the main checkout's resolved path to the volume name and the `omi-repo` label (or a new `omi-repo-path` label).
+> - Checked with no issue found: the session id is only passed as an argv list item and must match `\w[\w-]*`. Tokens reach `grep` on stdin, not in argv. The scan fails closed: only grep's "no match" exit (rc 1) keeps the volume. It runs in `attempt`'s finally, so Ctrl-C, container errors and the name-conflict exit are covered. Read roles get no volume and are never scanned. The scan covers the claude token, the codex API key and each `*_token` in the codex auth.json. The helper containers run with no network, no capabilities and a read-only root filesystem. The image has no ENTRYPOINT, so the helper commands run as written. `python3 tests/test_omi.py` printed `ok`; the pip and playwright checks were skipped.
+> [... truncated ...]
+> UNVERIFIED: (1) Ctrl-C during the scan: KeyboardInterrupt escapes the finally before the volume is dropped, and on the 300 s timeout `subprocess.run` kills only the docker client while the `--rm` scan container keeps running. A token-bearing volume could then outlive the run until the next scan. A real docker run would confirm it. (2) Whether `codex exec resume <id>` accepts the `-c/-m/--json` flags after the subcommand, which needs a real codex CLI. (3) Whether GNU grep `-r` skips FIFOs in the 
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -761,3 +796,5 @@ Next: Coordinator review and commit.
 | omi-agent-architect | claude-opus-5-5 | high | 12 | 11597 | 183899 | 163s | - | n/a |
 | omi-agent-engineer | claude-opus-5-5 | high | 68 | 33178 | 2410750 | 976s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-opus-5-5 | high | 36 | 4597 | 619658 | 709s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 6543 | 388317 | 334s | - | PASS de1b445 |
+| omi-agent-security-reviewer | claude-opus-5-5 | high | 18 | 6973 | 318529 | 311s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | PASS de1b445 |
