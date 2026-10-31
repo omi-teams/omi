@@ -4,7 +4,7 @@ title: Plans whose tasks are all done show as done
 status: in-progress
 depends:
 plan: PLAN-007
-scope: src/omi/board/**, src/omi/project/tasks.py, tests/test_board.py, tests/test_tasks.py, .omi/tasks/TASK-136.md
+scope: src/omi/board/**, src/omi/project/tasks.py, src/omi/app/cli.py, tests/test_board.py, tests/test_tasks.py, tests/test_content.py, .omi/tasks/TASK-136.md
 role: omi-agent-engineer
 skills: []
 refs: []
