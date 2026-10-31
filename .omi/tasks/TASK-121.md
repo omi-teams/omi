@@ -1,16 +1,16 @@
 ---
 id: TASK-121
 title: Coordinator proposes tool, model and effort; PO only approves
-status: planned
+status: in-progress
 depends:
 plan:
 scope: src/omi/template/AGENTS.md, src/omi/template/dot-claude/skills/**, src/omi/template_shas.json, AGENTS.md, .claude/skills/**, tests/test_tools.py, .omi/tasks/TASK-121.md
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: codex
+model: sonnet
+effort: medium
 step_settings:
 workflow: omi-flow-feature
 step:
