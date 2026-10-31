@@ -294,9 +294,6 @@ def test_empty_and_layer():
         assert view["plans"] == view["po_waiting"] == view["activity"] == view["decisions"] == []
         assert view["usage"]["totals"]["runs"] == 0
         assert str(home) not in json.dumps(view)
-    rule = (Path(__file__).parents[1] / ".omi/rules/omi-modules.md").read_text(encoding="utf-8")
-    order = next(line for line in rule.splitlines() if "module layer order" in line)
-    assert order.index("app.cli") < order.index("board.data") < order.index("board.source") < order.index("project.tasks") < order.index("state.resolve")
 
 
 def main():

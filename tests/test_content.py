@@ -134,8 +134,8 @@ def test_plans():
         plans = root / ".omi" / "plans"
         assert (plans / "PLAN-000.md").is_file()
         assert "- PLAN-000 (done): Example plan" in (plans / "CATALOG.md").read_text()
-        for base in (Path(__file__).resolve().parents[1], omi.common.core.TEMPLATE):
-            task_dir = base / ("dot-omi" if base == omi.common.core.TEMPLATE else ".omi") / "tasks"
+        for base in (omi.common.core.TEMPLATE,):
+            task_dir = base / "dot-omi" / "tasks"
             assert omi.common.core.meta(task_dir / "_template.md")["plan"] == ""
             assert "Coordinator-owned" in (task_dir / "_template.md").read_text().split("plan:", 1)[1].splitlines()[0]
             assert ".omi/plans/PLAN-NNN.md" in (base / "AGENTS.md").read_text()
@@ -249,8 +249,8 @@ def test_references():
                 assert "summary" in result.stderr
             assert (refs / "CATALOG.md").read_text() == cat
         (refs / "bad.md").unlink()
-        for base in (Path(__file__).resolve().parents[1], omi.common.core.TEMPLATE):
-            task = base / ("dot-omi" if base == omi.common.core.TEMPLATE else ".omi") / "tasks" / "_template.md"
+        for base in (omi.common.core.TEMPLATE,):
+            task = base / "dot-omi" / "tasks" / "_template.md"
             assert omi.common.core.meta(task)["refs"] == "[]"
             assert "references/CATALOG.md" in (base / "AGENTS.md").read_text()
         task = root / ".omi" / "tasks" / "TASK-001.md"

@@ -26,7 +26,7 @@ import omi.common.core
 
 
 def test_release_0_5_0():
-    assert omi.common.core.version() == "0.5.0" and Path(".omi/version").read_text(encoding="utf-8").strip() == "0.5.0"
+    assert omi.common.core.version() == "0.5.0"
     assert upgrade.template_shas() == json.loads(upgrade.SHAS.read_text(encoding="utf-8"))["0.5.0"]
 
 

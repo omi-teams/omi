@@ -1,3 +1,4 @@
+import os
 import io
 import shutil
 import json
@@ -98,7 +99,7 @@ def test_version_stamp_package_hook():
         c = json.loads(cfg.read_text())
         c["test"] = "exit 7"
         cfg.write_text(json.dumps(c))
-        assert subprocess.run([omi.worker.run.host_bash() or "sh", hook], cwd=d).returncode == 7
+        assert subprocess.run([omi.worker.run.host_bash() or "sh", hook], cwd=d, env={**os.environ, "OMI_PROJECT_STATE": d}).returncode == 7
 
 
 def test_upgrade():
@@ -498,9 +499,7 @@ def test_upgrade_repo_confirmation():
 
 
 def test_upgrade_skill_repo_confirmation():
-    root = Path(__file__).parents[1]
-    skill = (root / ".claude/skills/omi-upgrade/SKILL.md").read_text(encoding="utf-8")
-    assert skill == (omi.common.core.TEMPLATE / "dot-claude/skills/omi-upgrade/SKILL.md").read_text(encoding="utf-8")
+    skill = (omi.common.core.TEMPLATE / "dot-claude/skills/omi-upgrade/SKILL.md").read_text(encoding="utf-8")
     assert "repo" in skill and "pick-list" in skill
     assert "confirm" in skill and "non-default" in skill and "--repo <url>" in skill
     assert "--check" in skill and "--to <tag>" in skill and ".omi-new" in skill

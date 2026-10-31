@@ -1,3 +1,4 @@
+import contextlib
 import io
 import re
 import os
@@ -266,17 +267,14 @@ def test_reopen_last_write_step():
 
 
 def test_task_skill_step_commands():
-    repo = Path(__file__).resolve().parents[1]
     template = omi.common.core.TEMPLATE / "dot-claude/skills/omi-task/SKILL.md"
     text = template.read_text(encoding="utf-8")
-    assert text == (repo / ".claude/skills/omi-task/SKILL.md").read_text(encoding="utf-8")
     assert 'step <ID> approve --why "<PO\'s words>"' in text
     assert '--title "<title>" --body-file <file>' in text and "[TASK-NNN] <type>(<area>): <summary>" in text
     assert "## Summary" in text and "## Known issues" in text and "gh pr ready --undo" in text
     assert "--draft" in text and "gh pr ready`" in text and "**Agent:** Coordinator" in text and "--subject" in text
     assert "gh pr edit task/<ID>" in text and "gh pr comment task/<ID> --body-file" in text
-    release = (repo / ".claude/skills/omi-release/SKILL.md").read_text(encoding="utf-8")
-    assert release == (omi.common.core.TEMPLATE / "dot-claude/skills/omi-release/SKILL.md").read_text(encoding="utf-8")
+    release = (omi.common.core.TEMPLATE / "dot-claude/skills/omi-release/SKILL.md").read_text(encoding="utf-8")
     assert "[RELEASE vX.Y.Z] development -> staging" in release and "-> main" in release
     assert "--fill" not in text.replace("never `--fill`", "") and "--fill" not in release.replace("never `--fill`", "")
     assert 'step <ID> reopen --why "<CI failure reason>"' in text
@@ -453,14 +451,15 @@ def test_workflows():
                 omi.common.core.task_worktrees = real_wts
         finally:
             sys.stdout = saved
-    repo = Path(__file__).parents[1]
-    assert (repo / ".omi" / "tasks" / "_template.md").read_text() == (omi.common.core.TEMPLATE / "dot-omi" / "tasks" / "_template.md").read_text()
-    for name in ("omi-flow-feature", "omi-flow-feature-ui", "omi-flow-feature-sensitive"):
-        a, b = repo / ".omi" / "workflows" / f"{name}.md", omi.common.core.TEMPLATE / "dot-omi" / "workflows" / f"{name}.md"
-        assert a.read_text() == b.read_text() and not omi.project.workflows.validate_workflow(repo, a), name
-        assert "Review-fail rule" in a.read_text() and "PO gates" in a.read_text()
-    assert (repo / ".omi" / "workflows" / "CATALOG.md").read_text() == (omi.common.core.TEMPLATE / "dot-omi" / "workflows" / "CATALOG.md").read_text()
-    assert "workflow: omi-flow-feature" in (repo / ".omi" / "tasks" / "_template.md").read_text()
+    tpl = omi.common.core.TEMPLATE / "dot-omi"
+    assert "workflow: omi-flow-feature" in (tpl / "tasks" / "_template.md").read_text()
+    with tempfile.TemporaryDirectory() as d, contextlib.redirect_stdout(io.StringIO()):
+        repo = Path(d)
+        omi.setup.upgrade.init(repo)
+        for name in ("omi-flow-feature", "omi-flow-feature-ui", "omi-flow-feature-sensitive"):
+            a = tpl / "workflows" / f"{name}.md"
+            assert not omi.project.workflows.validate_workflow(repo, a), name
+            assert "Review-fail rule" in a.read_text() and "PO gates" in a.read_text()
 
 
 def test_parallel():

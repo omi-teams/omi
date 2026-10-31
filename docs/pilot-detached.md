@@ -134,3 +134,48 @@ CI ba hệ điều hành của PR splitbill #5 kiểm tra sản phẩm splitbill
 | G8 | Reviewer ghi nhận `--tip 1e9999999` gây traceback `ValueError` thay vì exit 2; không chặn merge | Follow-up của splitbill: giới hạn số mũ `--tip` quá lớn |
 
 Các gap trên được ghi lại để quyết định sau; task tài liệu này không sửa hành vi.
+
+## Chuyển repo omi sang chế độ độc lập (TASK-135)
+
+2026-10-31. Repo omi tự dùng chế độ độc lập: plan, task và decision của omi nằm ở
+`projects/omi/` trong [omi-teams/omi-state](https://github.com/omi-teams/omi-state), nên
+hiện trên board như mọi dự án khác. Phương án đã chọn (architect, option A): gỡ
+`.omi/**`, `AGENTS.md`, `.claude/**`, `docker/**` khỏi repo code; bản sao
+`src/omi/template/**` giữ nguyên; phát triển omi qua `omi install-user`.
+
+Bằng chứng được chép từ checkpoint T1 của Coordinator (chạy trên host); docs-writer không
+chạy lại các lệnh, và checkpoint không lưu stdout đầy đủ.
+
+### Lệnh và kết quả (T1, trên host)
+
+| Bước | Lệnh hoặc thao tác | Kết quả được ghi nhận |
+|---|---|---|
+| 1 | `python -m omi install-user` | `installed omi user integration`; `~/.claude/settings.json` có `-m omi guard` (PreToolUse) và `-m omi session-start` |
+| 2 | `omi status` (lưu làm "trước") | Đầu ra gốc để so sánh |
+| 3 | `python -m omi attach` | `attached: ~/.omi/state/projects/omi (pushed seed 01db044)` |
+| 4 | Chép `.omi/{agents,config.json,decisions.md,hooks,plans,references,rules,skills,tasks,version,workflows}` và `docker/` đè lên seed, sinh lại catalog | 19 skills, 9 roles, 11 workflows, 6 rules, 2 references, 8 plans |
+| 5 | Commit và push omi-state | `2eb37d5` "omi: import state from omi-teams/omi@17712ff; history: git log -- .omi AGENTS.md .claude" (159 file) |
+| 6 | `omi status` (lưu làm "sau"), so với "trước" | Chỉ khác một dòng thêm: `WARN: in-repo omi files ignored (detached): .omi/, AGENTS.md, .claude/` |
+| 7 | Clone mới omi-state, `OMI_STATE=<thư mục tạm>`, mở board | Dự án `['omi', 'omi-pilot-splitbill']`; omi có plan active `PLAN-007 3/16`, 8 plan |
+
+Lịch sử trước khi import xem bằng `git log -- .omi AGENTS.md .claude` trong repo code
+(ghi trong commit message của omi-state).
+
+### PR gỡ file in-repo (T2)
+
+Một PR duy nhất gỡ `.omi/**`, `AGENTS.md`, `.claude/**`, `docker/**` khỏi repo code.
+Test đổi theo: `tests/test_cli.py:16`, `tests/test_content.py:137,252` chỉ đọc TEMPLATE;
+`tests/test_board.py:297` bỏ kiểm tra text `omi-modules.md`. Sau PR, `omi status` không
+còn dòng `WARN: in-repo omi files ignored`. Kết quả (SHA PR, đầu ra `omi status`) do
+Coordinator ghi sau khi merge; mục này chưa có số liệu đó.
+
+### Rollback
+
+1. Trong repo code, khôi phục file từ commit ngay trước PR gỡ:
+   `git checkout <sha-trước-khi-gỡ> -- .omi AGENTS.md .claude docker`
+2. Trong omi-state, gỡ thư mục dự án và push:
+   `git rm -r projects/omi`, commit, `git push`.
+3. Chạy `omi status`: không còn project `omi` trong state; repo code dùng lại state in-repo.
+
+Đóng băng: từ lúc chép sang omi-state đến khi PR gỡ merge, không sửa `.omi` trong repo code
+(mọi sửa sau lúc chép sẽ không có trong state).

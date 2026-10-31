@@ -271,9 +271,9 @@ def test_hooks():
             assert "no tests found" not in r.stdout and "pytest not in the worker image" in r.stdout, r
     text = (omi.common.core.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh").read_text()
     assert all(w in text for w in ("pytest", "go test", "npm test"))
-    for f in (Path("AGENTS.md"), omi.common.core.TEMPLATE / "AGENTS.md", Path(".claude/skills/omi-task/SKILL.md"),
+    for f in (omi.common.core.TEMPLATE / "AGENTS.md",
               omi.common.core.TEMPLATE / "dot-claude" / "skills" / "omi-task" / "SKILL.md"):
-        assert "hook" in (Path(__file__).parents[1] / f if not f.is_absolute() else f).read_text(encoding="utf-8"), f
+        assert "hook" in f.read_text(encoding="utf-8"), f
 
 
 def test_run_read_role():
@@ -519,12 +519,10 @@ def test_review_round_flow():
 
 def test_host_only_criteria():
     root = Path(__file__).parents[1]
-    pairs = [(".omi/agents/omi-agent-reviewer.md", "src/omi/template/dot-omi/agents/omi-agent-reviewer.md"),
-             (".claude/skills/omi-task/SKILL.md", "src/omi/template/dot-claude/skills/omi-task/SKILL.md")]
-    for repo_copy, template_copy in pairs:
-        text = (root / repo_copy).read_text(encoding="utf-8")
-        assert text == (root / template_copy).read_text(encoding="utf-8")
-        if "reviewer" in repo_copy:
+    for template_copy in ("src/omi/template/dot-omi/agents/omi-agent-reviewer.md",
+                          "src/omi/template/dot-claude/skills/omi-task/SKILL.md"):
+        text = (root / template_copy).read_text(encoding="utf-8")
+        if "reviewer" in template_copy:
             assert "`HOST <criterion>`" in text and "UNVERIFIED|HOST" in text and "is `UNVERIFIED`" in text
         else:
             assert "Host: <command> -> <result>" in text and "no merge without one `Host:` line" in text
