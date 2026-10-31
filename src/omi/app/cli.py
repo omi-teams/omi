@@ -36,6 +36,7 @@ USAGE = """usage: omi <command>
   agents       write .omi/agents/CATALOG.md (one line per role)
   workflows [--check]   write .omi/workflows/CATALOG.md (one line per workflow); --check validates every workflow
   step <TASK-ID> next|done|back|skip|approve|reopen --why <reason>   record the task's workflow step (gates cannot be skipped; back --to <step> --why: return to an earlier agent step, e.g. architect)
+  note <TASK-ID> --step <step> --verdict <verdict> "<text>"   record a Coordinator decision under the task's ## Reports
   run <role> <TASK-ID> [--model M] [--effort E] [--tool claude|codex] [--fresh]   run a role in Docker (--fresh: no engineer session resume; read roles: ro worktree, after the deterministic checks)
   hook pre-run|post-run|pre-merge <TASK-ID>   run .omi/hooks/<event> (from the main checkout) in Docker against the task worktree; exits with its code
   parallel <TASK-ID> <TASK-ID> [...]   check that tasks can run in parallel (depends, status, scope overlap)
@@ -247,6 +248,10 @@ def dispatch(argv: list[str] | None = None) -> None:
         if "--to" in rest and (rest[1] != "back" or not to or to.startswith("--")):
             sys.exit(f"usage: omi step {rest[0]} back --to <step> --why <reason>. Nothing changed.")
         sys.exit(tasks.step(state.resolve(core.main_checkout(".") or Path(".").resolve()), rest[0], rest[1], why, to=to))
+    elif cmd == "note" and rest:
+        step_id, verdict = core.flag(rest, "--step"), core.flag(rest, "--verdict")
+        words = [w for i, w in enumerate(rest[1:]) if w not in ("--step", "--verdict") and rest[i] not in ("--step", "--verdict")]
+        tasks.note(state.resolve(core.main_checkout(".") or Path(".").resolve()), rest[0], step_id, verdict, " ".join(words))
     elif cmd == "run" and len(rest) >= 2 and not rest[1].startswith("--"):
         sys.exit(run.run_cmd(rest[0], rest[1], rest))
     elif cmd == "hook" and len(rest) == 2:

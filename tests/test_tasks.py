@@ -270,6 +270,30 @@ def test_reopen_last_write_step():
             assert task.read_text(encoding="utf-8") == text
 
 
+def test_note():
+    for detached in (False, True):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d).resolve()
+            with patch("sys.stdout", io.StringIO()):
+                omi.setup.upgrade.init(root)
+            code = root / "code" if detached else root
+            project = omi.state.resolve.Project(root, code, detached)
+            task = root / ".omi" / "tasks" / "TASK-109.md"
+            task.write_text("---\nid: TASK-109\n---\n## Reports\n", encoding="utf-8")
+            with patch("omi.common.core.task_worktrees", return_value={}):
+                omi.project.tasks.note(project, "TASK-109", "review", "FAIL", "fix round\nsecond line")
+                text = task.read_text(encoding="utf-8")
+                assert re.search(r"Coordinator \(review\) FAIL:\n> fix round\n> second line", text) and re.search(r"\d{4}-\d\d-\d\d \d\d:\d\d Coordinator", text)
+                for bad in (("TASK-109", None, "FAIL", "x"), ("TASK-109", "review", "FAIL", " "), ("TASK-999", "review", "FAIL", "x"), ("../x", "review", "FAIL", "x")):
+                    try:
+                        omi.project.tasks.note(project, *bad)
+                    except SystemExit as exc:
+                        assert "Nothing changed" in str(exc)
+                    else:
+                        raise AssertionError(bad)
+                    assert task.read_text(encoding="utf-8") == text
+
+
 def test_step_back_to():
     with tempfile.TemporaryDirectory() as d:
         root = Path(d).resolve()
@@ -612,6 +636,7 @@ def main():
     test_auto_accept()
     test_reopen_last_write_step()
     test_step_back_to()
+    test_note()
     test_task_skill_step_commands()
     test_parallel()
     test_workflows()

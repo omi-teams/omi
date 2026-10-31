@@ -370,6 +370,17 @@ def append_note(task, heading, line):
     task.write_text(text, encoding="utf-8")
 
 
+def note(root, tid, step_id, verdict, text):
+    """`omi note`: record a Coordinator decision under the task's `## Reports` (same shape as an agent report)."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", tid) or not (step_id and verdict and text.strip()):
+        sys.exit("usage: omi note <TASK-ID> --step <step> --verdict <verdict> \"<text>\". Nothing changed.")
+    task = state.task_file(state.resolve(root), tid)
+    if not task.exists():
+        sys.exit(f"no task file {task}. Nothing changed.")
+    line = f"{datetime.datetime.now():%Y-%m-%d %H:%M} Coordinator ({step_id}) {verdict}:"
+    append_note(task, "Reports", line + "\n" + "\n".join("> " + l for l in text.strip().splitlines()))
+
+
 USAGE_HEAD = "| role | model | effort | input | output | cache | duration | skills read | verdict |"
 
 
