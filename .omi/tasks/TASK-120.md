@@ -610,6 +610,11 @@ Next: Coordinator review and commit.
 > AC: Session data lives only in a per-task cache outside the repo, holds no auth token, and `omi clean` removes it; a missing or expired session falls back to a fresh run with one `RESUME FAILED:` line ✗ The cache location, `omi clean`, and `RESUME FAILED:` parts pass in the test. "Holds no auth token" fails for the mode-0 subdir case in the first finding. A clean-transcript, token-hit, symlink, and mode-0 file case all behave correctly.
 > [... truncated ...]
 > All changed files are within `scope`.
+2026-10-31 07:13 omi-agent-architect (claude):
+> RECOMMEND: A. Keep each task's transcripts in a per-task, per-tool Docker named volume, and run every check and delete through Docker. The host never reads, chmods or deletes a transcript file, so the 0777 / mode-0 / symlink / fifo / uid / Windows problems from rounds 2–7 go away instead of being patched again.
+> OPTIONS: A: volume `omi-sess-<repo>-<TID>-<tool>` (labels `omi-worker=1, omi-repo, omi-task, omi-session=1`) mounted at `/sessions`, with the existing `wrap()` symlink `~/.claude/projects` or `~/.codex/sessions` -> `/sessions`. A new volume gets a one-shot `chmod 0777 /s` run as `--user 0 --cap-drop ALL --network none` (no caps added). After each write run, a scan container (`--user node --read-only --network none --cap-drop ALL`, volume mounted `:ro`) runs `grep -rqF -f - /s` with the token strings on stdin. Pro: one boundary, works with any image. Con: two short helper runs, and root-in-container for the chmod. B: no scan, relying on the env never being persisted. Rejected: codex's `~/.codex/auth.json` is readable by the agent, and Claude's subprocess env scrub is UNVERIFIED. C: a node-owned `/sessions` in the Dockerfile instead of the chmod step. Con: the image hash changes, and projects with their own `docker/Dockerfile` get a root-owned, unwritable volume until they upgrade.
+> [... truncated ...]
+> TASKS: T1 (engineer, opus/high): scope `src/omi/worker/session.py`, `docker.py`, `run.py`, `tests/test_worker.py`. Make the switch above and delete the host-cache code and its mode/uid/symlink/fifo/mode-0/Windows-skip tests. New tests with subprocess mocked: the mount argv is `type=volume`; the token never appears in any argv; scan rc 0, 2 and 125 drop the volume and remove the `Session:` line while rc 1 keeps it; a failed rm prints `SESSION CACHE NOT REMOVED`; `--fresh` and a tool switch recrea
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -634,3 +639,4 @@ Next: Coordinator review and commit.
 | omi-agent-engineer | claude-opus-5-5 | high | 22 | 5912 | 332575 | 524s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 1674057 | 4438 | 1609216 | 295s | - | FAIL a37d894 |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 16 | 5339 | 545390 | 330s | - | FAIL a37d894 |
+| omi-agent-architect | claude-opus-5-5 | high | 12 | 11597 | 183899 | 163s | - | n/a |
