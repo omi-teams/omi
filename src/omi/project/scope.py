@@ -25,6 +25,14 @@ def git_hint(paths):
 
 
 def guard(stdin=None):
+    try:
+        return _guard(stdin)
+    except state.StateError as exc:
+        print(f"OMI: omi state registry is invalid ({exc}); fix ~/.omi/state before editing.", file=sys.stderr)
+        return 2
+
+
+def _guard(stdin=None):
     data = json.loads((stdin or sys.stdin.buffer).read())
     tool_input = data.get("tool_input", {})
     raw = tool_input.get("file_path") or tool_input.get("notebook_path")
@@ -39,14 +47,14 @@ def guard(stdin=None):
     engineer = data.get("agent_type") == "omi-agent-engineer"  # subagents share the session cwd; only the payload tells
     top = core.git(d, "rev-parse", "--show-toplevel")
     root = Path(top).resolve() if top else None
-    project = state.resolve(root) if root else None
-    projects = [project] if project else []
-    if engineer:
-        # Keep an omi engineer's escape checks even when the edited path is outside omi.
-        session_top = core.git(data.get("cwd", "."), "rev-parse", "--show-toplevel")
-        if session_top:
-            projects.append(state.resolve(session_top))
-    if not any(p.detached or (p.state / ".omi").is_dir() or (p.code / ".omi").is_dir() for p in projects):
+    session_top = core.git(data.get("cwd", "."), "rev-parse", "--show-toplevel")
+    session_root = Path(session_top).resolve() if session_top else None
+    omi_session = False
+    for repo in dict.fromkeys(p for p in (root, session_root) if p is not None):
+        in_repo = (repo / ".omi").is_dir()
+        project = state.resolve(repo)
+        omi_session = omi_session or in_repo or project.detached or (project.code / ".omi").is_dir()
+    if not engineer and not omi_session:
         return 0
     branch = (core.git(d, "rev-parse", "--abbrev-ref", "HEAD") or "") if top else ""
     try:
@@ -64,6 +72,7 @@ def guard(stdin=None):
     elif branch.startswith("task/"):
         tid = branch[5:]
         # Scope comes from state or development, never the agent-writable task copy.
+        project = state.resolve(root)
         shown = state.task_text(project, root, tid)
         task_file = state.task_file(project, tid)
         if shown is None:

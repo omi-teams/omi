@@ -143,7 +143,10 @@ def test_detached_scope_and_guard():
             git(other, "init", "-q", "-b", "task/TASK-1")
             for target in (Path(other) / "app.py", Path(other) / ".claude/settings.json"):
                 assert omi.project.scope.guard(io.StringIO(json.dumps({
-                    "cwd": str(wt), "tool_input": {"file_path": str(target)}}))) == 0
+                    "cwd": str(wt), "tool_input": {"file_path": str(target)}}))) == 2
+        with tempfile.TemporaryDirectory() as home:
+            assert omi.project.scope.guard(io.StringIO(json.dumps({
+                "cwd": str(wt), "tool_input": {"file_path": str(Path(home) / ".claude/settings.json")}}))) == 2
         # A counterfeit task in the code worktree cannot widen detached scope.
         fake = wt / ".omi" / "tasks" / task.name
         fake.parent.mkdir(parents=True)

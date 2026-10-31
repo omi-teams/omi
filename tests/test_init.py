@@ -172,12 +172,11 @@ def test_guard_non_omi_projects():
         git(repo, "commit", "-qm", "fixture")
         with patch.dict(os.environ, {"OMI_STATE": str(base / "state")}):
             def guard(path, cwd=repo):
-                for agent in (None, "omi-agent-engineer"):
-                    output = io.StringIO()
-                    with contextlib.redirect_stderr(output):
-                        result = omi.project.scope.guard(io.StringIO(json.dumps({
-                            "cwd": str(cwd), "agent_type": agent, "tool_input": {"file_path": str(path)}})))
-                    assert (result, output.getvalue()) == (0, "")
+                output = io.StringIO()
+                with contextlib.redirect_stderr(output):
+                    result = omi.project.scope.guard(io.StringIO(json.dumps({
+                        "cwd": str(cwd), "tool_input": {"file_path": str(path)}})))
+                assert (result, output.getvalue()) == (0, "")
 
             guard(repo / ".claude/settings.json")
             guard(".claude/settings.local.json")
@@ -200,6 +199,77 @@ def test_guard_user_settings_outside_repository():
                 result = omi.project.scope.guard(io.StringIO(json.dumps({
                     "cwd": str(home), "tool_input": {"file_path": str(Path.home() / ".claude/settings.json")}})))
             assert (result, output.getvalue()) == (0, "")
+            output = io.StringIO()
+            with contextlib.redirect_stderr(output):
+                result = omi.project.scope.guard(io.StringIO(json.dumps({
+                    "cwd": str(home), "agent_type": "omi-agent-engineer",
+                    "tool_input": {"file_path": str(home / "new.py")}})))
+            assert result == 2
+            assert output.getvalue() == f"OMI: {home / 'new.py'} is outside the task worktree.\n"
+            repo = home / "omi-project"
+            repo.mkdir()
+            git(repo, "init", "-q", "-b", "main")
+            (repo / ".omi").mkdir()
+            output = io.StringIO()
+            with contextlib.redirect_stderr(output):
+                result = omi.project.scope.guard(io.StringIO(json.dumps({
+                    "cwd": str(repo), "tool_input": {"file_path": str(Path.home() / ".claude/settings.json")}})))
+            assert result == 2 and "is Claude Code config" in output.getvalue()
+
+
+def test_guard_invalid_registry():
+    with tempfile.TemporaryDirectory() as d:
+        base = Path(d)
+        registry = base / "state"
+        manifest = registry / "projects/broken/project.json"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text("{", encoding="utf-8")
+        with patch.dict(os.environ, {"OMI_STATE": str(registry)}):
+            try:
+                omi.state.resolve.registry()
+            except omi.state.resolve.StateError as exc:
+                expected = f"OMI: omi state registry is invalid ({exc}); fix ~/.omi/state before editing.\n"
+            else:
+                raise AssertionError("expected corrupt registry")
+            for name in ("omi", "ordinary"):
+                repo = base / name
+                repo.mkdir()
+                git(repo, "init", "-q", "-b", "main")
+                if name == "omi":
+                    (repo / ".omi").mkdir()
+                for target in (repo / "app.py", repo / ".claude/settings.json"):
+                    output = io.StringIO()
+                    with contextlib.redirect_stderr(output):
+                        result = omi.project.scope.guard(io.StringIO(json.dumps({
+                            "cwd": str(repo), "tool_input": {"file_path": str(target)}})))
+                    assert (result, output.getvalue()) == (2, expected)
+
+
+def test_guard_invalid_registry_cli():
+    with tempfile.TemporaryDirectory() as d:
+        base = Path(d)
+        registry = base / "state"
+        manifest = registry / "projects/broken/project.json"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text("{", encoding="utf-8")
+        env = {**os.environ, "OMI_STATE": str(registry), "PYTHONPATH": str(Path(omi.__file__).parent.parent)}
+        results = []
+        for name in ("omi", "ordinary"):
+            repo = base / name
+            repo.mkdir()
+            git(repo, "init", "-q", "-b", "main")
+            if name == "omi":
+                (repo / ".omi").mkdir()
+            result = subprocess.run([sys.executable, "-m", "omi", "guard"], cwd=repo, env=env,
+                                    input=json.dumps({"cwd": str(repo), "tool_input": {"file_path": str(repo / "app.py")}}),
+                                    capture_output=True, encoding="utf-8")
+            results.append(result)
+        assert all(result.returncode == 2 for result in results), [(r.returncode, r.stderr) for r in results]
+        for result in results:
+            assert result.stdout == ""
+            assert result.stderr.startswith("OMI: omi state registry is invalid (")
+            assert str(manifest) in result.stderr
+            assert result.stderr.endswith("); fix ~/.omi/state before editing.\n")
 
 
 def test_init_guard_status():
@@ -249,11 +319,20 @@ def test_init_guard_status():
         with tempfile.TemporaryDirectory() as other:
             assert guard(Path(other) / "x.py", "omi-agent-engineer") == 2, "engineer writing to a non-git dir"
             assert guard(Path(other) / "x.py") == 0, "no agent identity: as before"
-            assert guard(Path(other) / ".claude" / "settings.json") == 0, "user-level config outside omi"
-            # A running omi task must not impose its guard on a different repository.
+            assert guard(Path(other) / ".claude" / "settings.json") == 2, "user-level config from an omi session"
+            # An omi session retains its existing checks even in another repository.
             git(other, "init", "-q", "-b", "task/TASK-1")
-            assert guard(Path(other) / "x.py") == 0
-            assert guard(Path(other) / ".claude" / "settings.json") == 0
+            assert guard(Path(other) / "x.py") == 2
+            assert guard(Path(other) / ".claude" / "settings.json") == 2
+        with tempfile.TemporaryDirectory(dir=wt) as nested_dir:
+            nested = Path(nested_dir)
+            git(nested, "init", "-q", "-b", "task/TASK-NESTED")
+            (nested / "app.py").write_text("nested repo\n", encoding="utf-8")
+            git(nested, "add", "app.py")
+            git(nested, "commit", "-qm", "nested fixture")
+            for target in (nested / "app.py", nested / ".claude/settings.json"):
+                assert omi.project.scope.guard(io.StringIO(json.dumps({
+                    "cwd": str(wt), "tool_input": {"file_path": str(target)}}))) == 2
         git(root, "branch", "task/TASK-099")
         git(root, "worktree", "add", "-q", str(root / "wt99"), "task/TASK-099")
         assert guard(root / "wt99" / "src" / "x.py") == 2, "task not on development: deny"
@@ -331,6 +410,7 @@ def test_template_docker():
 def main():
     test_guard_non_omi_projects()
     test_guard_user_settings_outside_repository()
+    test_guard_invalid_registry()
     test_step_settings_format_and_docs()
     test_template_docker()
     test_init_fresh_project()
@@ -338,6 +418,7 @@ def main():
     test_init_symlink_destinations()
     test_invalid_manifest_recovery()
     test_init_guard_status()
+    test_guard_invalid_registry_cli()
 
 
 if __name__ == "__main__":
