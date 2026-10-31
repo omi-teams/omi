@@ -185,9 +185,6 @@ def dispatch(argv: list[str] | None = None) -> None:
         port = core.flag(rest, "--port")
         if not set(rest) <= {"--port", "--no-open", port} or ("--port" in rest and not ((port or "").isascii() and (port or "").isdigit())):
             raise state.StateError("usage: omi board [--port N] [--no-open]")
-        project = state.resolve()
-        if project.detached:
-            state_sync.pull(project)
         try:
             httpd = server.make_server(int(port) if port else 8765)
         except (OSError, OverflowError) as exc:

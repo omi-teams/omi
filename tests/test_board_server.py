@@ -84,9 +84,13 @@ def test_board_cli():
             return pull, make, opened
 
     pull, make, opened = board()
-    assert make.call_args.args == (8765,) and pull.call_count == 1 and opened.call_count == 1
+    assert make.call_args.args == (8765,) and not pull.called and opened.call_count == 1
     pull, make, opened = board("--port", "9000", "--no-open")
-    assert make.call_args.args == (9000,) and not opened.called
+    assert make.call_args.args == (9000,) and not pull.called and not opened.called
+    with patch("omi.state.resolve.registry"), patch("omi.board.server.make_server"), \
+            patch("omi.app.cli.state_sync") as sync:
+        omi.app.cli.main(["board", "--no-open"])
+        assert not sync.mock_calls
     for bad in (["--port"], ["--port", "x"], ["--bogus"], ["--port", "-1"], ["--port", "\u00b2"]):
         try:
             board(*bad)

@@ -134,7 +134,7 @@ def _project(snap: source.Snapshot, name: str) -> dict:
             "activity": activity, "decisions": sorted(decisions, reverse=True),
             "usage": {"tasks": {t["id"]: t["usage"] for t in details},
                       "models": {model: _totals([r for r in rows if r["model"] == model]) for model in sorted({r["model"] for r in rows})},
-                      "totals": _totals(rows)}, "sync": {"ahead": 0, "behind": 0, "dirty": False, "last_commit": snap.source["sha"]}}
+                      "totals": _totals(rows)}}
 
 
 def projects() -> dict:
@@ -145,6 +145,6 @@ def projects() -> dict:
     for name in names:
         view = _project(snap, name)
         result.append({"name": name, "plans": [p for p in view["plans"] if p["status"] == "active"],
-                       "branch": view["branch"], "sync": view["sync"],
+                       "branch": view["branch"],
                        "task_counts": view["task_counts"], "po_waiting_count": view["po_waiting_count"]})
     return snap.response({"projects": result})

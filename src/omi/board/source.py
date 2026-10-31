@@ -60,9 +60,14 @@ class Snapshot:
 
     def response(self, value: dict) -> dict:
         # State documents can themselves contain the cache path (e.g. old reports).
+        paths = {form for path in (self.home, self.home.resolve())
+                 for form in (str(path), path.as_posix(), str(path).replace("/", "\\"), str(path).replace("\\", "/"))}
+
         def clean(item):
             if isinstance(item, str):
-                return item.replace(str(self.home), "[state]")
+                for path in sorted(paths, key=len, reverse=True):
+                    item = item.replace(path, "[state]")
+                return item
             if isinstance(item, list):
                 return [clean(v) for v in item]
             if isinstance(item, dict):

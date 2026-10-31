@@ -76,7 +76,7 @@ def test_mockup_layout() -> None:
     css = (WEB / "app.css").read_text(encoding="utf-8")
     # The approved desktop structures and phone adaptation must remain present.
     for cls in ("bar", "brand", "tools", "switch", "wrap", "panel", "ph", "stats", "stat", "plan",
-                "kanban", "col", "colh", "card", "grid2", "feed", "fi", "po", "poi", "sync",
+                "kanban", "col", "colh", "card", "grid2", "feed", "fi", "po", "poi",
                 "projects", "pc", "counts", "layout", "main", "side", "steps", "sn", "crit", "ck"):
         assert re.search(r"\." + cls + r"[\s.{:]", css), cls
     for token in ("#f6f6f4", "#1f2421", "#0f6e6e", "prefers-color-scheme: dark", "max-width:767px",
@@ -123,10 +123,9 @@ const frontmatter={title:'<img src=x onerror=evil()>',status:'in-progress',step:
 const detail={source:remoteSource,id:'TASK-115',frontmatter,goal:'Ship the board',criteria:[{text:'Safe <script> text',checked:true},{text:'Responsive',checked:false}],checkpoint:'Next: review',steps:'- build started',reports:'2026-10-30 engineer:\n> Complete',usage:{rows:[{role:'engineer',output:'1234',duration:'30s'}],runs:1,review_rounds:0}};
 const counts={planned:2,'in-progress':1,review:0,blocked:0,done:4};
 const plan={id:'PLAN-006',title:'Board',status:'active',done:4,total:7};
-const sync={ahead:0,behind:1,dirty:false,last_commit:'abc12345 time title'};
-const summary={source:remoteSource,name:'omi',path:'/state/projects/omi',branch:'main',sync,plans:[plan],task_counts:counts,po_waiting_count:1};
+const summary={source:remoteSource,name:'omi',branch:'main',plans:[plan],task_counts:counts,po_waiting_count:1};
 const totals={runs:1,input:10,output:1234,cache:5000,review_rounds:0};
-const dashboard={...summary,kanban:{planned:[], 'in-progress':[detail],review:[],blocked:[],done:[]},po_waiting:[{id:'TASK-115',reason:'po_gate',text:'accept'}],activity:[{id:'TASK-115',text:'build done',time:'2026-10-30 14:52'}],decisions:['- 2026-10-30: Approved'],usage:{totals,models:{sonnet:totals}},sync:{ahead:0,behind:1,dirty:false,last_commit:'abc12345 time title'}};
+const dashboard={...summary,kanban:{planned:[], 'in-progress':[detail],review:[],blocked:[],done:[]},po_waiting:[{id:'TASK-115',reason:'po_gate',text:'accept'}],activity:[{id:'TASK-115',text:'build done',time:'2026-10-30 14:52'}],decisions:['- 2026-10-30: Approved'],usage:{totals,models:{sonnet:totals}}};
 const workflowDetail={...detail,current_step:'review',workflow_steps:['plan','design','build','review',{id:'accept',gate:'po'},'qa']};
 const crowded={...dashboard,kanban:{...dashboard.kanban,done:Array.from({length:4},(_,i)=>({...detail,id:`TASK-${110+i}`,frontmatter:{...frontmatter,status:'done'}}))}};
 """
@@ -188,12 +187,17 @@ const countdown=()=>elements.countdown.textContent;
   assert.equal(find(elements.view,'counts')[0].children.length,5);
   assert.equal(all(elements.view).find(n=>n.tagName==='progress').attrs.value,'4');
   assert(elements.view.textContent.includes('1 dự án'));
-  assert(!elements.view.textContent.includes(summary.path));
+  assert(!elements.view.textContent.includes('/state/projects/omi'));
   assert.equal(elements.source.textContent,'github.com/omi-teams/omi-state @ abc1234');
-  for(const text of [summary.branch,'✓ Sạch']) assert(elements.view.textContent.includes(text),text);
+  assert(!elements.view.textContent.includes('✓ Sạch'));
+  for(const repo of ['https:'+'//example.org/team/state','ssh:'+'//example.org/team/state.git','example.org:team/state.git']) {
+    invoke(`updated({repo:${JSON.stringify(repo)},sha:'def567890',stale:false})`);
+    assert.equal(elements.source.textContent,repo.replace(/^[a-z]+:\/\//i,'')+' @ def5678');
+  }
+  invoke(`updated(${JSON.stringify(remoteSource)})`);
   const unknown=invoke('home([{name:"unknown",plans:[],task_counts:{},po_waiting_count:0}])');
   assert(unknown[1].textContent.includes('Nhánh: Chưa rõ'));
-  assert(unknown[1].textContent.includes('Đồng bộ: Chưa rõ'));
+  assert(!unknown[1].textContent.includes('Đồng bộ'));
   assert.equal(intervalMs,1000);
   assert.equal(countdown(),'Làm mới sau 30 giây');
   const original=elements.view.children[0];
@@ -268,8 +272,9 @@ const countdown=()=>elements.countdown.textContent;
   assert(find(elements.view,'card')[0].textContent.includes(frontmatter.title));
   assert.equal(all(elements.view).filter(n=>n.tagName==='img'||n.tagName==='script').length,0);
   assert.equal(find(elements.view,'card')[0].attrs.href,'#/p/omi/t/TASK-115');
-  for(const text of ['Hoạt động','Quyết định','Sử dụng','Trước 0 · Sau 1','abc1234','1.234']) assert(elements.view.textContent.includes(text),text);
-  assert(!elements.view.textContent.includes(summary.path));
+  for(const text of ['Hoạt động','Quyết định','Sử dụng','abc1234','1.234']) assert(elements.view.textContent.includes(text),text);
+  assert(!elements.view.textContent.includes('/state/projects/omi'));
+  for(const text of ['✓ Sạch','Trước ','Sau ','Commit cuối']) assert(!elements.view.textContent.includes(text),text);
   assert.equal(find(elements.view,'usage-summary')[0].textContent,'1 lượt · 1.234 output');
   data=crowded;await invoke('route()');
   const more=find(elements.view,'more')[0];assert.equal(more.tagName,'details');

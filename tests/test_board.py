@@ -80,6 +80,8 @@ def test_views():
         assert view["usage"]["models"]["model-a"] == {"runs": 10, "input": 50, "output": 10, "cache": 15, "review_rounds": 5}
         assert view["source"]["stale"] is False and len(view["source"]["sha"]) == 40
         assert view["source"]["fetched_at"]
+        assert "sync" not in view
+        assert all("sync" not in p for p in data.projects()["projects"])
         assert data.projects()["projects"][0]["name"] == "sample"
         for response in (detail, view, data.projects()):
             assert str(home) not in json.dumps(response)
@@ -153,6 +155,30 @@ def test_shared_fetch():
                               ("ssh://git@github.com:2222/omi-teams/omi-state.git", "ssh://github.com:2222/omi-teams/omi-state.git"),
                               (str(home), ""), (r"C:\x\y", ""), ("C:/x/y", ""), ("file:///local/state", "")):
             assert source._repo(url) == expected
+
+
+def test_path_redaction() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        home = Path(directory) / "cache"
+        home.mkdir()
+        fixture(home)
+        remote(home)
+        # Different spelling without relying on symlink privileges.
+        spelled = home / ".." / "cache"
+        variants = {str(p).replace("\\", "/") for p in (spelled, spelled.resolve())}
+        variants |= {p.replace("/", "\\") for p in variants}
+        path = home / "projects/sample/.omi/tasks/TASK-002.md"
+        write(path, path.read_text(encoding="utf-8").replace("Ship it", " | ".join(sorted(variants))))
+        publish(home)
+        with patch("omi.board.source.state.state_home", return_value=spelled):
+            for response in (data.projects(), data.project("sample"), data.task("sample", "TASK-002")):
+                encoded = json.dumps(response, ensure_ascii=False)
+                for variant in variants:
+                    assert json.dumps(variant)[1:-1] not in encoded
+                if "projects" not in response:
+                    assert "[state]" in encoded
+            snap = source.snapshot()
+            assert snap.response({v: [v] for v in variants})["[state]"] == ["[state]"]
 
 
 def test_unavailable_snapshot():
@@ -254,12 +280,13 @@ def test_empty_and_layer():
         assert str(home) not in json.dumps(view)
     rule = (Path(__file__).parents[1] / ".omi/rules/omi-modules.md").read_text(encoding="utf-8")
     order = next(line for line in rule.splitlines() if "module layer order" in line)
-    assert order.index("app.cli") < order.index("board.data") < order.index("project.tasks") < order.index("state.resolve")
+    assert order.index("app.cli") < order.index("board.data") < order.index("board.source") < order.index("project.tasks") < order.index("state.resolve")
 
 
 def main():
     test_views()
     test_shared_fetch()
+    test_path_redaction()
     test_unavailable_snapshot()
     test_workflow_detail()
     test_path_refusal()

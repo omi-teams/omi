@@ -69,7 +69,7 @@ function home(items) {
       box("row small", [el("span", `${plan.id} ${plan.title || ""}`), el("span", `${plan.done}/${plan.total}`, {class: "muted"})]),
       progress(plan.done, plan.total)])) : [empty("Chưa có kế hoạch")]),
     box("counts", Object.keys(STATUS).map((s) => box("", [el("b", num(p.task_counts[s])), el("span", STATUS[s])]))),
-    box("chips", [branchChip(p.branch), syncChip(p.sync || {})]));
+    box("chips", [branchChip(p.branch)]));
     return card;
   });
   return [box("heading", [heading("Dự án"), el("span", `${num(items.length)} dự án · ${num(items.reduce((n, p) => n + p.po_waiting_count, 0))} việc chờ PO`, {class: "muted small"})]),
@@ -77,16 +77,6 @@ function home(items) {
 }
 function branchChip(branch) {
   return el("span", branch || "Nhánh: Chưa rõ", {class: "chip", title: "Nhánh kho trạng thái"});
-}
-function syncChip(s) {
-  return chip(s.dirty === false ? "✓ Sạch" : s.dirty === true ? "Có thay đổi chưa commit" : "Đồng bộ: Chưa rõ",
-    s.dirty === false ? "good" : "");
-}
-function syncView(s, branch) {
-  const known = (v) => v === null || v === undefined ? "—" : num(v);
-  return el("div", null, {class: "sync", "aria-label": "Đồng bộ git"}, [
-    branchChip(branch), chip(`Trước ${known(s.ahead)} · Sau ${known(s.behind)}`), syncChip(s),
-    chip(`Commit cuối ${s.last_commit ? s.last_commit.split(" ")[0].slice(0, 7) : "—"}`, "last-commit")]);
 }
 function dashboard(name, d) {
   const tasks = Object.values(d.kanban).flat();
@@ -129,7 +119,7 @@ function dashboard(name, d) {
   });
   const u = d.usage;
   return [box("heading", [box("stack", [heading(name),
-    el("span", "origin/main", {class: "muted small mono"})]), syncView(d.sync, d.branch)]),
+    el("span", "origin/main", {class: "muted small mono"})]), chip(d.source.sha.slice(0, 7), "mono")]),
     section(`Chờ PO (${num(d.po_waiting_count)})`, waiting.length ? waiting : [empty("Không có việc chờ PO.")], "Những việc cần anh/chị quyết", "po"),
     box("stats", stats.map(([n, label], i) => box("stat", [el("div", num(n), {class: "n"}, i === 3 ? [el("span", ` / ${num(Object.values(count).reduce((a, b) => a + b, 0))}`, {class: "denom"})] : []), el("div", label, {class: "l"})]))),
     section("Kế hoạch", [box("", d.plans.length ? d.plans.map(planRow) : [empty("Chưa có kế hoạch.")])], `${num(d.plans.length)} kế hoạch · ${num(d.plans.filter((p) => p.status === "active").length)} đang chạy`),
@@ -187,7 +177,7 @@ function taskPage(name, id, d) {
 }
 function updated(source) {
   err.replaceChildren();
-  document.getElementById("source").textContent = `github.com/omi-teams/omi-state @ ${source.sha.slice(0, 7)}`;
+  document.getElementById("source").textContent = `${source.repo.replace(/^[a-z]+:\/\//i, "")} @ ${source.sha.slice(0, 7)}`;
   if (source.stale) err.append(el("span", `Dữ liệu cũ - không kết nối được GitHub (lúc ${source.fetched_at ? new Date(source.fetched_at).toLocaleTimeString("vi-VN", {hour12: false}) : "chưa rõ"})`));
   status.replaceChildren(el("span", "Cập nhật lần cuối ", {class: "update-label"}),
     el("span", new Date().toLocaleTimeString("vi-VN", {hour12: false})));
