@@ -4,6 +4,7 @@ import contextlib
 import datetime
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -67,7 +68,7 @@ def egress(main, name, image, allow):
     """Internal docker network plus a CONNECT-only allowlist proxy (docker/proxy.py, no token, no worktree);
     yields (network, proxy host name on that network). What this run created is removed on exit; hosts the proxy refused are reported.
     A name already in use raises NameTaken and removes nothing, so another run's proxy or network is never touched."""
-    net, proxy, repo = f"omi-net-{name}", f"{name}-proxy", repo_label(main)
+    net, proxy, repo = f"omi-net-{name}", f"{name}-proxy", repo_key(main)
     labels = ["--label", "omi-worker=1", "--label", f"omi-repo={repo}"]
     script = core.TEMPLATE / "docker" / "proxy.py"
     docker = lambda *a: subprocess.run(["docker", *a], capture_output=True, encoding="utf-8", errors="replace")
@@ -132,6 +133,11 @@ def repo_label(main):
     return re.sub(r"[^a-zA-Z0-9_.-]", "-", main.name.lower())
 
 
+def repo_key(main):
+    """<repo_label>-<8 hex of the main checkout path>: the `omi-repo` label and session volume key, so two repos with the same folder name never meet."""
+    return f"{repo_label(main)}-{hashlib.sha256(os.path.normcase(str(Path(main).resolve())).encode('utf-8')).hexdigest()[:8]}"
+
+
 CACHE_ENV = ("XDG_CACHE_HOME=/cache", "GOCACHE=/cache/go-build", "GOMODCACHE=/work/.omi-cache/go-mod", "GOTMPDIR=/cache",
              "npm_config_cache=/work/.omi-cache/npm", "PIP_CACHE_DIR=/work/.omi-cache/pip", "GOFLAGS=-modcacherw")
 
@@ -176,7 +182,7 @@ def running_workers(main):
     """Rows (task, role, model, effort, started) of this repo's running worker containers; empty without docker."""
     fmt = "\t".join("{{.Label \"%s\"}}" % k for k in ("omi-task", "omi-role", "omi-model", "omi-effort", "omi-started"))
     try:
-        r = subprocess.run(["docker", "ps", "--filter", "label=omi-worker=1", "--filter", f"label=omi-repo={repo_label(main)}",
+        r = subprocess.run(["docker", "ps", "--filter", "label=omi-worker=1", "--filter", f"label=omi-repo={repo_key(main)}",
                             "--format", fmt], capture_output=True, encoding="utf-8", errors="replace")
     except OSError:
         return []
@@ -187,7 +193,7 @@ def full_volumes(main):
     """Lines for this repo's running containers whose /cache or /home/node is over 90% full; best effort, silent without docker."""
     out = []
     try:
-        r = subprocess.run(["docker", "ps", "--filter", "label=omi-worker=1", "--filter", f"label=omi-repo={repo_label(main)}",
+        r = subprocess.run(["docker", "ps", "--filter", "label=omi-worker=1", "--filter", f"label=omi-repo={repo_key(main)}",
                             "--format", "{{.Names}}"], capture_output=True, encoding="utf-8", errors="replace", timeout=10)
         for name in r.stdout.split() if r.returncode == 0 else []:
             d = subprocess.run(["docker", "exec", name, "df", "-P", "/cache", "/home/node"], capture_output=True, encoding="utf-8", errors="replace", timeout=10)
@@ -234,7 +240,7 @@ def image_tag(main):
 
 def old_images(main, keep):
     """Images of this repo's worker other than `keep`."""
-    r = subprocess.run(["docker", "images", "--filter", f"label=omi-repo={repo_label(main)}",
+    r = subprocess.run(["docker", "images", "--filter", f"label=omi-repo={repo_key(main)}",
                         "--format", "{{.Repository}}:{{.Tag}}"],
                        capture_output=True, encoding="utf-8", errors="replace")
     return [i for i in r.stdout.split() if i != keep and i.startswith(image_repo(main) + ":")]
@@ -242,9 +248,11 @@ def old_images(main, keep):
 
 def ensure_image(main):
     d, tag = image_tag(main)
-    if subprocess.run(["docker", "image", "inspect", tag], capture_output=True).returncode:
+    r = subprocess.run(["docker", "image", "inspect", "--format", '{{index .Config.Labels "omi-repo"}}', tag],
+                       capture_output=True, encoding="utf-8", errors="replace")
+    if r.returncode or r.stdout.strip() != repo_key(main):  # an image with the old (or another repo's) label is rebuilt once
         r = subprocess.run(["docker", "build", "-t", tag, "--label", "omi-worker=1",
-                            "--label", f"omi-repo={repo_label(main)}", str(d)],
+                            "--label", f"omi-repo={repo_key(main)}", str(d)],
                            capture_output=True, encoding="utf-8", errors="replace")
         if r.returncode:
             print(r.stdout, r.stderr, sep="\n", file=sys.stderr)
@@ -258,13 +266,13 @@ def clean(cwd=".", all_images=False):
     """Remove this repo's worker containers, engineer session volumes and every worker image except the current one (all_images: that too)."""
     main = state.resolve(core.main_checkout(cwd) or Path(cwd).resolve()).state
     r = subprocess.run(["docker", "ps", "-a", "-q", "--filter", "label=omi-worker=1",
-                        "--filter", f"label=omi-repo={repo_label(main)}"],
+                        "--filter", f"label=omi-repo={repo_key(main)}"],
                        capture_output=True, encoding="utf-8", errors="replace")
     ids = r.stdout.split()
     if ids:
         subprocess.run(["docker", "rm", "-f", *ids], capture_output=True)
-    vols = session.clear(repo_label(main))  # after the containers: a volume in use cannot go
-    r = subprocess.run(["docker", "network", "ls", "-q", "--filter", f"label=omi-repo={repo_label(main)}"],
+    vols = session.clear(repo_key(main))  # after the containers: a volume in use cannot go
+    r = subprocess.run(["docker", "network", "ls", "-q", "--filter", f"label=omi-repo={repo_key(main)}"],
                        capture_output=True, encoding="utf-8", errors="replace")
     nets = r.stdout.split()
     if nets:

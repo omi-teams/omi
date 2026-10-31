@@ -1,6 +1,8 @@
 """Fetch and read immutable origin/main snapshots without touching the checkout."""
 
+import os
 import re
+import subprocess
 import threading
 import time
 from datetime import datetime, timezone
@@ -12,6 +14,7 @@ from ..state import resolve as state
 
 _LOCK = threading.Lock()
 _CACHE = {}
+FETCH_TIMEOUT = 15  # seconds; the lock holds other board requests meanwhile
 
 
 def _repo(url: str) -> str:
@@ -76,6 +79,17 @@ class Snapshot:
         return clean({**value, "source": self.source})
 
 
+def _fetch(home: Path) -> bool:
+    """Fetch origin/main without ever prompting for credentials; False on failure or timeout."""
+    try:
+        return subprocess.run(["git", "-C", str(home), "fetch", "--no-write-fetch-head", "--no-tags", "origin",
+                               "+refs/heads/main:refs/remotes/origin/main"],
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,  # no pipes: a surviving git-remote-* child would hold them open past the timeout
+                              env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}, timeout=FETCH_TIMEOUT).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def snapshot() -> Snapshot:
     """Share one fetch attempt per ten seconds, including concurrent requests."""
     home = state.state_home()
@@ -84,8 +98,7 @@ def snapshot() -> Snapshot:
         cached = _CACHE.get(home)
         if cached is None or now - cached[0] >= 10:
             previous = cached[1] if cached else {}
-            fetched = core.git(home, "fetch", "--no-write-fetch-head", "--no-tags", "origin",
-                               "+refs/heads/main:refs/remotes/origin/main") is not None
+            fetched = _fetch(home)
             sha = core.git(home, "rev-parse", "--verify", "refs/remotes/origin/main^{commit}") if fetched or not previous else previous["sha"]
             source = {"repo": _repo(core.git(home, "remote", "get-url", "origin") or ""), "sha": sha,
                       "fetched_at": datetime.now(timezone.utc).isoformat() if fetched else previous.get("fetched_at"),

@@ -112,7 +112,8 @@ def test_detached_project_commands():
         with patch.object(subprocess, "run", side_effect=execute):
             detached_cli(wt, "clean")
             detached_cli(wt, "status")
-        assert any("label=omi-repo=sample" in argv for argv in calls if argv[:2] == ["docker", "ps"])
+        assert any(f"label=omi-repo={omi.worker.docker.repo_key(project)}" in argv for argv in calls if argv[:2] == ["docker", "ps"])
+        assert omi.worker.docker.repo_label(project) == "sample"
         assert not any("label=omi-repo=state" in argv for argv in calls)
         task2 = task.with_name("TASK-098.md")
         task2.write_text("---\nid: TASK-098\nstatus: planned\nscope: other.py\n---\n", encoding="utf-8")
@@ -201,6 +202,8 @@ def test_detached_run_and_hooks():
             argv, kwargs = next((a, k) for a, k in reversed(calls) if a[:2] == ["docker", "run"])
             assert f"{project}:/state:ro" in argv and f"{wt}:/work:ro" in argv
             assert "OMI_PROJECT_STATE=/state" in argv
+            key = omi.worker.docker.repo_key(project)  # hook containers carry the hashed key; the name keeps the plain label
+            assert argv[argv.index(f"omi-repo={key}") - 1] == "--label" and argv[argv.index("--name") + 1].startswith("sample-")
             assert kwargs["input"] == (project / ".omi" / "hooks" / "post-run.sh").read_bytes().replace(b"\r\n", b"\n")
             report = task.read_text(encoding="utf-8")
             assert "DONE detached" in report and "hook post-run passed" in report and "## Usage" in report

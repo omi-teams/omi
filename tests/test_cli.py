@@ -239,7 +239,10 @@ def test_cli_characterization():
             (["next"], 0, "TASK-001: step review (omi-agent-reviewer, gate review): input task file, diff; output VERDICT PASS or FAIL; "
                           "stop when VERDICT PASS\n"),
             (["bogus"], 1, "usage: omi step <TASK-ID> next|done|back|skip|approve|reopen --why <reason>\n"),
-            (["back"], 0, "TASK-001: step review failed; back to build (omi-agent-engineer), then `omi step TASK-001 done` and `next`\n"))
+            (["back"], 0, "TASK-001: step review failed; back to build (omi-agent-engineer), then `omi step TASK-001 done` and `next`\n"),
+            (["back", "--to", "plan", "--why", "x"], 1, "TASK-001: `plan` is not an agent step before build in workflow omi-flow-feature. Nothing changed.\n"),
+            (["back", "--to"], 1, "usage: omi step TASK-001 back --to <step> --why <reason>. Nothing changed.\n"),
+            (["next", "--to", "plan"], 1, "usage: omi step TASK-001 back --to <step> --why <reason>. Nothing changed.\n"))
         for args, code, msg in steps:
             rc, out, err = cli(root, "step", "TASK-001", *args)
             assert (rc, out if code == 0 else err) == (code, msg) and not (err if code == 0 else out), (args, rc, out, err)
@@ -247,6 +250,16 @@ def test_cli_characterization():
         assert "\nstep: build\n" in text and re.search(r"\n## Steps\n- plan started [\d-]+ [\d:]+\n- plan done ", text), text
         rc, out, _ = cli(root, "status")
         assert rc == 0 and "[Chưa bắt đầu] TASK-001 T1\n" in out
+        assert cli(root, "step", "TASK-001", "done")[0] == 0 and cli(root, "step", "TASK-001", "next")[0] == 0
+        assert cli(root, "step", "TASK-001", "back", "--to", "build", "--why", "re-plan", "the API") == (
+            0, "TASK-001: step review failed; back to build (omi-agent-engineer), then `omi step TASK-001 done` and `next`\n", "")
+        assert cli(root, "step", "TASK-001", "done")[0] == 0 and cli(root, "step", "TASK-001", "next")[0] == 0 and cli(root, "step", "TASK-001", "done")[0] == 0
+        assert cli(root, "step", "TASK-001", "next")[0] == 0
+        assert cli(root, "step", "TASK-001", "back", "--why", "late", "reason", "--to", "build")[0] == 0
+        text = (root / ".omi" / "tasks" / "TASK-001.md").read_text(encoding="utf-8")
+        assert "workflow back to build" in text and ": late reason\n" in text and "--to" not in text.split("## Steps")[1]
+        text = (root / ".omi" / "tasks" / "TASK-001.md").read_text(encoding="utf-8")
+        assert "\nstep: build\n" in text and re.search(r"^- workflow back to build [\d-]+ [\d:]+: re-plan the API\n- review failed ", text, re.M), text
         assert cli(root, "attach") == (1, "", f"OMI: {root.as_posix()} has no origin remote\n")
         rc, out, err = cli(root, "attach", "--state")
         assert (rc, out, err) == (1, "", "OMI: usage: omi attach [<repo path>] [--state <git url>]\n")

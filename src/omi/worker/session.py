@@ -1,5 +1,6 @@
 """Engineer session resume: the per-task transcript volume (a Docker named volume, never on the host filesystem) and the task's `Session:` line."""
 
+import contextlib
 import json
 import re
 import subprocess
@@ -19,7 +20,7 @@ def _docker(*a, **kw):
 
 
 def volume(repo, tid, tool):
-    """omi-sess-<repo>-<task>-<tool>, limited to Docker's [a-zA-Z0-9_.-]."""
+    """omi-sess-<repo key>-<task>-<tool> (repo: docker.repo_key), limited to Docker's [a-zA-Z0-9_.-]."""
     return re.sub(r"[^a-zA-Z0-9_.-]", "-", f"omi-sess-{repo}-{tid}-{tool}")
 
 
@@ -44,8 +45,8 @@ def mount_args(repo, tid, tool, image, fresh):
     """`docker run` args mounting this task's transcript volume at /sessions; fresh: a new, empty volume.
     A new volume is root-owned 0755, so a one-shot root helper (no caps, no network, ro rootfs) opens it to the container user."""
     vol = volume(repo, tid, tool)
-    if fresh and exists(vol):
-        drop(vol)
+    if fresh and exists(vol) and not drop(vol):  # never reuse an old session as a fresh one
+        raise SystemExit(f"cannot remove the old session volume {vol}; remove it (omi clean) and retry. Nothing changed.")
     if fresh or not exists(vol):
         labels = [x for kv in ("omi-worker=1", f"omi-repo={repo}", f"omi-task={tid}", "omi-session=1") for x in ("--label", kv)]
         for cmd in (["volume", "create", *labels, vol],
@@ -115,15 +116,20 @@ def scrub(repo, tid, tool, image, secret_value):
     if not needles:
         return False
     vol = volume(repo, tid, tool)
+    name, rc = f"{vol}-scan", None
     try:  # the token goes in on stdin, never in argv
-        rc = _docker("run", "-i", *HELPER, "--user", "node", "--mount", f"type=volume,src={vol},dst=/s,readonly", image,
+        rc = _docker("run", "-i", "--name", name, "--label", f"omi-repo={repo}", *HELPER,  # no omi-worker=1: not a worker row in status
+                     "--user", "node", "--mount", f"type=volume,src={vol},dst=/s,readonly", image,
                      "grep", "-rqF", "-f", "-", "/s", input="\n".join(needles) + "\n", timeout=SCAN_TIMEOUT).returncode
     except (OSError, subprocess.SubprocessError):
-        rc = None
-    if rc == 1:
-        return False
-    drop(vol, "token found in transcript" if rc == 0 else "cannot scan the session volume")
-    return True
+        pass
+    finally:  # Ctrl-C included
+        if rc is None:  # timeout or Ctrl-C kill only the docker client; the container would keep the volume in use
+            with contextlib.suppress(OSError):
+                _docker("rm", "-f", name)
+        if rc != 1:
+            drop(vol, "token found in transcript" if rc == 0 else "cannot scan the session volume")
+    return rc != 1
 
 
 def clear(repo):
