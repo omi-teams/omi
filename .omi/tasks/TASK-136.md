@@ -1,16 +1,16 @@
 ---
 id: TASK-136
 title: Plans whose tasks are all done show as done
-status: planned
+status: in-progress
 depends:
 plan: PLAN-007
 scope: src/omi/board/**, src/omi/project/tasks.py, tests/test_board.py, tests/test_tasks.py, .omi/tasks/TASK-136.md
 role: omi-agent-engineer
 skills: []
 refs: []
-tool:
-model:
-effort:
+tool: claude
+model: sonnet
+effort: medium
 step_settings:
 workflow: omi-flow-feature
 step:
