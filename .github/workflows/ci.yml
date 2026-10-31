@@ -14,7 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       OMI_BROWSER_REQUIRED: "1"
-      OMI_BOARD_SCREENS: ${{ runner.temp }}/board-screens
     steps:
       - uses: actions/checkout@v6
 
@@ -35,6 +34,8 @@ jobs:
         run: pip install .
 
       - name: Run tests
+        env:
+          OMI_BOARD_SCREENS: ${{ runner.temp }}/board-screens
         run: python tests/test_omi.py
 
       - name: Upload board screenshots

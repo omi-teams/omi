@@ -34,7 +34,13 @@ def test_browser_qa_config() -> None:
         assert docker.index(line) < docker.index("USER node")
     assert 'OMI_BROWSER_REQUIRED: "1"' in ci
     assert 'node-version: "24.11.0"' in ci
-    assert "OMI_BOARD_SCREENS: ${{ runner.temp }}/board-screens" in ci
+    # This workflow uses two-space indentation: job env is at four spaces,
+    # whereas step env is deeper. The runner context is unavailable in job env.
+    job_envs = re.findall(r"(?m)^    env:[^\n]*(?:\n(?: {6}[^\n]*|[ \t]*$))*", ci)
+    for env in job_envs:
+        assert not re.search(r"\$\{\{[^}]*\brunner\s*\.", env), env
+    test_step = ci.split("      - name: Run tests\n", 1)[1].split("\n      - ", 1)[0]
+    assert "        env:\n          OMI_BOARD_SCREENS: ${{ runner.temp }}/board-screens" in test_step
     assert "if: always()" in ci and "uses: actions/upload-artifact@" in ci
     assert "path: ${{ runner.temp }}/board-screens" in ci
     assert "if-no-files-found: error" in ci
