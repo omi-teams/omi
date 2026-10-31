@@ -4,7 +4,7 @@ title: Resume the engineer session on fix rounds
 status: in-progress
 depends:
 plan:
-scope: src/omi/worker/**, src/omi/app/cli.py, .omi/rules/omi-modules.md, src/omi/template/**, src/omi/template_shas.json, .claude/skills/omi-task/SKILL.md, tests/test_worker.py, .omi/tasks/TASK-120.md
+scope: src/omi/worker/**, src/omi/app/cli.py, .omi/rules/omi-modules.md, src/omi/template/**, src/omi/template_shas.json, .claude/skills/omi-task/SKILL.md, tests/test_worker.py, tests/test_creds.py, tests/test_tools.py, tests/test_hooks.py, tests/test_content.py, .omi/tasks/TASK-120.md
 role: omi-agent-engineer
 skills: []
 refs: []
