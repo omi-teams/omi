@@ -2,9 +2,9 @@
 id: TASK-135
 title: Move the omi repo to detached mode on omi-state
 status: in-progress
-depends: TASK-137
+depends: TASK-137, TASK-143
 plan: PLAN-007
-scope: .omi/tasks/TASK-135.md, docs/**
+scope: .omi/**, AGENTS.md, .claude/**, docker/**, tests/test_cli.py, tests/test_content.py, tests/test_board.py, docs/**, README.md
 role: omi-agent-engineer
 skills: []
 refs: []
