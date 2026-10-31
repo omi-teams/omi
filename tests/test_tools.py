@@ -469,24 +469,26 @@ def task_start_sections() -> list[str]:
 
 def test_task_start_proposal():
     for text in task_start_sections():
-        for phrase in ("every task-start pick-list", "the Coordinator decides the tool, concrete model and effort",
-                       "quota rules", "## Models", "`models` and `codex_models`",
-                       "one proposal first", "other tool as the alternative",
-                       "Approve: <tool> (<model>/<effort>) — <task-specific reason>",
-                       "Alternative: <other tool> (<model>/<effort>) — <task-specific reason>",
-                       "The PO approves", "record the approved choice as `tool`, model alias and explicit `effort`",
-                       "in the task before starting"):
+        for phrase in ("picks tool, concrete model and effort itself", "quota rules", "## Models",
+                       "`models` and `codex_models`", "Spread tasks evenly across Claude Code and Codex",
+                       "Record `tool`, model alias and explicit `effort`", "state them in the report",
+                       "no PO question", "Never use `codex-default` or an omitted effort"):
             assert phrase in text, phrase
-        assert text.index("- Approve:") < text.index("- Alternative:")
-        for old in ("offer both tools and wait for the PO to choose", "PO chooses", "option Recommended"):
+        for old in ("Approve:", "Alternative:", "The PO approves", "pick-list"):
             assert old not in text, old
 
 
-def test_task_start_tool_only():
-    for text in task_start_sections():
-        for phrase in ("When the PO names only a tool", "Coordinator chooses model and effort itself",
-                       "states both, without another question", "Never use `codex-default` or an omitted effort"):
-            assert phrase in text, phrase
+def test_po_decides_short_list():
+    text = (omi.common.core.TEMPLATE / "AGENTS.md").read_text(encoding="utf-8")
+    po = text.split("## The PO decides\n", 1)[1].split("\n## ", 1)[0]
+    for phrase in ("extra money", "high security risk", "product scope changes", "UAT", "`staging`/`main`",
+                   "fix-round limit", "tool/model/effort", "the next task", "small review nits",
+                   "`omi-agent-architect`", "only for the PO decisions above"):
+        assert phrase in po, phrase
+    skill = (omi.common.core.TEMPLATE / "dot-claude/skills/omi-task/SKILL.md").read_text(encoding="utf-8")
+    step8 = skill.split("\n8. ", 1)[1].split("\n## ", 1)[0]
+    assert "continue with the next planned task" in step8 and "`QUOTA:`" in step8 and "no planned task" in step8
+    assert "propose the `next` task" not in skill
 
 
 def test_task_start_copies_match():
@@ -495,13 +497,13 @@ def test_task_start_copies_match():
     for path in (omi.common.core.TEMPLATE / "AGENTS.md",
                  omi.common.core.TEMPLATE / "dot-claude/skills/omi-idea/SKILL.md"):
         text = path.read_text(encoding="utf-8")
-        assert "only at task start from the approved proposal or alternative" in text
+        assert "approved proposal or alternative" not in text
         assert "from the PO's pick" not in text
 
 
 def main():
     test_task_start_proposal()
-    test_task_start_tool_only()
+    test_po_decides_short_list()
     test_task_start_copies_match()
     test_model_catalog_and_task_start()
     test_tool_choice_and_quota_switch()
