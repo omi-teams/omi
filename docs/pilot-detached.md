@@ -226,11 +226,18 @@ $
 
 ### Sau khi merge
 
+PR [#132](https://github.com/omi-teams/omi/pull/132), CI pass, squash-merge vào `development`:
+
 ```
 $ git log --oneline -1
-(Coordinator điền sau khi merge)
-$ python -m omi status
-(Coordinator điền sau khi merge)
+fe87a99 [TASK-135] Move the omi repo to detached mode on omi-state
+$ python -m omi status        (6 dòng đầu, không còn dòng WARN)
+branch: development
+omi 0.5.0 (project 0.5.0)
+no `test` command in .omi/config.json; set one, e.g. "test": "python3 -m pytest -q"
+PLAN-007 omi 0.6.0 - professional omi board: done 4/16
+done plans: PLAN-002, PLAN-003, PLAN-004, PLAN-005, PLAN-006
+done: 125/142
 ```
 
 ### Rollback
