@@ -75,11 +75,17 @@ def status(cwd="."):
     if missing_test:
         print('no `test` command in .omi/config.json; set one, e.g. "test": "python3 -m pytest -q"')
     ts = tasks.tasks(project)
+    finished = []
     for pid, m in catalogs.load_plans(root, strict=False).items():
-        if m["status"] == "active":
-            members = [t for t in ts.values() if t.get("plan") == pid]
-            done_count = sum(t.get("status") == "done" for t in members)
+        members = [t for t in ts.values() if t.get("plan") == pid]
+        done_count = sum(t.get("status") == "done" for t in members)
+        if tasks.plan_status(m["status"], [t.get("status") for t in members]) == "done":
+            if m["status"] != "done":  # stored-done plans stay hidden, as before
+                finished.append(pid)
+        else:
             print(f"{pid} {m['title']}: done {done_count}/{len(members)}")
+    if finished:
+        print(f"done plans: {', '.join(finished)}")
     if not ts:
         print("no tasks yet - run omi-idea")
         docker.print_workers(project)

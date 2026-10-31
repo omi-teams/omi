@@ -73,7 +73,7 @@ def _plans(snap: source.Snapshot, root: Path, details: list[dict]) -> list[dict]
             continue
         members = [t for t in details if t["frontmatter"].get("plan") == path.stem]
         result.append({k: v for k, v in meta.items() if k != "_text"} |
-                      {"id": path.stem, "done": sum(t["frontmatter"].get("status") == "done" for t in members), "total": len(members)})
+                      {"id": path.stem, "status": tasks.plan_status(meta["status"], [t["frontmatter"].get("status") for t in members]), "done": sum(t["frontmatter"].get("status") == "done" for t in members), "total": len(members)})
     return result
 
 
@@ -144,7 +144,7 @@ def projects() -> dict:
     names = sorted({p.parts[1] for p in snap.paths if len(p.parts) > 2 and p.parts[0] == "projects"})
     for name in names:
         view = _project(snap, name)
-        result.append({"name": name, "plans": [p for p in view["plans"] if p["status"] == "active"],
+        result.append({"name": name, "plans": [p for p in view["plans"] if p["status"] != "done"],
                        "branch": view["branch"],
                        "task_counts": view["task_counts"], "po_waiting_count": view["po_waiting_count"]})
     return snap.response({"projects": result})
