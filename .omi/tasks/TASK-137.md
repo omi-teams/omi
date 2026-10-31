@@ -1,7 +1,7 @@
 ---
 id: TASK-137
 title: omi board reads GitHub omi-state as its only source
-status: in-progress
+status: done
 depends: TASK-115
 plan: PLAN-007
 scope: src/omi/board/**, src/omi/app/cli.py, .omi/rules/omi-modules.md, tests/test_board.py, tests/test_board_server.py, tests/test_board_web.py, tests/test_cli.py, .omi/tasks/TASK-137.md
@@ -13,7 +13,7 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature
-step: build
+step: accept
 ---
 ## Goal
 Every board refresh shows exactly what is on `origin/main` of the GitHub omi-state repo; the local clone is only a read-only cache and its path is never shown.
@@ -25,6 +25,9 @@ Every board refresh shows exactly what is on `origin/main` of the GitHub omi-sta
 - [x] Tests with a local bare repo as origin cover: a pushed change appears, a local unpushed change does not, fetch failure gives `stale: true`, and no response contains the state dir path; all tests pass.
 
 ## Checkpoint
+Host: `python tests/test_omi.py` on Windows -> ok (playwright skipped): pass
+Host: board from this branch on the real ~/.omi/state, `curl /api/projects` -> source github.com/omi-teams/omi-state sha d1d5032 = `git ls-remote origin main`, stale false, no local path in the response, local clone unchanged (`git status` empty): pass
+Known issues (follow-up): `git fetch` has no timeout and no GIT_TERMINAL_PROMPT=0, so a hung network blocks requests instead of serving stale data.
 Done: Fixed all five round-3 findings within the expanded scope. Board startup no longer resolves a project or pulls state; both dispatch and the main CLI entry point have regression coverage for no sync calls. The header uses source.repo with its scheme stripped and sha7. Removed fabricated sync metadata and the clean/ahead/behind UI, retaining the origin/main SHA. Snapshot responses redact literal and resolved cache paths in slash/backslash forms, including nested keys and values. Added board/source.py and its layer to omi-modules.md.
 Done: Acceptance criteria remain covered by local bare-origin tests for pushed changes, ignored dirty/unpushed files, unchanged checkout, shared ten-second fetch throttling, stale fallback/recovery, metadata and path-free responses; JavaScript runtime checks cover the dynamic repository header and stale warning. New regressions cover alternate path spellings and absent sync fields/UI.
 Not done: No implementation work remains. Optional wheel packaging and real-browser layout/keyboard checks remain unverified because their tools are unavailable.
@@ -44,6 +47,12 @@ Session: codex 01a18f84-e0b8-77b2-b9d6-568a0ac29aab
 - review started 2026-10-30 23:27
 - review failed 2026-10-30 23:36
 - build started 2026-10-30 23:36
+- build done 2026-10-31 08:25
+- review started 2026-10-31 08:25
+- review done 2026-10-31 08:31
+- accept started 2026-10-31 08:31
+PO approval accept: PO: nếu có question nào cần tôi chọn hãy tự chọn option được đề xuất mà không cần PO gate, 137 done thì dừng phiên
+- accept done 2026-10-31 08:31
 
 ## Reports
 2026-10-30 22:53 omi-agent-engineer (codex):
@@ -278,6 +287,16 @@ Session: codex 01a18f84-e0b8-77b2-b9d6-568a0ac29aab
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-31 08:31 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/board/source.py:601 `git fetch` runs under `_LOCK` with no timeout, and nothing sets `GIT_TERMINAL_PROMPT=0`. A hung network or an HTTPS credential prompt would block every board request, so the `stale: true` fallback would never be reached. This is not an acceptance-criteria failure, and `core.git` has no timeout parameter. -> Run the fetch with `GIT_TERMINAL_PROMPT=0` and a timeout, treating a timeout as a failed fetch.
+> 
+> AC: Fetch before each API read (at most once per 10 s, shared), read from origin/main, never pull/commit/push/touch the working tree ✓ `source.snapshot()` fetches under a lock with a 10 s throttle and reads through `ls-tree` and `show` on the sha. `test_shared_fetch` shows 1 fetch for 12 concurrent calls, then 1 more at +10 s, and only fetch/rev-parse/remote/ls-tree/show calls are made. `test_views` checks that HEAD, status and a dirty file are unchanged after a fetch. The startup pull is removed from `cli.py`, with tests that no sync calls are made. `python3 tests/test_omi.py` exited 0 with final "ok".
+> 
+> AC: Response carries `source {repo, sha, fetched_at, stale}`; on fetch failure serve the last origin/main with `stale: true`; page shows "Dữ liệu cũ - không kết nối được GitHub (lúc <giờ>)" ✓ `test_views` covers the metadata, an unreachable origin giving `stale: true` with the same sha and fetched_at, and recovery. `_repo` is tested with `https://user:token@…?token=secret` input, which comes out without credentials or query. The JS runtime test checks that the stale warning shows, persists on a repeat route call with unchanged data, and clears on recovery.
+> 
+> [... truncated ...]
+> All changed files are within the task `scope`.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -287,3 +306,4 @@ Session: codex 01a18f84-e0b8-77b2-b9d6-568a0ac29aab
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1245068 | 4678 | 1167232 | 336s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 3021 | 220503 | 366s | - | FAIL 6404eaa |
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1744907 | 7412 | 1685632 | 316s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 2573 | 189189 | 248s | - | PASS 10b80b5 |
