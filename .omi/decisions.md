@@ -116,3 +116,4 @@
 - 2026-10-30 | Release 0.5.0 with board v1 now; TASK-123/124/125 move to PLAN-007 (0.6.0) | PO: ship v1 first, PLAN-006 done criteria are TASK-112..117 | TASK-117
 - 2026-10-30 | GitHub omi-teams/omi-state is the board's only source: each refresh fetches and reads origin/main, the local clone is a cache and its path is never shown (TASK-137); TASK-135 changes from "board reads in-repo projects" to "move the omi repo to omi-state"; TASK-123 version = origin/main sha | PO: data must come from GitHub, not local | TASK-135, TASK-137
 - 2026-10-31 | TASK-120 stops patching the host session cache after 7 rounds; architect redesigns it as a per-task Docker named volume | a host dir written by the untrusted container needs endless host-side hardening; PO chose re-plan | TASK-120
+- 2026-10-31 | Remove the board's 30 s auto-refresh (countdown, toggle, timer) once the version-endpoint refresh lands | PO: khi nào xong cơ chế server tự làm mới thì bỏ luôn | TASK-123
