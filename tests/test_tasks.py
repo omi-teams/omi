@@ -170,7 +170,10 @@ def test_step_approve_reopen():
             project = omi.state.resolve.Project(root, code, detached)
             task = root / ".omi" / "tasks" / "TASK-109.md"
             commits = []
-            with patch("omi.project.tasks.commit_task_file", side_effect=lambda *args: commits.append(args)), \
+            real = omi.project.workflows.get_workflow  # accept is an auto gate in omi-flow-feature; this test needs a po gate
+            po_gate = lambda r, w: [dict(st, gate="po") if st["id"] == "accept" else st for st in real(r, w)]  # noqa: E731
+            with patch("omi.project.workflows.get_workflow", side_effect=po_gate), \
+                    patch("omi.project.tasks.commit_task_file", side_effect=lambda *args: commits.append(args)), \
                     patch("omi.common.core.task_worktrees", return_value={}), patch("sys.stdout", io.StringIO()):
                 def go(action, why=None):
                     return omi.project.tasks.step(project, "TASK-109", action, why=why)
@@ -278,7 +281,7 @@ def test_task_skill_step_commands():
     assert "[RELEASE vX.Y.Z] development -> staging" in release and "-> main" in release
     assert "--fill" not in text.replace("never `--fill`", "") and "--fill" not in release.replace("never `--fill`", "")
     assert 'step <ID> reopen --why "<CI failure reason>"' in text
-    assert "fresh PO approval" in text
+    assert "review and accept again" in text
 
 
 def test_workflows():
@@ -520,9 +523,39 @@ def test_parallel():
         assert "| r | m |" in a.read_text() and b.read_text() == "# t\n"
 
 
+def test_auto_accept():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        with patch("sys.stdout", io.StringIO()):
+            omi.setup.upgrade.init(root)
+        task = root / ".omi" / "tasks" / "TASK-110.md"
+        with patch("omi.project.tasks.commit_task_file"), patch("omi.common.core.task_worktrees", return_value={}), \
+                patch("sys.stdout", io.StringIO()):
+            def run(wid, verdict):
+                usage = f"\n## Usage\n| role | model | tokens | verdict |\n|---|---|---|---|\n| omi-agent-reviewer | m | 1 | {verdict} |\n" if verdict else ""
+                task.write_text(f"---\nid: TASK-110\nworkflow: {wid}\nstatus: in-progress\nstep: accept\n---\n"
+                                "## Acceptance criteria\n- [x] ok\n\n## Steps\n- plan done 2026-10-31 10:00\n- build done 2026-10-31 10:01\n"
+                                f"- review done 2026-10-31 10:02\n- accept started 2026-10-31 10:03\n{usage}", encoding="utf-8")
+                return omi.project.tasks.step(root, "TASK-110", "done")
+
+            for verdict in ("", "FAIL"):
+                try:
+                    run("omi-flow-feature", verdict)
+                except SystemExit as exc:
+                    assert "auto gate" in str(exc), str(exc)
+                else:
+                    raise AssertionError("auto accept without PASS")
+            assert run("omi-flow-feature", "PASS") == 0
+            assert "Auto accept: review PASS\n- accept done" in task.read_text(encoding="utf-8")
+        for wid in ("omi-flow-feature", "omi-flow-feature-ui", "omi-flow-bugfix", "omi-flow-refactor"):
+            assert omi.project.workflows.get_workflow(root, wid)[-1]["gate"] == "auto", wid
+        assert omi.project.workflows.get_workflow(root, "omi-flow-feature-sensitive")[-1]["gate"] == "po"
+
+
 def main():
     test_plan_status()
     test_step_approve_reopen()
+    test_auto_accept()
     test_reopen_last_write_step()
     test_task_skill_step_commands()
     test_parallel()
