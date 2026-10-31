@@ -13,7 +13,7 @@ model: opus
 effort: high
 step_settings:
 workflow: omi-flow-feature-sensitive
-step: build
+step: review
 ---
 ## Goal
 A detached repo keeps the Coordinator's edit guard: `omi install-user` adds the `PreToolUse` hook `python -m omi guard` (matcher `Edit|Write|MultiEdit|NotebookEdit`) to the user's Claude Code settings next to the SessionStart hook, so removing `.claude/settings.json` from a code repo (TASK-135) does not drop the guard.
@@ -25,6 +25,10 @@ A detached repo keeps the Coordinator's edit guard: `omi install-user` adds the 
 - [x] Tests cover fresh install, rerun, existing user PreToolUse hooks kept, remove, and a malformed PreToolUse; all tests pass.
 
 ## Checkpoint
+Review round 1 FAIL (reviewer PASS on the criteria, Coordinator blocks: the user-wide guard breaks non-omi repos; reproduced exit 2):
+- src/omi/project/scope.py guard: return 0 first when the edited path's repo is not an omi project (no in-repo `.omi/` and no detached registration found by `state.resolve`), before the `.claude/settings*.json` block. Covers: ~/.claude/settings.json and any non-omi repo's settings, a non-omi repo on a `task/*` branch, a non-omi repo while omi task worktrees exist elsewhere.
+- Omi projects (in-repo and detached) keep today's behaviour exactly.
+- Tests: non-omi repo on `task/TASK-1` edit allowed; ~/.claude/settings.json (outside any repo) allowed; non-omi repo `.claude/settings.json` allowed; omi project cases unchanged.
 Coordinator note for review/security: the guard is now user-wide, so `omi guard` runs in every repo on the machine. Check scope.py:27-80 for non-omi repos: blocks any `.claude/settings*.json` edit outside a task branch (also ~/.claude/settings.json?), and a non-omi repo on a `task/*` branch reaches `state.resolve`. Say whether that is acceptable or must be limited to omi projects.
 Done: Added tracked, idempotent PreToolUse guard installation/removal, validation, legacy manifest support, and acceptance tests.
 Not done: No implementation work remains. Wheel packaging and browser layout/keyboard checks were skipped because pip and Playwright are unavailable.
@@ -38,6 +42,8 @@ Session: codex 01a190a2-9685-7231-bbfd-99ed4f30a80e
 - architect started 2026-10-31 13:25
 - architect skipped 2026-10-31 13:25: design given by the TASK-135 architect (T4): mirror the SessionStart hook handling
 - build started 2026-10-31 13:25
+- build done 2026-10-31 13:48
+- review started 2026-10-31 13:48
 
 ## Reports
 2026-10-31 13:43 omi-agent-engineer (codex):
@@ -94,8 +100,19 @@ Session: codex 01a190a2-9685-7231-bbfd-99ed4f30a80e
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-31 13:56 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/project/scope.py:47-50 The guard now runs in every repo on the machine, and this scope is not acceptable as is. Any edit to `.claude/settings*.json` (including `~/.claude/settings.json`) is blocked with exit 2 unless the repo is on a `task/*` branch, in any repo, omi or not. The fix is outside TASK-143's scope, so it needs a follow-up task before or with TASK-135 → make `guard` return 0 when the repo is not an omi project, meaning `state.resolve` finds no omi state. Put that check first, before the settings.json block.
+> - src/omi/project/scope.py:55-62 A non-omi repo on a `task/*` branch has every edit blocked. I reproduced it in a scratch git repo on `task/TASK-1`: `omi guard` printed "TASK-1 is not on development yet. Stop and report to the Coordinator." and exited 2. That breaks the user's own repos after `install-user`. Same fix as above.
+> - src/omi/project/scope.py:71-78 A non-omi repo with a `task/*` worktree elsewhere gets "product code; … is running" blocks. This follows from the same missing "is this an omi project" check → same fix.
+> - src/omi/setup/install.py:165 The guard command is recorded with `sys.executable` at install time, the same as the SessionStart hook. Nothing new here, no action needed.
+> 
+> AC: `install-user` adds the guard once, idempotent, keeps the user's other hooks, and records it in the manifest ✓ `test_install_user_guard_fresh` and `test_install_user_guard_existing_hooks` pass. They cover a rerun with an unchanged snapshot, an existing identical guard entry, and a user hook kept.
+> [... truncated ...]
+> Changes stay within the declared scope: `install.py`, `test_install.py` and the task file.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | gpt-6-astra (codex) | high | 2749300 | 13822 | 2703872 | 1102s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 3527 | 187985 | 350s | - | PASS 0138652 |
