@@ -13,7 +13,7 @@ model: opus
 effort: high
 step_settings:
 workflow: omi-flow-feature-sensitive
-step: build
+step: security
 ---
 ## Goal
 A detached repo keeps the Coordinator's edit guard: `omi install-user` adds the `PreToolUse` hook `python -m omi guard` (matcher `Edit|Write|MultiEdit|NotebookEdit`) to the user's Claude Code settings next to the SessionStart hook, so removing `.claude/settings.json` from a code repo (TASK-135) does not drop the guard.
@@ -25,6 +25,11 @@ A detached repo keeps the Coordinator's edit guard: `omi install-user` adds the 
 - [x] Tests cover fresh install, rerun, existing user PreToolUse hooks kept, remove, and a malformed PreToolUse; all tests pass.
 
 ## Checkpoint
+Review round 3 FAIL (security): a non-omi repo with a bad `origin` URL is blocked with a misleading registry message. PO round override 3: "Thêm 1 vòng, quy tắc gọn". Last round; the rule replaces the round-2 StateError rule:
+- For each repo considered (edited path's repo, session cwd's repo): in-repo `.omi/` present -> omi. Otherwise call `state.resolve`; on success use `.detached`; on any StateError -> not omi, and print one stderr warning `OMI: warning: cannot read omi state for <repo> (<error>); guard skipped.` (exit code unaffected).
+- A StateError only blocks (exit 2, existing message) when the repo has an in-repo `.omi/`, or when the agent is `omi-agent-engineer`.
+- Everything else from round 2 stays: early return 0 only for non-engineer with no omi repo involved; `.claude/settings*.json` blocked from omi sessions; engineers never take the early return.
+- Tests: bad origin in a non-omi repo -> 0 with the warning; corrupt manifest + non-omi repo -> 0 with the warning; corrupt manifest + in-repo `.omi/` repo -> 2; engineer + corrupt manifest -> 2; update `test_invalid_registry_cli` / `test_guard_invalid_registry_cli` to these rules. Full suite.
 Scope widened (src/omi/app/cli.py, tests/test_attach.py): apply your NEEDS SCOPE fix - `main()` skips the `state.registry()` precheck for `guard`; `test_invalid_registry_cli` expects exit 2 for `guard`. Then run the full suite.
 Review round 2 FAIL (security). Coordinator decision on NEEDS DECISION: keep the old protection inside omi sessions, skip only fully non-omi sessions.
 - scope.py guard: decide "omi" for a repo by in-repo `.omi/` first, then `state.resolve` wrapped in `try/except StateError`. On StateError: print `OMI: omi state registry is invalid (<error>); fix ~/.omi/state before editing.` and return 2 (fail closed), never exit 1.
@@ -60,6 +65,11 @@ Session: claude f30b7a25-bccd-4e10-9347-ff7a2ee169b7
 - security started 2026-10-31 14:26
 - security failed 2026-10-31 14:33
 - build started 2026-10-31 14:33
+- build done 2026-10-31 14:57
+- review started 2026-10-31 14:57
+- review done 2026-10-31 15:08
+- security started 2026-10-31 15:08
+PO round override 3: Thêm 1 vòng, quy tắc gọn
 
 ## Reports
 2026-10-31 13:43 omi-agent-engineer (codex):
@@ -298,6 +308,22 @@ Session: claude f30b7a25-bccd-4e10-9347-ff7a2ee169b7
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-31 15:08 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/project/scope.py:55 `state.resolve(repo)` runs on every edit even when an in-repo `.omi/` is already found. A bad registry therefore blocks edits (exit 2) in unrelated non-omi repos too. The task's round-2 text asks for exit 2 in a non-omi repo with a corrupt manifest, so this is accepted. It is a usability cost to mention to the Coordinator, not a defect.
+> 
+> AC: `omi install-user` adds the guard hook once, idempotent, keeps other hooks, and records it in the manifest ✓ `test_install_user_guard_fresh` (fresh install, rerun with an unchanged snapshot) and `test_install_user_guard_existing_hooks` (empty list, user hook, identical entry already present) pass. `test_install_user_recorded_interpreter` checks the recorded `guard_hook`.
+> AC: `--remove` removes only the guard entry, and the `PreToolUse` list only if install-user created it; the backup rule stays as today ✓ `install.py` removes the guard only when `guard_added` is set and drops `PreToolUse` only when `pretool_created` is set. `test_install_user_removal_preserves_edits` keeps a user's `PreToolUse` entry. The existing-hooks test restores the original bytes and removes the backup.
+> AC: A non-list `hooks.PreToolUse` raises `StateError` in the SessionStart style and changes nothing ✓ `test_install_user_guard_malformed_pretool` covers install and remove for `{}`, `None`, a string and `1`, and checks that the message matches and the file snapshot is unchanged. `test_install_user_invalid_input` adds the same case.
+> [... truncated ...]
+> AC: Changes stay within the declared scope ✓ The changed files are `install.py`, `scope.py`, `cli.py`, `test_attach.py`, `test_install.py`, `test_init.py`, `test_detached.py` and the task file.
+2026-10-31 15:15 omi-agent-security-reviewer (claude):
+> ```
+> VERDICT: FAIL
+> - src/omi/project/scope.py:55 `state.resolve(repo)` now runs on every edit in every repo, and its StateError is turned into a block (exit 2) | why: an ordinary non-omi repo whose `origin` URL `normalise_url` rejects now has every edit blocked, with the misleading message "omi state registry is invalid … fix ~/.omi/state". The same applies to any bad manifest. The round-2 decision asked for exit 2 only on registry errors, and the Coordinator accepted that blocking for a corrupt manifest. A bad origin in an unrelated repo is not the same case. | verified: ran `scope.guard()` in a scratch git repo with `origin=https://[bad` and an empty OMI_STATE. It printed that message and returned 2. -> Check the in-repo `.omi/` first. If a StateError is raised for an origin error and not for the registry, treat the repo as non-omi when it has no `.omi/`. Only fail closed when the repo has `.omi/` or the registry itself is invalid.
+> NEEDS DECISION: should a corrupt manifest in `~/.omi/state` block edits in every non-omi repo on the machine? The task text says yes. The reviewer accepted it as a usability cost. A one-line decision from the Coordinator would settle it.
+> Other checks: `install.py` matches the acceptance criteria. `python3 tests/test_omi.py` exits 0 (wheel and Playwright checks skipped). The diff has no workflow files and no injection text.
+> ```
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -311,3 +337,5 @@ Session: claude f30b7a25-bccd-4e10-9347-ff7a2ee169b7
 | omi-agent-engineer | claude-opus-5-5 | high | 22 | 4205 | 353554 | 373s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-engineer | claude-opus-5-5 | high | 6 | 1370 | 120897 | 103s | 0/1 | - |
 | omi-agent-engineer | claude-opus-5-5 | high | 16 | 3700 | 372454 | 282s | 0/1 | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 2386 | 188499 | 484s | - | PASS e5b0c3b |
+| omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 14 | 2182 | 391011 | 297s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL e5b0c3b |
