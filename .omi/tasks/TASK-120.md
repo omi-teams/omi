@@ -27,6 +27,8 @@ On a fix round, `omi run` continues the engineer's previous CLI session (`claude
 - [ ] The omi-task skill (template copy) describes the resume behaviour; tests cover resume, fresh fallback and read-role exclusion; all tests pass.
 
 ## Checkpoint
+Review round 7 FAIL (review):
+- src/omi/worker/session.py scrub (and clear): `shutil.rmtree(d, ignore_errors=True)` cannot delete a mode-0 or read-only subdir, so the token file stays while `SESSION DROPPED` is printed (reproduced). Use an error handler that chmods the entry and its parent u+rwx and retries; if anything is still left, print `SESSION CACHE NOT REMOVED: <path>`. Test: token file in a mode-0 `sub/` is gone after scrub (POSIX only; skip line on Windows).
 Review round 6 FAIL (security):
 - src/omi/worker/session.py scrub: `f.read_bytes()` raises on an unreadable file (e.g. the engineer writes the token to /sessions/x.jsonl and `chmod 000`), the exception escapes `attempt`'s `finally`, the post-run hook and the OUT OF SCOPE check never run, and the token stays in the host cache. Fail closed: any OSError while walking or reading, or any entry that is not a readable regular file (other than a skipped symlink), counts as a hit: rmtree the task cache dir, print `SESSION DROPPED`, return True. scrub itself must never raise out of `attempt`. Test with a mode-0 transcript (POSIX only; skip line on Windows).
 Round 7 done: `scrub` fails closed. It walks with `os.walk(onerror=raise)` (linked dirs are never entered, linked files skipped). An unreadable dir, a non-regular file (fifo/socket/device) or any exception while searching counts as a hit: the task cache dir is rmtree'd, `SESSION DROPPED: cannot read the session cache` is printed, and it returns True. scrub never raises out of `attempt`. Tests: a mode-0 transcript and a mode-0 subdir are both dropped (skip line on Windows/root); a fifo was checked by hand. python3 tests/test_omi.py passed (pip/playwright skipped). Open: rmtree(ignore_errors) cannot empty a mode-0 subdir that still holds files, so such files can stay on disk (the session is still not resumed). Next: Coordinator review and commit.
@@ -84,6 +86,10 @@ Next: Coordinator review and commit.
 - security started 2026-10-31 06:22
 - security failed 2026-10-31 06:42
 - build started 2026-10-31 06:42
+- build done 2026-10-31 06:58
+- review started 2026-10-31 06:58
+- review failed 2026-10-31 07:02
+- build started 2026-10-31 07:02
 
 ## Reports
 2026-10-30 22:43 omi-agent-architect (claude):
@@ -581,6 +587,28 @@ Next: Coordinator review and commit.
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-31 07:01 omi-agent-reviewer (codex):
+> VERDICT: FAIL
+> - src/omi/worker/session.py:106 `rmtree(ignore_errors=True)` can leave token-containing files inside a mode-000 directory while reporting `SESSION DROPPED`; `clear()` also silently leaves them. The test permits this and manually cleans up afterward. -> Restore directory access without following symlinks, retry deletion, verify removal, and test a locked directory containing a token.
+> 
+> AC: Record engineer session IDs ✓ `test_session_resume` passed; asserts the task contains `Session: claude S2`.
+> AC: Resume with checkpoint prompt; fresh on `--fresh` or tool switch ✓ Focused tests exercise these command paths.
+> AC: Read roles never resume ✓ Read-role branch excludes both resume and cache mounts; reviewer test passed.
+> AC: Per-task external cache, no auth tokens, clean removal, missing/expired fallback ✗ External paths and fallback tests passed; failed deletion can retain tokens and survive `omi clean`.
+> AC: One resumed hook-fix retry, hook rerun, usage recorded ✓ Focused tests cover output forwarding, retry limit, hook failure reporting, and usage rows.
+> AC: Skill documents resume; required test coverage ✓ Template updated; resume, fallback, and read-role tests passed.
+> AC: All tests pass UNVERIFIED `python3 tests/test_omi.py` exited 0 with `ok`, but wheel and browser tests were skipped because pip and Playwright are missing.
+2026-10-31 07:05 omi-agent-reviewer (claude):
+> VERDICT: FAIL
+> - src/omi/worker/session.py:968 `scrub` calls `shutil.rmtree(d, ignore_errors=True)`, which cannot delete a mode-0 or read-only subdir. The token file stays on disk while `SESSION DROPPED` is printed. I reproduced it: a token file in a mode-0 `sub/` was still there after `scrub` returned True. The task's own Round 7 note lists this as open. -> Use an `onerror` handler that chmods the entry and its parent u+rwx and retries. Print a distinct warning with the path if anything is left. Add a test that the dir is gone after a mode-0 subdir.
+> - src/omi/worker/run.py:845 The hook-fix retry ignores a quota hit and a lost session. It only prints `hook-fix attempt exited with code N`, then reruns the hook on unchanged code. Minor, does not break an acceptance criterion. -> Optional: reuse the quota and `RESUME FAILED:` handling.
+> 
+> AC: `omi run` records the engineer's session id per tool in the task file after each write-role run ✓ `run.py` writes `Session: <tool> <id>` via `with_session`; `test_session_resume` asserts `Session: claude S2`.
+> AC: Later write-role run resumes with a short prompt pointing at `## Checkpoint`; `--fresh` forces a new session; a tool switch starts fresh ✓ the test covers resume, `--fresh`, a codex-then-claude switch, and the quota fallback running without `resume`.
+> AC: Read roles never resume ✓ the test asserts the reviewer gets no `--resume` and no `--mount`.
+> AC: Session data lives only in a per-task cache outside the repo, holds no auth token, and `omi clean` removes it; a missing or expired session falls back to a fresh run with one `RESUME FAILED:` line ✗ The cache location, `omi clean`, and `RESUME FAILED:` parts pass in the test. "Holds no auth token" fails for the mode-0 subdir case in the first finding. A clean-transcript, token-hit, symlink, and mode-0 file case all behave correctly.
+> [... truncated ...]
+> All changed files are within `scope`.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -603,3 +631,5 @@ Next: Coordinator review and commit.
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 8 | 3935 | 242681 | 257s | - | PASS 47d0458 |
 | omi-agent-security-reviewer | claude-opus-5-5 | high | 20 | 7043 | 607723 | 323s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL 47d0458 |
 | omi-agent-engineer | claude-opus-5-5 | high | 22 | 5912 | 332575 | 524s | 1/1 omi-skill-lean-implementation | - |
+| omi-agent-reviewer | gpt-6.1-sol (codex) | medium | 1674057 | 4438 | 1609216 | 295s | - | FAIL a37d894 |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 16 | 5339 | 545390 | 330s | - | FAIL a37d894 |
