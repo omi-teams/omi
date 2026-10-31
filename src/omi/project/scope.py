@@ -39,6 +39,15 @@ def guard(stdin=None):
     engineer = data.get("agent_type") == "omi-agent-engineer"  # subagents share the session cwd; only the payload tells
     top = core.git(d, "rev-parse", "--show-toplevel")
     root = Path(top).resolve() if top else None
+    project = state.resolve(root) if root else None
+    projects = [project] if project else []
+    if engineer:
+        # Keep an omi engineer's escape checks even when the edited path is outside omi.
+        session_top = core.git(data.get("cwd", "."), "rev-parse", "--show-toplevel")
+        if session_top:
+            projects.append(state.resolve(session_top))
+    if not any(p.detached or (p.state / ".omi").is_dir() or (p.code / ".omi").is_dir() for p in projects):
+        return 0
     branch = (core.git(d, "rev-parse", "--abbrev-ref", "HEAD") or "") if top else ""
     try:
         rel = PurePosixPath(path.resolve().relative_to(root).as_posix())
@@ -55,7 +64,6 @@ def guard(stdin=None):
     elif branch.startswith("task/"):
         tid = branch[5:]
         # Scope comes from state or development, never the agent-writable task copy.
-        project = state.resolve(root)
         shown = state.task_text(project, root, tid)
         task_file = state.task_file(project, tid)
         if shown is None:

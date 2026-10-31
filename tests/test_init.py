@@ -1,6 +1,7 @@
 import io
 import shlex
 import json
+import os
 import contextlib
 import importlib.metadata
 import importlib.util
@@ -8,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 from helpers import omi, git
 
 
@@ -159,6 +161,47 @@ def test_init_fresh_project():
             assert (Path(d) / ".gitignore").read_text() == existing + "\n.omi-cache/\n", existing
 
 
+def test_guard_non_omi_projects():
+    with tempfile.TemporaryDirectory() as d:
+        base = Path(d)
+        repo = base / "ordinary"
+        repo.mkdir()
+        git(repo, "init", "-q", "-b", "main")
+        (repo / "README.md").write_text("ordinary repo\n", encoding="utf-8")
+        git(repo, "add", "README.md")
+        git(repo, "commit", "-qm", "fixture")
+        with patch.dict(os.environ, {"OMI_STATE": str(base / "state")}):
+            def guard(path, cwd=repo):
+                for agent in (None, "omi-agent-engineer"):
+                    output = io.StringIO()
+                    with contextlib.redirect_stderr(output):
+                        result = omi.project.scope.guard(io.StringIO(json.dumps({
+                            "cwd": str(cwd), "agent_type": agent, "tool_input": {"file_path": str(path)}})))
+                    assert (result, output.getvalue()) == (0, "")
+
+            guard(repo / ".claude/settings.json")
+            guard(".claude/settings.local.json")
+            wt = base / "ordinary-task"
+            git(repo, "worktree", "add", "-qb", "task/TASK-1", str(wt))
+            guard(wt / "src/new.py")
+            guard(wt / ".claude/settings.json")
+            guard(repo / "src/new.py")  # An unrelated task/* worktree is not an omi task.
+            guard(repo / ".claude/settings.json")
+
+
+def test_guard_user_settings_outside_repository():
+    with tempfile.TemporaryDirectory() as d:
+        home = Path(d)
+        (home / ".omi").mkdir()  # install-user's manifest directory is not an omi repository.
+        with patch.object(Path, "home", return_value=home), \
+                patch.dict(os.environ, {"OMI_STATE": str(home / "state")}):
+            output = io.StringIO()
+            with contextlib.redirect_stderr(output):
+                result = omi.project.scope.guard(io.StringIO(json.dumps({
+                    "cwd": str(home), "tool_input": {"file_path": str(Path.home() / ".claude/settings.json")}})))
+            assert (result, output.getvalue()) == (0, "")
+
+
 def test_init_guard_status():
     with tempfile.TemporaryDirectory() as d:
         root = Path(d).resolve()
@@ -206,7 +249,11 @@ def test_init_guard_status():
         with tempfile.TemporaryDirectory() as other:
             assert guard(Path(other) / "x.py", "omi-agent-engineer") == 2, "engineer writing to a non-git dir"
             assert guard(Path(other) / "x.py") == 0, "no agent identity: as before"
-            assert guard(Path(other) / ".claude" / "settings.json") == 2, "user-level config"
+            assert guard(Path(other) / ".claude" / "settings.json") == 0, "user-level config outside omi"
+            # A running omi task must not impose its guard on a different repository.
+            git(other, "init", "-q", "-b", "task/TASK-1")
+            assert guard(Path(other) / "x.py") == 0
+            assert guard(Path(other) / ".claude" / "settings.json") == 0
         git(root, "branch", "task/TASK-099")
         git(root, "worktree", "add", "-q", str(root / "wt99"), "task/TASK-099")
         assert guard(root / "wt99" / "src" / "x.py") == 2, "task not on development: deny"
@@ -282,6 +329,8 @@ def test_template_docker():
 
 
 def main():
+    test_guard_non_omi_projects()
+    test_guard_user_settings_outside_repository()
     test_step_settings_format_and_docs()
     test_template_docker()
     test_init_fresh_project()

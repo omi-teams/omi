@@ -4,7 +4,7 @@ title: install-user also installs the omi guard edit hook
 status: in-progress
 depends:
 plan: PLAN-007
-scope: src/omi/setup/install.py, tests/test_install.py, .omi/tasks/TASK-143.md
+scope: src/omi/setup/install.py, src/omi/project/scope.py, tests/test_install.py, tests/test_init.py, tests/test_detached.py, .omi/tasks/TASK-143.md
 role: omi-agent-engineer
 skills: []
 refs: []
@@ -13,7 +13,7 @@ model: opus
 effort: high
 step_settings:
 workflow: omi-flow-feature-sensitive
-step: review
+step: build
 ---
 ## Goal
 A detached repo keeps the Coordinator's edit guard: `omi install-user` adds the `PreToolUse` hook `python -m omi guard` (matcher `Edit|Write|MultiEdit|NotebookEdit`) to the user's Claude Code settings next to the SessionStart hook, so removing `.claude/settings.json` from a code repo (TASK-135) does not drop the guard.
@@ -30,10 +30,10 @@ Review round 1 FAIL (reviewer PASS on the criteria, Coordinator blocks: the user
 - Omi projects (in-repo and detached) keep today's behaviour exactly.
 - Tests: non-omi repo on `task/TASK-1` edit allowed; ~/.claude/settings.json (outside any repo) allowed; non-omi repo `.claude/settings.json` allowed; omi project cases unchanged.
 Coordinator note for review/security: the guard is now user-wide, so `omi guard` runs in every repo on the machine. Check scope.py:27-80 for non-omi repos: blocks any `.claude/settings*.json` edit outside a task branch (also ~/.claude/settings.json?), and a non-omi repo on a `task/*` branch reaches `state.resolve`. Say whether that is acceptable or must be limited to omi projects.
-Done: Added tracked, idempotent PreToolUse guard installation/removal, validation, legacy manifest support, and acceptance tests.
-Not done: No implementation work remains. Wheel packaging and browser layout/keyboard checks were skipped because pip and Playwright are unavailable.
-Tests: python3 tests/test_install.py passed (all 11 test functions); python3 tests/test_omi.py exited 0 with ok. Both ran with PYTHONDONTWRITEBYTECODE=1 and TMPDIR=/work. Full suite skipped test_wheel_ships_web (pip missing) and test_browser_layout_and_keyboard (Playwright missing); Node DOM tests ran successfully. Earlier development runs failed before fixes, and the earlier full-suite run was interrupted and replaced by the successful final run.
-Next: Coordinator reviews the scoped diff and commits; rerun the two optional checks in an environment with pip and Playwright. TASK-135 can proceed after review.
+Done: Fix round 1 adds omi-project detection before guard restrictions. Non-omi task branches, non-omi settings, and user settings outside repositories are allowed, including when omi worktrees exist elsewhere. Omi in-repo and detached guard behavior is preserved, including engineer escape protection based on the omi session cwd. Added regression tests in test_init.py and test_detached.py.
+Not done: No implementation work remains. Wheel packaging and browser layout/keyboard checks require missing optional tools.
+Tests: Both new non-omi regression tests failed before the fix. Final focused run passed test_guard_non_omi_projects, test_guard_user_settings_outside_repository, test_init_guard_status, and test_detached_scope_and_guard. python3 tests/test_omi.py exited 0 with ok, including installer and CLI tests. Runs used PYTHONDONTWRITEBYTECODE=1 and TMPDIR=/work. Skipped test_wheel_ships_web (pip missing) and test_browser_layout_and_keyboard (Playwright missing); Node DOM tests executed successfully. An initial detached test fixture-ordering failure was corrected before the final runs.
+Next: Coordinator reviews the fix and commits; rerun the two optional checks where pip and Playwright are available. No scope expansion needed.
 Session: codex 01a190a2-9685-7231-bbfd-99ed4f30a80e
 
 ## Steps
@@ -44,6 +44,8 @@ Session: codex 01a190a2-9685-7231-bbfd-99ed4f30a80e
 - build started 2026-10-31 13:25
 - build done 2026-10-31 13:48
 - review started 2026-10-31 13:48
+- review failed 2026-10-31 13:56
+- build started 2026-10-31 13:56
 
 ## Reports
 2026-10-31 13:43 omi-agent-engineer (codex):
@@ -110,9 +112,64 @@ Session: codex 01a190a2-9685-7231-bbfd-99ed4f30a80e
 > AC: `install-user` adds the guard once, idempotent, keeps the user's other hooks, and records it in the manifest ✓ `test_install_user_guard_fresh` and `test_install_user_guard_existing_hooks` pass. They cover a rerun with an unchanged snapshot, an existing identical guard entry, and a user hook kept.
 > [... truncated ...]
 > Changes stay within the declared scope: `install.py`, `test_install.py` and the task file.
+2026-10-31 14:13 omi-agent-engineer (codex):
+> DONE — non-omi edits allowed; omi engineer escape protection preserved.
+> Files changed: `src/omi/project/scope.py`, `tests/test_init.py`, `tests/test_detached.py`, `.omi/tasks/TASK-143.md`.
+> Suggested commit: `fix(guard): limit user-wide restrictions to omi projects`
+> Tests: four focused tests passed; `python3 tests/test_omi.py` exited 0.
+> Skipped: wheel packaging (pip missing), browser layout/keyboard checks (Playwright missing).
+> Checkpoint updated. No implementation issues remain; no commit created.
+2026-10-31 14:17 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | gpt-6-astra (codex) | high | 2749300 | 13822 | 2703872 | 1102s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 3527 | 187985 | 350s | - | PASS 0138652 |
+| omi-agent-engineer | gpt-6-astra (codex) | high | 5854726 | 26632 | 5775616 | 976s | 0/1 | - |
