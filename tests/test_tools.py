@@ -498,11 +498,14 @@ def test_task_start_copies_match():
     sections = task_start_sections()
     assert all(text == sections[0] for text in sections)
     root = Path(__file__).parents[1]
-    assert (root / ".claude/skills/omi-task/SKILL.md").read_text(encoding="utf-8") == (
-        omi.common.core.TEMPLATE / "dot-claude/skills/omi-task/SKILL.md").read_text(encoding="utf-8")
-    for path in (root / "AGENTS.md", omi.common.core.TEMPLATE / "AGENTS.md"):
+    for skill in ("omi-task", "omi-idea"):
+        assert (root / f".claude/skills/{skill}/SKILL.md").read_text(encoding="utf-8") == (
+            omi.common.core.TEMPLATE / f"dot-claude/skills/{skill}/SKILL.md").read_text(encoding="utf-8")
+    for path in (root / "AGENTS.md", omi.common.core.TEMPLATE / "AGENTS.md",
+                 root / ".claude/skills/omi-idea/SKILL.md",
+                 omi.common.core.TEMPLATE / "dot-claude/skills/omi-idea/SKILL.md"):
         text = path.read_text(encoding="utf-8")
-        assert "set them only at task start from the approved proposal or alternative" in text
+        assert "only at task start from the approved proposal or alternative" in text
         assert "from the PO's pick" not in text
 
 

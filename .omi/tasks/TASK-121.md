@@ -1,7 +1,6 @@
 ---
 id: TASK-121
 title: Coordinator proposes tool, model and effort; PO only approves
-status: in-progress
 depends:
 plan:
 scope: src/omi/template/AGENTS.md, src/omi/template/dot-claude/skills/**, src/omi/template_shas.json, AGENTS.md, .claude/skills/**, tests/test_tools.py, .omi/tasks/TASK-121.md
@@ -13,7 +12,8 @@ model: sonnet
 effort: medium
 step_settings:
 workflow: omi-flow-feature
-step: accept
+step: build
+status: in-progress
 ---
 ## Goal
 In every omi project, the Coordinator picks the fitting tool, model and effort for a task itself and presents it as one proposal for the PO to approve, with the other tool as the alternative; the PO no longer works out model or effort.
@@ -26,10 +26,10 @@ In every omi project, the Coordinator picks the fitting tool, model and effort f
 
 ## Checkpoint
 Review round 1 PASS with a nit; PO: Accept + sửa nốt. Fix: `.claude/skills/omi-idea/SKILL.md:10` and `src/omi/template/dot-claude/skills/omi-idea/SKILL.md` still say "set only at task start from the PO's pick" -> "from the approved proposal or alternative"; update that template hash in `src/omi/template_shas.json`; extend the tests/test_tools.py check to the omi-idea copies. Nothing else.
-Done: Updated task-start proposal and tool-only rules in template/local AGENTS.md and omi-task skill; updated quota wording, template hashes and acceptance tests.
-Not done: None.
-Tests: python3 tests/test_tools.py passed (exit 0); python3 tests/test_omi.py passed (exit 0, final "ok"). All task-specific tests ran. Suite skips: test_wheel_ships_web (pip missing); test_browser_layout_and_keyboard (Playwright missing; 360px/390px visual and keyboard checks unverified).
-Next: Coordinator reviews the diff and commits on the host.
+Done: Fix round 1: changed both omi-idea copies from "PO's pick" to "approved proposal or alternative"; updated only that template hash; extended copy consistency and wording checks to omi-idea.
+Not done: None for the requested fix.
+Tests: Extended regression failed on the original omi-idea wording, then python3 tests/test_tools.py passed (exit 0) after the fix. python3 tests/test_omi.py passed (exit 0, final "ok"). Skipped: test_wheel_ships_web (pip missing); test_browser_layout_and_keyboard (Playwright missing; 360px/390px visual and keyboard checks unverified).
+Next: Coordinator reviews the fix and commits on the host.
 Session: codex 01a1906b-d90b-7c82-9971-540ac0bc3613
 
 ## Steps
@@ -41,6 +41,11 @@ Session: codex 01a1906b-d90b-7c82-9971-540ac0bc3613
 - review done 2026-10-31 12:49
 - accept started 2026-10-31 12:49
 PO approval accept: Accept + sửa nốt
+- accept done 2026-10-31 12:50
+- workflow reopened 2026-10-31 12:50: PO: Accept + sửa nốt (omi-idea still says PO's pick)
+- review failed 2026-10-31 12:50
+- accept failed 2026-10-31 12:50
+- build started 2026-10-31 12:50
 
 ## Reports
 2026-10-31 12:32 omi-agent-engineer (codex):
@@ -106,9 +111,64 @@ PO approval accept: Accept + sửa nốt
 > AC: When the PO names only a tool, the Coordinator chooses model and effort itself and states both, without another question, and never uses `codex-default` or an omitted effort. ✓ The sentence is in all four copies and `test_task_start_tool_only` checks it.
 > AC: The repo's `AGENTS.md` and omi-task skill match the template, and the `template_shas.json` hashes are updated. ✓ `sha256sum` shows the copies are identical, and the new hashes at lines 390 and 444 match them.
 > AC: `tests/test_tools.py` checks the new wording instead of "PO chooses", and all tests pass. ✓ `test_tools.py` and `test_omi.py` both exit 0. `test_omi.py` skipped the playwright browser test, which is unrelated to this criterion.
+2026-10-31 12:57 omi-agent-engineer (codex):
+> DONE
+> Files: both omi-idea/SKILL.md copies, src/omi/template_shas.json, tests/test_tools.py, .omi/tasks/TASK-121.md.
+> Suggested commit: `fix(workflow): align idea skill with approved task proposals`
+> Tests: regression failed before fix; test_tools.py and test_omi.py passed after fix.
+> Skipped: web wheel test (pip missing); browser layout/keyboard checks (Playwright missing).
+> Open issues: none for this fix. Checkpoint updated; no commit made.
+2026-10-31 13:02 hook post-run passed:
+> create AGENTS.md
+> create docker/Dockerfile
+> create docker/prove.sh
+> create docker/proxy.py
+> create .claude/settings.json
+> create .claude/skills/omi-idea/SKILL.md
+> create .claude/skills/omi-release/SKILL.md
+> create .claude/skills/omi-status/SKILL.md
+> create .claude/skills/omi-task/SKILL.md
+> create .claude/skills/omi-upgrade/SKILL.md
+> create .omi/agents/omi-agent-architect.md
+> create .omi/agents/omi-agent-designer-ui.md
+> create .omi/agents/omi-agent-devops.md
+> create .omi/agents/omi-agent-docs-writer.md
+> create .omi/agents/omi-agent-engineer.md
+> create .omi/agents/omi-agent-qa-tester.md
+> create .omi/agents/omi-agent-researcher.md
+> create .omi/agents/omi-agent-reviewer.md
+> create .omi/agents/omi-agent-security-reviewer.md
+> create .omi/hooks/post-run.sh
+> create .omi/plans/PLAN-000.md
+> create .omi/references/nextjs-app-router.md
+> create .omi/references/postgres-conventions.md
+> create .omi/rules/docker.md
+> create .omi/rules/go.md
+> create .omi/rules/nextjs.md
+> create .omi/rules/postgres.md
+> create .omi/rules/python.md
+> create .omi/skills/.gitkeep
+> create .omi/skills/data/omi-skill-data-review/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+> create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+> create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+> create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+> create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+> create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+> create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+> create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+> create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+> [... truncated ...]
+> ok
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
 |---|---|---|---|---|---|---|---|---|
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 1709470 | 6081 | 1622528 | 409s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 1639 | 145690 | 487s | - | PASS 47a01a6 |
+| omi-agent-engineer | gpt-6.1-sol (codex) | medium | 3083795 | 9005 | 2973568 | 405s | 0/1 | - |
