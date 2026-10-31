@@ -2,7 +2,7 @@
 id: TASK-139
 title: Enforce the fix-round limit in code and force a re-plan on a repeated root cause
 status: planned
-depends: TASK-121, TASK-138
+depends: TASK-121, TASK-138, TASK-142
 plan:
 scope: src/omi/project/tasks.py, src/omi/project/workflows.py, src/omi/app/cli.py, src/omi/worker/run.py, src/omi/template/dot-omi/config.json, src/omi/template/dot-omi/agents/omi-agent-reviewer.md, src/omi/template/dot-omi/agents/omi-agent-security-reviewer.md, src/omi/template/dot-omi/workflows/**, src/omi/template/AGENTS.md, src/omi/template/dot-claude/skills/omi-task/SKILL.md, src/omi/template_shas.json, .omi/config.json, .omi/agents/**, .omi/workflows/**, AGENTS.md, .claude/skills/omi-task/SKILL.md, tests/test_tasks.py, tests/test_worker.py, tests/test_cli.py, tests/test_content.py, .omi/tasks/TASK-139.md
 role: omi-agent-engineer
