@@ -387,7 +387,7 @@
     ".claude/skills/omi-idea/SKILL.md": "04713479983aeb18bf49052409dc391fc9292cad5604e4511dcea3cac7367228",
     ".claude/skills/omi-release/SKILL.md": "0031e8637f6cb93806949282f51bd7b9b76fd476044734dae211f44be2ea774b",
     ".claude/skills/omi-status/SKILL.md": "b1d3296f2c5fcc7154799aa90210cca477995bb7e0dd4019863f7bdbfebd2a05",
-    ".claude/skills/omi-task/SKILL.md": "6242c64bbbda90326e266003337cd428bc38867cc960282cf2bb4412201ee817",
+    ".claude/skills/omi-task/SKILL.md": "cb9e7ac1ae3bf3e722c1728fc7884f24177761d6525c76a19e3253a6934f2cb1",
     ".claude/skills/omi-upgrade/SKILL.md": "fbffef4f583854fe732648dd9dafbd34d7287245e5fe6f01f7831490aad34820",
     ".omi/agents/omi-agent-architect.md": "3e09f68012e35c9c8b662a5ac5ea4743aad715b2d3bac16d920506025195d2bf",
     ".omi/agents/omi-agent-designer-ui.md": "f101bc09a2fc6e2603767085daef7b06340d72c04b2312bd1a7437dad5939ea8",
@@ -441,7 +441,7 @@
     ".omi/workflows/omi-flow-refactor.md": "9ee8bc8ed88bbd84601e5fa0096025e0bd114739daeb7b2acfcecaa64353ca4f",
     ".omi/workflows/omi-flow-release.md": "bd75e993b2e7807cda9b34b26df0419b1322e59c0f4d23bce77839f3f8d81cd9",
     ".omi/workflows/omi-flow-spike.md": "38e43d2a9f1508ddfc89e2bbce349443675c97a8f3d8185b7f25165cc3c900e3",
-    "AGENTS.md": "41df06c3cb7e76872845dcf481f773a1a42eecc5c186d8b9fe18861e725677f1",
+    "AGENTS.md": "9682d60b72e290251ac79335e248308977f6044364b7d3f8d7863b864c909692",
     "docker/Dockerfile": "f40f8bb7d09dcf5a096a693aba060b6c789fe8299783712a011ca5254cd17546",
     "docker/prove.sh": "511315ec4046be60bed75c1149c10093a90078d350c538ef5fdda0715d008d22",
     "docker/proxy.py": "0ba39b820fc01693be64aa4b00b516902842f0c0f82fda2a4b21237684b828ec"

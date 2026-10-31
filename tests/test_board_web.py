@@ -242,7 +242,7 @@ def main() -> None:
 API_FIXTURES = r"""
 const remoteSource={repo:'https:'+'//github.com/omi-teams/omi-state',sha:'abc123456789',fetched_at:'2026-10-30T12:00:00Z',stale:false};
 const frontmatter={title:'<img src=x onerror=evil()>',status:'in-progress',step:'build',plan:'PLAN-006',model:'sonnet',effort:'medium',depends:'TASK-114',workflow:'feature'};
-const detail={source:remoteSource,id:'TASK-115',frontmatter,goal:'Ship the board',criteria:[{text:'Safe <script> text',checked:true},{text:'Responsive',checked:false}],checkpoint:'Next: review',steps:'- build started',reports:'2026-10-30 engineer:\n> Complete',usage:{rows:[{role:'engineer',output:'1234',duration:'30s'}],runs:1,review_rounds:0}};
+const detail={source:remoteSource,id:'TASK-115',frontmatter,goal:'Ship the board',criteria:[{text:'Safe <script> text',checked:true},{text:'Responsive',checked:false}],checkpoint:'Next: review',steps:'- build started',reports:'2026-10-30 14:00 engineer (claude):\n> DONE first\n2026-10-30 15:00 Coordinator (review) FAIL:\n> fix round',usage:{rows:[{role:'engineer',output:'1234',duration:'30s'}],runs:1,review_rounds:0}};
 const counts={planned:2,'in-progress':1,review:0,blocked:0,done:4};
 const plan={id:'PLAN-006',title:'Board',status:'active',done:4,total:7};
 const summary={source:remoteSource,name:'omi',branch:'main',plans:[plan],task_counts:counts,po_waiting_count:1};
@@ -281,7 +281,7 @@ let interval, intervalMs, calls=0, stored={}, fail=false, pending=null;
 let now=0;
 class Clock extends Date { static now() { return now; } }
 const localStorage={getItem:k=>stored[k] || null,setItem:(k,v)=>{stored[k]=v;}};
-const window={listeners:{},addEventListener(k,f){this.listeners[k]=f;}};
+const window={scrollY:0,scrolled:null,scrollTo(x,y){this.scrolled=y;},listeners:{},addEventListener(k,f){this.listeners[k]=f;}};
 const location={hash:'#/'};
 """ + API_FIXTURES + r"""
 let data={projects:[summary],source:remoteSource};
@@ -420,7 +420,19 @@ const countdown=()=>elements.countdown.textContent;
   assert.equal(find(elements.view,'layout').length,1);
   assert.equal(find(elements.view,'main').length,1);assert.equal(find(elements.view,'side').length,1);
   assert.equal(find(elements.view,'ck').length,2);assert.equal(find(elements.view,'checked').length,1);
-  assert.equal(all(elements.view).filter(n=>n.tagName==='details').length,1);
+  const reps=all(elements.view).filter(n=>n.tagName==='details');assert.equal(reps.length,2);
+  assert.equal(reps[0].attrs.open,'');assert.equal(reps[1].attrs.open,undefined);
+  assert(reps[0].children[0].textContent.startsWith('2026-10-30 15:00 Coordinator (review) FAIL'));
+  assert(reps[1].children[0].textContent.includes('engineer (claude)')&&reps[1].children[0].textContent.includes('DONE'));
+  assert(elements.view.textContent.includes('Báo cáo (2)'));
+  // Auto-refresh keeps opened reports and the scroll position of the same task page.
+  reps[1].open=true;reps[1].listeners.toggle();window.scrollY=420;
+  data={...detail,goal:'Changed goal'};await invoke('route()');
+  const again=all(elements.view).filter(n=>n.tagName==='details');
+  assert.equal(again[0].attrs.open,'');assert.equal(again[1].attrs.open,'');assert.equal(window.scrolled,420);
+  reps[0].open=false;reps[0].listeners.toggle();data={...detail,goal:'Changed again'};await invoke('route()');
+  assert.equal(all(elements.view).filter(n=>n.tagName==='details')[0].attrs.open,undefined);
+  data=detail;
   assert.equal(find(elements.view,'steps').length,0);assert(elements.view.textContent.includes('build'));
   data=workflowDetail;await invoke('route()');
   const stepper=find(elements.view,'steps')[0];assert.equal(stepper.children.length,6);
@@ -570,8 +582,11 @@ catch(e) {
           assert.deepEqual(await page.locator('.steps [aria-current="step"] span').allTextContents(),['4','review']);
           assert(await page.locator('#view').innerText().then(text=>text.includes('Bước 4/6')));
           assert.equal(await page.locator('details').first().getAttribute('open'),'');
-          await page.locator('summary').focus();await page.keyboard.press('Enter');
+          const marker=()=>page.locator('details summary').first().evaluate(n=>getComputedStyle(n,'::before').content);
+          assert.equal(await marker(),'"▾"');
+          await page.locator('summary').first().focus();await page.keyboard.press('Enter');
           assert.equal(await page.locator('details').first().getAttribute('open'),null);
+          assert.equal(await marker(),'"▸"');
         }
         if(pageName!=='projects') {
           assert(await page.locator('#refresh').isVisible());

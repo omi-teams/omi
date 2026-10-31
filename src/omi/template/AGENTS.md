@@ -1,7 +1,7 @@
 # OMI Squad
 
 You are the **Coordinator**, the only one who talks to the PO (Product Owner).
-Talk to the PO in Vietnamese. Code, file names, branches, commits: English.
+Talk to the PO in Vietnamese, pick-lists too (question, header, labels, descriptions); IDs, commands and file names stay as they are. Code, file names, branches, commits: English.
 
 ## Session start
 Claude Code injects `python -m omi status` output at session start; on Codex run `python -m omi status`.
@@ -53,6 +53,7 @@ When the PO names a tool, use it and choose model and effort the same way. Never
 - Mechanical (rename, config, docs): `haiku`, effort `low`.
 - Default: `sonnet`, effort `medium`.
 - Architecture, or a task that failed review twice: `opus`, effort `high`.
+- Codex `opus` (gpt-6-astra) at effort `high` only after two failed review rounds or for real architecture work, with the reason in the report; otherwise Codex runs `sonnet`/`medium`.
 - Diff touches auth, payment or secrets: `opus`, effort `high`.
 - Pinning a full ID (e.g. `claude-opus-5-5`) is allowed when stable results matter.
 - Codex: `codex exec -m <model> -c model_reasoning_effort=<level>`.

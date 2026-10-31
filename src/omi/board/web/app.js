@@ -14,6 +14,7 @@ let timer = null;
 let nextRefresh = 0;
 let current = "";
 let seen = null;
+let openReports = null;
 let request = 0;
 
 function el(tag, text, attrs, kids) {
@@ -150,9 +151,14 @@ function taskPage(name, id, d) {
   const f = d.frontmatter;
   const criteria = el("ul", null, {class: "crit"}, d.criteria.map((c) => el("li", null, {}, [
     el("span", c.checked ? "✓" : "", {class: `ck ${c.checked ? "checked" : ""}`, role: "img", "aria-label": c.checked ? "Xong" : "Chưa"}), el("span", c.text)])));
-  const reports = d.reports.split(/\n(?=\d{4}-\d\d-\d\d[^\n]*:)/).filter(Boolean).map((r, i) => {
+  const reports = d.reports.split(/\n(?=\d{4}-\d\d-\d\d[^\n]*:)/).filter(Boolean).reverse().map((r, i) => {
     const [summary, ...body] = r.split("\n");
-    return el("details", null, i === 0 ? {open: ""} : {}, [el("summary", summary), pre(body.join("\n").replace(/^> ?/gm, ""))]);
+    const verdict = (summary + " " + (body[0] || "").replace(/^> ?/, "")).match(/\b(DONE|PASS|FAIL|BLOCKED|NEEDS SCOPE)\b/);
+    const text = verdict && !summary.includes(verdict[0]) ? `${summary.replace(/:$/, "")} · ${verdict[0]}` : summary;
+    openReports ??= new Set([text]);
+    const det = el("details", null, openReports.has(text) ? {open: ""} : {}, [el("summary", text), pre(body.join("\n").replace(/^> ?/gm, ""))]);
+    det.addEventListener("toggle", () => openReports[det.open ? "add" : "delete"](text));
+    return det;
   });
   const meta = el("dl");
   const labels = {plan: "Kế hoạch", depends: "Phụ thuộc", role: "Role", tool: "Tool", model: "Model", effort: "Effort", scope: "Scope", skills: "Skills"};
@@ -170,7 +176,7 @@ function taskPage(name, id, d) {
       section("Mục tiêu", [el("p", d.goal || "—", {class: "goal"})]),
       section("Tiêu chí nghiệm thu", [criteria], `${d.criteria.filter((c) => c.checked).length}/${d.criteria.length} xong`),
       section("Checkpoint", [pre(d.checkpoint)]), section("Các bước", [pre(d.steps)]),
-      section("Báo cáo", reports.length ? reports : [empty("Chưa có báo cáo.")])]),
+      section(`Báo cáo (${reports.length})`, reports.length ? reports : [empty("Chưa có báo cáo.")])]),
     box("side", [section("Thông tin", [meta]), section("Sử dụng", [table(["Role", "Output", "Thời gian"],
       d.usage.rows.map((r) => [r.role, /^\d+$/.test(r.output) ? num(r.output) : r.output, r.duration]), "Bảng sử dụng của task")],
       `${num(d.usage.runs)} lượt · ${num(d.usage.review_rounds)} vòng review`)])])];
@@ -187,7 +193,7 @@ async function route() {
   const hash = location.hash === "#main" ? current || "#/" : location.hash || "#/";
   const changed = hash !== current;
   current = hash;
-  if (changed) seen = null;
+  if (changed) { seen = null; openReports = null; }
   const ticket = ++request;
   const abort = new AbortController();
   const limit = setTimeout(() => abort.abort(), 10000);
@@ -204,7 +210,9 @@ async function route() {
     if (text === seen) { updated(data.source); return; }
     // Render off the page, and only cache a response after its view succeeds.
     const nodes = name ? id ? taskPage(name, id, data) : dashboard(name, data) : home(data.projects);
+    const scrolled = window.scrollY;
     view.replaceChildren(...nodes);
+    if (!changed) window.scrollTo(0, scrolled);
     setNav(name ? id ? [[name, projectHref(name)], [id]] : [[name]] : []);
     document.title = `${id || name || "Dự án"} — omi board`;
     seen = text;
