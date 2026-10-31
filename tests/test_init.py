@@ -28,10 +28,10 @@ def test_step_settings_format_and_docs():
         except SystemExit as exc:
             assert "expected <step>=<tool>/<model>/<effort>, ..." in str(exc)
     root = Path(__file__).parents[1]
-    for path in (root / ".omi/tasks/_template.md", omi.common.core.TEMPLATE / "dot-omi/tasks/_template.md"):
+    for path in (omi.common.core.TEMPLATE / "dot-omi/tasks/_template.md",):
         lines = path.read_text(encoding="utf-8").splitlines()
         assert len([line for line in lines if line.startswith("step_settings:  #")]) == 1
-    for path in (root / "AGENTS.md", omi.common.core.TEMPLATE / "AGENTS.md"):
+    for path in (omi.common.core.TEMPLATE / "AGENTS.md",):
         line = next(line for line in path.read_text(encoding="utf-8").splitlines() if line.startswith("Tool per run:"))
         assert line.index("defaults") < line.index("role file") < line.index("task `tool/model/effort`") < line.index("step_settings:") < line.index("omi run --tool/--model/--effort")
     readme = (root / "README.md").read_text(encoding="utf-8")

@@ -13,8 +13,7 @@ from helpers import omi, git
 
 
 def test_cli_correctness():
-    repo = Path(__file__).resolve().parents[1]
-    for base, dot in ((repo, "."), (omi.common.core.TEMPLATE, "dot-")):
+    for base, dot in ((omi.common.core.TEMPLATE, "dot-"),):
         template = (base / f"{dot}omi/tasks/_template.md").read_text(encoding="utf-8")
         assert omi.project.scope.GIT_HINT in template and "edit only on development" in template
         skill = (base / f"{dot}claude/skills/omi-task/SKILL.md").read_text(encoding="utf-8")

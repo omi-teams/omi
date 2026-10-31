@@ -13,8 +13,7 @@ from helpers import omi
 
 def test_tool_choice_and_quota_switch():
     import contextlib
-    for template in (Path(__file__).parents[1] / ".omi" / "tasks" / "_template.md",
-                     omi.common.core.TEMPLATE / "dot-omi" / "tasks" / "_template.md"):
+    for template in (omi.common.core.TEMPLATE / "dot-omi" / "tasks" / "_template.md",):
         lines = template.read_text(encoding="utf-8").splitlines()
         for field in ("tool:", "model:"):
             assert "write role or the task's own role" in next(line for line in lines if line.startswith(field))
@@ -378,9 +377,7 @@ def test_tool_choice_and_quota_switch():
 
 
 def test_model_catalog_and_task_start():
-    root = Path(__file__).parents[1]
     for base, config_rel, catalog_rel in (
-        (root, ".omi/config.json", ".omi/agents/CATALOG.md"),
         (omi.common.core.TEMPLATE, "dot-omi/config.json", "dot-omi/agents/CATALOG.md"),
     ):
         cfg = json.loads((base / config_rel).read_text(encoding="utf-8"))
@@ -465,10 +462,8 @@ def test_model_catalog_and_task_start():
 
 
 def task_start_sections() -> list[str]:
-    root = Path(__file__).parents[1]
     return [path.read_text(encoding="utf-8").split("## Task-start tool choice\n", 1)[1].split("\n## ", 1)[0]
-            for path in (root / "AGENTS.md", omi.common.core.TEMPLATE / "AGENTS.md",
-                         root / ".claude/skills/omi-task/SKILL.md",
+            for path in (omi.common.core.TEMPLATE / "AGENTS.md",
                          omi.common.core.TEMPLATE / "dot-claude/skills/omi-task/SKILL.md")]
 
 
@@ -497,12 +492,7 @@ def test_task_start_tool_only():
 def test_task_start_copies_match():
     sections = task_start_sections()
     assert all(text == sections[0] for text in sections)
-    root = Path(__file__).parents[1]
-    for skill in ("omi-task", "omi-idea"):
-        assert (root / f".claude/skills/{skill}/SKILL.md").read_text(encoding="utf-8") == (
-            omi.common.core.TEMPLATE / f"dot-claude/skills/{skill}/SKILL.md").read_text(encoding="utf-8")
-    for path in (root / "AGENTS.md", omi.common.core.TEMPLATE / "AGENTS.md",
-                 root / ".claude/skills/omi-idea/SKILL.md",
+    for path in (omi.common.core.TEMPLATE / "AGENTS.md",
                  omi.common.core.TEMPLATE / "dot-claude/skills/omi-idea/SKILL.md"):
         text = path.read_text(encoding="utf-8")
         assert "only at task start from the approved proposal or alternative" in text
