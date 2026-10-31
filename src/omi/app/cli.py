@@ -241,8 +241,9 @@ def dispatch(argv: list[str] | None = None) -> None:
     elif cmd == "workflows":
         workflows.check_all_workflows(root) if rest[:1] == ["--check"] else workflows.workflows_catalog(root)
     elif cmd == "step" and len(rest) >= 2:
-        why = " ".join(rest[rest.index("--why") + 1:]) if "--why" in rest else None
         to = core.flag(rest, "--to")
+        words = [w for i, w in enumerate(rest) if not (w == "--to" and to) and not (to and i and rest[i - 1] == "--to" and w == to)]
+        why = " ".join(words[words.index("--why") + 1:]) if "--why" in words else None
         if "--to" in rest and (rest[1] != "back" or not to or to.startswith("--")):
             sys.exit(f"usage: omi step {rest[0]} back --to <step> --why <reason>. Nothing changed.")
         sys.exit(tasks.step(state.resolve(core.main_checkout(".") or Path(".").resolve()), rest[0], rest[1], why, to=to))

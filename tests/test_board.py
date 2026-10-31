@@ -232,6 +232,7 @@ def test_fetch_timeout_serves_stale():
             stale = data.projects()["source"]
         (argv, kw), = seen
         assert "fetch" in argv and kw["env"]["GIT_TERMINAL_PROMPT"] == "0" and kw["timeout"] == source.FETCH_TIMEOUT
+        assert kw["env"]["GCM_INTERACTIVE"] == "never" and kw["stdout"] == kw["stderr"] == subprocess.DEVNULL and "capture_output" not in kw
         assert stale["stale"] is True and stale["sha"] == fresh["sha"] and stale["fetched_at"] == fresh["fetched_at"]
 
 

@@ -360,7 +360,7 @@ def test_session_resume():
             (scan, given), = scans
             assert scan[scan.index("--user") + 1] == "node" and scan[scan.index("--network") + 1] == "none" and "--read-only" in scan
             assert f"type=volume,src={vol},dst=/s,readonly" in scan and scan[-5:] == ["grep", "-rqF", "-f", "-", "/s"]
-            assert scan[scan.index("--name") + 1] == f"{vol}-scan" and f"omi-repo={repo}" in scan and not killed
+            assert scan[scan.index("--name") + 1] == f"{vol}-scan" and f"omi-repo={repo}" in scan and "omi-worker=1" not in scan and not killed
             assert given.splitlines() == ["tok"], given
             assert not any("tok" in a.split("=")[-1] for c in [*calls, *runs] for a in c if a != "omi-task=TASK-001"), "token in argv"
             assert sess.recorded("Session: claude --x", "claude") is None and sess.recorded("Session: claude *", "claude") is None

@@ -253,6 +253,11 @@ def test_cli_characterization():
         assert cli(root, "step", "TASK-001", "done")[0] == 0 and cli(root, "step", "TASK-001", "next")[0] == 0
         assert cli(root, "step", "TASK-001", "back", "--to", "build", "--why", "re-plan", "the API") == (
             0, "TASK-001: step review failed; back to build (omi-agent-engineer), then `omi step TASK-001 done` and `next`\n", "")
+        assert cli(root, "step", "TASK-001", "done")[0] == 0 and cli(root, "step", "TASK-001", "next")[0] == 0 and cli(root, "step", "TASK-001", "done")[0] == 0
+        assert cli(root, "step", "TASK-001", "next")[0] == 0
+        assert cli(root, "step", "TASK-001", "back", "--why", "late", "reason", "--to", "build")[0] == 0
+        text = (root / ".omi" / "tasks" / "TASK-001.md").read_text(encoding="utf-8")
+        assert "workflow back to build" in text and ": late reason\n" in text and "--to" not in text.split("## Steps")[1]
         text = (root / ".omi" / "tasks" / "TASK-001.md").read_text(encoding="utf-8")
         assert "\nstep: build\n" in text and re.search(r"^- workflow back to build [\d-]+ [\d:]+: re-plan the API\n- review failed ", text, re.M), text
         assert cli(root, "attach") == (1, "", f"OMI: {root.as_posix()} has no origin remote\n")

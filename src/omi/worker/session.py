@@ -118,7 +118,7 @@ def scrub(repo, tid, tool, image, secret_value):
     vol = volume(repo, tid, tool)
     name, rc = f"{vol}-scan", None
     try:  # the token goes in on stdin, never in argv
-        rc = _docker("run", "-i", "--name", name, "--label", "omi-worker=1", "--label", f"omi-repo={repo}", *HELPER,
+        rc = _docker("run", "-i", "--name", name, "--label", f"omi-repo={repo}", *HELPER,  # no omi-worker=1: not a worker row in status
                      "--user", "node", "--mount", f"type=volume,src={vol},dst=/s,readonly", image,
                      "grep", "-rqF", "-f", "-", "/s", input="\n".join(needles) + "\n", timeout=SCAN_TIMEOUT).returncode
     except (OSError, subprocess.SubprocessError):

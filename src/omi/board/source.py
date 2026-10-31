@@ -83,8 +83,9 @@ def _fetch(home: Path) -> bool:
     """Fetch origin/main without ever prompting for credentials; False on failure or timeout."""
     try:
         return subprocess.run(["git", "-C", str(home), "fetch", "--no-write-fetch-head", "--no-tags", "origin",
-                               "+refs/heads/main:refs/remotes/origin/main"], capture_output=True,
-                              env={**os.environ, "GIT_TERMINAL_PROMPT": "0"}, timeout=FETCH_TIMEOUT).returncode == 0
+                               "+refs/heads/main:refs/remotes/origin/main"],
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,  # no pipes: a surviving git-remote-* child would hold them open past the timeout
+                              env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}, timeout=FETCH_TIMEOUT).returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False
 
