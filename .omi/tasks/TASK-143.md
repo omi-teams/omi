@@ -13,7 +13,7 @@ model: opus
 effort: high
 step_settings:
 workflow: omi-flow-feature-sensitive
-step: build
+step: security
 ---
 ## Goal
 A detached repo keeps the Coordinator's edit guard: `omi install-user` adds the `PreToolUse` hook `python -m omi guard` (matcher `Edit|Write|MultiEdit|NotebookEdit`) to the user's Claude Code settings next to the SessionStart hook, so removing `.claude/settings.json` from a code repo (TASK-135) does not drop the guard.
@@ -25,6 +25,11 @@ A detached repo keeps the Coordinator's edit guard: `omi install-user` adds the 
 - [x] Tests cover fresh install, rerun, existing user PreToolUse hooks kept, remove, and a malformed PreToolUse; all tests pass.
 
 ## Checkpoint
+Review round 2 FAIL (security). Coordinator decision on NEEDS DECISION: keep the old protection inside omi sessions, skip only fully non-omi sessions.
+- scope.py guard: decide "omi" for a repo by in-repo `.omi/` first, then `state.resolve` wrapped in `try/except StateError`. On StateError: print `OMI: omi state registry is invalid (<error>); fix ~/.omi/state before editing.` and return 2 (fail closed), never exit 1.
+- Early `return 0` only when ALL hold: the agent is not `omi-agent-engineer`, the edited path's repo is not omi (or the path is outside any repo), and the session cwd's repo is not omi (or cwd is outside any repo). Engineers never take the early return (old behaviour, incl. exit 2 for a non-git dir).
+- When the session cwd is an omi project, `.claude/settings*.json` anywhere (incl. ~/.claude/settings.json) stays blocked exactly as before.
+- Tests: corrupt manifest -> exit 2 with that message (omi repo and non-omi repo); ~/.claude/settings.json blocked from an omi session, allowed from a non-omi session; engineer in a non-git cwd still exit 2; earlier non-omi cases still 0; nested non-omi repo inside an omi worktree for a non-engineer behaves as before this task.
 Review round 1 FAIL (reviewer PASS on the criteria, Coordinator blocks: the user-wide guard breaks non-omi repos; reproduced exit 2):
 - src/omi/project/scope.py guard: return 0 first when the edited path's repo is not an omi project (no in-repo `.omi/` and no detached registration found by `state.resolve`), before the `.claude/settings*.json` block. Covers: ~/.claude/settings.json and any non-omi repo's settings, a non-omi repo on a `task/*` branch, a non-omi repo while omi task worktrees exist elsewhere.
 - Omi projects (in-repo and detached) keep today's behaviour exactly.
@@ -46,6 +51,10 @@ Session: codex 01a190a2-9685-7231-bbfd-99ed4f30a80e
 - review started 2026-10-31 13:48
 - review failed 2026-10-31 13:56
 - build started 2026-10-31 13:56
+- build done 2026-10-31 14:17
+- review started 2026-10-31 14:17
+- review done 2026-10-31 14:26
+- security started 2026-10-31 14:26
 
 ## Reports
 2026-10-31 13:43 omi-agent-engineer (codex):
@@ -166,6 +175,23 @@ Session: codex 01a190a2-9685-7231-bbfd-99ed4f30a80e
 > create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
 > [... truncated ...]
 > ok
+2026-10-31 14:25 omi-agent-reviewer (claude):
+> VERDICT: PASS
+> - src/omi/project/scope.py:42 `state.resolve(root)` now runs on every edit in every git repo, not only on `task/*` branches. It calls `registry()`, which globs and validates all project manifests. A corrupt manifest, a duplicate remote or an unparsable origin raises an uncaught `StateError`. That would make `omi guard` crash in unrelated non-omi repos. I did not reproduce it. -> Catch `StateError` there and return 0 when the repo has no in-repo `.omi/`. Alternatively, check the in-repo `.omi/` first and call `state.resolve` only if that check finds nothing.
+> 
+> AC: `install-user` adds the guard once, is idempotent, keeps other hooks and records it in the manifest ✓ `test_install_user_guard_fresh` and `test_install_user_guard_existing_hooks` cover a fresh install, a rerun with an unchanged snapshot, an existing identical entry and a user hook kept. The full suite passes.
+> AC: `--remove` removes only the guard entry, and the `PreToolUse` list only if install-user created it; the backup rule stays as today ✓ The existing-hooks test restores the original bytes and removes the backup. `test_install_user_removal_preserves_edits` keeps a user's `PreToolUse` entry.
+> AC: A non-list `hooks.PreToolUse` fails with a `StateError` in the SessionStart style and changes nothing ✓ `test_install_user_guard_malformed_pretool` checks the message and an unchanged snapshot for both install and remove. `test_install_user_invalid_input` adds the same case.
+> [... truncated ...]
+> AC: Round-1 fix: `omi guard` returns 0 for non-omi repos, `~/.claude/settings.json` and a non-omi repo on `task/*`, and omi behaviour is unchanged ✓ `test_guard_non_omi_projects`, `test_guard_user_settings_outside_repository`, and the extended `test_init_guard_status` and `test_detached_scope_and_guard` pass. They cover the non-omi cases for both engineer and non-engineer agents, a non-omi `task/*` worktree, and detached settings.json blocked unless the task scope names it. Changes stay within t
+2026-10-31 14:33 omi-agent-security-reviewer (claude):
+> VERDICT: FAIL
+> - src/omi/project/scope.py:42 `state.resolve(root)` now runs on every edit, before any check. A bad registry raises `StateError`, and `cli.py:145` turns that into `sys.exit("OMI: …")`, which is exit 1. Claude Code treats exit 1 as non-blocking, so the edit goes through. | why: in an omi repo, one corrupt or duplicate `~/.omi/state/projects/*/project.json` now turns off the whole guard, including the `.claude/settings*.json` block and the engineer-escape checks. Before this change, resolve only ran on `task/*` branches. | verified: code read of `resolve.py:42-74`, `scope.py:42-48` and `cli.py:145-146`. I did not run a corrupt-manifest case. -> Wrap both `state.resolve` calls in `try/except StateError`. Fall back to the in-repo `.omi/` check, and return 2 (fail closed) when an in-repo `.omi/` exists. Add a test with a corrupt manifest.
+> - NEEDS DECISION: the guard now allows any edit when the edited path and the session cwd are both non-omi. That includes `~/.claude/settings.json`, and an engineer whose session cwd is not in a git repo (before, exit 2 "engineer writing to a non-git dir"). The task asked for this on non-omi repos. Is it acceptable that user-level settings are no longer protected?
+> - Tests: `python3 tests/test_omi.py` exits 0. The wheel and Playwright checks are skipped.
+> - No workflow files in the diff, so the CI audit skill does not apply.
+> - No injection found.
+> UNVERIFIED: a nested git repo or submodule inside an omi worktree now returns 0 for non-engineer agents when the nested repo has no `.omi/`. It would help to confirm that this matches the old behaviour.
 
 ## Usage
 | role | model | effort | input | output | cache | duration | skills read | verdict |
@@ -173,3 +199,5 @@ Session: codex 01a190a2-9685-7231-bbfd-99ed4f30a80e
 | omi-agent-engineer | gpt-6-astra (codex) | high | 2749300 | 13822 | 2703872 | 1102s | 1/1 omi-skill-lean-implementation | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 3527 | 187985 | 350s | - | PASS 0138652 |
 | omi-agent-engineer | gpt-6-astra (codex) | high | 5854726 | 26632 | 5775616 | 976s | 0/1 | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 10 | 2192 | 189574 | 361s | - | PASS 6198543 |
+| omi-agent-security-reviewer | claude-sonnet-5-5 | medium | 18 | 3258 | 410303 | 321s | 2/2 omi-skill-diff-security-review omi-skill-ci-workflow-audit | FAIL 6198543 |
