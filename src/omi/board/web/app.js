@@ -152,7 +152,8 @@ function dashboard(name, d) {
   });
   const u = d.usage;
   return [box("heading", [box("stack", [heading(name),
-    el("span", "origin/main", {class: "muted small mono"})]), chip(d.source.sha.slice(0, 7), "mono")]),
+    el("span", "origin/main", {class: "muted small mono"})]),
+    box("chips", [link("Chi phí và quota →", `${projectHref(name)}/cost`, "small"), chip(d.source.sha.slice(0, 7), "mono")])]),
     section(`Chờ PO (${num(d.po_waiting_count)})`, waiting.length ? waiting : [empty("Không có việc chờ PO.")], "Những việc cần anh/chị quyết", "po"),
     box("stats", stats.map(([n, label], i) => box("stat", [el("div", num(n), {class: "n"}, i === 3 ? [el("span", ` / ${num(Object.values(count).reduce((a, b) => a + b, 0))}`, {class: "denom"})] : []), el("div", label, {class: "l"})]))),
     section("Kế hoạch", [box("", d.plans.length ? d.plans.map(planRow) : [empty("Chưa có kế hoạch.")])], `${num(d.plans.length)} kế hoạch · ${num(d.plans.filter((p) => p.status === "active").length)} đang chạy`),
@@ -164,6 +165,53 @@ function dashboard(name, d) {
       table(["Model", "Lượt", "Input", "Output", "Cache"],
       [...Object.entries(u.models), ["Tổng", u.totals]].map(([m, r]) => [m, num(r.runs), num(r.input), num(r.output), num(r.cache)]),
       "Bảng sử dụng token")], `Vòng review: ${num(u.totals.review_rounds)}`, "panel usage")];
+}
+const usd = (n) => n === null || n === undefined ? "Thiếu giá" : `≈ US$${Number(n).toLocaleString("vi-VN", {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+function costBar(tokens, max, hatch) {
+  const pct = max ? Math.round(tokens / max * 100) : 0;
+  const fill = el("div", null, {class: `bar-f${hatch ? " hatch" : ""}`});
+  fill.setAttribute("style", `width:${pct}%`);
+  return box("cell", [el("div", null, {class: "bar-t", role: "img", "aria-label": `${num(tokens)} token, ${pct}% mức lớn nhất`}, [fill]),
+    el("strong", num(tokens))]);
+}
+function costTable(label, rows, caption, hasPrices, project) {
+  const max = Math.max(0, ...rows.map((r) => r.tokens));
+  const head = [label, "Tổng token", "Vào", "Ra", "Cache", "Lượt chạy", ...(project ? ["Vòng review"] : []), ...(hasPrices ? ["Ước tính"] : [])];
+  const body = rows.map((r) => {
+    const badges = [];
+    if (r.top) badges.push(el("span", `↑ Top ${r.top}`, {class: "badge b-top"}));
+    if (r.fails >= 2) badges.push(el("span", `✕ ${r.fails} lần FAIL`, {class: "badge b-fail"}));
+    const name = project ? [link(r.id, taskHref(project, r.id)), el("span", ` ${r.title}`), el("br"),
+      el("span", `${r.plan} · ${r.tool}`, {class: "muted small"})] : [el("span", r.key)];
+    const cells = [["", name], ["", [costBar(r.tokens, max, !!r.top), ...(badges.length ? [box("badges", badges)] : [])]],
+      ["Vào", num(r.input)], ["Ra", num(r.output)], ["Cache", num(r.cache)], ["Lượt chạy", num(r.runs)],
+      ...(project ? [["Vòng review", num(r.review_rounds)]] : []), ...(hasPrices ? [["Ước tính", usd(r.cost)]] : [])];
+    return el("tr", null, {}, cells.map(([l, c], i) => el("td", Array.isArray(c) ? null : c,
+      {class: i === 0 ? "name" : i === 1 ? "barc" : "num", ...(l ? {"data-l": l} : {})}, Array.isArray(c) ? c : [])));
+  });
+  return el("div", null, {class: "scroll"}, [el("table", null, {}, [el("caption", caption),
+    el("thead", null, {}, [el("tr", null, {}, head.map((h, i) => el("th", h, {scope: "col", class: i > 1 ? "num" : ""})))]),
+    el("tbody", null, {}, body)])]);
+}
+function costPage(name, d) {
+  const t = d.totals;
+  const total = d.has_prices ? (t.cost === null ? "chưa đủ giá" : usd(t.cost)) : "Chưa có";
+  const stats = [[num(t.input), "Token vào"], [num(t.output), "Token ra"], [num(t.cache), "Token cache"], [num(t.runs), "Lượt chạy"],
+    [total, d.has_prices ? "Ước tính USD, theo prices trong config" : "Ước tính USD: thiếu prices"]];
+  const keyed = (rows, key) => rows.map((r) => ({...r, key: r[key]}));
+  const groups = [["Task đắt nhất và vòng review", d.tasks, "Task", true], ["Theo plan", keyed(d.plans, "plan"), "Plan"],
+    ["Theo tool", keyed(d.tools, "tool"), "Tool"], ["Theo model", keyed(d.models, "model"), "Model"]];
+  const note = d.has_prices ? [] : [el("div", null, {class: "note", role: "note"}, [
+    el("div", null, {}, [el("strong", "Chỉ hiển thị token, chưa có chi phí USD."),
+      el("br"), el("span", "Thêm bản đồ prices theo từng model vào .omi/config.json để xem ước tính.")])])];
+  const legend = el("ul", null, {class: "legend", "aria-label": "Chú giải"}, [
+    el("li", "Thanh vạch chéo + nhãn “↑ Top n”: 5 task đắt nhất"), el("li", "Nhãn “✕ n lần FAIL”: task có từ 2 vòng review FAIL")]);
+  return [box("stack", [link(`← Về dự án ${name}`, projectHref(name), "small"), heading("Chi phí và quota")]),
+    box("stats cost-stats", stats.map(([n, l]) => box("stat", [el("div", n, {class: "n"}), el("div", l, {class: "l"})]))), ...note,
+    ...groups.map(([text, rows, label, byTask]) => section(text, [
+      ...(byTask ? [legend] : []),
+      rows.length ? costTable(label, rows, `${text}. Thanh so với mức lớn nhất; giá trị luôn ghi bằng chữ.`, d.has_prices, byTask ? name : null) : empty("Chưa có dữ liệu sử dụng.")],
+      `${num(rows.length)} mục`))];
 }
 function workflow(d) {
   const f = d.frontmatter;
@@ -258,12 +306,13 @@ async function route(button = null) {
   const abort = new AbortController();
   const limit = setTimeout(() => abort.abort(), 10000);
   try {
-    const m = hash.match(/^#\/p\/([^/]+)(?:\/t\/([^/]+))?$/);
+    const m = hash.match(/^#\/p\/([^/]+)(?:\/t\/([^/]+)|\/(cost))?$/);
     const name = m ? decodeURIComponent(m[1]) : null;
     const id = m?.[2] ? decodeURIComponent(m[2]) : null;
-    if (changed) view.replaceChildren(heading(id || name || "Dự án"),
+    const costs = !!m?.[3];
+    if (changed) view.replaceChildren(heading(costs ? "Chi phí và quota" : id || name || "Dự án"),
       el("div", null, {class: "skeleton", "aria-hidden": "true"}), el("p", "Đang tải…"));
-    const path = name ? `/api/projects/${enc(name)}${id ? "/tasks/" + enc(id) : ""}` : "/api/projects";
+    const path = name ? `/api/projects/${enc(name)}${id ? "/tasks/" + enc(id) : costs ? "/cost" : ""}` : "/api/projects";
     const response = await fetch(path, {cache: "no-store", signal: abort.signal});
     if (!response.ok) throw new Error(String(response.status));
     const text = await response.text();
@@ -295,7 +344,7 @@ async function route(button = null) {
     }
     if (contentKey === seen) { revision = data.source.sha; updated(data.source); return; }
     // Render off the page, and only cache a response after its view succeeds.
-    const nodes = name ? id ? taskPage(name, id, data) : dashboard(name, data) : home(data.projects);
+    const nodes = name ? costs ? costPage(name, data) : id ? taskPage(name, id, data) : dashboard(name, data) : home(data.projects);
     const scrolled = window.scrollY;
     const focused = document.activeElement;
     const focusInView = !changed && view.contains(focused);
@@ -311,8 +360,8 @@ async function route(button = null) {
       focused.focus({preventScroll: true});
     }
     if (!changed) window.scrollTo(0, scrolled);
-    if (changed) setNav(name ? id ? [[name, projectHref(name)], [id]] : [[name]] : []);
-    document.title = `${id || name || "Dự án"} — omi board`;
+    if (changed) setNav(name ? id || costs ? [[name, projectHref(name)], [id || "Chi phí"]] : [[name]] : []);
+    document.title = `${costs ? "Chi phí" : id || name || "Dự án"} — omi board`;
     seen = contentKey;
     revision = data.source.sha;
     updated(data.source);

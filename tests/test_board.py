@@ -375,6 +375,43 @@ def test_empty_and_layer():
         assert str(home) not in json.dumps(view)
 
 
+def usage_task(root, id, plan, tool, rows):
+    table = "".join(f"| {r} |\n" for r in rows)
+    write(root / f".omi/tasks/{id}.md", f"---\nid: {id}\ntitle: T {id}\nstatus: done\nplan: {plan}\ntool: {tool}\n---\n## Goal\nx\n\n## Usage\n"
+          "| role | model | effort | input | output | cache | duration | skills read | verdict |\n|---|---|---|---|---|---|---|---|---|\n" + table)
+
+
+def test_cost():
+    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+        home = Path(directory)
+        root = home / "projects" / "sample"
+        usage_task(root, "TASK-001", "PLAN-001", "claude", [
+            "omi-agent-engineer | m-a | high | 1000000 | 500000 | 2000000 | 5s | - | -",
+            "omi-agent-reviewer | m-a | high | 100 | 50 | n/a | 5s | - | FAIL abc1234",
+            "omi-agent-reviewer | m-a | high | 100 | 50 | 0 | 5s | - | FAIL bcd2345",
+            "omi-agent-reviewer | m-a | high | 1 | 1 | 1 | 5s | - | QUOTA->codex"])
+        usage_task(root, "TASK-002", "PLAN-002", "codex", ["omi-agent-engineer | m-b | high | 10 | 20 | 30 | 5s | - | -"])
+        write(root / ".omi/tasks/TASK-003.md", "---\nid: TASK-003\nstatus: planned\n---\n")
+        remote(home)
+        view = data.cost("sample")
+        assert not view["has_prices"] and [t["id"] for t in view["tasks"]] == ["TASK-001", "TASK-002"]
+        first = view["tasks"][0]
+        assert (first["input"], first["output"], first["cache"], first["runs"]) == (1000201, 500101, 2000001, 4)
+        assert (first["review_rounds"], first["fails"], first["top"], first["cost"]) == (2, 2, 1, None)
+        assert [(p["plan"], p["runs"]) for p in view["plans"]] == [("PLAN-001", 4), ("PLAN-002", 1)]
+        assert [(t["tool"], t["tokens"]) for t in view["tools"]] == [("claude", 3500303), ("codex", 60)]
+        assert [m["model"] for m in view["models"]] == ["m-a", "m-b"] and view["totals"]["runs"] == 5
+        assert view["totals"]["cost"] is None
+        write(home / "projects/sample/.omi/config.json", json.dumps({"prices": {"m-a": {"input": 1, "output": 2, "cache": 0.5}}}))
+        publish(home)
+        view = data.cost("sample")
+        assert view["has_prices"] and view["tasks"][0]["cost"] == 3.0004
+        assert view["tasks"][1]["cost"] is None and view["totals"]["cost"] is None  # m-b has no price
+        write(home / "projects/sample/.omi/config.json", "{bad")
+        publish(home)
+        assert not data.cost("sample")["has_prices"]
+
+
 def main():
     test_views()
     test_plan_status_derived()
@@ -388,6 +425,7 @@ def main():
     test_path_refusal()
     test_snapshot_symlink_unavailable()
     test_empty_and_layer()
+    test_cost()
 
 
 if __name__ == "__main__":

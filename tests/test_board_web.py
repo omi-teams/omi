@@ -554,6 +554,17 @@ async function advance(polls) {
   assert(elements.err.textContent.includes('Thử lại'));
   assert.equal(find(elements.view,'skeleton').length,0);
   assert.equal(elements.view.textContent,'missing');
+  // Cost page: text only, tokens-only note without prices, badges not by colour alone.
+  const row=(o)=>({input:10,output:5,cache:1,runs:2,tokens:16,cost:null,review_rounds:3,fails:0,top:null,...o});
+  const costData={has_prices:false,tasks:[row({id:'TASK-1',title:'<b>x</b>',plan:'P',tool:'claude',top:1,fails:2})],
+    plans:[row({plan:'P'})],tools:[row({tool:'claude'})],models:[row({model:'m'})],totals:row({})};
+  const page=invoke(`costPage('omi',${JSON.stringify(costData)})`);
+  const pageText=page.map(n=>n.textContent).join('|');
+  assert(pageText.includes('Chỉ hiển thị token'));assert(!pageText.includes('US$'));
+  assert(pageText.includes('↑ Top 1')&&pageText.includes('✕ 2 lần FAIL')&&pageText.includes('<b>x</b>'));
+  assert.equal(find(page[page.length-4],'hatch').length,1);
+  const priced=invoke(`costPage('omi',${JSON.stringify({...costData,has_prices:true,totals:row({cost:null})})})`).map(n=>n.textContent).join('|');
+  assert(priced.includes('Thiếu giá')&&priced.includes('chưa đủ giá'));
   console.log('ok: API views, mockup DOM, safe text, version changes/unchanged/hidden, polling, recovery, focus, races');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 """
