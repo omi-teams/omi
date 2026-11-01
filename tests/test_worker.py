@@ -889,7 +889,16 @@ def test_pr_comment():
         subprocess.run, shutil.which, omi.common.core.git = real
 
 
+def test_verdict_of_forms():
+    v = omi.worker.tools.verdict_of
+    assert v("VERDICT: FAIL\n**VERDICT: PASS**") == "PASS"
+    assert v("done\nRESULT: FAIL") == "FAIL"
+    assert v("```\nRESULT: PASS\n```") == "PASS"
+    assert v("the verdict is unchanged: FAIL") is None
+
+
 def main():
+    test_verdict_of_forms()
     test_pr_comment()
     test_worker_cache_tmpfs_and_full_volumes()
     test_download_cache_gitignore()
@@ -906,3 +915,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
