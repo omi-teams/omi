@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ..board import server
 from ..setup import attach, install, upgrade
-from ..project import catalogs, github, scope, tasks, workflows
+from ..project import catalogs, github, improve, scope, tasks, workflows
 from ..common import core
 from ..worker import creds, docker, hooks, run
 from ..state import resolve as state, sync as state_sync
@@ -22,6 +22,7 @@ USAGE = """usage: omi <command>
   upgrade [--check | --to vX.Y.Z]   install a newer omi and update the project's unmodified template files (modified ones get <path>.omi-new)
   version      print the omi version and how to check for a newer one (also --version)
   status       show tasks, checkpoints and the next suggested task
+  improve "<one line>" [--kind bug|security|idea] [--from <project>]   file an omi improvement
   sync         pull, commit leftover detached state changes and push
   board [--port N] [--no-open]   serve the read-only task board on 127.0.0.1 (default port 8765)
   guard        Claude Code PreToolUse hook: block writes outside task scope
@@ -62,6 +63,8 @@ def status(cwd="."):
         old = True
     if old:
         print(f"run `python -m omi upgrade --apply` to bring the project files to omi {core.version()}")
+    source = project.state.name if project.detached else project.code.name
+    print(f"omi improvements filed: {improve.open_count(source)} open")
     dockerfile = root / "docker" / "Dockerfile"
     if dockerfile.exists() and dockerfile.read_bytes().replace(b"\r\n", b"\n") != (core.TEMPLATE / "docker" / "Dockerfile").read_bytes().replace(b"\r\n", b"\n"):
         print(f"docker/Dockerfile differs from the omi {core.version()} template; review it (omi init never overwrites it)")
@@ -189,6 +192,8 @@ def dispatch(argv: list[str] | None = None) -> None:
         sys.exit(upgrade.upgrade_cmd(rest, root, detached=project.detached))
     elif cmd == "template-shas" and len(rest) == 2:
         upgrade.template_shas_cmd(*rest)
+    elif cmd == "improve":
+        improve.improve(rest)
     elif cmd == "sync":
         project = state.resolve()
         if rest:

@@ -1,6 +1,7 @@
 import io
 import re
 import shutil
+import shlex
 import json
 import contextlib
 import os
@@ -9,7 +10,10 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from helpers import omi, git
+from helpers import omi, git, detached_project, detached_cli, state_remote
+from unittest.mock import patch
+from omi.project import improve
+from omi.state import resolve as state
 
 
 def test_cli_correctness():
@@ -158,7 +162,7 @@ def test_cli_characterization():
         rc, usage, err = cli(root)
         assert rc == 0 and usage.startswith("usage: omi <command>\n") and not err
         assert [l.split()[0] for l in usage.splitlines()[1:]] == [
-            "attach", "install-user", "init", "upgrade", "version", "status", "sync", "board", "guard", "github", "clean", "skills", "skills", "token", "plans",
+            "attach", "install-user", "init", "upgrade", "version", "status", "improve", "sync", "board", "guard", "github", "clean", "skills", "skills", "token", "plans",
             "references", "rules", "agents", "workflows", "step", "note", "run", "hook", "parallel", "worker", "worker"]
         # unknown commands and incomplete arguments fall through to the usage text
         for args in (["help"], ["bogus"], ["step", "TASK-001"], ["run", "omi-agent-engineer", "--model"], ["parallel", "X"],
@@ -300,7 +304,106 @@ def test_status_phase_and_step_lines() -> None:
         assert "bước 0/" not in output.getvalue()
 
 
+
+def register_omi(project: Path) -> Path:
+    root = project.parent / "omi"
+    root.mkdir()
+    (root / "project.json").write_text('{"remote": "https://github.com/omi-teams/omi"}', encoding="utf-8")
+    (root / ".omi" / "tasks").mkdir(parents=True)
+    return root
+
+
+def test_improve_creation_and_workflows() -> None:
+    with detached_project() as (code, project, wt, task):
+        target = register_omi(project)
+        # Existing omi task numbers, including done tasks, determine the next id.
+        (target / ".omi/tasks/TASK-123.md").write_text("---\nid: TASK-123\nstatus: done\n---\n", encoding="utf-8")
+        home, remote, other = state_remote(project)
+        unrelated = project / "pending.txt"
+        unrelated.write_text("leave staged", encoding="utf-8")
+        git(home, "add", str(unrelated))
+        for index, (kind, workflow) in enumerate((("bug", "omi-flow-bugfix"), ("security", "omi-flow-feature-sensitive"),
+                                                 ("idea", "omi-flow-feature")), 124):
+            summary = f"Fix {kind}: preserve # and 'quotes'"
+            with patch.dict(os.environ, {"OMI_AGENT": "omi-agent-reviewer"}):
+                args = ["improve", summary] + ([] if kind == "bug" else ["--kind", kind])
+                out = detached_cli(wt, *args)
+            tid = f"TASK-{index}"
+            assert tid in out.splitlines(), out
+            text = (target / f".omi/tasks/{tid}.md").read_text(encoding="utf-8")
+            front = omi.common.core.parse(text)
+            assert front["id"] == tid and front["status"] == "planned" and front["workflow"] == workflow
+            assert f"title: {summary}\n" in text
+            assert "Source project: sample\nSource task: TASK-097\nSource agent: omi-agent-reviewer" in text
+            assert omi.common.core.git(home, "show", "--pretty=format:", "--name-only", "HEAD") == f"projects/omi/.omi/tasks/{tid}.md"
+            assert omi.common.core.git(home, "rev-parse", "HEAD") == omi.common.core.git(remote, "rev-parse", "main")
+        assert omi.common.core.git(home, "diff", "--cached", "--name-only") == "projects/sample/pending.txt"
+
+
+def test_improve_duplicate() -> None:
+    with detached_project() as (code, project, wt, task):
+        target = register_omi(project)
+        state_remote(project)
+        assert "TASK-001" in detached_cli(wt, "improve", "Same # finding")
+        head = omi.common.core.git(project, "rev-parse", "HEAD")
+        assert detached_cli(wt, "improve", "Same # finding", "--kind", "idea").strip() == "TASK-001"
+        assert omi.common.core.git(project, "rev-parse", "HEAD") == head
+        first = target / ".omi/tasks/TASK-001.md"
+        first.write_text(first.read_text(encoding="utf-8").replace("status: planned", "status: done"), encoding="utf-8")
+        assert "TASK-002" in detached_cli(wt, "improve", "Same # finding")
+
+
+def test_improve_fallback_and_validation() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        summary = "Keep 'quoted' $(text) # intact"
+        out = io.StringIO()
+        with patch.object(state, "resolve", return_value=state.Project(root, root)), \
+                patch.object(state, "registry", return_value={}), \
+                patch.object(omi.common.core, "git", return_value=None), \
+                patch("subprocess.run", side_effect=AssertionError("unexpected subprocess/network")), \
+                patch.dict(os.environ, {"OMI_TASK": "TASK-149", "OMI_AGENT": "Coordinator"}), \
+                contextlib.redirect_stdout(out):
+            improve.improve([summary, "--from", "other project", "--kind", "idea"], root)
+            for args in (["bad\ntext"], ["ok", "--from", ""], ["ok", "--kind", "invalid"], ["ok", "--from"]):
+                try:
+                    improve.improve(args, root)
+                    assert False, args
+                except (state.StateError, SystemExit):
+                    pass
+        text = out.getvalue()
+        command = text[text.index("gh issue create"):].strip()
+        words = shlex.split(command)
+        assert words[:5] == ["gh", "issue", "create", "--repo", "omi-teams/omi"]
+        assert words[words.index("--title") + 1] == summary
+        body = words[words.index("--body") + 1]
+        assert "Source project: other project\nSource task: TASK-149\nSource agent: Coordinator" in body
+        assert "Kind: idea" in body and summary in text
+        assert not list(root.iterdir())
+
+
+def test_improve_status_count() -> None:
+    with detached_project() as (code, project, wt, task):
+        target = register_omi(project)
+        state_remote(project)
+        detached_cli(wt, "improve", "open from sample")
+        detached_cli(wt, "improve", "open from elsewhere", "--from", "elsewhere")
+        detached_cli(wt, "improve", "closed from sample")
+        closed = target / ".omi/tasks/TASK-003.md"
+        closed.write_text(closed.read_text(encoding="utf-8").replace("status: planned", "status: done"), encoding="utf-8")
+        (project / ".omi/version").write_text("0.0.1", encoding="utf-8")
+        out = detached_cli(wt, "status")
+        assert "omi improvements filed: 1 open" in out and "upgrade --apply" in out
+        # Status in a project without the shared omi registration still prints zero.
+        with patch.object(improve, "omi_project", return_value=None):
+            assert "omi improvements filed: 0 open" in detached_cli(wt, "status")
+
+
 def main():
+    test_improve_creation_and_workflows()
+    test_improve_duplicate()
+    test_improve_fallback_and_validation()
+    test_improve_status_count()
     test_status_phase_and_step_lines()
     test_cli_correctness()
     test_cli_characterization()

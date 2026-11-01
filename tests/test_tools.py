@@ -499,6 +499,10 @@ def test_found_bug_rule():
         assert phrase in rule, phrase
     skill = (omi.common.core.TEMPLATE / "dot-claude/skills/omi-task/SKILL.md").read_text(encoding="utf-8")
     assert "`FOUND: <one line>`" in skill and "`Session: <tool> <id> <role>`" in skill
+    for content in (rule, skill):
+        for phrase in ('omi improve "<one line>" --kind bug --from <project>', "--kind security", "--kind idea",
+                       "before any other step", "Project bugs stay in the project", "OMI_TASK", "OMI_AGENT"):
+            assert phrase in content, phrase
 
 
 def test_task_start_copies_match():
