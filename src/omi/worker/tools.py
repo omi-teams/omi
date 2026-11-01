@@ -238,6 +238,6 @@ def parse_usage(tool, out):
 
 
 def verdict_of(report):
-    """The last `VERDICT: PASS|FAIL` line of a report, or None."""
-    found = re.findall(r"^\W*VERDICT:\W*(PASS|FAIL)", report or "", re.M)
+    """The last `VERDICT|RESULT: PASS|FAIL` line of a report, or None."""
+    found = re.findall(r"^\W*(?:VERDICT|RESULT):\W*(PASS|FAIL)", report or "", re.M)
     return found[-1] if found else None
