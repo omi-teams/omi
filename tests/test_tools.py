@@ -373,7 +373,7 @@ def test_tool_choice_and_quota_switch():
             printed = sys.stdout.getvalue()
         finally:
             sys.stdout = saved
-        assert "(step: build)" in printed and "resume: omi-task TASK-001" in printed, printed
+        assert "[Đang làm] TASK-001 t\n" in printed and "resume: omi-task TASK-001" in printed, printed
 
 
 def test_model_catalog_and_task_start():

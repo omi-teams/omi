@@ -379,7 +379,7 @@ def test_init_guard_status():
             omi.app.cli.status(root)
         finally:
             sys.stdout = real
-        assert "TASK-001 A (step: build)" in out.getvalue(), out.getvalue()
+        assert "[Đang làm] TASK-001 A\n" in out.getvalue(), out.getvalue()
 
         def show():
             out = io.StringIO()
