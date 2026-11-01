@@ -124,7 +124,7 @@ function dashboard(name, d) {
       chip(`${REASON[w.reason] || w.reason}${w.text ? " · " + w.text : ""}`, "warn"), link("Xem task →", taskHref(name, w.id), "push small")]);
   });
   const count = leafCounts(d);
-  const stats = [[d.po_waiting_count, "Chờ PO"], [count["in-progress"], "Đang làm"], [count.planned, "Kế hoạch"], [count.done, "Task đã xong"]];
+  const stats = [[d.po_waiting_count, "Chờ PO"], [count["in-progress"], "Đang làm · task lá"], [count.blocked, "Bị chặn · task lá"], [count.done, "Task lá đã xong"]];
   const leaves = tasks.filter(t => !t.children?.length);
   const columns = [], vacant = [];
   for (const [key, label] of Object.entries(PHASES)) {
@@ -156,8 +156,8 @@ function dashboard(name, d) {
     section(`Chờ PO (${num(d.po_waiting_count)})`, waiting.length ? waiting : [empty("Không có việc chờ PO.")], "Những việc cần anh/chị quyết", "po"),
     box("stats", stats.map(([n, label], i) => box("stat", [el("div", num(n), {class: "n"}, i === 3 ? [el("span", ` / ${num(Object.values(count).reduce((a, b) => a + b, 0))}`, {class: "denom"})] : []), el("div", label, {class: "l"})]))),
     section("Kế hoạch", [box("", d.plans.length ? d.plans.map(planRow) : [empty("Chưa có kế hoạch.")])], `${num(d.plans.length)} kế hoạch · ${num(d.plans.filter((p) => p.status === "active").length)} đang chạy`),
-    section("Cây công việc", [taskTree(name, tasks)]),
-    section("Kanban", [board]),
+    section("Cây công việc", [el("p", "Trạng thái cha tổng hợp từ con trực tiếp; mở một hàng để xem cấp dưới.", {class: "muted small"}), taskTree(name, tasks)]),
+    section("Kanban", [el("p", "Chỉ task lá · thứ tự pha cố định · cột trống thu gọn", {class: "muted small"}), board]),
     box("grid2", [section("Hoạt động", [box("feed", activity.length ? activity : [empty("Chưa có hoạt động.")])]),
       section("Quyết định", [box("feed", decisions.length ? decisions : [empty("Chưa có quyết định.")])])]),
     section("Sử dụng", [el("p", `${num(u.totals.runs)} lượt · ${num(u.totals.output)} output`, {class: "usage-summary muted small"}),
@@ -269,25 +269,31 @@ async function route(button = null) {
     const text = await response.text();
     if (ticket !== request) return;
     const data = JSON.parse(text);
+    let contentKey = text;
     // The detail endpoint carries the task's own workflow; the project view
     // carries hierarchy and the status derived from its children.
-    if (id && text !== seen) {
+    if (id) {
       const response = await fetch(`/api/projects/${enc(name)}`, {cache: "no-store", signal: abort.signal});
       if (!response.ok) throw new Error(String(response.status));
-      const project = JSON.parse(await response.text());
+      const projectText = await response.text();
+      const project = JSON.parse(projectText);
+      contentKey = JSON.stringify([text, projectText]);
       const item = Object.values(project.kanban).flat().find(t => t.id === id);
       if (item) Object.assign(data, {status: item.status, children: item.children, parent: item.parent, type: item.type});
       if (ticket !== request) return;
     }
-    if (!name && text !== seen) {
-      await Promise.all(data.projects.map(async p => {
+    if (!name) {
+      const projectTexts = await Promise.all(data.projects.map(async p => {
         const response = await fetch(`/api/projects/${enc(p.name)}`, {cache: "no-store", signal: abort.signal});
         if (!response.ok) throw new Error(String(response.status));
-        p.task_counts = leafCounts(JSON.parse(await response.text()));
+        const projectText = await response.text();
+        p.task_counts = leafCounts(JSON.parse(projectText));
+        return projectText;
       }));
+      contentKey = JSON.stringify([text, ...projectTexts]);
       if (ticket !== request) return;
     }
-    if (text === seen) { revision = data.source.sha; updated(data.source); return; }
+    if (contentKey === seen) { revision = data.source.sha; updated(data.source); return; }
     // Render off the page, and only cache a response after its view succeeds.
     const nodes = name ? id ? taskPage(name, id, data) : dashboard(name, data) : home(data.projects);
     const scrolled = window.scrollY;
@@ -307,7 +313,7 @@ async function route(button = null) {
     if (!changed) window.scrollTo(0, scrolled);
     if (changed) setNav(name ? id ? [[name, projectHref(name)], [id]] : [[name]] : []);
     document.title = `${id || name || "Dự án"} — omi board`;
-    seen = text;
+    seen = contentKey;
     revision = data.source.sha;
     updated(data.source);
     if (changed) document.getElementById("title").focus();

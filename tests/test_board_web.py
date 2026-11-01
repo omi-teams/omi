@@ -313,9 +313,10 @@ const window={scrollY:0,scrolled:null,scrollTo(x,y){this.scrolled=y;},listeners:
 const location={hash:'#/'};
 """ + API_FIXTURES + r"""
 let data={projects:[summary],source:remoteSource};
+let projectData=dashboard;
 let timeouts=[];
 async function fetch(path,opts) {
-  if((location.hash==='#/' || location.hash.includes('/t/')) && path==='/api/projects/omi') return {ok:true,text:async()=>JSON.stringify(dashboard)};
+  if((location.hash==='#/' || location.hash.includes('/t/')) && path==='/api/projects/omi') return {ok:true,text:async()=>JSON.stringify(projectData)};
   if(path.endsWith('/version')) versionCalls++; else calls++;
   if(pending) return pending(path,opts);
   if(fail) throw Error('offline');
@@ -412,6 +413,15 @@ async function advance(polls) {
   assert.equal(window.scrolled,210);
   data=dashboard;location.hash='#/p/omi';await invoke('route()');
   assert.equal(find(elements.view,'stat').length,4);
+  assert.deepEqual(find(elements.view,'stat').map(n=>find(n,'l')[0].textContent),
+    ['Chờ PO','Đang làm · task lá','Bị chặn · task lá','Task lá đã xong']);
+  for(const note of ['Chỉ task lá · thứ tự pha cố định · cột trống thu gọn',
+    'Trạng thái cha tổng hợp từ con trực tiếp; mở một hàng để xem cấp dưới.'])
+    assert(elements.view.textContent.includes(note));
+  const blockedLeaf={...detail,id:'TASK-BLOCKED',status:'blocked',children:[]};
+  const blockedParent={...blockedLeaf,id:'FR-BLOCKED',type:'fr',children:['TASK-BLOCKED']};
+  const blockedStats=invoke(`dashboard('omi',${JSON.stringify({...dashboard,kanban:{blocked:[blockedLeaf,blockedParent]}})})`);
+  assert.equal(find(blockedStats[2],'stat')[2].textContent,'1Bị chặn · task lá');
   assert.equal(find(elements.view,'col').length,9);
   assert.equal(find(elements.view,'empty-phases').length,1);
   assert.equal(find(elements.view,'poi').length,1);
@@ -482,7 +492,7 @@ async function advance(polls) {
   data={...dashboard,kanban:{planned:[],done:[leaf,parent], 'in-progress':[epic]}};
   location.hash='#/p/omi';await invoke('route()');
   assert.equal(find(elements.view,'card').length,1);
-  assert.equal(find(elements.view,'stat')[3].textContent,'1 / 1Task đã xong');
+  assert.equal(find(elements.view,'stat')[3].textContent,'1 / 1Task lá đã xong');
   const tree=find(elements.view,'tree')[0];
   assert.equal(all(tree).filter(n=>n.tagName==='details').length,2);
   assert.equal(all(tree).filter(n=>n.tagName==='details')[1].attrs.open,undefined);
@@ -496,6 +506,37 @@ async function advance(polls) {
   assert(parentPage[0].textContent.includes('✓ Xong · tổng hợp'));
   assert(parentPage[1].textContent.includes('Quy trình riêng'));
   assert.equal(invoke('stepText({frontmatter:{},step_index:null,step_count:7})'),'bước ?/7 · —');
+  // A child-only change must invalidate the combined task/project cache key.
+  data={...detail,id:'FR-001'};projectData={...dashboard,kanban:{done:[parent,leaf]}};
+  location.hash='#/p/omi/t/FR-001';await invoke('route()');
+  assert(elements.view.children[0].textContent.includes('✓ Xong · tổng hợp'));
+  const parentView=elements.view.children[0];
+  const unchangedDetail=JSON.stringify(data);
+  projectData={...dashboard,kanban:{blocked:[{...parent,status:'blocked',type:'nfr'}, {...leaf,status:'blocked'}]}};
+  versionSha='child-blocked';await invoke('pollVersion()');
+  assert.equal(JSON.stringify(data),unchangedDetail);
+  assert.notEqual(elements.view.children[0],parentView);
+  assert(elements.view.children[0].textContent.includes('✖ Bị chặn · tổng hợp'));
+  assert(elements.view.children[0].textContent.includes('NFR'));
+  const refreshedParent=elements.view.children[0];await invoke('route()');
+  assert.equal(elements.view.children[0],refreshedParent);
+  // Removing the last child also refreshes the parent's derived metadata.
+  projectData={...dashboard,kanban:{blocked:[{...parent,status:'blocked',children:[]}]}};
+  await invoke('route()');assert(!elements.view.children[0].textContent.includes('tổng hợp'));
+  // The same unchanged-primary-response case applies to home leaf counts.
+  data={projects:[summary],source:remoteSource};location.hash='#/';
+  projectData=dashboard;await invoke('route()');
+  const homeView=elements.view.children[0];const unchangedHome=JSON.stringify(data);
+  assert.equal(find(elements.view,'counts')[0].children[1].children[0].textContent,'1');
+  projectData={...dashboard,kanban:{blocked:[{...detail,status:'blocked'}]}};
+  versionSha='home-child-blocked';await invoke('pollVersion()');
+  assert.equal(JSON.stringify(data),unchangedHome);
+  assert.notEqual(elements.view.children[0],homeView);
+  assert.equal(find(elements.view,'counts')[0].children[1].children[0].textContent,'0');
+  assert.equal(find(elements.view,'counts')[0].children[3].children[0].textContent,'1');
+  const refreshedHome=elements.view.children[0];await invoke('route()');
+  assert.equal(elements.view.children[0],refreshedHome);
+  projectData=dashboard;
   // Late responses from another route cannot replace the current route.
   let finish;
   pending=()=>new Promise(resolve=>{finish=resolve;});const late=invoke('route()');await flush();
