@@ -106,20 +106,19 @@ def test_wheel_ships_web() -> None:
 
 def test_app_js_behaviors() -> None:
     js = (WEB / "app.js").read_text(encoding="utf-8")
-    for needle in ("Thử lại", "Cập nhật lần cuối", "document.hidden", "localStorage"):
+    for needle in ("Thử lại", "Cập nhật lần cuối", "document.hidden", "pollVersion"):
         assert needle in js, needle
     html = (WEB / "index.html").read_text(encoding="utf-8")
     assert 'role="status"' in html and 'id="refresh"' in html and "Làm mới" in html
-    # Countdown is a sibling of the label, outside the last-updated live region.
-    assert re.search(r'<span id="status"[^>]*></span>\s*<div class="auto-refresh">\s*'
-                     r'<label[^>]*><input[^>]*id="auto"[^>]*> Tự làm mới \(30 giây\)</label>\s*'
-                     r'<span id="countdown" class="countdown" aria-hidden="true"></span>', html)
+    for removed in ("auto-refresh", "countdown", "localStorage", "30000", "Làm mới sau"):
+        assert removed not in js + html + (WEB / "app.css").read_text(encoding="utf-8"), removed
+    assert "setInterval(pollVersion, 3000)" in js
 
 
 def test_mockup_layout() -> None:
     css = (WEB / "app.css").read_text(encoding="utf-8")
     # The approved desktop structures and phone adaptation must remain present.
-    for cls in ("bar", "brand", "tools", "switch", "wrap", "panel", "ph", "stats", "stat", "plan",
+    for cls in ("bar", "brand", "tools", "wrap", "panel", "ph", "stats", "stat", "plan",
                 "kanban", "col", "colh", "card", "grid2", "feed", "fi", "po", "poi",
                 "projects", "pc", "counts", "layout", "main", "side", "steps", "sn", "crit", "ck"):
         assert re.search(r"\." + cls + r"[\s.{:]", css), cls
@@ -262,12 +261,16 @@ class Element {
   set textContent(value) { this.text = String(value); this.children = []; }
   get textContent() { return this.text + this.children.map(c => c.textContent).join(''); }
   setAttribute(k, v) { this.attrs[k] = String(v); }
+  getAttribute(k) { return this.attrs[k] ?? null; }
+  contains(node) { return all(this).includes(node); }
+  querySelectorAll(selector) { return all(this).slice(1).filter(n => selector.split(',').map(s => s.trim()).includes(n.tagName)); }
+  get isConnected() { return this === document.body || Object.values(elements).some(root => root.contains(this)); }
   append(...kids) { this.children.push(...kids); }
   replaceChildren(...kids) { this.text = ''; this.children = kids; this.replacements = (this.replacements || 0) + 1; }
   addEventListener(k, f) { this.listeners[k] = f; }
   focus() { document.activeElement = this; }
 }
-const elements = Object.fromEntries(['view','nav','auto','countdown','status','err','refresh','main','source'].map(id => [id,new Element('div')]));
+const elements = Object.fromEntries(['view','nav','status','err','refresh','main','source'].map(id => [id,new Element('div')]));
 function all(root) { return [root, ...root.children.flatMap(all)]; }
 function find(root, cls) { return all(root).filter(n => (n.attrs.class || '').split(' ').includes(cls)); }
 const document = {
@@ -277,34 +280,37 @@ const document = {
   addEventListener(k,f) { this.listeners[k]=f; }
 };
 document.activeElement = document.body;
-let interval, intervalMs, calls=0, stored={}, fail=false, pending=null;
+let interval, intervalMs, calls=0, versionCalls=0, versionSha='abc123456789', fail=false, pending=null;
 let now=0;
 class Clock extends Date { static now() { return now; } }
-const localStorage={getItem:k=>stored[k] || null,setItem:(k,v)=>{stored[k]=v;}};
 const window={scrollY:0,scrolled:null,scrollTo(x,y){this.scrolled=y;},listeners:{},addEventListener(k,f){this.listeners[k]=f;}};
 const location={hash:'#/'};
 """ + API_FIXTURES + r"""
 let data={projects:[summary],source:remoteSource};
 let timeouts=[];
 async function fetch(path,opts) {
-  calls++;
+  if(path.endsWith('/version')) versionCalls++; else calls++;
   if(pending) return pending(path,opts);
   if(fail) throw Error('offline');
-  return {ok:true,text:async()=>JSON.stringify(data)};
+  return {ok:true,text:async()=>JSON.stringify(path.endsWith('/version') ? {sha:versionSha} : data)};
 }
-const context=vm.createContext({document,localStorage,window,location,fetch,console,Date:Clock,AbortController,
+const context=vm.createContext({document,window,location,fetch,console,Date:Clock,AbortController,
   setTimeout:(f,ms)=>{const t={f,ms};timeouts.push(t);return t;},clearTimeout:t=>{timeouts=timeouts.filter(x=>x!==t);},
   setInterval:(f,ms)=>{interval=f;intervalMs=ms;return 1;},clearInterval:()=>{interval=null;}});
 const source=fs.readFileSync(process.argv[1],'utf8');
 vm.runInContext(source,context);
 const invoke=code=>vm.runInContext(code,context);
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
-async function advance(seconds) {
-  for(let i=0;i<seconds;i++) { now+=1000;if(interval) interval();await flush(); }
+async function advance(polls) {
+  for(let i=0;i<polls;i++) { now+=intervalMs;if(interval) interval();await flush(); }
 }
-const countdown=()=>elements.countdown.textContent;
 (async()=>{
+  assert.equal(elements.view.attrs['aria-busy'],'true');
+  assert.equal(elements.refresh.disabled,true);
+  assert.equal(find(elements.view,'skeleton').length,1);
   await flush();
+  assert.equal(elements.view.attrs['aria-busy'],'false');
+  assert.equal(elements.refresh.disabled,false);
   assert.equal(find(elements.view,'pc').length,1);
   assert.equal(find(elements.view,'counts')[0].children.length,5);
   assert.equal(all(elements.view).find(n=>n.tagName==='progress').attrs.value,'4');
@@ -320,70 +326,63 @@ const countdown=()=>elements.countdown.textContent;
   const unknown=invoke('home([{name:"unknown",plans:[],task_counts:{},po_waiting_count:0}])');
   assert(unknown[1].textContent.includes('Nhánh: Chưa rõ'));
   assert(!unknown[1].textContent.includes('Đồng bộ'));
-  assert.equal(intervalMs,1000);
-  assert.equal(countdown(),'Làm mới sau 30 giây');
+  assert.equal(intervalMs,3000);
   const original=elements.view.children[0];
   const focused=find(elements.view,'pc')[0];focused.focus();
   const initialCalls=calls;
   const replacements=[elements.view.replacements,elements.nav.replacements,elements.status.replacements];
   await advance(5);
-  assert.equal(countdown(),'Làm mới sau 25 giây');
-  assert.equal(calls,initialCalls);
+  assert.equal(calls,initialCalls);assert.equal(versionCalls,5);
   assert.deepEqual([elements.view.replacements,elements.nav.replacements,elements.status.replacements],replacements);
   assert.equal(document.activeElement,focused);
-  // A manual refresh restarts the deadline, including an unchanged API response.
-  await elements.refresh.listeners.click();
-  assert.equal(countdown(),'Làm mới sau 30 giây');
-  await advance(29);assert.equal(calls,initialCalls+1);
-  assert.equal(countdown(),'Làm mới sau 1 giây');
-  await advance(1);assert.equal(calls,initialCalls+2);
-  assert.equal(countdown(),'Làm mới sau 30 giây');
-  await advance(1);assert.equal(countdown(),'Làm mới sau 29 giây');
-  await invoke('route()');
-  assert.equal(elements.view.children[0],original);
-  assert.equal(document.activeElement,focused);
-  fail=true; await invoke('route()');
+  // The matching freshly rendered link gets focus; stale attributes stay on
+  // the detached old node rather than leaking into the new render.
+  focused.setAttribute('open','stale');
+  focused.setAttribute('aria-label','stale label');
+  window.scrollY=210;
+  versionSha='changed';data={...data,source:{...remoteSource,sha:versionSha}};
+  await advance(1);assert.equal(calls,initialCalls+1);
+  const newFocused=find(elements.view,'pc')[0];
+  assert.notEqual(newFocused,focused);
+  assert.equal(document.activeElement,newFocused);
+  assert.equal(focused.isConnected,false);
+  assert.equal(newFocused.getAttribute('href'),focused.getAttribute('href'));
+  assert.equal(newFocused.textContent,focused.textContent);
+  assert.equal(newFocused.getAttribute('open'),null);
+  assert.equal(newFocused.getAttribute('aria-label'),null);
+  assert.equal(window.scrolled,210);
+  await advance(2);assert.equal(calls,initialCalls+1);
+  assert.equal(elements.status.replacements,replacements[2]+1);
+  fail=true;await advance(1);
   assert(elements.err.textContent.includes('Thử lại'));
-  assert.equal(countdown(),'Làm mới sau 30 giây');
-  assert.equal(elements.view.children[0],original);
-  fail=false;await invoke('route()');
-  assert.equal(elements.err.textContent,'');
-  assert(elements.status.textContent.startsWith('Cập nhật lần cuối '));
-  assert.equal(elements.view.children[0],original);
-  const before=calls;document.hidden=true;document.listeners.visibilitychange();
-  assert.equal(countdown(),'Tạm dừng');assert.equal(interval,null);
-  await advance(60);assert.equal(calls,before);assert.equal(countdown(),'Tạm dừng');
-  document.hidden=false;document.listeners.visibilitychange();await flush();assert.equal(calls,before+1);
-  assert.equal(countdown(),'Làm mới sau 30 giây');
-  elements.auto.checked=false;elements.auto.listeners.change();assert.equal(interval,null);assert.equal(stored['omi-board-auto'],'off');
-  assert.equal(countdown(),'Đã tắt');
-  await advance(30);assert.equal(calls,before+1);
-  await elements.refresh.listeners.click();assert.equal(calls,before+2);assert.equal(countdown(),'Đã tắt');
-  document.hidden=true;document.listeners.visibilitychange();
-  document.hidden=false;document.listeners.visibilitychange();await flush();assert.equal(calls,before+2);
-  assert.equal(countdown(),'Đã tắt');assert.equal(interval,null);
-  elements.auto.checked=true;elements.auto.listeners.change();assert.equal(intervalMs,1000);
-  assert.equal(countdown(),'Làm mới sau 30 giây');
-  // The next poll is 30 seconds after a slow refresh completes.
+  const errorReplacements=elements.err.replacements;
+  await advance(2);assert.equal(elements.err.replacements,errorReplacements);
+  assert.equal(calls,initialCalls+1);
+  fail=false;await advance(1);assert.equal(calls,initialCalls+2);assert.equal(elements.err.textContent,'');
+  const before=versionCalls;document.hidden=true;document.listeners.visibilitychange();
+  assert.equal(interval,null);await advance(60);assert.equal(versionCalls,before);
+  document.hidden=false;document.listeners.visibilitychange();await flush();assert.equal(versionCalls,before+1);
+  await elements.refresh.listeners.click();assert.equal(calls,initialCalls+3);
   let completeRefresh;
   pending=()=>new Promise(resolve=>{completeRefresh=resolve;});
-  const slow=elements.refresh.listeners.click();await advance(35);
-  assert.equal(calls,before+3);
+  const slow=elements.refresh.listeners.click();await advance(5);
+  assert.equal(elements.refresh.disabled,true);assert.equal(calls,initialCalls+4);
+  assert.equal(versionCalls,before+1);
   pending=null;completeRefresh({ok:true,text:async()=>JSON.stringify(data)});await slow;
-  assert.equal(countdown(),'Làm mới sau 30 giây');
-  await advance(29);assert.equal(calls,before+3);
-  await advance(1);assert.equal(calls,before+4);
-  // A request that never settles is aborted after 10 s, then the error UI shows and polling resumes.
+  assert.equal(elements.refresh.disabled,false);
   pending=(path,opts)=>new Promise((_,reject)=>opts.signal.addEventListener('abort',()=>reject(Object.assign(Error('aborted'),{name:'AbortError'}))));
-  const hung=elements.refresh.listeners.click();await flush();
+  const hung=invoke('pollVersion()');await flush();
   assert.equal(timeouts.length,1);assert.equal(timeouts[0].ms,10000);
   timeouts[0].f();await hung;
-  assert(elements.err.textContent.includes('quá thời gian chờ'));assert(elements.err.textContent.includes('Thử lại'));
-  assert.equal(timeouts.length,0);assert.equal(countdown(),'Làm mới sau 30 giây');assert.equal(intervalMs,1000);
-  pending=null;await advance(30);assert.equal(elements.err.textContent,'');
-  // Delayed timer callbacks use elapsed time rather than counting callbacks.
-  now+=5000;interval();await flush();assert.equal(countdown(),'Làm mới sau 25 giây');
-  localStorage.setItem=()=>{throw Error('blocked');};elements.auto.listeners.change();
+  assert(elements.err.textContent.includes('quá thời gian chờ'));
+  pending=null;await advance(1);assert.equal(elements.err.textContent,'');
+  // With no matching new control, focus stays in the current view context.
+  find(elements.view,'pc')[0].focus();
+  versionSha='removed';data={projects:[],source:{...remoteSource,sha:versionSha}};
+  await advance(1);
+  assert.equal(document.activeElement,elements.view);
+  assert.equal(find(elements.view,'pc').length,0);
+  assert.equal(window.scrolled,210);
   data=dashboard;location.hash='#/p/omi';await invoke('route()');
   assert.equal(find(elements.view,'stat').length,4);
   assert.equal(find(elements.view,'col').length,6); // Five desktop columns plus the phone's merged empty row.
@@ -425,11 +424,16 @@ const countdown=()=>elements.countdown.textContent;
   assert(reps[0].children[0].textContent.startsWith('2026-10-30 15:00 Coordinator (review) FAIL'));
   assert(reps[1].children[0].textContent.includes('engineer (claude)')&&reps[1].children[0].textContent.includes('DONE'));
   assert(elements.view.textContent.includes('Báo cáo (2)'));
-  // Auto-refresh keeps opened reports and the scroll position of the same task page.
+  // Background refresh keeps opened reports and the scroll position of the same task page.
   reps[1].open=true;reps[1].listeners.toggle();window.scrollY=420;
+  const oldSummary=reps[1].children[0];oldSummary.setAttribute('open','stale');oldSummary.focus();
   data={...detail,goal:'Changed goal'};await invoke('route()');
   const again=all(elements.view).filter(n=>n.tagName==='details');
   assert.equal(again[0].attrs.open,'');assert.equal(again[1].attrs.open,'');assert.equal(window.scrolled,420);
+  assert.notEqual(again[1].children[0],oldSummary);
+  assert.equal(document.activeElement,again[1].children[0]);
+  assert.equal(again[1].children[0].getAttribute('open'),null);
+  assert.equal(oldSummary.isConnected,false);
   reps[0].open=false;reps[0].listeners.toggle();data={...detail,goal:'Changed again'};await invoke('route()');
   assert.equal(all(elements.view).filter(n=>n.tagName==='details')[0].attrs.open,undefined);
   data=detail;
@@ -454,7 +458,11 @@ const countdown=()=>elements.countdown.textContent;
   assert(elements.err.textContent.startsWith('Dữ liệu cũ - không kết nối được GitHub (lúc '));
   await invoke('route()');assert(elements.err.textContent.startsWith('Dữ liệu cũ - không kết nối được GitHub'));
   data={...data,source:remoteSource};await invoke('route()');assert.equal(elements.err.textContent,'');
-  console.log('ok: API views, mockup DOM, safe text, countdown ticks/resets/off/hidden, polling, recovery, focus, storage, races');
+  fail=true;location.hash='#/p/missing';await invoke('route()');
+  assert(elements.err.textContent.includes('Thử lại'));
+  assert.equal(find(elements.view,'skeleton').length,0);
+  assert.equal(elements.view.textContent,'missing');
+  console.log('ok: API views, mockup DOM, safe text, version changes/unchanged/hidden, polling, recovery, focus, races');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 """
 
@@ -502,7 +510,7 @@ catch(e) {
         return route.abort();
       }
       if(url.pathname.startsWith('/api/')) {
-        const data=url.pathname.endsWith('/tasks/TASK-115')?workflowDetail:url.pathname==='/api/projects/omi'?crowded:{projects:[summary],source:remoteSource};
+        const data=url.pathname.endsWith('/version')?{sha:remoteSource.sha}:url.pathname.endsWith('/tasks/TASK-115')?workflowDetail:url.pathname==='/api/projects/omi'?crowded:{projects:[summary],source:remoteSource};
         return route.fulfill({json:data});
       }
       const name=url.pathname==='/'?'index.html':url.pathname.slice(1);
@@ -511,7 +519,7 @@ catch(e) {
       await route.fulfill({body:fs.readFileSync(path.join(process.argv[1],name)),contentType:types[name],
         headers:{'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'"}});
     });
-    for(const width of [360,390,768,1280]) {
+    for(const width of [320,375,768,1280]) {
       await page.setViewportSize({width,height:900});
       for(const hash of ['#/','#/p/omi','#/p/omi/t/TASK-115']) {
         await page.goto(`http://omi.test/?width=${width}&page=${encodeURIComponent(hash)}${hash}`);
@@ -526,19 +534,11 @@ catch(e) {
         await page.evaluate(axeSource);
         await audit(`${pageName} ${width} light`);
         const header=await page.locator('.top').boundingBox();
-        assert(await page.locator('#countdown').isVisible());
-        assert.equal(await page.locator('#countdown').getAttribute('aria-hidden'),'true');
-        assert.equal(await page.locator('#countdown').evaluate(n=>n.closest('[aria-live], [role="status"], [role="alert"]')),null);
-        const countdownBox=await page.locator('#countdown').boundingBox();
-        const switchBox=await page.locator('.switch').boundingBox();
-        if(width<768) {
-          assert.equal(countdownBox.x,switchBox.x);
-          assert(countdownBox.y>=switchBox.y+switchBox.height);
-        } else assert(countdownBox.x>=switchBox.x+switchBox.width);
-        assert(countdownBox.y+countdownBox.height<=header.y+header.height);
+        assert.equal(await page.locator('#countdown, #auto, .switch').count(),0);
+        assert(await page.getByRole('button',{name:'Làm mới',exact:true}).isVisible());
         assert.equal(await page.locator('.top').evaluate(n=>getComputedStyle(n).position),'sticky');
         assert(await page.locator('html').evaluate(n=>parseFloat(getComputedStyle(n).scrollPaddingTop))>header.height);
-        // The countdown adds a second line beneath the phone's refresh switch.
+        // The timestamp wraps onto its own line on phones.
         if(width<768) assert(header.height<160,`compact phone header ${width} ${hash}: ${header.height}px`);
         if(hash==='#/p/omi') {
           const columns=await page.locator('.col:visible').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().x));
@@ -564,12 +564,25 @@ catch(e) {
         await page.keyboard.press('Enter');
         assert.equal(await page.evaluate(()=>document.activeElement.id),'main');
         assert((await page.locator('#main').boundingBox()).y>=(await page.locator('.top').boundingBox()).height,'skip target clears header');
-        await page.locator('#auto').focus();
-        const checked=await page.locator('#auto').isChecked();
-        await page.keyboard.press('Space');
-        assert.equal(await page.locator('#auto').isChecked(),!checked);
-        assert.equal(await page.locator('#countdown').innerText(),'Đã tắt');
-        await page.keyboard.press('Space');
+        await page.locator('#refresh').focus();
+        await page.keyboard.press('Enter');
+        await page.waitForFunction(()=>!document.getElementById('refresh').disabled);
+        // An unchanged poll preserves all nodes and the timestamp; a changed
+        // revision reloads the view and focuses the matching freshly rendered control.
+        const target=page.locator(hash==='#/'?'.pc':hash.includes('/t/')?'details summary':'.card').first();
+        await target.focus();
+        await target.evaluate(n=>{window.savedControl=n;window.savedView=document.getElementById('view').firstChild;window.savedStatus=document.getElementById('status').firstChild;});
+        await page.evaluate(()=>pollVersion());
+        assert(await page.evaluate(()=>window.savedView===document.getElementById('view').firstChild && window.savedStatus===document.getElementById('status').firstChild));
+        remoteSource.sha=`change-${width}-${pageName}`;
+        await page.evaluate(()=>pollVersion());
+        assert(await page.evaluate(()=>window.savedView!==document.getElementById('view').firstChild));
+        assert(await page.evaluate(()=>{
+          const focused=document.activeElement;
+          return window.savedControl!==focused && !window.savedControl.isConnected && focused.isConnected &&
+            focused.tagName===window.savedControl.tagName && focused.getAttribute('href')===window.savedControl.getAttribute('href') &&
+            focused.textContent===window.savedControl.textContent;
+        }));
         const initial=await page.locator('body').evaluate(n=>getComputedStyle(n).backgroundColor);
         await page.emulateMedia({colorScheme:'dark'});
         assert.notEqual(await page.locator('body').evaluate(n=>getComputedStyle(n).backgroundColor),initial);
@@ -602,11 +615,11 @@ catch(e) {
       }
     }
     if(screens) {
-      for(const name of ['projects','dashboard','task']) for(const width of [360,390,768,1280])
+      for(const name of ['projects','dashboard','task']) for(const width of [320,375,768,1280])
         assert(fs.statSync(path.join(screens,`${name}-${width}.png`)).size>0);
     }
     assert.deepEqual(errors,[]);
-    console.log('ok: browser layouts at 360/390/768/1280px, sticky header, phone summaries, overflow disclosure, dark mode, CSP, keyboard controls, axe (light/dark), print, GET-only requests');
+    console.log('ok: browser layouts at 320/375/768/1280px, sticky header, phone summaries, overflow disclosure, dark mode, CSP, keyboard controls, axe (light/dark), print, GET-only requests');
   } finally { await browser.close(); }
 })().catch(e=>{console.error(e);process.exitCode=1;});
 """
