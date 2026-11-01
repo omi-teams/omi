@@ -163,12 +163,18 @@ def test_semantic_palette_and_approved_mockups() -> None:
     assert "max-width:390px" in (mockups / "task-phone.html").read_text(encoding="utf-8")
 
 
+def run_node(node: str, script: str, *args: str, **kwargs) -> subprocess.CompletedProcess:
+    # Scripts go through stdin: `node -e` hits the Windows command-line length limit.
+    return subprocess.run([node, "-", *args], input="process.argv.splice(1, 1);" + script,
+                          capture_output=True, text=True, encoding="utf-8", errors="replace", **kwargs)
+
+
 def test_runtime() -> None:
     node = shutil.which("node")
     if not node:
         print("skip test_runtime: node missing (DOM behavior unverified)")
         return
-    run = subprocess.run([node, "-e", RUNTIME_TEST, str(WEB / "app.js")], capture_output=True, text=True)
+    run = run_node(node, RUNTIME_TEST, str(WEB / "app.js"))
     assert run.returncode == 0, run.stdout + run.stderr
     print(run.stdout.strip())
 
@@ -182,8 +188,7 @@ def test_browser_layout_and_keyboard() -> None:
     # Hook checkouts can be read-only; use the system temp directory for screenshots.
     with tempfile.TemporaryDirectory() as tmp:
         env = {**os.environ, "OMI_BOARD_SCREENS": os.environ.get("OMI_BOARD_SCREENS") or tmp}
-        run = subprocess.run([node, "-e", BROWSER_TEST, str(WEB), str(AXE)],
-                             cwd=ROOT, env=env, capture_output=True, text=True)
+        run = run_node(node, BROWSER_TEST, str(WEB), str(AXE), cwd=ROOT, env=env)
     assert run.returncode == 0, run.stdout + run.stderr
     print(run.stdout.strip())
 
@@ -233,8 +238,7 @@ Module._load = function(name, ...args) {
     for missing, required, fails in (("playwright", "", False), ("playwright", "1", True),
                                      ("nested-dependency", "", True), ("chromium", "", True)):
         env = {**os.environ, "OMI_BROWSER_REQUIRED": required, "OMI_TEST_MISSING": missing}
-        run = subprocess.run([node, "-e", stub + BROWSER_TEST, str(WEB), str(AXE)],
-                             cwd=ROOT, env=env, capture_output=True, text=True)
+        run = run_node(node, stub + BROWSER_TEST, str(WEB), str(AXE), cwd=ROOT, env=env)
         assert (run.returncode != 0) == fails, run.stdout + run.stderr
         assert ("skip test_browser" in run.stdout) == (not fails), run.stdout + run.stderr
         assert missing in run.stdout + run.stderr
