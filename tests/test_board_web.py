@@ -595,6 +595,15 @@ async function advance(polls) {
   assert.equal(permissionRequests,0);assert.equal(notices.length,0);
   assert.equal(elements['inbox-count'].textContent,'1');assert.equal(document.title,'(1) Hộp thư PO — omi board');
   assert.equal(all(elements.view).filter(n=>n.tagName==='img').length,0);
+  versionSha=remoteSource.sha;now=Date.parse('2026-11-01T12:00:00Z');await invoke('route()');
+  assert(elements.view.textContent.includes('Chờ 0 phút'));
+  const ageView=elements.view.children[0], ageCalls=calls;
+  now+=120000;await invoke('pollVersion()');
+  assert(elements.view.textContent.includes('Chờ 2 phút'));assert.equal(calls,ageCalls);
+  assert.equal(elements.view.children[0],ageView);
+  now+=60000;await invoke('route()');
+  assert(elements.view.textContent.includes('Chờ 3 phút'));assert.equal(elements.view.children[0],ageView);
+
   const settings=()=>all(elements.view).find(n=>n.attrs.id==='notification-settings');
   const notificationButton=()=>all(settings()).find(n=>n.tagName==='button');
   await notificationButton().listeners.click();
@@ -642,6 +651,13 @@ async function advance(polls) {
   await invoke('pollVersion()');assert.equal(notices.length,3);
   globalInbox=[...globalInbox,{...episode,project:'fifth'}];versionSha='other-project-change';
   await invoke('pollVersion()');assert.equal(notices.length,4);assert.equal(elements['inbox-count'].textContent,'3');
+  for(const reason of ['needs_scope','quota']) {
+    const first={...next,reason,since:null,request_marker:'2026-11-01 12:00:1'};
+    await openInbox([first]);const count=notices.length;
+    await openInbox([]);await openInbox([{...first,request_marker:'2026-11-01 12:00:2'}]);
+    assert.equal(notices.length,count+1);
+    await invoke('route()');assert.equal(notices.length,count+1);
+  }
   console.log('ok: API views, mockup DOM, safe text, version changes/unchanged/hidden, polling, recovery, focus, races');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 """

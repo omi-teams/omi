@@ -510,6 +510,33 @@ def test_inbox_detection() -> None:
     assert not data._inbox({**review, "usage": {"rows": rows[:1]}})
     assert not data._inbox({**review, "reports": "2026-11-01 13:00 engineer:\n> DONE"})
     assert not data._inbox({**review, "usage": {"rows": rows + [{"role": "omi-agent-reviewer", "verdict": "PASS def5678"}]}})
+    # Excerpts from TASK-123 / TASK-126: reports stop without an explicit PO request.
+    real_reports = [
+        "2026-11-01 08:07 omi-agent-reviewer (claude):\n"
+        "> The verdict is unchanged: FAIL, on AC5 only. No mockup-comparison evidence is recorded, and the review rules don't allow PASS without it.",
+        "2026-11-01 15:30 omi-agent-reviewer (claude):\n> ```\n> VERDICT: FAIL\n> ```",
+        "2026-11-01 07:48 Coordinator (review) FAIL:\n> Fix round 1: re-focus the matching new node; 2 s TTL kept (about 3 s criterion, shared cache); mockup comparison left to qa; Host wheel test ok.",
+    ]
+    for report in real_reports:
+        stopped = {**review, "reports": report}
+        assert data._inbox(stopped)[0]["reason"] == "review_fail"
+        assert not data._inbox({**stopped, "usage": {"rows": rows[:1]}})
+        assert not data._inbox({**stopped, "steps": "- build started 2026-11-01 16:00"})
+        assert not data._inbox({**stopped, "reports": report + "\n2026-11-01 16:00 engineer:\n> DONE"})
+    for note in (
+        '2026-11-01 09:17 Coordinator (review) FAIL:\n> Round 2 FAIL on mockup evidence only. PO: "Chạy QA trước, rồi review lại". QA runs now, then review round 3.',
+        '2026-11-01 15:45 Coordinator (review) FAIL:\n> Round 4 FAIL: host wheel ok on 837e481; row tool from frontmatter. PO: "Sửa nốt điểm 2 rồi merge".',
+    ):
+        assert not data._inbox({**review, "reports": note})
+    for marker in ("NEEDS SCOPE", "QUOTA"):
+        pending = {**worker, "checkpoint": f"Next: {marker}: ask PO"}
+        first = data._inbox(pending)[0]
+        repeated = data._inbox({**pending, "usage": {"rows": [{"role": "omi-agent-engineer", "verdict": "QUOTA->codex"}]}})[0]
+        assert first["since"] is repeated["since"] is None
+        assert first["request_marker"] != repeated["request_marker"]
+        report = f"2026-11-01 12:00 engineer:\n> {marker}: ask PO"
+        assert data._inbox({**worker, "reports": report})[0]["request_marker"] != data._inbox(
+            {**worker, "reports": report.replace("12:00", "13:00")})[0]["request_marker"]
     combined = data._inbox({**base, "checkpoint": "Next: NEEDS SCOPE: add a file\nQUOTA: resume required"})
     assert {i["reason"] for i in combined} == {"po_gate", "needs_scope", "quota"}
 

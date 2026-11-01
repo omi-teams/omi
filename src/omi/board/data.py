@@ -124,12 +124,19 @@ def _inbox(t: dict) -> list[dict]:
         lines = [line for line in lines if not re.search(r"continued|rerunning|resolved|scope widened", line, re.I)]
         if lines:
             add(reason, lines[-1], since if lines[-1] in body else None)
+            result[-1]["request_marker"] = f"{since or ''}:{len(rows)}"
     verdicts = [r.get("verdict", "") for r in t["usage"]["rows"] if r["role"] == "omi-agent-reviewer"
                 and r.get("verdict", "").startswith(("FAIL", "PASS"))]
-    decision = re.search(r"(?:waiting|await|ask|chờ|cần).*(?:PO|decision|quyết định)|(?:PO|decision).*?(?:needed|required)",
+    decision = re.search(r"(?:waiting|await|ask|chờ|cần).*(?:PO|decision|quyết định)|(?:PO|decision).*?(?:needed|required|decides)",
                          evidence, re.I)
-    if len(verdicts) >= 2 and all(v.startswith("FAIL") for v in verdicts[-2:]) and decision:
-        add("review_fail", decision[0], since if not later_step else None)
+    # A second reviewer FAIL is itself a stop; real reports don't always say
+    # "Waiting for PO decision". A Coordinator's quoted PO instruction resolves it.
+    review_stop = (not later_step and not re.search(r"\bPO\s*:", body)
+                   and (re.search(r"^\d[^\n]*omi-agent-reviewer[^\n]*:\n", report)
+                        and re.search(r"(?:VERDICT:|verdict is unchanged:)\s*FAIL", body, re.I)
+                        or re.search(r"^\d[^\n]*Coordinator \(review\) FAIL:", report)))
+    if len(verdicts) >= 2 and all(v.startswith("FAIL") for v in verdicts[-2:]) and (decision or review_stop):
+        add("review_fail", decision[0] if decision else "Review FAIL ×2; cần PO quyết định", since if not later_step else None)
     return result
 
 
