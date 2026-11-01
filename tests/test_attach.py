@@ -465,12 +465,17 @@ def test_attach_gitattributes():
 
 
 def test_lf_writes():
-    import re
+    import ast
     src = Path(omi.__file__).parent
     for f in src.rglob("*.py"):
-        for line in f.read_text(encoding="utf-8").splitlines():
-            if re.search(r"(?<!core)\.write_text\(", line) and 'newline="\\n"' not in line:
-                raise AssertionError(f"bare write_text( in {f}: {line.strip()}")
+        for node in ast.walk(ast.parse(f.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                kw = {k.arg: k.value for k in node.keywords}
+                name = node.func.attr
+                if name == "write_text" and not (isinstance(node.func.value, ast.Name) and node.func.value.id == "core"):
+                    assert "newline" in kw and ast.literal_eval(kw["newline"]) == "\n", f"{f}:{node.lineno} write_text without newline"
+                if name == "read_text":
+                    assert "newline" not in kw, f"{f}:{node.lineno} read_text with newline"
     with tempfile.TemporaryDirectory() as d:
         path = Path(d) / "x.md"
         omi.common.core.write_text(path, "a\nb\n")
