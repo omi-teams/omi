@@ -209,6 +209,7 @@ def cost(name: str) -> dict:
         return {**t, "tokens": t["input"] + t["output"] + t["cache"], "cost": _usd(rows, prices)}
 
     tasks_ = [{"id": id, "title": meta.get("title", ""), "plan": meta.get("plan") or "—", "tool": meta.get("tool") or "—",
+               "model": ", ".join(sorted({r["model"] for r in rows})),
                "fails": sum(r["role"] == "omi-agent-reviewer" and r["verdict"].startswith("FAIL") for r in rows), **_row(rows)}
               for id, meta, rows in items]
     priced = bool(prices) and all(t["cost"] is not None for t in tasks_)

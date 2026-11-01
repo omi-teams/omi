@@ -170,7 +170,7 @@ const usd = (n) => n === null || n === undefined ? "Thiếu giá" : `≈ US$${Nu
 function costBar(tokens, max, hatch) {
   const pct = max ? Math.round(tokens / max * 100) : 0;
   const fill = el("div", null, {class: `bar-f${hatch ? " hatch" : ""}`});
-  fill.setAttribute("style", `width:${pct}%`);
+  fill.style.width = `${pct}%`; // CSSOM, not a style attribute: the CSP forbids inline styles
   return box("cell", [el("div", null, {class: "bar-t", role: "img", "aria-label": `${num(tokens)} token, ${pct}% mức lớn nhất`}, [fill]),
     el("strong", num(tokens))]);
 }
@@ -182,7 +182,7 @@ function costTable(label, rows, caption, hasPrices, project) {
     if (r.top) badges.push(el("span", `↑ Top ${r.top}`, {class: "badge b-top"}));
     if (r.fails >= 2) badges.push(el("span", `✕ ${r.fails} lần FAIL`, {class: "badge b-fail"}));
     const name = project ? [link(r.id, taskHref(project, r.id)), el("span", ` ${r.title}`), el("br"),
-      el("span", `${r.plan} · ${r.tool}`, {class: "muted small"})] : [el("span", r.key)];
+      el("span", `${r.plan} · ${r.tool}${r.model ? " / " + r.model : ""}`, {class: "muted small"})] : [el("span", r.key)];
     const cells = [["", name], ["", [costBar(r.tokens, max, !!r.top), ...(badges.length ? [box("badges", badges)] : [])]],
       ["Vào", num(r.input)], ["Ra", num(r.output)], ["Cache", num(r.cache)], ["Lượt chạy", num(r.runs)],
       ...(project ? [["Vòng review", num(r.review_rounds)]] : []), ...(hasPrices ? [["Ước tính", usd(r.cost)]] : [])];
@@ -205,13 +205,25 @@ function costPage(name, d) {
     el("div", null, {}, [el("strong", "Chỉ hiển thị token, chưa có chi phí USD."),
       el("br"), el("span", "Thêm bản đồ prices theo từng model vào .omi/config.json để xem ước tính.")])])];
   const legend = el("ul", null, {class: "legend", "aria-label": "Chú giải"}, [
-    el("li", "Thanh vạch chéo + nhãn “↑ Top n”: 5 task đắt nhất"), el("li", "Nhãn “✕ n lần FAIL”: task có từ 2 vòng review FAIL")]);
-  return [box("stack", [link(`← Về dự án ${name}`, projectHref(name), "small"), heading("Chi phí và quota")]),
-    box("stats cost-stats", stats.map(([n, l]) => box("stat", [el("div", n, {class: "n"}), el("div", l, {class: "l"})]))), ...note,
-    ...groups.map(([text, rows, label, byTask]) => section(text, [
+    el("li", null, {}, [el("i", null, {class: "hatch"}), el("span", "Top 5 đắt nhất (vạch chéo + nhãn “Top n”)")]),
+    el("li", null, {}, [el("span", "✕ n lần FAIL", {class: "badge b-fail"}), el("span", " task có từ 2 vòng review FAIL")]),
+    el("li", null, {}, [el("i", null, {class: "plain"}), el("span", "Các task còn lại")])]);
+  const jump = el("nav", null, {class: "jump", "aria-label": "Nhóm số liệu"}, groups.map(([text], i) => {
+    const b = el("button", text.startsWith("Task") ? "Theo task" : text, {type: "button", class: "btn"});
+    b.addEventListener("click", () => document.getElementById(`cost-${i}`)?.scrollIntoView({behavior: "smooth", block: "start"}));
+    return b;
+  }));
+  const panels = groups.map(([text, rows, label, byTask], i) => {
+    const panel = section(text, [
       ...(byTask ? [legend] : []),
       rows.length ? costTable(label, rows, `${text}. Thanh so với mức lớn nhất; giá trị luôn ghi bằng chữ.`, d.has_prices, byTask ? name : null) : empty("Chưa có dữ liệu sử dụng.")],
-      `${num(rows.length)} mục`))];
+      byTask ? `${num(rows.length)} task · số vòng review = số hàng reviewer trong Usage` : `${num(rows.length)} mục`);
+    panel.setAttribute("id", `cost-${i}`);
+    return panel;
+  });
+  return [box("stack", [link(`← Về dự án ${name}`, projectHref(name), "small"), el("p", `Dự án ${name} · chỉ đọc`, {class: "muted small"}), heading("Chi phí và quota")]), jump,
+    box("stats cost-stats", stats.map(([n, l]) => box("stat", [el("div", n, {class: "n"}), el("div", l, {class: "l"})]))), ...note,
+    ...panels];
 }
 function workflow(d) {
   const f = d.frontmatter;

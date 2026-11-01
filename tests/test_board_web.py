@@ -283,7 +283,8 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
 class Element {
-  constructor(tag) { this.tagName = tag; this.children = []; this.attrs = {}; this.listeners = {}; this.checked = true; this.text = ''; }
+  constructor(tag) { this.tagName = tag; this.children = []; this.attrs = {}; this.listeners = {}; this.checked = true; this.text = ''; this.style = {}; }
+  scrollIntoView() { this.scrolled = true; }
   set textContent(value) { this.text = String(value); this.children = []; }
   get textContent() { return this.text + this.children.map(c => c.textContent).join(''); }
   setAttribute(k, v) { this.attrs[k] = String(v); }
@@ -556,13 +557,16 @@ async function advance(polls) {
   assert.equal(elements.view.textContent,'missing');
   // Cost page: text only, tokens-only note without prices, badges not by colour alone.
   const row=(o)=>({input:10,output:5,cache:1,runs:2,tokens:16,cost:null,review_rounds:3,fails:0,top:null,...o});
-  const costData={has_prices:false,tasks:[row({id:'TASK-1',title:'<b>x</b>',plan:'P',tool:'claude',top:1,fails:2})],
+  const costData={has_prices:false,tasks:[row({id:'TASK-1',title:'<b>x</b>',plan:'P',tool:'claude',model:'m',top:1,fails:2})],
     plans:[row({plan:'P'})],tools:[row({tool:'claude'})],models:[row({model:'m'})],totals:row({})};
   const page=invoke(`costPage('omi',${JSON.stringify(costData)})`);
   const pageText=page.map(n=>n.textContent).join('|');
   assert(pageText.includes('Chỉ hiển thị token'));assert(!pageText.includes('US$'));
   assert(pageText.includes('↑ Top 1')&&pageText.includes('✕ 2 lần FAIL')&&pageText.includes('<b>x</b>'));
-  assert.equal(find(page[page.length-4],'hatch').length,1);
+  assert.equal(find(page[page.length-4],'hatch').length,2);  // legend swatch + the Top 1 bar
+  assert(pageText.includes('P · claude / m')&&pageText.includes('chỉ đọc')&&pageText.includes('Các task còn lại'));
+  assert.equal(find(page[1],'btn').length,4);
+  find(page[1],'btn')[1].listeners.click();
   const priced=invoke(`costPage('omi',${JSON.stringify({...costData,has_prices:true,totals:row({cost:null})})})`).map(n=>n.textContent).join('|');
   assert(priced.includes('Thiếu giá')&&priced.includes('chưa đủ giá'));
   console.log('ok: API views, mockup DOM, safe text, version changes/unchanged/hidden, polling, recovery, focus, races');
@@ -604,6 +608,13 @@ catch(e) {
       for(const violation of violations)
         errors.push(`axe ${label}: ${violation.id} (${violation.impact}): ${violation.nodes.map(n=>n.html).join(', ')}`);
     }
+    const row=(o)=>({input:100,output:50,cache:50,runs:2,tokens:200,cost:1.5,review_rounds:3,fails:0,top:null,...o});
+    const tasks=[row({id:'TASK-1',title:'A',plan:'P1',tool:'claude',model:'m',tokens:400,cost:3,top:1,fails:2}),row({id:'TASK-2',title:'B',plan:'P1',tool:'codex',model:'n',cost:null,top:2})];
+    const base={name:'omi',tasks,plans:[row({plan:'P1',tokens:600})],tools:[row({tool:'claude',tokens:400}),row({tool:'codex'})],models:[row({model:'m',tokens:400}),row({model:'n'})]};
+    const costFixture={priced:{...base,has_prices:true,tasks:[tasks[0],{...tasks[1],cost:1.5}],totals:row({tokens:600,cost:4.5})},
+      tokens:{...base,has_prices:false,tasks:tasks.map(t=>({...t,cost:null})),totals:row({tokens:600,cost:null})},
+      partial:{...base,has_prices:true,totals:row({tokens:600,cost:null})}};
+    let costMode='priced';
     const errors=[];page.on('pageerror', e=>errors.push(e.message));
     page.on('console', msg=>{if(msg.type()==='error') errors.push(msg.text());});
     await page.route('**/*',async route=>{
@@ -613,6 +624,7 @@ catch(e) {
         return route.abort();
       }
       if(url.pathname.startsWith('/api/')) {
+        if(url.pathname==='/api/projects/omi/cost') return route.fulfill({json:{...costFixture[costMode],source:remoteSource}});
         const data=url.pathname.endsWith('/version')?{sha:remoteSource.sha}:url.pathname.endsWith('/tasks/TASK-115')?workflowDetail:url.pathname==='/api/projects/omi'?hierarchy:{projects:[summary],source:remoteSource};
         return route.fulfill({json:data});
       }
@@ -717,6 +729,28 @@ catch(e) {
           await page.emulateMedia({media:'screen'});
           assert(await page.locator('#refresh').isVisible());
         }
+      }
+    }
+    for(const mode of ['priced','tokens','partial']) {
+      costMode=mode;
+      for(const width of [320,390,1280]) {
+        await page.setViewportSize({width,height:900});
+        await page.goto(`http://omi.test/?cost=${mode}&width=${width}#/p/omi/cost`);
+        await page.locator('.cost-stats').waitFor();
+        assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`overflow cost ${mode} ${width}`);
+        // Bars come from the CSSOM (the CSP blocks style attributes) and stay proportional.
+        const widths=await page.locator('.panel').first().locator('.bar-f').evaluateAll(n=>n.map(b=>Math.round(b.getBoundingClientRect().width/b.parentElement.clientWidth*100)));
+        assert.deepEqual(widths,[100,50],`bar widths ${mode} ${width}`);
+        const text=await page.locator('#view').innerText();
+        assert.equal(text.includes('Chỉ hiển thị token'),mode==='tokens');
+        assert.equal(text.includes('Thiếu giá'),mode==='partial');
+        assert.equal(await page.locator('.panel').first().locator('caption').evaluate(n=>n.getBoundingClientRect().height<60),true,`caption wrap ${mode} ${width}`);
+        await page.getByRole('button',{name:'Theo model',exact:true}).click();
+        await page.evaluate(axeSource);
+        await audit(`cost ${mode} ${width} light`);
+        await page.emulateMedia({colorScheme:'dark'});
+        await audit(`cost ${mode} ${width} dark`);
+        await page.emulateMedia({colorScheme:'light'});
       }
     }
     if(screens) {
