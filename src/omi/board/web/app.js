@@ -294,7 +294,7 @@ let storageAvailable = true;
 try { notifyEnabled = window.localStorage.getItem("omi-board-notifications") === "on"; }
 catch (_) { storageAvailable = false; }
 const notificationAPI = () => window.isSecureContext && window.Notification;
-const inboxKey = (i) => JSON.stringify([i.project, i.id, i.reason, i.gate || "", i.since || ""]);
+const inboxKey = (i) => JSON.stringify([i.project, i.id, i.reason, i.gate || "", i.since || "", i.request_marker || ""]);
 function pageTitle() {
   const title = document.getElementById("title");
   document.title = `${inboxItems?.length ? `(${inboxItems.length}) ` : ""}${current === "#/inbox" ? "Hộp thư PO" : title?.textContent || "Dự án"} — omi board`;
@@ -351,6 +351,17 @@ function renderNotificationSettings() {
       "Quyền thông báo bị chặn. Mở cài đặt trình duyệt để thay đổi." : enabled ? "Đã bật thông báo cho việc mới." : "Thông báo đang tắt.", {class: "small"}),
     el("p", `${notifyMessage}${!storageAvailable ? " Tùy chọn chỉ áp dụng cho tab này." : ""}`, {role: "status", class: "small"}));
 }
+function inboxAge(stamp) {
+  const minutes = Math.max(0, Math.floor((Date.now() - stamp) / 60000));
+  return `Chờ ${minutes < 60 ? minutes + " phút" : Math.floor(minutes / 60) + " giờ"}`;
+}
+function refreshInboxAges() {
+  if (current !== "#/inbox") return;
+  for (const node of view.querySelectorAll("strong")) {
+    const stamp = node.getAttribute("data-inbox-since");
+    if (stamp !== null) node.textContent = inboxAge(Number(stamp));
+  }
+}
 function inboxPage(items) {
   const tasks = new Set(items.map(i => JSON.stringify([i.project, i.id])));
   const rows = items.map(i => {
@@ -370,12 +381,11 @@ function inboxPage(items) {
     });
     const date = i.since ? new Date(i.since.replace(" ", "T") + "Z") : null;
     const valid = date && Number.isFinite(date.getTime());
-    const minutes = valid ? Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000)) : 0;
-    const age = valid ? `Chờ ${minutes < 60 ? minutes + " phút" : Math.floor(minutes / 60) + " giờ"}` : "Chờ: chưa rõ thời điểm";
+    const age = valid ? inboxAge(date.getTime()) : "Chờ: chưa rõ thời điểm";
     return el("li", null, {}, [box("stack", [chip(i.gate ? `PO · ${i.gate}` : INBOX_REASON[i.reason] || i.reason, i.reason === "po_gate" ? "po" : "blocked"),
       link(`${i.id} · ${i.title || "Chưa có tiêu đề"}`, taskHref(i.project, i.id), "strong"),
       el("p", i.text || "Cần PO quyết định; xem chi tiết task."), el("p", `Dự án: ${i.project}`, {class: "small muted"})]),
-      box("inbox-age", [el("strong", age), ...(valid ? [el("time", `${i.since} UTC`, {datetime: date.toISOString(), class: "small muted"})] : [])]),
+      box("inbox-age", [el("strong", age, valid ? {"data-inbox-since": date.getTime()} : {}), ...(valid ? [el("time", `${i.since} UTC`, {datetime: date.toISOString(), class: "small muted"})] : [])]),
       box("inbox-command", [el("code", command), copy, feedback])]);
   });
   const title = heading("Hộp thư PO ");
@@ -467,7 +477,7 @@ async function route(button = null) {
       contentKey = JSON.stringify([text, ...projectTexts]);
       if (ticket !== request) return;
     }
-    if (contentKey === seen) { revision = board.source.sha; updated(data.source); return; }
+    if (contentKey === seen) { refreshInboxAges(); revision = board.source.sha; updated(data.source); return; }
     // Render off the page, and only cache a response after its view succeeds.
     const nodes = isInbox ? inboxPage(items) : name ? costs ? costPage(name, data) : id ? taskPage(name, id, data) : dashboard(name, data) : home(data.projects);
     const scrolled = window.scrollY;
@@ -526,6 +536,7 @@ async function pollVersion() {
     const data = JSON.parse(await response.text());
     if (hash !== current || ticket !== request || document.hidden) return;
     if (data.sha !== revision || failed) await route();
+    refreshInboxAges();
   } catch (e) {
     if (hash === current && ticket === request && !document.hidden) showError(e);
   } finally {
