@@ -283,3 +283,23 @@ td.name,td.barc{white-space:normal}td.num,th.num{text-align:right}
 
 .inbox-notice .notify-enable:enabled{background:var(--accent);color:var(--surface);border-color:var(--accent)}
 .inbox-notice .notify-enable:hover:enabled{background:var(--accent-hover);color:var(--surface)}
+
+/* TASK-129: approved search/filter toolbar and responsive result states. */
+.filters{display:grid;grid-template-columns:minmax(0,2fr) repeat(4,minmax(0,1fr));gap:12px}
+.filters label,.share-fallback label{display:grid;gap:6px;font-size:13px;font-weight:600;min-width:0}
+.filters input,.filters select,.share-fallback input{font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--muted);border-radius:6px;min-height:44px;padding:8px 12px;max-width:100%;min-width:0;width:100%}
+.filters input,.share-fallback input{cursor:text}
+.filters select{cursor:pointer}
+.filters input:disabled,.filters select:disabled{color:var(--muted);background:var(--bg);cursor:default}
+.filters input,.filters select{transition:transform 220ms cubic-bezier(.32,.72,0,1),opacity 220ms cubic-bezier(.32,.72,0,1)}
+.filters :focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+.filter-actions .btn:disabled{background:var(--bg);border-style:solid}
+.filter-actions{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.filter-summary:empty,.filter-notice:empty,.share-fallback:empty,.filter-actions+p:empty{display:none}
+.filter-notice{border-left:4px solid var(--accent);padding:12px 16px;background:var(--bg)}
+.no-results{display:grid;gap:12px;padding:24px 0}.no-results p{margin:0}.no-results button{justify-self:start}
+.context-label{border-left:2px solid var(--muted);padding-left:8px}
+.task-results{gap:24px}
+@media(max-width:1000px){.filters{grid-template-columns:repeat(2,minmax(0,1fr))}.filter-search{grid-column:1/-1}}
+@media(max-width:767px){.filters{grid-template-columns:minmax(0,1fr)}.filter-search{grid-column:auto}.filter-actions .btn{max-width:100%}}
+@media(prefers-reduced-motion:reduce){.filters input,.filters select{transition:none}}
