@@ -473,6 +473,7 @@ def test_cost_mixed_tools_per_task() -> None:
             assert all(row[k] == model[k] for k in ("input", "output", "cache", "runs", "review_rounds", "tokens", "cost"))
         task = view["tasks"][0]
         assert (task["runs"], task["review_rounds"], task["fails"]) == (6, 2, 1)
+        assert task["tool"] == "claude, codex"
         for key in ("input", "output", "cache", "runs", "tokens", "review_rounds"):
             assert task[key] == view["plans"][0][key] == view["totals"][key] == sum(t[key] for t in tools.values())
         assert not view["has_prices"] and view["totals"]["cost"] is None

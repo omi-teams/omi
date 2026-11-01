@@ -186,6 +186,10 @@ def _usd(rows: list[dict], prices: dict) -> float | None:
     return round(total, 4)
 
 
+def _tool(row: dict) -> str:
+    return "codex" if "(codex)" in row["model"] else "claude"
+
+
 def cost(name: str) -> dict:
     """Token and estimated USD sums per task, plan, tool and model from the `## Usage` tables."""
     snap = source.snapshot()
@@ -208,7 +212,7 @@ def cost(name: str) -> dict:
         t = _totals(rows)
         return {**t, "tokens": t["input"] + t["output"] + t["cache"], "cost": _usd(rows, prices)}
 
-    tasks_ = [{"id": id, "title": meta.get("title", ""), "plan": meta.get("plan") or "—", "tool": meta.get("tool") or "—",
+    tasks_ = [{"id": id, "title": meta.get("title", ""), "plan": meta.get("plan") or "—", "tool": ", ".join(sorted({_tool(r) for r in rows})),
                "model": ", ".join(sorted({r["model"] for r in rows})),
                "fails": sum(r["role"] == "omi-agent-reviewer" and r.get("verdict", "").startswith("FAIL") for r in rows), **_row(rows)}
               for id, meta, rows in items]
@@ -217,11 +221,10 @@ def cost(name: str) -> dict:
     for rank, t in enumerate(tasks_, 1):
         t["top"] = rank if rank <= 5 else None
     model_rows = [r for i in items for r in i[2]]
-    tool = lambda r: "codex" if "(codex)" in r["model"] else "claude"
     return snap.response({
         "name": name, "has_prices": bool(prices), "tasks": tasks_,
         "plans": group("plan", lambda i: i[1].get("plan") or "—"),
-        "tools": [{"tool": t, **_row([r for r in model_rows if tool(r) == t])} for t in sorted({tool(r) for r in model_rows})],
+        "tools": [{"tool": t, **_row([r for r in model_rows if _tool(r) == t])} for t in sorted({_tool(r) for r in model_rows})],
         "models": [{"model": m, **_row([r for r in model_rows if r["model"] == m])} for m in sorted({r["model"] for r in model_rows})],
         "totals": _row(model_rows)})
 
