@@ -383,15 +383,11 @@
     "docker/proxy.py": "0ba39b820fc01693be64aa4b00b516902842f0c0f82fda2a4b21237684b828ec"
   },
   "0.5.0": {
-    "AGENTS.md": "9e10e955752fcd24de4ceb46f8578ef16effed51d73a65228cd4b4dd724912da",
-    "docker/Dockerfile": "f40f8bb7d09dcf5a096a693aba060b6c789fe8299783712a011ca5254cd17546",
-    "docker/prove.sh": "511315ec4046be60bed75c1149c10093a90078d350c538ef5fdda0715d008d22",
-    "docker/proxy.py": "0ba39b820fc01693be64aa4b00b516902842f0c0f82fda2a4b21237684b828ec",
     ".claude/settings.json": "bb82110c2fdb62932040ad7c42387123cc6f947578492571ab37e2947ec8fb7f",
     ".claude/skills/omi-idea/SKILL.md": "04713479983aeb18bf49052409dc391fc9292cad5604e4511dcea3cac7367228",
     ".claude/skills/omi-release/SKILL.md": "0031e8637f6cb93806949282f51bd7b9b76fd476044734dae211f44be2ea774b",
     ".claude/skills/omi-status/SKILL.md": "b1d3296f2c5fcc7154799aa90210cca477995bb7e0dd4019863f7bdbfebd2a05",
-    ".claude/skills/omi-task/SKILL.md": "d9fe7f81e73091843e8a9068b247e81275985a90ad6a02b0936ff8616d85d275",
+    ".claude/skills/omi-task/SKILL.md": "ab0e19088f6ed516c9183a9034ffdfbfbbef878436400ea402494644d32dcee7",
     ".claude/skills/omi-upgrade/SKILL.md": "fbffef4f583854fe732648dd9dafbd34d7287245e5fe6f01f7831490aad34820",
     ".omi/agents/omi-agent-architect.md": "3e09f68012e35c9c8b662a5ac5ea4743aad715b2d3bac16d920506025195d2bf",
     ".omi/agents/omi-agent-designer-ui.md": "f101bc09a2fc6e2603767085daef7b06340d72c04b2312bd1a7437dad5939ea8",
@@ -444,6 +440,10 @@
     ".omi/workflows/omi-flow-promote.md": "8696154f7614a46f67f99ec9fbc727310ecf967325f94667e98de0419f1a9e22",
     ".omi/workflows/omi-flow-refactor.md": "9ee8bc8ed88bbd84601e5fa0096025e0bd114739daeb7b2acfcecaa64353ca4f",
     ".omi/workflows/omi-flow-release.md": "bd75e993b2e7807cda9b34b26df0419b1322e59c0f4d23bce77839f3f8d81cd9",
-    ".omi/workflows/omi-flow-spike.md": "38e43d2a9f1508ddfc89e2bbce349443675c97a8f3d8185b7f25165cc3c900e3"
+    ".omi/workflows/omi-flow-spike.md": "38e43d2a9f1508ddfc89e2bbce349443675c97a8f3d8185b7f25165cc3c900e3",
+    "AGENTS.md": "af589b7be20abf2a9d5974e8a58c5adb538f7050a4778e6b4ac7af52c000d634",
+    "docker/Dockerfile": "f40f8bb7d09dcf5a096a693aba060b6c789fe8299783712a011ca5254cd17546",
+    "docker/prove.sh": "511315ec4046be60bed75c1149c10093a90078d350c538ef5fdda0715d008d22",
+    "docker/proxy.py": "0ba39b820fc01693be64aa4b00b516902842f0c0f82fda2a4b21237684b828ec"
   }
 }
