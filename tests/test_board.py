@@ -390,7 +390,7 @@ def test_cost():
             "omi-agent-reviewer | m-a | high | 100 | 50 | n/a | 5s | - | FAIL abc1234",
             "omi-agent-reviewer | m-a | high | 100 | 50 | 0 | 5s | - | FAIL bcd2345",
             "omi-agent-reviewer | m-a | high | 1 | 1 | 1 | 5s | - | QUOTA->codex"])
-        usage_task(root, "TASK-002", "PLAN-002", "codex", ["omi-agent-engineer | m-b | high | 10 | 20 | 30 | 5s | - | -"])
+        usage_task(root, "TASK-002", "PLAN-002", "codex", ["omi-agent-engineer | m-b (codex) | high | 10 | 20 | 30 | 5s | - | -"])
         write(root / ".omi/tasks/TASK-003.md", "---\nid: TASK-003\nstatus: planned\n---\n")
         remote(home)
         view = data.cost("sample")
@@ -400,7 +400,7 @@ def test_cost():
         assert (first["review_rounds"], first["fails"], first["top"], first["cost"]) == (2, 2, 1, None)
         assert [(p["plan"], p["runs"]) for p in view["plans"]] == [("PLAN-001", 4), ("PLAN-002", 1)]
         assert [(t["tool"], t["tokens"]) for t in view["tools"]] == [("claude", 3500303), ("codex", 60)]
-        assert [m["model"] for m in view["models"]] == ["m-a", "m-b"] and view["totals"]["runs"] == 5
+        assert [m["model"] for m in view["models"]] == ["m-a", "m-b (codex)"] and view["totals"]["runs"] == 5
         assert view["totals"]["cost"] is None
         write(home / "projects/sample/.omi/config.json", json.dumps({"prices": {"m-a": {"input": 1, "output": 2, "cache": 0.5}}}))
         publish(home)
@@ -410,6 +410,72 @@ def test_cost():
         write(home / "projects/sample/.omi/config.json", "{bad")
         publish(home)
         assert not data.cost("sample")["has_prices"]
+
+
+def test_cost_legacy_usage() -> None:
+    # Usage tables copied from TASK-026 (7 columns) and TASK-035 (8 columns).
+    tables = (
+        """## Usage
+| role | model | effort | input | output | cache | duration |
+|---|---|---|---|---|---|---|
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 22 | 9893 | 465579 | 92s |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 6 | 1461 | 93093 | 20s |
+""",
+        """## Usage
+| role | model | effort | input | output | cache | duration | skills read |
+|---|---|---|---|---|---|---|---|
+| omi-agent-engineer | claude-sonnet-5-5 | medium | 14 | 3061 | 150263 | 37s | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 1669 | 148530 | 35s | - |
+"""
+    )
+    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+        home = Path(directory)
+        root = home / "projects/sample"
+        for id, table in zip(("TASK-026", "TASK-035"), tables):
+            write(root / f".omi/tasks/{id}.md", f"---\nid: {id}\nplan: PLAN-001\n---\n{table}\n")
+        remote(home)
+        view = data.cost("sample")
+        by_task = {t["id"]: t for t in view["tasks"]}
+        for id, expected in (("TASK-026", (28, 11354, 558672)), ("TASK-035", (26, 4730, 298793))):
+            row = by_task[id]
+            assert (row["input"], row["output"], row["cache"]) == expected
+            assert (row["runs"], row["review_rounds"], row["fails"]) == (2, 1, 0)
+        assert view["totals"]["runs"] == 4 and view["totals"]["review_rounds"] == 2
+        assert view["plans"][0]["tokens"] == view["tools"][0]["tokens"] == view["models"][0]["tokens"] == 873603
+
+
+def test_cost_mixed_tools_per_task() -> None:
+    # All six Usage rows from TASK-125; frontmatter names only the current tool.
+    table = """| role | model | effort | input | output | cache | duration | skills read | verdict |
+|---|---|---|---|---|---|---|---|---|
+| omi-agent-designer-ui | gpt-6.1-sol (codex) | medium | 1879579 | 22644 | 1833600 | 482s | 2/2 omi-skill-ui-direction omi-skill-ui-a11y-review | - |
+| omi-agent-engineer | gpt-6.1-sol (codex) | medium | 3131809 | 18765 | 3068288 | 661s | 2/2 omi-skill-ui-direction omi-skill-lean-implementation | - |
+| omi-agent-qa-tester | claude-sonnet-5-5 | medium | 44 | 5362 | 667652 | 539s | - | PASS 684e44c |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 14 | 4327 | 352156 | 323s | - | FAIL 684e44c |
+| omi-agent-engineer | gpt-6.1-sol (codex) | medium | 4791246 | 22961 | 4713600 | 306s | 0/2 | - |
+| omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 3495 | 302635 | 495s | - | PASS 6499fb8 |
+"""
+    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+        home = Path(directory)
+        root = home / "projects/sample"
+        write(root / ".omi/tasks/TASK-125.md", "---\nid: TASK-125\nplan: PLAN-007\ntool: codex\n---\n## Usage\n" + table + "\n")
+        remote(home)
+        view = data.cost("sample")
+        tools = {t["tool"]: t for t in view["tools"]}
+        assert set(tools) == {"claude", "codex"}
+        for tool, expected in (("claude", (70, 13184, 1322443, 2)),
+                               ("codex", (9802634, 64370, 9615488, 0))):
+            row = tools[tool]
+            assert (row["input"], row["output"], row["cache"], row["review_rounds"]) == expected
+            assert row["runs"] == 3
+            assert row["tokens"] == sum(expected[:3])
+            model = next(m for m in view["models"] if ("(codex)" in m["model"]) == (tool == "codex"))
+            assert all(row[k] == model[k] for k in ("input", "output", "cache", "runs", "review_rounds", "tokens", "cost"))
+        task = view["tasks"][0]
+        assert (task["runs"], task["review_rounds"], task["fails"]) == (6, 2, 1)
+        for key in ("input", "output", "cache", "runs", "tokens", "review_rounds"):
+            assert task[key] == view["plans"][0][key] == view["totals"][key] == sum(t[key] for t in tools.values())
+        assert not view["has_prices"] and view["totals"]["cost"] is None
 
 
 def main():
@@ -426,6 +492,8 @@ def main():
     test_snapshot_symlink_unavailable()
     test_empty_and_layer()
     test_cost()
+    test_cost_legacy_usage()
+    test_cost_mixed_tools_per_task()
 
 
 if __name__ == "__main__":

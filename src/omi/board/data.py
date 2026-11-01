@@ -210,17 +210,18 @@ def cost(name: str) -> dict:
 
     tasks_ = [{"id": id, "title": meta.get("title", ""), "plan": meta.get("plan") or "—", "tool": meta.get("tool") or "—",
                "model": ", ".join(sorted({r["model"] for r in rows})),
-               "fails": sum(r["role"] == "omi-agent-reviewer" and r["verdict"].startswith("FAIL") for r in rows), **_row(rows)}
+               "fails": sum(r["role"] == "omi-agent-reviewer" and r.get("verdict", "").startswith("FAIL") for r in rows), **_row(rows)}
               for id, meta, rows in items]
     priced = bool(prices) and all(t["cost"] is not None for t in tasks_)
     tasks_.sort(key=lambda t: (-(t["cost"] if priced else t["tokens"]), t["id"]))
     for rank, t in enumerate(tasks_, 1):
         t["top"] = rank if rank <= 5 else None
     model_rows = [r for i in items for r in i[2]]
+    tool = lambda r: "codex" if "(codex)" in r["model"] else "claude"
     return snap.response({
         "name": name, "has_prices": bool(prices), "tasks": tasks_,
         "plans": group("plan", lambda i: i[1].get("plan") or "—"),
-        "tools": group("tool", lambda i: i[1].get("tool") or "—"),
+        "tools": [{"tool": t, **_row([r for r in model_rows if tool(r) == t])} for t in sorted({tool(r) for r in model_rows})],
         "models": [{"model": m, **_row([r for r in model_rows if r["model"] == m])} for m in sorted({r["model"] for r in model_rows})],
         "totals": _row(model_rows)})
 
