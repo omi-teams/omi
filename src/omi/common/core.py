@@ -12,6 +12,11 @@ TEMPLATE = Path(__file__).parents[1] / "template"
 WINDOWS = sys.platform == "win32"
 
 
+def write_text(path, text):
+    """Write UTF-8 text with LF endings on every OS."""
+    Path(path).write_text(text, encoding="utf-8", newline="\n")
+
+
 def git(cwd, *args):
     r = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, encoding="utf-8", errors="replace")
     return r.stdout.strip() if r.returncode == 0 else None

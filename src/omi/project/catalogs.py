@@ -41,7 +41,7 @@ def skills_catalog(root):
         lines.append(f"- {sid} ({d.parent.name}): {when} [~{core.tokens(*skill_files(d))} tokens]")
     out = Path(root) / ".omi" / "skills" / "CATALOG.md"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     print(f"wrote {out} ({len(lines) - 3} skills)")
 
 
@@ -173,7 +173,7 @@ def rules_catalog(root):
         lines.append(f"- {rid}: {' '.join(core.meta(f)['summary'].split())} (applies: {', '.join(globs)}) [~{n} tokens]")
     out = Path(root) / ".omi" / "rules" / "CATALOG.md"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     print(f"wrote {out} ({len(lines) - 3} rules)")
 
 
@@ -234,7 +234,7 @@ def plans_catalog(root):
         lines.append(f"- {pid} ({m['status']}): {' '.join(m['title'].split())}")
     out = Path(root) / ".omi" / "plans" / "CATALOG.md"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     print(f"wrote {out} ({len(plans)} plans)")
 
 
@@ -267,7 +267,7 @@ def references_catalog(root):
         lines.append(f"- {rid}: {' '.join(core.meta(f)['summary'].split())}")
     out = Path(root) / ".omi" / "references" / "CATALOG.md"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     print(f"wrote {out} ({len(refs)} references)")
 
 
@@ -362,7 +362,7 @@ def agents_catalog(root):
                     lines.append(f"- effort {name}; fits: {note['fits']}; avoid: {note['avoid']}")
     out = Path(root) / ".omi" / "agents" / "CATALOG.md"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     print(f"wrote {out} ({count} roles)")
 
 

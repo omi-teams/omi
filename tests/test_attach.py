@@ -442,7 +442,44 @@ def test_state_sync_conflict():
         assert omi.common.core.git(home, "diff", "--name-only", "--diff-filter=U") == task.relative_to(home).as_posix()
 
 
+def test_attach_gitattributes():
+    with tempfile.TemporaryDirectory() as d:
+        base = Path(d).resolve()
+        code, home = base / "code", base / "state"
+        code.mkdir()
+        git(code, "init", "-q", "-b", "main")
+        git(code, "remote", "add", "origin", "git@EXAMPLE.org:team/sample.git")
+        env = {"OMI_STATE": str(home), "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        with patch.dict(os.environ, env):
+            detached_cli(code, "attach")
+            assert (home / ".gitattributes").read_bytes() == b"* text=auto eol=lf\n"
+            assert omi.common.core.git(home, "ls-files", "--", ".gitattributes") == ".gitattributes"
+            (home / ".gitattributes").write_bytes(b"custom\n")
+            code2 = base / "code2"
+            code2.mkdir()
+            git(code2, "init", "-q", "-b", "main")
+            git(code2, "remote", "add", "origin", "git@EXAMPLE.org:team/other.git")
+            detached_cli(code2, "attach")
+            assert (home / ".gitattributes").read_bytes() == b"custom\n"
+
+
+def test_lf_writes():
+    import re
+    src = Path(omi.__file__).parent
+    for f in src.rglob("*.py"):
+        for line in f.read_text(encoding="utf-8").splitlines():
+            if re.search(r"(?<!core)\.write_text\(", line) and 'newline="\\n"' not in line:
+                raise AssertionError(f"bare write_text( in {f}: {line.strip()}")
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "x.md"
+        omi.common.core.write_text(path, "a\nb\n")
+        assert b"\r" not in path.read_bytes()
+
+
 def main():
+    test_attach_gitattributes()
+    test_lf_writes()
     test_detached_in_repo_warning()
     test_detached_in_repo_no_warning()
     test_in_repo_status_unchanged()

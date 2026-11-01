@@ -42,7 +42,7 @@ def template_shas_cmd(tpl: str | Path, ver: str) -> None:
     """Maintainer step: record the hashes of a released template (an export of its tag) in template_shas.json."""
     known = json.loads(SHAS.read_text(encoding="utf-8")) if SHAS.is_file() else {}
     known[ver] = template_shas(tpl)
-    SHAS.write_text(json.dumps(known, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    SHAS.write_text(json.dumps(known, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
     print(f"template-shas {ver}: {len(known[ver])} files")
 
 
@@ -63,7 +63,7 @@ def read_manifest(target: str | Path) -> dict[str, str]:
 def write_manifest(target: str | Path, files: dict[str, str]) -> None:
     f = Path(target) / ".omi" / "manifest.json"
     f.parent.mkdir(parents=True, exist_ok=True)
-    f.write_text(json.dumps({"version": core.version(), "files": dict(sorted(files.items()))}, indent=2) + "\n", encoding="utf-8")
+    f.write_text(json.dumps({"version": core.version(), "files": dict(sorted(files.items()))}, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 
 def released_shas() -> dict[str, set[str]]:
@@ -85,7 +85,7 @@ def ensure_gitattributes(target: Path) -> None:
     """Create the project's line-ending policy only when absent."""
     attrs = target / ".gitattributes"
     if upgrade_write_safe(target, ".gitattributes") and not attrs.exists():
-        attrs.write_text("* text=auto eol=lf\n", encoding="utf-8")
+        attrs.write_text("* text=auto eol=lf\n", encoding="utf-8", newline="\n")
         print("create .gitattributes (* text=auto eol=lf)")
 
 
@@ -98,7 +98,7 @@ def ensure_gitignore(target: Path) -> None:
     for name in ("__pycache__", ".omi-cache"):
         if not {name, name + "/", "/" + name + "/"} & set(lines):
             lines.append(name + "/")
-            ignore.write_text("".join(line + "\n" for line in lines), encoding="utf-8")
+            ignore.write_text("".join(line + "\n" for line in lines), encoding="utf-8", newline="\n")
             print(f"update .gitignore ({name}/)")
 
 
@@ -125,7 +125,7 @@ def init(target: str | Path = ".", *, detached: bool = False) -> None:
     if manifest_safe:
         write_manifest(target, files)
     if upgrade_write_safe(target, ".omi/version"):
-        (target / ".omi" / "version").write_text(core.version() + "\n", encoding="utf-8")
+        (target / ".omi" / "version").write_text(core.version() + "\n", encoding="utf-8", newline="\n")
         print(f"stamp  .omi/version ({core.version()})")
     ensure_gitattributes(target)
     ensure_gitignore(target)
@@ -218,11 +218,11 @@ def upgrade_apply(target: str | Path = ".", *, detached: bool = False) -> int:
     tpl_cfg = json.loads(template_map()[".omi/config.json"].read_text(encoding="utf-8"))
     if cfg_safe:
         cfg.parent.mkdir(parents=True, exist_ok=True)
-        cfg.write_text(json.dumps(merge_keys(old_cfg, tpl_cfg) if old_cfg is not None else tpl_cfg, indent=2) + "\n", encoding="utf-8")
+        cfg.write_text(json.dumps(merge_keys(old_cfg, tpl_cfg) if old_cfg is not None else tpl_cfg, indent=2) + "\n", encoding="utf-8", newline="\n")
     if manifest_safe:
         write_manifest(target, files)
     if upgrade_write_safe(target, ".omi/version"):
-        (target / ".omi" / "version").write_text(core.version() + "\n", encoding="utf-8")
+        (target / ".omi" / "version").write_text(core.version() + "\n", encoding="utf-8", newline="\n")
     for kind, catalog in (("skills", catalogs.skills_catalog), ("agents", catalogs.agents_catalog), ("workflows", workflows.workflows_catalog),
                           ("rules", catalogs.rules_catalog), ("references", catalogs.references_catalog), ("plans", catalogs.plans_catalog)):
         if upgrade_write_safe(target, f".omi/{kind}/CATALOG.md"):

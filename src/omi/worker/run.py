@@ -292,7 +292,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         finally:  # Ctrl-C, a container error and the exit above included: no token may stay in the session volume
             dropped = not read and session.scrub(repo, task.stem, t, image, value)
             if dropped and task.exists():  # token in a transcript: forget the session, next run is fresh
-                task.write_text(session.LINE.sub("", task.read_text(encoding="utf-8")), encoding="utf-8")
+                task.write_text(session.LINE.sub("", task.read_text(encoding="utf-8", newline="\n")), encoding="utf-8")
         result, *nums = tools.parse_usage(t, r.stdout)
         done = skills_read(catalog, ids, tools.opened_files(t, r.stdout))
         verdict = (tools.verdict_of(result) or "n/a") if read else "-"
@@ -302,7 +302,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         if tools.quota_hit(t, r.stdout, r.returncode):
             verdict = f"QUOTA->{'codex' if t == 'claude' else 'claude'}"
         if not read and not dropped and (sid := session.session_id(t, r.stdout)) and task.exists():
-            task.write_text(session.with_session(task.read_text(encoding="utf-8"), t, sid, role), encoding="utf-8")
+            task.write_text(session.with_session(task.read_text(encoding="utf-8", newline="\n"), t, sid, role), encoding="utf-8")
         tasks.record_usage(task, role, models[t] + (" (codex)" if t == "codex" else ""), efforts[t], nums,
                      time.monotonic() - t0, skills_cell(ids, done), verdict)
         return r, result, done
@@ -325,10 +325,10 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
                 changed = set(re.findall(r"^diff --git a/.* b/(.*)$", inc, re.M))
                 if changed and changed <= named:
                     patch = inc
-                    (Path(tmp.name) / "full.patch").write_text(full, encoding="utf-8")
+                    (Path(tmp.name) / "full.patch").write_text(full, encoding="utf-8", newline="\n")
                     note = ("\nDiff: /review/diff.patch (fixes since the last reviewed commit; read-only; git does not work in this container)"
                             "\nIncremental round: previous findings are under `## Checkpoint`; full diff at /review/full.patch only if needed")
-            (Path(tmp.name) / "diff.patch").write_text(patch, encoding="utf-8")
+            (Path(tmp.name) / "diff.patch").write_text(patch, encoding="utf-8", newline="\n")
             mounts.append(f"{tmp.name}:/review")
             prompt_skills += note
         print(f"tool: {tool} ({models[tool]})")

@@ -101,16 +101,24 @@ def attach(rest: list[str]) -> None:
     if not project.resolve().is_relative_to(home):
         raise state.StateError(f"project directory escapes state repo: {project}")
     rel = project.relative_to(home).as_posix()
+    attrs = home / ".gitattributes"
+    new_attrs = not attrs.exists()
     try:
+        if new_attrs:
+            core.write_text(attrs, "* text=auto eol=lf\n")
         upgrade.init(project, detached=True)
-        (project / "project.json").write_text(json.dumps({"remote": remote}, indent=2) + "\n", encoding="utf-8")
-        checked_git("-C", str(home), "add", "--", rel)
-        checked_git("-C", str(home), "commit", "--only", "-m", f"omi: attach {name}", "--", rel)
+        (project / "project.json").write_text(json.dumps({"remote": remote}, indent=2) + "\n", encoding="utf-8", newline="\n")
+        paths = [rel, ".gitattributes"] if new_attrs else [rel]
+        checked_git("-C", str(home), "add", "--", *paths)
+        checked_git("-C", str(home), "commit", "--only", "-m", f"omi: attach {name}", "--", *paths)
     except Exception:
-        subprocess.run(["git", "-C", str(home), "rm", "--cached", "-r", "-f", "--ignore-unmatch", "--", rel],
+        subprocess.run(["git", "-C", str(home), "rm", "--cached", "-r", "-f", "--ignore-unmatch", "--", rel,
+                        *([".gitattributes"] if new_attrs else [])],
                        capture_output=True)
         if project.exists():
             shutil.rmtree(project)
+        if new_attrs:
+            attrs.unlink(missing_ok=True)
         raise
     print(f"attached: {project}")
     warn_in_repo_files(code)
