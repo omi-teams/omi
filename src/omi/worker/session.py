@@ -1,4 +1,4 @@
-"""Engineer session resume: the per-task transcript volume (a Docker named volume, never on the host filesystem) and the task's `Session:` line."""
+"""Write-role session resume: the per-task transcript volume (a Docker named volume, never on the host filesystem) and the task's `Session:` line."""
 
 import contextlib
 import json
@@ -9,7 +9,7 @@ from pathlib import Path
 
 # where each CLI keeps its transcripts under $HOME; only these directories reach the volume, never the auth files
 TRANSCRIPTS = {"claude": ".claude/projects", "codex": ".codex/sessions"}
-LINE = re.compile(r"^Session: (claude|codex) (\S+)\n?", re.M)
+LINE = re.compile(r"^Session: (claude|codex) ([^\s]+)(?:[ \t]+([^\s]+))?[ \t]*$\n?", re.M)
 SID = re.compile(r"\w[\w-]*")  # no leading '-': the id goes into argv
 HELPER = ["--rm", "--network", "none", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--read-only"]
 SCAN_TIMEOUT = 300
@@ -78,15 +78,15 @@ def session_id(tool, out):
     return found
 
 
-def recorded(text, tool):
-    """The session id the task file records for this tool, or None (no line, or the last run used the other tool)."""
+def recorded(text: str, tool: str, role: str = "omi-agent-engineer") -> str | None:
+    """The id recorded for this tool and role; legacy lines belong to the engineer."""
     m = LINE.search(text or "")
-    return m[2] if m and m[1] == tool and SID.fullmatch(m[2]) else None
+    return m[2] if m and m[1] == tool and (m[3] or "omi-agent-engineer") == role and SID.fullmatch(m[2]) else None
 
 
-def with_session(text, tool, sid):
+def with_session(text: str, tool: str, sid: str, role: str = "omi-agent-engineer") -> str:
     """Task text with its `Session:` line replaced by this one (appended under `## Checkpoint`, else at the end)."""
-    text, line = LINE.sub("", text), f"Session: {tool} {sid}"
+    text, line = LINE.sub("", text), f"Session: {tool} {sid} {role}"
     head, sep, rest = text.partition("\n## Checkpoint")
     if not sep:
         return f"{text.rstrip()}\n\n## Checkpoint\n{line}\n"
