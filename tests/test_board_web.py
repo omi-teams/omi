@@ -261,6 +261,10 @@ class Element {
   set textContent(value) { this.text = String(value); this.children = []; }
   get textContent() { return this.text + this.children.map(c => c.textContent).join(''); }
   setAttribute(k, v) { this.attrs[k] = String(v); }
+  getAttribute(k) { return this.attrs[k] ?? null; }
+  contains(node) { return all(this).includes(node); }
+  querySelectorAll(selector) { return all(this).slice(1).filter(n => selector.split(',').map(s => s.trim()).includes(n.tagName)); }
+  get isConnected() { return this === document.body || Object.values(elements).some(root => root.contains(this)); }
   append(...kids) { this.children.push(...kids); }
   replaceChildren(...kids) { this.text = ''; this.children = kids; this.replacements = (this.replacements || 0) + 1; }
   addEventListener(k, f) { this.listeners[k] = f; }
@@ -331,8 +335,22 @@ async function advance(polls) {
   assert.equal(calls,initialCalls);assert.equal(versionCalls,5);
   assert.deepEqual([elements.view.replacements,elements.nav.replacements,elements.status.replacements],replacements);
   assert.equal(document.activeElement,focused);
+  // The matching freshly rendered link gets focus; stale attributes stay on
+  // the detached old node rather than leaking into the new render.
+  focused.setAttribute('open','stale');
+  focused.setAttribute('aria-label','stale label');
+  window.scrollY=210;
   versionSha='changed';data={...data,source:{...remoteSource,sha:versionSha}};
   await advance(1);assert.equal(calls,initialCalls+1);
+  const newFocused=find(elements.view,'pc')[0];
+  assert.notEqual(newFocused,focused);
+  assert.equal(document.activeElement,newFocused);
+  assert.equal(focused.isConnected,false);
+  assert.equal(newFocused.getAttribute('href'),focused.getAttribute('href'));
+  assert.equal(newFocused.textContent,focused.textContent);
+  assert.equal(newFocused.getAttribute('open'),null);
+  assert.equal(newFocused.getAttribute('aria-label'),null);
+  assert.equal(window.scrolled,210);
   await advance(2);assert.equal(calls,initialCalls+1);
   assert.equal(elements.status.replacements,replacements[2]+1);
   fail=true;await advance(1);
@@ -358,7 +376,13 @@ async function advance(polls) {
   timeouts[0].f();await hung;
   assert(elements.err.textContent.includes('quá thời gian chờ'));
   pending=null;await advance(1);assert.equal(elements.err.textContent,'');
-  data={projects:[summary],source:remoteSource};
+  // With no matching new control, focus stays in the current view context.
+  find(elements.view,'pc')[0].focus();
+  versionSha='removed';data={projects:[],source:{...remoteSource,sha:versionSha}};
+  await advance(1);
+  assert.equal(document.activeElement,elements.view);
+  assert.equal(find(elements.view,'pc').length,0);
+  assert.equal(window.scrolled,210);
   data=dashboard;location.hash='#/p/omi';await invoke('route()');
   assert.equal(find(elements.view,'stat').length,4);
   assert.equal(find(elements.view,'col').length,6); // Five desktop columns plus the phone's merged empty row.
@@ -402,9 +426,14 @@ async function advance(polls) {
   assert(elements.view.textContent.includes('Báo cáo (2)'));
   // Background refresh keeps opened reports and the scroll position of the same task page.
   reps[1].open=true;reps[1].listeners.toggle();window.scrollY=420;
+  const oldSummary=reps[1].children[0];oldSummary.setAttribute('open','stale');oldSummary.focus();
   data={...detail,goal:'Changed goal'};await invoke('route()');
   const again=all(elements.view).filter(n=>n.tagName==='details');
   assert.equal(again[0].attrs.open,'');assert.equal(again[1].attrs.open,'');assert.equal(window.scrolled,420);
+  assert.notEqual(again[1].children[0],oldSummary);
+  assert.equal(document.activeElement,again[1].children[0]);
+  assert.equal(again[1].children[0].getAttribute('open'),null);
+  assert.equal(oldSummary.isConnected,false);
   reps[0].open=false;reps[0].listeners.toggle();data={...detail,goal:'Changed again'};await invoke('route()');
   assert.equal(all(elements.view).filter(n=>n.tagName==='details')[0].attrs.open,undefined);
   data=detail;
@@ -539,7 +568,7 @@ catch(e) {
         await page.keyboard.press('Enter');
         await page.waitForFunction(()=>!document.getElementById('refresh').disabled);
         // An unchanged poll preserves all nodes and the timestamp; a changed
-        // revision reloads the view while preserving the focused control itself.
+        // revision reloads the view and focuses the matching freshly rendered control.
         const target=page.locator(hash==='#/'?'.pc':hash.includes('/t/')?'details summary':'.card').first();
         await target.focus();
         await target.evaluate(n=>{window.savedControl=n;window.savedView=document.getElementById('view').firstChild;window.savedStatus=document.getElementById('status').firstChild;});
@@ -548,7 +577,12 @@ catch(e) {
         remoteSource.sha=`change-${width}-${pageName}`;
         await page.evaluate(()=>pollVersion());
         assert(await page.evaluate(()=>window.savedView!==document.getElementById('view').firstChild));
-        assert(await page.evaluate(()=>window.savedControl===document.activeElement && window.savedControl.isConnected));
+        assert(await page.evaluate(()=>{
+          const focused=document.activeElement;
+          return window.savedControl!==focused && !window.savedControl.isConnected && focused.isConnected &&
+            focused.tagName===window.savedControl.tagName && focused.getAttribute('href')===window.savedControl.getAttribute('href') &&
+            focused.textContent===window.savedControl.textContent;
+        }));
         const initial=await page.locator('body').evaluate(n=>getComputedStyle(n).backgroundColor);
         await page.emulateMedia({colorScheme:'dark'});
         assert.notEqual(await page.locator('body').evaluate(n=>getComputedStyle(n).backgroundColor),initial);

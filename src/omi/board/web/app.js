@@ -229,15 +229,14 @@ async function route(button = null) {
     const nodes = name ? id ? taskPage(name, id, data) : dashboard(name, data) : home(data.projects);
     const scrolled = window.scrollY;
     const focused = document.activeElement;
-    // Reuse the focused control when its destination/content survives the update.
-    if (!changed && view.contains?.(focused)) {
-      const candidates = nodes.flatMap(n => [...n.querySelectorAll("a, summary, button")]);
-      const replacement = candidates.find(n => n.tagName === focused.tagName &&
-        n.getAttribute("href") === focused.getAttribute("href") && n.textContent === focused.textContent);
-      if (replacement) replacement.replaceWith(focused);
-    }
+    const focusInView = !changed && view.contains(focused);
     view.replaceChildren(...nodes);
-    if (!changed && focused !== document.body && focused.isConnected === false) {
+    if (focusInView) {
+      const replacement = [...view.querySelectorAll("a, summary, button")].find(n =>
+        n.tagName === focused.tagName && n.getAttribute("href") === focused.getAttribute("href") &&
+        n.textContent === focused.textContent);
+      (replacement || view).focus({preventScroll: true});
+    } else if (!changed && focused !== document.body && focused.isConnected === false) {
       view.focus({preventScroll: true});
     } else if (!changed && focused.isConnected && document.activeElement !== focused) {
       focused.focus({preventScroll: true});
