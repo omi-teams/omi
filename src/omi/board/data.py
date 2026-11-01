@@ -80,6 +80,59 @@ def _detail(snap: source.Snapshot, root: Path, id: str, text: str) -> dict:
             "reports": _section(text, "Reports"), "usage": _usage(text)}
 
 
+def _inbox(t: dict) -> list[dict]:
+    """Open PO requests only; never infer a stop from historical usage totals."""
+    if t["status"] == "done":
+        return []
+    step = t["current_step"]
+    log = "\n## Steps\n" + t["steps"] + "\n"
+    result = []
+
+    def add(reason: str, text: str, since: str | None = None) -> None:
+        result.append({"id": t["id"], "title": t["frontmatter"].get("title", ""),
+                       "reason": reason, "text": text, "since": since,
+                       "command": f"omi-task {t['id']}"})
+
+    if (step and any(s.get("id") == step and s.get("gate") == "po" for s in t["workflow_steps"])
+            and tasks.step_states(log).get(step) not in ("done", "skipped")
+            and not tasks.po_approved(log, step)):
+        starts = re.findall(rf"^- {re.escape(step)} started (\d{{4}}-\d\d-\d\d \d\d:\d\d(?::\d\d)?)", t["steps"], re.M)
+        add("po_gate", f"Duyệt bước {step}", starts[-1] if starts else None)
+        result[-1]["gate"] = step
+
+    # Only the latest report can represent an outstanding worker stop. Hooks
+    # are validation evidence, not a replacement for the worker's request.
+    reports = re.split(r"(?m)^(?=\d{4}-\d\d-\d\d \d\d:\d\d(?::\d\d)? (?!hook ))", t["reports"])
+    report = reports[-1] if reports else ""
+    stamp = re.match(r"(\d{4}-\d\d-\d\d \d\d:\d\d(?::\d\d)?)", report)
+    since = stamp[1] if stamp else None
+    later_step = since and any(date > since for date in re.findall(
+        r"^- \S+ (?:started|done|skipped) (\d{4}-\d\d-\d\d \d\d:\d\d(?::\d\d)?)", t["steps"], re.M))
+    body = "\n".join(line.removeprefix("> ").strip() for line in report.splitlines()[1:])
+    checkpoint = t["checkpoint"]
+    # Next/Not done are current requests. A bare QUOTA line is emitted by
+    # stop_quota; a successful fallback explicitly says it continued.
+    current = "\n".join(line for line in checkpoint.splitlines()
+                        if re.match(r"(?:Next:|Not done:|NEEDS SCOPE:|QUOTA:)", line))
+    rows = t["usage"]["rows"]
+    if rows and not rows[-1].get("verdict", "").startswith("QUOTA->"):
+        current = "\n".join(line for line in current.splitlines() if not line.startswith("QUOTA:"))
+    evidence = current + ("\n" + body if not later_step else "")
+    for reason, marker in (("needs_scope", "NEEDS SCOPE"), ("quota", "QUOTA")):
+        lines = [line for line in evidence.splitlines() if re.match(
+            rf"^(?:(?:Next|Not done):\s*)?{marker}[:\s]", line)]
+        lines = [line for line in lines if not re.search(r"continued|rerunning|resolved|scope widened", line, re.I)]
+        if lines:
+            add(reason, lines[-1], since if lines[-1] in body else None)
+    verdicts = [r.get("verdict", "") for r in t["usage"]["rows"] if r["role"] == "omi-agent-reviewer"
+                and r.get("verdict", "").startswith(("FAIL", "PASS"))]
+    decision = re.search(r"(?:waiting|await|ask|chờ|cần).*(?:PO|decision|quyết định)|(?:PO|decision).*?(?:needed|required)",
+                         evidence, re.I)
+    if len(verdicts) >= 2 and all(v.startswith("FAIL") for v in verdicts[-2:]) and decision:
+        add("review_fail", decision[0], since if not later_step else None)
+    return result
+
+
 def _plans(snap: source.Snapshot, root: Path, details: list[dict]) -> list[dict]:
     result = []
     for path in snap.files(root / ".omi" / "plans", "*.md"):
@@ -151,6 +204,7 @@ def _project(snap: source.Snapshot, name: str) -> dict:
     return {"name": name, "branch": "main",
             "plans": _plans(snap, root, details), "kanban": kanban,
             "task_counts": {status: len(items) for status, items in kanban.items()},
+            "inbox": [item for t in details for item in _inbox(t)],
             "po_waiting": waiting, "po_waiting_count": len({item["id"] for item in waiting}),
             "activity": activity, "decisions": sorted(decisions, reverse=True),
             "usage": {"tasks": {t["id"]: t["usage"] for t in details},
@@ -233,10 +287,13 @@ def projects() -> dict:
     """List project summaries and their shared remote source."""
     snap = source.snapshot()
     result = []
+    inbox = []
     names = sorted({p.parts[1] for p in snap.paths if len(p.parts) > 2 and p.parts[0] == "projects"})
     for name in names:
         view = _project(snap, name)
+        inbox.extend({**item, "project": name} for item in view["inbox"])
         result.append({"name": name, "plans": [p for p in view["plans"] if p["status"] != "done"],
                        "branch": view["branch"],
                        "task_counts": view["task_counts"], "po_waiting_count": view["po_waiting_count"]})
-    return snap.response({"projects": result})
+    inbox.sort(key=lambda item: (item["since"] is None, item["since"] or "", item["project"], item["id"], item["reason"]))
+    return snap.response({"projects": result, "inbox": inbox})

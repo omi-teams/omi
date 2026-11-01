@@ -284,6 +284,108 @@ function taskPage(name, id, d) {
     el("aside", null, {class: "side"}, [section("Thông tin", [meta]), section("Sử dụng", [taskUsage(d.usage)],
       `${num(d.usage.runs)} lượt · ${num(d.usage.review_rounds)} vòng review`)])])];
 }
+const INBOX_REASON = {po_gate: "Chờ PO duyệt", needs_scope: "NEEDS SCOPE", quota: "QUOTA stop", review_fail: "Review FAIL ×2"};
+let inboxItems = null;
+const inboxSeen = new Set();
+let notifyEnabled = false;
+let notifyPending = false;
+let notifyMessage = "";
+let storageAvailable = true;
+try { notifyEnabled = window.localStorage.getItem("omi-board-notifications") === "on"; }
+catch (_) { storageAvailable = false; }
+const notificationAPI = () => window.isSecureContext && window.Notification;
+const inboxKey = (i) => JSON.stringify([i.project, i.id, i.reason, i.gate || "", i.since || ""]);
+function pageTitle() {
+  const title = document.getElementById("title");
+  document.title = `${inboxItems?.length ? `(${inboxItems.length}) ` : ""}${current === "#/inbox" ? "Hộp thư PO" : title?.textContent || "Dự án"} — omi board`;
+}
+function acceptInbox(items) {
+  const baseline = inboxItems === null;
+  const fresh = items.filter(i => !inboxSeen.has(inboxKey(i)));
+  for (const item of items) inboxSeen.add(inboxKey(item));
+  inboxItems = items;
+  document.getElementById("inbox-count").textContent = String(items.length);
+  pageTitle();
+  if (!baseline && fresh.length && notifyEnabled && notificationAPI()?.permission === "granted") {
+    try {
+      const note = new window.Notification(`${fresh.length} việc mới chờ PO`, {
+        body: fresh.map(i => `${i.project} · ${i.id}: ${INBOX_REASON[i.reason] || i.reason}`).join("\n")});
+      note.onclick = () => { window.focus(); location.hash = "#/inbox"; note.close(); };
+    } catch (_) {
+      notifyMessage = "Không tạo được thông báo. Kiểm tra cài đặt trình duyệt.";
+      renderNotificationSettings();
+    }
+  }
+}
+function renderNotificationSettings() {
+  const target = document.getElementById("notification-settings");
+  if (!target) return;
+  const api = notificationAPI();
+  const denied = api?.permission === "denied";
+  const enabled = notifyEnabled && api?.permission === "granted";
+  const button = el("button", notifyPending ? "Đang xin quyền…" : enabled ? "Tắt thông báo" : "Bật thông báo",
+    {type: "button", class: `btn${!enabled ? " notify-enable" : ""}`, "data-control": "notifications"});
+  button.disabled = notifyPending || !api || denied;
+  button.addEventListener("click", async () => {
+    if (notifyPending) return;
+    if (enabled) notifyEnabled = false;
+    else {
+      notifyPending = true; renderNotificationSettings();
+      try {
+        const permission = await api.requestPermission();
+        notifyEnabled = permission === "granted";
+        notifyMessage = permission === "default" ? "Chưa cấp quyền. Bấm Bật thông báo để thử lại." : "";
+      } catch (_) { notifyEnabled = false; notifyMessage = "Không xin được quyền thông báo. Thử lại khi trình duyệt sẵn sàng."; }
+      finally { notifyPending = false; }
+    }
+    // Enabling establishes a baseline; no backlog notifications.
+    for (const item of inboxItems || []) inboxSeen.add(inboxKey(item));
+    try { window.localStorage.setItem("omi-board-notifications", notifyEnabled ? "on" : "off"); }
+    catch (_) { storageAvailable = false; }
+    renderNotificationSettings();
+    document.getElementById("notification-settings")?.querySelectorAll("button")[0]?.focus({preventScroll: true});
+  });
+  target.replaceChildren(box("row", [box("stack", [el("h2", "Thông báo trình duyệt"),
+    el("p", "Chỉ hoạt động khi board đang mở và tab đang hiển thị; tab ẩn dừng kiểm tra. Không có thông báo nền.", {class: "muted small"})]), button]),
+    el("p", !api ? "Trình duyệt không hỗ trợ thông báo hoặc kết nối chưa an toàn." : denied ?
+      "Quyền thông báo bị chặn. Mở cài đặt trình duyệt để thay đổi." : enabled ? "Đã bật thông báo cho việc mới." : "Thông báo đang tắt.", {class: "small"}),
+    el("p", `${notifyMessage}${!storageAvailable ? " Tùy chọn chỉ áp dụng cho tab này." : ""}`, {role: "status", class: "small"}));
+}
+function inboxPage(items) {
+  const tasks = new Set(items.map(i => JSON.stringify([i.project, i.id])));
+  const rows = items.map(i => {
+    const command = i.command;
+    const feedback = el("p", "", {role: "status", class: "small"});
+    const copy = el("button", "Sao chép lệnh", {type: "button", class: "btn", "data-control": inboxKey(i),
+      "aria-label": `Sao chép ${command} · ${i.project}`});
+    copy.addEventListener("click", async () => {
+      const focused = document.activeElement === copy;
+      copy.disabled = true;
+      try { await window.navigator.clipboard.writeText(command); feedback.textContent = `Đã sao chép: ${command}`; }
+      catch (_) { feedback.textContent = "Không sao chép được. Chọn và sao chép lệnh hiển thị bên trên."; }
+      finally {
+        copy.disabled = false;
+        if (focused && copy.isConnected && (document.activeElement === document.body || document.activeElement === copy)) copy.focus({preventScroll: true});
+      }
+    });
+    const date = i.since ? new Date(i.since.replace(" ", "T") + "Z") : null;
+    const valid = date && Number.isFinite(date.getTime());
+    const minutes = valid ? Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000)) : 0;
+    const age = valid ? `Chờ ${minutes < 60 ? minutes + " phút" : Math.floor(minutes / 60) + " giờ"}` : "Chờ: chưa rõ thời điểm";
+    return el("li", null, {}, [box("stack", [chip(i.gate ? `PO · ${i.gate}` : INBOX_REASON[i.reason] || i.reason, i.reason === "po_gate" ? "po" : "blocked"),
+      link(`${i.id} · ${i.title || "Chưa có tiêu đề"}`, taskHref(i.project, i.id), "strong"),
+      el("p", i.text || "Cần PO quyết định; xem chi tiết task."), el("p", `Dự án: ${i.project}`, {class: "small muted"})]),
+      box("inbox-age", [el("strong", age), ...(valid ? [el("time", `${i.since} UTC`, {datetime: date.toISOString(), class: "small muted"})] : [])]),
+      box("inbox-command", [el("code", command), copy, feedback])]);
+  });
+  const title = heading("Hộp thư PO ");
+  title.append(chip(`${items.length} việc`, "po"));
+  return [box("heading inbox-heading", [title]),
+    el("p", "Mọi việc đang chờ anh/chị quyết định, từ tất cả dự án. Board chỉ đọc; sao chép lệnh rồi chạy trong terminal của dự án.", {class: "inbox-intro"}),
+    el("section", null, {id: "notification-settings", class: "panel inbox-notice"}),
+    section("Đang chờ quyết định", [el("p", "Việc chờ lâu nhất ở trên. Lệnh không tự chạy.", {class: "small muted"}),
+      rows.length ? el("ul", null, {class: "inbox-items"}, rows) : empty("Không có việc chờ PO. Mọi quyết định đã được xử lý.")], `${items.length} việc · ${tasks.size} task`, "panel inbox-panel")];
+}
 function updated(source) {
   failed = false;
   if (err.contains?.(document.activeElement)) document.getElementById("refresh").focus();
@@ -322,7 +424,8 @@ async function route(button = null) {
     const name = m ? decodeURIComponent(m[1]) : null;
     const id = m?.[2] ? decodeURIComponent(m[2]) : null;
     const costs = !!m?.[3];
-    if (changed) view.replaceChildren(heading(costs ? "Chi phí và quota" : id || name || "Dự án"),
+    const isInbox = hash === "#/inbox";
+    if (changed) view.replaceChildren(heading(isInbox ? "Hộp thư PO" : costs ? "Chi phí và quota" : id || name || "Dự án"),
       el("div", null, {class: "skeleton", "aria-hidden": "true"}), el("p", "Đang tải…"));
     const path = name ? `/api/projects/${enc(name)}${id ? "/tasks/" + enc(id) : costs ? "/cost" : ""}` : "/api/projects";
     const response = await fetch(path, {cache: "no-store", signal: abort.signal});
@@ -330,7 +433,17 @@ async function route(button = null) {
     const text = await response.text();
     if (ticket !== request) return;
     const data = JSON.parse(text);
-    let contentKey = text;
+    // /api/projects aggregates every project's inbox from one immutable snapshot.
+    let board = data;
+    let boardText = text;
+    if (name) {
+      const response = await fetch("/api/projects", {cache: "no-store", signal: abort.signal});
+      if (!response.ok) throw new Error(String(response.status));
+      boardText = await response.text(); board = JSON.parse(boardText);
+      if (ticket !== request) return;
+    }
+    const items = board.inbox || [];
+    let contentKey = JSON.stringify([text, boardText]);
     // The detail endpoint carries the task's own workflow; the project view
     // carries hierarchy and the status derived from its children.
     if (id) {
@@ -338,12 +451,12 @@ async function route(button = null) {
       if (!response.ok) throw new Error(String(response.status));
       const projectText = await response.text();
       const project = JSON.parse(projectText);
-      contentKey = JSON.stringify([text, projectText]);
+      contentKey = JSON.stringify([text, boardText, projectText]);
       const item = Object.values(project.kanban).flat().find(t => t.id === id);
       if (item) Object.assign(data, {status: item.status, children: item.children, parent: item.parent, type: item.type});
       if (ticket !== request) return;
     }
-    if (!name) {
+    if (!name && !isInbox) {
       const projectTexts = await Promise.all(data.projects.map(async p => {
         const response = await fetch(`/api/projects/${enc(p.name)}`, {cache: "no-store", signal: abort.signal});
         if (!response.ok) throw new Error(String(response.status));
@@ -354,28 +467,36 @@ async function route(button = null) {
       contentKey = JSON.stringify([text, ...projectTexts]);
       if (ticket !== request) return;
     }
-    if (contentKey === seen) { revision = data.source.sha; updated(data.source); return; }
+    if (contentKey === seen) { revision = board.source.sha; updated(data.source); return; }
     // Render off the page, and only cache a response after its view succeeds.
-    const nodes = name ? costs ? costPage(name, data) : id ? taskPage(name, id, data) : dashboard(name, data) : home(data.projects);
+    const nodes = isInbox ? inboxPage(items) : name ? costs ? costPage(name, data) : id ? taskPage(name, id, data) : dashboard(name, data) : home(data.projects);
     const scrolled = window.scrollY;
     const focused = document.activeElement;
     const focusInView = !changed && view.contains(focused);
     view.replaceChildren(...nodes);
+    if (isInbox) {
+      renderNotificationSettings();
+      const listTitle = view.querySelectorAll("h2")[1];
+      listTitle.setAttribute("id", "inbox-title"); listTitle.setAttribute("tabindex", "-1");
+      listTitle.setAttribute("aria-label", `Đang chờ quyết định: ${items.length} việc`);
+      view.querySelectorAll("section")[1].querySelectorAll("span")[0]?.setAttribute("role", "status");
+    }
     if (focusInView) {
-      const replacement = [...view.querySelectorAll("a, summary, button")].find(n =>
+      const control = focused.getAttribute("data-control");
+      const replacement = [...view.querySelectorAll("a, summary, button")].find(n => control ? n.getAttribute("data-control") === control :
         n.tagName === focused.tagName && n.getAttribute("href") === focused.getAttribute("href") &&
         n.textContent === focused.textContent);
-      (replacement || view).focus({preventScroll: true});
+      (replacement || (isInbox ? document.getElementById("inbox-title") : view)).focus({preventScroll: true});
     } else if (!changed && focused !== document.body && focused.isConnected === false) {
       view.focus({preventScroll: true});
     } else if (!changed && focused.isConnected && document.activeElement !== focused) {
       focused.focus({preventScroll: true});
     }
     if (!changed) window.scrollTo(0, scrolled);
-    if (changed) setNav(name ? id || costs ? [[name, projectHref(name)], [id || "Chi phí"]] : [[name]] : []);
-    document.title = `${costs ? "Chi phí" : id || name || "Dự án"} — omi board`;
+    if (changed) setNav(isInbox ? [["Hộp thư PO"]] : name ? id || costs ? [[name, projectHref(name)], [id || "Chi phí"]] : [[name]] : []);
+    acceptInbox(items);
     seen = contentKey;
-    revision = data.source.sha;
+    revision = board.source.sha;
     updated(data.source);
     if (changed) document.getElementById("title").focus();
   } catch (e) {
@@ -399,8 +520,7 @@ async function pollVersion() {
   const abort = new AbortController();
   const limit = setTimeout(() => abort.abort(), 10000);
   try {
-    const match = hash.match(/^#\/p\/([^/]+)/);
-    const path = match ? `/api/projects/${enc(decodeURIComponent(match[1]))}/version` : "/api/version";
+    const path = "/api/version";
     const response = await fetch(path, {cache: "no-store", signal: abort.signal});
     if (!response.ok) throw new Error(String(response.status));
     const data = JSON.parse(await response.text());

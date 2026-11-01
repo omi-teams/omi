@@ -252,3 +252,34 @@ td.name,td.barc{white-space:normal}td.num,th.num{text-align:right}
  td.num{display:flex;justify-content:space-between;gap:12px}
  td.num::before{content:attr(data-l);color:var(--muted);font-size:13px}
 }
+
+/* TASK-127: approved inbox desktop rows and single-column phone layout. */
+.top{position:static}
+#inbox-link{display:inline-flex;align-items:center;gap:8px;min-height:44px}
+#inbox-count{border-radius:5px;padding:3px 8px;background:var(--po-bg);color:var(--po-fg);font-weight:600}
+.inbox-intro{max-width:65ch;margin:0}
+.inbox-notice{gap:12px}.inbox-notice p{max-width:65ch}.inbox-notice button{align-self:flex-start}
+.inbox-items{list-style:none;padding:0;margin:0}
+.inbox-items>li{padding:20px 0;border-top:1px solid var(--line);display:grid;grid-template-columns:minmax(0,1fr) 220px 250px;gap:24px;align-items:start}
+.inbox-items>li:first-child{padding-top:0;border-top:0}.inbox-items>li:last-child{padding-bottom:0}
+.inbox-items .chip{justify-self:start;align-self:flex-start}
+.inbox-age{display:grid;gap:4px}.inbox-command{display:grid;gap:8px;min-width:0}
+.inbox-command code{background:var(--code);border-radius:6px;padding:8px 10px;font:13px/1.6 ui-monospace,"Cascadia Mono",Consolas,monospace;overflow-wrap:anywhere}
+.inbox-command button{justify-self:start}.inbox-panel .ph h2{outline-offset:3px}
+.btn:disabled{opacity:1;color:var(--muted);cursor:default;border-style:dashed}
+@media(max-width:767px){
+ #inbox-link{grid-row:2;grid-column:1/-1}.updated{grid-row:3}.crumb{grid-row:4}#source{grid-row:5}
+ .inbox-items>li{grid-template-columns:minmax(0,1fr);gap:12px}
+ .inbox-command button{width:100%}
+}
+
+.inbox-notice{padding:16px;border-radius:8px;border-color:var(--muted)}
+.inbox-notice .row{flex-wrap:nowrap}.inbox-notice .btn{flex-shrink:0}
+@media(max-width:767px){.inbox-notice .row{flex-wrap:wrap}}
+
+.inbox-heading h1{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.inbox-heading .chip.po,.inbox-items .chip.po{display:inline-flex;flex-direction:row;gap:6px;padding:3px 8px;border:0;border-radius:5px}
+.inbox-notice [role=status]:empty,.inbox-command [role=status]:empty{display:none}
+
+.inbox-notice .notify-enable:enabled{background:var(--accent);color:var(--surface);border-color:var(--accent)}
+.inbox-notice .notify-enable:hover:enabled{background:var(--accent-hover);color:var(--surface)}
