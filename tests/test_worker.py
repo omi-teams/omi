@@ -255,13 +255,32 @@ def test_worker():
                 os.environ[omi.worker.creds.TOKEN_ENV] = tok
 
 
+def test_session_role_record():
+    sess = omi.worker.session
+    engineer, designer = "omi-agent-engineer", "omi-agent-designer-ui"
+    for tool in ("claude", "codex"):
+        for role in (engineer, designer):
+            text = sess.with_session("## Checkpoint\nDone:\n\n## Usage\nrow\n", tool, "S1", role)
+            assert f"Session: {tool} S1 {role}\n" in text
+            assert sess.recorded(text, tool, role) == "S1"
+            assert sess.recorded(text, tool, designer if role == engineer else engineer) is None
+            assert sess.recorded(text, "codex" if tool == "claude" else "claude", role) is None
+            replaced = sess.with_session(text, tool, "S2", engineer)
+            assert replaced.count("Session:") == 1 and designer not in replaced
+            assert "## Usage\nrow\n" in replaced
+        legacy = f"## Checkpoint\nSession: {tool} S1\nDone:\n"
+        assert sess.recorded(legacy, tool, engineer) == "S1"
+        assert sess.recorded(legacy, tool, designer) is None
+        assert sess.recorded(f"Session: {tool} S1", tool, engineer) == "S1"
+
+
 def test_session_resume():
     sess, tools = omi.worker.session, omi.worker.tools
     out = '{"type":"system","session_id":"S1"}\n{"type":"result","session_id":"S2","result":"DONE","usage":{}}\n'
     assert sess.session_id("claude", out) == "S2" and sess.session_id("codex", '{"type":"thread.started","thread_id":"T1"}') == "T1"
     assert sess.session_id("claude", "junk") is None and sess.session_id("codex", out) is None
     text = sess.with_session("---\na: b\n---\n## Checkpoint\nDone:\n\n## Usage\nrow\n", "claude", "S1")
-    assert text == "---\na: b\n---\n\n## Checkpoint\nDone:\nSession: claude S1\n\n## Usage\nrow\n".replace("---\n\n", "---\n"), text
+    assert text == "---\na: b\n---\n\n## Checkpoint\nDone:\nSession: claude S1 omi-agent-engineer\n\n## Usage\nrow\n".replace("---\n\n", "---\n"), text
     again = sess.with_session(text, "codex", "T9")
     assert again.count("Session:") == 1 and sess.recorded(again, "codex") == "T9" and sess.recorded(again, "claude") is None
     c = tools.engineer_cmd("---\n---\nbody", "t.md", "m", "low", "", "S1", "boom")
@@ -355,7 +374,7 @@ def test_session_resume():
             chmod = next(c for c in runs if "chmod" in c)
             assert chmod[chmod.index("--user") + 1] == "0" and chmod[chmod.index("--cap-drop") + 1] == "ALL" and "--read-only" in chmod
             assert chmod[chmod.index("--network") + 1] == "none" and f"type=volume,src={vol},dst=/s" in chmod and "--privileged" not in chmod
-            assert "Session: claude S2" in task.read_text(encoding="utf-8")
+            assert "Session: claude S2 omi-agent-engineer" in task.read_text(encoding="utf-8")
             # the scan: node, no network, volume ro, the token on stdin only
             (scan, given), = scans
             assert scan[scan.index("--user") + 1] == "node" and scan[scan.index("--network") + 1] == "none" and "--read-only" in scan
@@ -369,6 +388,23 @@ def test_session_resume():
             argv = go()
             assert argv[argv.index("--resume") + 1] == "S2" and "RESUME FAILED" not in buf.getvalue() and not recreated()
             assert "new findings" in argv[argv.index("-p") + 1] and "--append-system-prompt" in argv
+            # Switching write roles starts fresh and records the role that now owns the session.
+            designer = "omi-agent-designer-ui"
+            argv = go(designer, model="sonnet", tool="claude")
+            assert "--resume" not in argv and recreated() and "RESUME FAILED" not in buf.getvalue()
+            assert sess.recorded(task.read_text(encoding="utf-8"), "claude", designer) == "S2"
+            argv = go(designer, model="sonnet", tool="claude")
+            assert argv[argv.index("--resume") + 1] == "S2" and not recreated()
+            assert "--resume" not in go() and recreated()
+            assert sess.recorded(task.read_text(encoding="utf-8"), "claude", "omi-agent-engineer") == "S2"
+            # Legacy records belong only to the engineer, including when followed by checkpoint text.
+            legacy = task.read_text(encoding="utf-8").replace("Session: claude S2 omi-agent-engineer", "Session: claude S2")
+            task.write_text(legacy, encoding="utf-8")
+            argv = go()
+            assert argv[argv.index("--resume") + 1] == "S2" and not recreated()
+            task.write_text(legacy, encoding="utf-8")
+            assert "--resume" not in go(designer, model="sonnet", tool="claude") and recreated()
+            assert "--resume" not in go() and recreated()
             # --fresh: a new session in a new volume
             assert "--resume" not in go(fresh=True) and recreated()
             # recorded but the volume is gone: one RESUME FAILED line, fresh run
@@ -905,6 +941,7 @@ def main():
     test_download_cache_scope()
     test_download_cache_shared_exclude()
     test_worker()
+    test_session_role_record()
     test_session_resume()
     test_container_names()
     test_clip_report()

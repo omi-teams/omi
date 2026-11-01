@@ -302,7 +302,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         if tools.quota_hit(t, r.stdout, r.returncode):
             verdict = f"QUOTA->{'codex' if t == 'claude' else 'claude'}"
         if not read and not dropped and (sid := session.session_id(t, r.stdout)) and task.exists():
-            task.write_text(session.with_session(task.read_text(encoding="utf-8"), t, sid), encoding="utf-8")
+            task.write_text(session.with_session(task.read_text(encoding="utf-8"), t, sid, role), encoding="utf-8")
         tasks.record_usage(task, role, models[t] + (" (codex)" if t == "codex" else ""), efforts[t], nums,
                      time.monotonic() - t0, skills_cell(ids, done), verdict)
         return r, result, done
@@ -332,7 +332,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             mounts.append(f"{tmp.name}:/review")
             prompt_skills += note
         print(f"tool: {tool} ({models[tool]})")
-        sid = None if read or fresh else session.recorded(before, tool)  # another tool last: no line for this one, fresh
+        sid = None if read or fresh else session.recorded(before, tool, role)  # another tool or role starts fresh
         if sid and not session.available(repo, task.stem, tool, sid):
             print(f"RESUME FAILED: session {sid} has no session volume; starting a fresh session")
             sid = None
@@ -378,7 +378,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             if sid not in done:
                 print(f"SKILL NOT READ: {sid}")
         res = hooks.run_hook(wt, main, "post-run", task.stem, image) if not rc and not read else None
-        if res and res[0] and (sid := session.recorded(task.read_text(encoding="utf-8"), tool)) \
+        if res and res[0] and (sid := session.recorded(task.read_text(encoding="utf-8"), tool, role)) \
                 and session.available(repo, task.stem, tool, sid):  # one retry: the engineer fixes what the hook found
             print("post-run hook failed; resuming the engineer once to fix it")
             if (fix := attempt(tool, secret, resume=sid, hook_tail="\n".join(res[1].strip().splitlines()[-20:])))[0].returncode:
