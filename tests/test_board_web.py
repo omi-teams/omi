@@ -744,7 +744,8 @@ catch(e) {
         const text=await page.locator('#view').innerText();
         assert.equal(text.includes('Chỉ hiển thị token'),mode==='tokens');
         assert.equal(text.includes('Thiếu giá'),mode==='partial');
-        assert.equal(await page.locator('.panel').first().locator('caption').evaluate(n=>n.getBoundingClientRect().height<60),true,`caption wrap ${mode} ${width}`);
+        // Font-independent: the caption fills its table instead of shrinking to a narrow column.
+        assert.equal(await page.locator('.panel').first().locator('caption').evaluate(n=>n.getBoundingClientRect().width>=n.closest('table').getBoundingClientRect().width*.9),true,`caption wrap ${mode} ${width}`);
         await page.getByRole('button',{name:'Theo model',exact:true}).click();
         await page.evaluate(axeSource);
         await audit(`cost ${mode} ${width} light`);
