@@ -1,5 +1,6 @@
 """JSON-ready views of the fetched GitHub state snapshot."""
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -123,8 +124,9 @@ def _inbox(t: dict) -> list[dict]:
             rf"^(?:(?:Next|Not done):\s*)?{marker}[:\s]", line)]
         lines = [line for line in lines if not re.search(r"continued|rerunning|resolved|scope widened", line, re.I)]
         if lines:
-            add(reason, lines[-1], since if lines[-1] in body else None)
-            result[-1]["request_marker"] = f"{since or ''}:{len(rows)}"
+            from_report = lines[-1] in body
+            add(reason, lines[-1], since if from_report else None)
+            result[-1]["request_marker"] = (since or "") if from_report else hashlib.sha1(lines[-1].encode()).hexdigest()[:12]
     verdicts = [r.get("verdict", "") for r in t["usage"]["rows"] if r["role"] == "omi-agent-reviewer"
                 and r.get("verdict", "").startswith(("FAIL", "PASS"))]
     decision = re.search(r"(?:waiting|await|ask|chờ|cần).*(?:PO|decision|quyết định)|(?:PO|decision).*?(?:needed|required|decides)",

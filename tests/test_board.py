@@ -533,10 +533,24 @@ def test_inbox_detection() -> None:
         first = data._inbox(pending)[0]
         repeated = data._inbox({**pending, "usage": {"rows": [{"role": "omi-agent-engineer", "verdict": "QUOTA->codex"}]}})[0]
         assert first["since"] is repeated["since"] is None
-        assert first["request_marker"] != repeated["request_marker"]
+        assert first["request_marker"] == repeated["request_marker"]
         report = f"2026-11-01 12:00 engineer:\n> {marker}: ask PO"
         assert data._inbox({**worker, "reports": report})[0]["request_marker"] != data._inbox(
             {**worker, "reports": report.replace("12:00", "13:00")})[0]["request_marker"]
+        # pending -> resolved -> raised again: same marker while pending, new one on re-raise.
+        marks = []
+        for state in ({"reports": report}, {"reports": report + "\n2026-11-01 12:30 hook x:\n> ok"}, {},
+                      {"reports": report.replace("12:00", "14:00")}):
+            items = data._inbox({**worker, **state})
+            marks.append(items[0]["request_marker"] if items else None)
+        assert marks[0] == marks[1] and marks[2] is None and marks[3] != marks[0]
+        marks = []
+        for state in ({"checkpoint": f"Next: {marker}: ask PO"}, {"checkpoint": f"Next: {marker}: ask PO",
+                       "reports": "2026-11-01 12:30 engineer:\n> still working"},
+                      {"checkpoint": "Next: continued"}, {"checkpoint": f"Next: {marker}: ask again"}):
+            items = data._inbox({**worker, **state})
+            marks.append(items[0]["request_marker"] if items else None)
+        assert marks[0] == marks[1] and marks[2] is None and marks[3] != marks[0]
     combined = data._inbox({**base, "checkpoint": "Next: NEEDS SCOPE: add a file\nQUOTA: resume required"})
     assert {i["reason"] for i in combined} == {"po_gate", "needs_scope", "quota"}
 
