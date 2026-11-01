@@ -533,7 +533,7 @@ def test_inbox_detection() -> None:
         first = data._inbox(pending)[0]
         repeated = data._inbox({**pending, "usage": {"rows": [{"role": "omi-agent-engineer", "verdict": "QUOTA->codex"}]}})[0]
         assert first["since"] is repeated["since"] is None
-        assert first["request_marker"] != repeated["request_marker"]
+        assert first["request_marker"] == repeated["request_marker"]
         report = f"2026-11-01 12:00 engineer:\n> {marker}: ask PO"
         assert data._inbox({**worker, "reports": report})[0]["request_marker"] != data._inbox(
             {**worker, "reports": report.replace("12:00", "13:00")})[0]["request_marker"]

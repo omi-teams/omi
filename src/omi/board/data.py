@@ -124,7 +124,7 @@ def _inbox(t: dict) -> list[dict]:
         lines = [line for line in lines if not re.search(r"continued|rerunning|resolved|scope widened", line, re.I)]
         if lines:
             add(reason, lines[-1], since if lines[-1] in body else None)
-            result[-1]["request_marker"] = f"{since or ''}:{len(rows)}"
+            result[-1]["request_marker"] = since or ""
     verdicts = [r.get("verdict", "") for r in t["usage"]["rows"] if r["role"] == "omi-agent-reviewer"
                 and r.get("verdict", "").startswith(("FAIL", "PASS"))]
     decision = re.search(r"(?:waiting|await|ask|chờ|cần).*(?:PO|decision|quyết định)|(?:PO|decision).*?(?:needed|required|decides)",
