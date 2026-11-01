@@ -1,5 +1,6 @@
 """JSON-ready views of the fetched GitHub state snapshot."""
 
+import json
 import re
 from pathlib import Path
 
@@ -155,6 +156,77 @@ def _project(snap: source.Snapshot, name: str) -> dict:
             "usage": {"tasks": {t["id"]: t["usage"] for t in details},
                       "models": {model: _totals([r for r in rows if r["model"] == model]) for model in sorted({r["model"] for r in rows})},
                       "totals": _totals(rows)}}
+
+
+def _prices(snap: source.Snapshot, root: Path) -> dict:
+    """Per-model USD per million tokens from `.omi/config.json` `prices`; {} when absent or malformed."""
+    path = root / ".omi" / "config.json"
+    try:
+        prices = json.loads(snap.read(path)).get("prices") if path in snap.paths else None
+    except (json.JSONDecodeError, AttributeError):
+        return {}
+    ok = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0
+    return {m: p for m, p in prices.items() if isinstance(p, dict) and ok(p.get("input")) and ok(p.get("output"))
+            and ok(p.get("cache", 0))} if isinstance(prices, dict) else {}
+
+
+def _usd(rows: list[dict], prices: dict) -> float | None:
+    """Estimated cost of usage rows; None when no prices map exists or a used model has no price."""
+    if not prices:
+        return None
+    total = 0.0
+    for r in rows:
+        tokens = _totals([r])
+        if not any((tokens["input"], tokens["output"], tokens["cache"])):
+            continue
+        price = prices.get(r["model"])
+        if price is None:
+            return None
+        total += sum(tokens[k] * price.get(k, 0) for k in ("input", "output", "cache")) / 1e6
+    return round(total, 4)
+
+
+def _tool(row: dict) -> str:
+    return "codex" if "(codex)" in row["model"] else "claude"
+
+
+def cost(name: str) -> dict:
+    """Token and estimated USD sums per task, plan, tool and model from the `## Usage` tables."""
+    snap = source.snapshot()
+    root = snap.root(_name(name, project_name=True))
+    prices = _prices(snap, root)
+    items = []
+    for f in snap.files(root / ".omi" / "tasks", "*.md"):
+        if f.name == "_template.md" or not re.fullmatch(r"[A-Za-z0-9_-]+", f.stem):
+            continue
+        text = snap.read(f)
+        meta, rows = core.parse(text), _usage(text)["rows"]
+        if rows:
+            items.append((f.stem, meta, rows))
+
+    def group(label: str, key) -> list[dict]:
+        keys = sorted({key(i) for i in items})
+        return [{label: k, **_row([r for i in items if key(i) == k for r in i[2]])} for k in keys]
+
+    def _row(rows: list[dict]) -> dict:
+        t = _totals(rows)
+        return {**t, "tokens": t["input"] + t["output"] + t["cache"], "cost": _usd(rows, prices)}
+
+    tasks_ = [{"id": id, "title": meta.get("title", ""), "plan": meta.get("plan") or "—", "tool": ", ".join(sorted({_tool(r) for r in rows})),
+               "model": ", ".join(sorted({r["model"] for r in rows})),
+               "fails": sum(r["role"] == "omi-agent-reviewer" and r.get("verdict", "").startswith("FAIL") for r in rows), **_row(rows)}
+              for id, meta, rows in items]
+    priced = bool(prices) and all(t["cost"] is not None for t in tasks_)
+    tasks_.sort(key=lambda t: (-(t["cost"] if priced else t["tokens"]), t["id"]))
+    for rank, t in enumerate(tasks_, 1):
+        t["top"] = rank if rank <= 5 else None
+    model_rows = [r for i in items for r in i[2]]
+    return snap.response({
+        "name": name, "has_prices": bool(prices), "tasks": tasks_,
+        "plans": group("plan", lambda i: i[1].get("plan") or "—"),
+        "tools": [{"tool": t, **_row([r for r in model_rows if _tool(r) == t])} for t in sorted({_tool(r) for r in model_rows})],
+        "models": [{"model": m, **_row([r for r in model_rows if r["model"] == m])} for m in sorted({r["model"] for r in model_rows})],
+        "totals": _row(model_rows)})
 
 
 def projects() -> dict:

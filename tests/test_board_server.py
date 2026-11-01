@@ -54,6 +54,8 @@ def test_server():
             assert res.getheader("Content-Security-Policy") == "default-src 'self'"
             assert json.loads(request(port, "GET", "/api/projects/sample")[2])["name"] == "sample"
             assert json.loads(request(port, "GET", "/api/projects/sample/tasks/TASK-002?x=1")[2])["id"] == "TASK-002"
+            costs = json.loads(request(port, "GET", "/api/projects/sample/cost")[2])
+            assert costs["name"] == "sample" and not costs["has_prices"] and costs["totals"]["runs"] == 10
             status, res, body = request(port, "GET", "/")
             assert status == 200 and body == b"<h1>board</h1>" and res.getheader("Content-Type").startswith("text/html")
             assert request(port, "GET", "/app.js")[1].getheader("Content-Type").startswith("text/javascript")
