@@ -491,6 +491,16 @@ def test_po_decides_short_list():
     assert "propose the `next` task" not in skill
 
 
+def test_found_bug_rule():
+    text = (omi.common.core.TEMPLATE / "AGENTS.md").read_text(encoding="utf-8")
+    rule = text.split("## Bugs and vulnerabilities\n", 1)[1].split("\n## ", 1)[0]
+    for phrase in ("`FOUND: <one line>`", "without a PO question", "`omi-flow-feature-sensitive`", "after the current task",
+                   "before any other step", "omi status"):
+        assert phrase in rule, phrase
+    skill = (omi.common.core.TEMPLATE / "dot-claude/skills/omi-task/SKILL.md").read_text(encoding="utf-8")
+    assert "`FOUND: <one line>`" in skill and "`Session: <tool> <id> <role>`" in skill
+
+
 def test_task_start_copies_match():
     sections = task_start_sections()
     assert all(text == sections[0] for text in sections)
@@ -507,6 +517,7 @@ def main():
     test_task_start_copies_match()
     test_model_catalog_and_task_start()
     test_tool_choice_and_quota_switch()
+    test_found_bug_rule()
 
 
 if __name__ == "__main__":
