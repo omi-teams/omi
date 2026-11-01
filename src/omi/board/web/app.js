@@ -2,16 +2,16 @@
 // State content is always plain text; no Markdown or HTML is evaluated.
 const view = document.getElementById("view");
 const nav = document.getElementById("nav");
-const auto = document.getElementById("auto");
-const countdown = document.getElementById("countdown");
 const status = document.getElementById("status");
 const err = document.getElementById("err");
-const KEY = "omi-board-auto";
 const GLYPH = {planned: "○", "in-progress": "▶", review: "◐", blocked: "✖", done: "✓"};
 const STATUS = {planned: "Kế hoạch", "in-progress": "Đang làm", review: "Review", blocked: "Bị chặn", done: "Xong"};
 const REASON = {blocked: "Bị chặn", next_task: "Việc kế tiếp", next: "Bước tiếp theo", po_gate: "Chờ PO duyệt bước"};
 let timer = null;
-let nextRefresh = 0;
+let revision = null;
+let loading = false;
+let polling = false;
+let failed = false;
 let current = "";
 let seen = null;
 let openReports = null;
@@ -182,18 +182,33 @@ function taskPage(name, id, d) {
       `${num(d.usage.runs)} lượt · ${num(d.usage.review_rounds)} vòng review`)])])];
 }
 function updated(source) {
+  failed = false;
+  if (err.contains?.(document.activeElement)) document.getElementById("refresh").focus();
   err.replaceChildren();
   document.getElementById("source").textContent = `${source.repo.replace(/^[a-z]+:\/\//i, "")} @ ${source.sha.slice(0, 7)}`;
   if (source.stale) err.append(el("span", `Dữ liệu cũ - không kết nối được GitHub (lúc ${source.fetched_at ? new Date(source.fetched_at).toLocaleTimeString("vi-VN", {hour12: false}) : "chưa rõ"})`));
   status.replaceChildren(el("span", "Cập nhật lần cuối ", {class: "update-label"}),
     el("span", new Date().toLocaleTimeString("vi-VN", {hour12: false})));
 }
-async function route() {
-  clearInterval(timer);
+function showError(e) {
+  if (failed) return;
+  failed = true;
+  const retry = el("button", "Thử lại", {type: "button", class: "btn"});
+  retry.addEventListener("click", () => route(retry));
+  err.replaceChildren(el("span", `Không tải được dữ liệu (${e.name === "AbortError" ? "quá thời gian chờ" : e.message}). `), retry);
+}
+async function route(button = null) {
   const hash = location.hash === "#main" ? current || "#/" : location.hash || "#/";
   const changed = hash !== current;
   current = hash;
-  if (changed) { seen = null; openReports = null; }
+  if (changed) {
+    seen = null; openReports = null; revision = null;
+
+  }
+  loading = true;
+  view.setAttribute("aria-busy", "true");
+  const label = button ? [...button.childNodes || button.children] : [];
+  if (button) { button.disabled = true; button.textContent = "Đang tải…"; }
   const ticket = ++request;
   const abort = new AbortController();
   const limit = setTimeout(() => abort.abort(), 10000);
@@ -201,56 +216,84 @@ async function route() {
     const m = hash.match(/^#\/p\/([^/]+)(?:\/t\/([^/]+))?$/);
     const name = m ? decodeURIComponent(m[1]) : null;
     const id = m?.[2] ? decodeURIComponent(m[2]) : null;
+    if (changed) view.replaceChildren(heading(id || name || "Dự án"),
+      el("div", null, {class: "skeleton", "aria-hidden": "true"}), el("p", "Đang tải…"));
     const path = name ? `/api/projects/${enc(name)}${id ? "/tasks/" + enc(id) : ""}` : "/api/projects";
     const response = await fetch(path, {cache: "no-store", signal: abort.signal});
     if (!response.ok) throw new Error(String(response.status));
     const text = await response.text();
     if (ticket !== request) return;
     const data = JSON.parse(text);
-    if (text === seen) { updated(data.source); return; }
+    if (text === seen) { revision = data.source.sha; updated(data.source); return; }
     // Render off the page, and only cache a response after its view succeeds.
     const nodes = name ? id ? taskPage(name, id, data) : dashboard(name, data) : home(data.projects);
     const scrolled = window.scrollY;
+    const focused = document.activeElement;
+    // Reuse the focused control when its destination/content survives the update.
+    if (!changed && view.contains?.(focused)) {
+      const candidates = nodes.flatMap(n => [...n.querySelectorAll("a, summary, button")]);
+      const replacement = candidates.find(n => n.tagName === focused.tagName &&
+        n.getAttribute("href") === focused.getAttribute("href") && n.textContent === focused.textContent);
+      if (replacement) replacement.replaceWith(focused);
+    }
     view.replaceChildren(...nodes);
+    if (!changed && focused !== document.body && focused.isConnected === false) {
+      view.focus({preventScroll: true});
+    } else if (!changed && focused.isConnected && document.activeElement !== focused) {
+      focused.focus({preventScroll: true});
+    }
     if (!changed) window.scrollTo(0, scrolled);
-    setNav(name ? id ? [[name, projectHref(name)], [id]] : [[name]] : []);
+    if (changed) setNav(name ? id ? [[name, projectHref(name)], [id]] : [[name]] : []);
     document.title = `${id || name || "Dự án"} — omi board`;
     seen = text;
+    revision = data.source.sha;
     updated(data.source);
-    if (changed || document.activeElement === document.body) document.getElementById("title").focus();
+    if (changed) document.getElementById("title").focus();
   } catch (e) {
     if (ticket !== request) return;
-    const retry = el("button", "Thử lại", {type: "button", class: "btn"});
-    retry.addEventListener("click", route);
-    err.replaceChildren(el("span", `Không tải được dữ liệu (${e.name === "AbortError" ? "quá thời gian chờ" : e.message}). `), retry);
+    if (seen === null) view.replaceChildren(document.getElementById("title"));
+    showError(e);
   } finally {
     clearTimeout(limit);
-    if (ticket === request) schedule();
+    if (button) { button.disabled = false; button.replaceChildren(...label); }
+    if (ticket === request) {
+      loading = false;
+      view.setAttribute("aria-busy", "false");
+    }
   }
 }
-function updateCountdown() {
-  countdown.textContent = !auto.checked ? "Đã tắt" : document.hidden ? "Tạm dừng" :
-    `Làm mới sau ${Math.max(0, Math.ceil((nextRefresh - Date.now()) / 1000))} giây`;
+async function pollVersion() {
+  if (document.hidden || loading || polling) return;
+  polling = true;
+  const hash = current;
+  const ticket = request;
+  const abort = new AbortController();
+  const limit = setTimeout(() => abort.abort(), 10000);
+  try {
+    const match = hash.match(/^#\/p\/([^/]+)/);
+    const path = match ? `/api/projects/${enc(decodeURIComponent(match[1]))}/version` : "/api/version";
+    const response = await fetch(path, {cache: "no-store", signal: abort.signal});
+    if (!response.ok) throw new Error(String(response.status));
+    const data = JSON.parse(await response.text());
+    if (hash !== current || ticket !== request || document.hidden) return;
+    if (data.sha !== revision || failed) await route();
+  } catch (e) {
+    if (hash === current && ticket === request && !document.hidden) showError(e);
+  } finally {
+    clearTimeout(limit);
+    polling = false;
+  }
 }
 function schedule() {
   clearInterval(timer);
-  nextRefresh = Date.now() + 30000;
-  updateCountdown();
-  timer = auto.checked && !document.hidden ? setInterval(() => {
-    updateCountdown();
-    if (!document.hidden && Date.now() >= nextRefresh) route();
-  }, 1000) : null;
+  timer = document.hidden ? null : setInterval(pollVersion, 3000);
 }
-try { auto.checked = localStorage.getItem(KEY) !== "off"; } catch (e) { /* Keep the default if storage is blocked. */ }
-auto.addEventListener("change", () => {
-  try { localStorage.setItem(KEY, auto.checked ? "on" : "off"); } catch (e) { /* Storage may be blocked. */ }
-  schedule();
-});
-document.getElementById("refresh").addEventListener("click", route);
+const refresh = document.getElementById("refresh");
+refresh.addEventListener("click", () => route(refresh));
 document.addEventListener("visibilitychange", () => {
   schedule();
-  if (!document.hidden && auto.checked) route();
+  if (!document.hidden) pollVersion();
 });
-window.addEventListener("hashchange", route);
+window.addEventListener("hashchange", () => route());
 schedule();
-route();
+route(refresh);

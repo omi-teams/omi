@@ -26,11 +26,12 @@ class Handler(BaseHTTPRequestHandler):
         if self.foreign_host():
             return self.send(403, "text/plain; charset=utf-8", b"forbidden")
         path = unquote(urlsplit(self.path).path)
+        version = re.fullmatch(r"/api/(?:projects/([^/]+)/)?version", path)
         match = API.fullmatch(path)
-        if match:
-            name, id = match.groups()
+        if match or version:
+            name, id = match.groups() if match else (None, None)
             try:
-                body = data.projects() if name is None else data.project(name) if id is None else data.task(name, id)
+                body = data.version(version[1]) if version else data.projects() if name is None else data.project(name) if id is None else data.task(name, id)
             except (OSError, UnicodeError) as exc:
                 code = 404 if isinstance(exc, FileNotFoundError) else 500
                 return self.send(code, "text/plain; charset=utf-8", b"not found" if code == 404 else b"error")

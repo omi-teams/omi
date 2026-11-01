@@ -161,10 +161,10 @@ def test_shared_fetch():
                 views = list(pool.map(lambda _: data.projects(), range(12)))
             assert all(v["source"] == views[0]["source"] for v in views)
             assert fetches.call_count == 1
-            with patch("omi.board.source.time.monotonic", return_value=109):
+            with patch("omi.board.source.time.monotonic", return_value=101):
                 data.projects()
             assert fetches.call_count == 1
-            with patch("omi.board.source.time.monotonic", return_value=110):
+            with patch("omi.board.source.time.monotonic", return_value=102):
                 data.projects()
             assert fetches.call_count == 2
             assert {c.args[1] for c in calls.call_args_list} <= {"rev-parse", "remote", "ls-tree", "show"}
@@ -173,6 +173,41 @@ def test_shared_fetch():
                               ("ssh://git@github.com:2222/omi-teams/omi-state.git", "ssh://github.com:2222/omi-teams/omi-state.git"),
                               (str(home), ""), (r"C:\x\y", ""), ("C:/x/y", ""), ("file:///local/state", "")):
             assert source._repo(url) == expected
+
+
+def test_version() -> None:
+    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+        home = Path(directory)
+        root = fixture(home)
+        remote(home)
+        real_git = source.core.git
+        with patch("omi.board.source.Snapshot", side_effect=AssertionError("snapshot parsed")), \
+                patch("omi.board.source.core.git", wraps=real_git) as calls:
+            first = data.version()
+            assert first["sha"] == data.version("sample")["sha"]
+            assert {c.args[1] for c in calls.call_args_list} <= {"rev-parse", "remote", "ls-tree"}
+        path = root / ".omi/tasks/TASK-002.md"
+        write(path, "changed state")
+        assert data.version()["sha"] == first["sha"]
+        git(home, "add", ".")
+        git(home, "commit", "-qm", "local change")
+        source._CACHE.clear()
+        assert data.version()["sha"] == first["sha"]
+        git(home, "push", "-q", "origin", "main")
+        # Version and full data share the same fetch cache and expiry.
+        assert data.version()["sha"] == first["sha"]
+        with patch("omi.board.source.time.monotonic", return_value=source._CACHE[home][0] + 3):
+            pushed = data.version("sample")
+        assert pushed["sha"] != first["sha"]
+        assert pushed["sha"] == data.project("sample")["source"]["sha"]
+        for name in ("..", "../sample", "x/y", "x\\y", "x:", "x\0"):
+            refuses(lambda: data.version(name))
+        try:
+            data.version("missing")
+        except FileNotFoundError:
+            pass
+        else:
+            raise AssertionError("missing project served")
 
 
 def test_path_redaction() -> None:
@@ -325,6 +360,7 @@ def main():
     test_views()
     test_plan_status_derived()
     test_shared_fetch()
+    test_version()
     test_path_redaction()
     test_unavailable_snapshot()
     test_fetch_timeout_serves_stale()

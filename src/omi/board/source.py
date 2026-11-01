@@ -90,13 +90,13 @@ def _fetch(home: Path) -> bool:
         return False
 
 
-def snapshot() -> Snapshot:
-    """Share one fetch attempt per ten seconds, including concurrent requests."""
+def version() -> dict:
+    """Share fetch attempts across requests; expire before the next three-second poll."""
     home = state.state_home()
     with _LOCK:
         now = time.monotonic()
         cached = _CACHE.get(home)
-        if cached is None or now - cached[0] >= 10:
+        if cached is None or now - cached[0] >= 2:
             previous = cached[1] if cached else {}
             fetched = _fetch(home)
             sha = core.git(home, "rev-parse", "--verify", "refs/remotes/origin/main^{commit}") if fetched or not previous else previous["sha"]
@@ -106,4 +106,9 @@ def snapshot() -> Snapshot:
             _CACHE[home] = (time.monotonic(), source)
         if not _CACHE[home][1]["sha"]:
             raise OSError("origin/main unavailable")
-        return Snapshot(home, _CACHE[home][1])
+        return _CACHE[home][1].copy()
+
+
+def snapshot() -> Snapshot:
+    """Read files from the same revision used by lightweight version requests."""
+    return Snapshot(state.state_home(), version())

@@ -41,7 +41,12 @@ def test_server():
             assert status == 200 and json.loads(body)["projects"][0]["name"] == "sample"
             assert res.getheader("Content-Type") == "application/json"
             assert json.loads(body)["source"]["stale"] is False
-            for path in ("/api/projects", "/api/projects/sample", "/api/projects/sample/tasks/TASK-002"):
+            for path in ("/api/projects", "/api/projects/sample", "/api/projects/sample/tasks/TASK-002",
+                         "/api/version", "/api/projects/sample/version"):
+                if path.endswith("/version"):
+                    status, headers, payload = request(port, "GET", path)
+                    assert status == 200 and json.loads(payload)["sha"] == json.loads(body)["source"]["sha"]
+                    assert headers.getheader("Content-Security-Policy") == "default-src 'self'"
                 response = request(port, "GET", path)[2]
                 assert str(home).encode() not in response
                 assert "source" in json.loads(response)
@@ -53,6 +58,8 @@ def test_server():
             assert status == 200 and body == b"<h1>board</h1>" and res.getheader("Content-Type").startswith("text/html")
             assert request(port, "GET", "/app.js")[1].getheader("Content-Type").startswith("text/javascript")
             for path in ("/api/projects/nope", "/api/projects/sample/tasks/TASK-999", "/api/projects/sample/tasks/..%2f..",
+                         "/api/projects/nope/version", "/api/projects/../version", "/api/projects/x%5cy/version",
+                         "/api/projects/x%00/version", "/api/projects/x:/version", "/api/projects/x%2fy/version",
                          "/api/other", "/api/projects/sample/extra", "/missing.js", "/../secret.txt", "/..%2fsecret.txt",
                          "/%2e%2e/secret.txt", "/%2e%2e%2fsecret.txt", "//etc/passwd", "/etc/passwd/", "/%2fetc%2fpasswd",
                          "/..\\secret.txt", "/%00", "/app.js/", "/.", "/C:/Windows"):
@@ -60,14 +67,15 @@ def test_server():
                 assert status == 404, path
                 assert res.getheader("X-Content-Type-Options") == "nosniff"
             for host in ("evil.example:80", "evil.example", f"127.0.0.1:{port + 1}", "127.0.0.1", f"evil.example:{port}"):
-                for path in ("/api/projects", "/app.js"):
+                for path in ("/api/projects", "/api/version", "/api/projects/sample/version", "/app.js"):
                     status, res, _ = request(port, "GET", path, host)
                     assert status == 403 and res.getheader("Content-Security-Policy") == "default-src 'self'", (host, path)
                 assert request(port, "POST", "/api/projects", host)[0] == 403
             assert request(port, "GET", "/api/projects", f"localhost:{port}")[0] == 200
             for method in ("POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"):
-                status, res, _ = request(port, method, "/api/projects")
-                assert status == 405 and res.getheader("Allow") == "GET", method
+                for path in ("/api/projects", "/api/version", "/api/projects/sample/version"):
+                    status, res, _ = request(port, method, path)
+                    assert status == 405 and res.getheader("Allow") == "GET", method
         finally:
             httpd.shutdown()
             httpd.server_close()

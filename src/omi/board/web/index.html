@@ -17,17 +17,13 @@
     <nav id="nav" class="crumb" aria-label="Điều hướng"></nav>
     <div class="tools">
       <span id="status" class="updated" role="status"></span>
-      <div class="auto-refresh">
-        <label class="switch"><input type="checkbox" id="auto" checked> Tự làm mới (30 giây)</label>
-        <span id="countdown" class="countdown" aria-hidden="true"></span>
-      </div>
       <button class="btn" type="button" id="refresh" aria-label="Làm mới"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"></path><path d="M20 4v7h-7"></path></svg><span class="refresh-text">Làm mới</span></button>
     </div>
   </div>
 </header>
 <main id="main" class="wrap" tabindex="-1">
   <div id="err" role="alert"></div>
-  <div id="view"><h1 id="title" tabindex="-1">Đang tải…</h1></div>
+  <div id="view" tabindex="-1"><h1 id="title" tabindex="-1">Đang tải…</h1></div>
 </main>
 <script src="app.js"></script>
 </body>

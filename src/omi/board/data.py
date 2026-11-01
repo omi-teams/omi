@@ -18,6 +18,21 @@ def _name(value: str, project_name: bool = False) -> str:
     return value
 
 
+def version(name: str | None = None) -> dict:
+    """Return shared fetch metadata without reading or parsing state documents."""
+    if name is not None:
+        _name(name, project_name=True)
+    metadata = source.version()
+    if name is not None:
+        path = f"projects/{name}"
+        tree = core.git(source.state.state_home(), "ls-tree", "-d", "--name-only", metadata["sha"], "--", path)
+        if tree is None:
+            raise OSError("state tree unavailable")
+        if tree != path:
+            raise FileNotFoundError("project not found")
+    return {"sha": metadata["sha"], "source": metadata}
+
+
 def _section(text: str, heading: str) -> str:
     match = re.search(rf"^## {re.escape(heading)}\s*\n(.*?)(?=^## |\Z)", text, re.M | re.S)
     return match[1].strip() if match else ""
