@@ -102,10 +102,10 @@ def status(cwd="."):
                 except SystemExit:
                     steps = []
                 ph = tasks.phase(m, steps)
-                print(f"[{ph['label']}] {k} {m.get('title', '')}" + (f" (step: {m['step']})" if st == "in-progress" and m.get("step") else ""))
+                print(f"[{ph['label']}] {k} {m.get('title', '')}")
                 if ph["step"] and steps:
                     rnd = f" · vòng {ph['review_round']}" if ph["review_round"] else ""
-                    print(f"  bước {ph['step_index']}/{ph['step_count']} {ph['step']}{rnd} · {m.get('tool', '-')} {m.get('model', '-')}/{m.get('effort', '-')}")
+                    print(f"  bước {ph['step_index'] or '?'}/{ph['step_count']} {ph['step']}{rnd} · {m.get('tool', '-')} {m.get('model', '-')}/{m.get('effort', '-')}")
                     print("  " + tasks.step_strip(m, steps))
                 if st == "in-progress":
                     print(f"  resume: omi-task {k}")

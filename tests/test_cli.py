@@ -272,7 +272,36 @@ def test_cli_characterization():
         assert cli(root, "sync", "extra") == (1, "", "OMI: usage: omi sync\n")
 
 
+def test_status_phase_and_step_lines() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        omi.setup.upgrade.init(root)
+        task = root / ".omi/tasks/TASK-001.md"
+        base = ("---\nid: TASK-001\ntitle: Ship board\nstatus: in-progress\nworkflow: omi-flow-feature\n"
+                "tool: codex\nmodel: sonnet\neffort: medium\nstep: {step}\n---\n"
+                "## Usage\n" + omi.project.tasks.USAGE_HEAD + "\n|---|---|---|---|---|---|---|---|---|\n"
+                "| omi-agent-reviewer | sonnet | medium | 1 | 1 | 1 | 1s | - | FAIL |\n")
+        steps = omi.project.workflows.get_workflow(root, "omi-flow-feature")
+        task.write_text(base.format(step="review"), encoding="utf-8")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            omi.app.cli.status(root)
+        lines = output.getvalue().splitlines()
+        first = next(i for i, line in enumerate(lines) if "TASK-001 Ship board" in line)
+        assert lines[first] == "[Đang review] TASK-001 Ship board"
+        index = next(i for i, step in enumerate(steps, 1) if step["id"] == "review")
+        assert lines[first + 1] == f"  bước {index}/{len(steps)} review · vòng 2 · codex sonnet/medium"
+        assert lines[first + 2] == "  " + omi.project.tasks.step_strip({"step": "review", "status": "in-progress"}, steps)
+        task.write_text(base.format(step="unknown"), encoding="utf-8")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            omi.app.cli.status(root)
+        assert f"bước ?/{len(steps)} unknown · codex sonnet/medium" in output.getvalue()
+        assert "bước 0/" not in output.getvalue()
+
+
 def main():
+    test_status_phase_and_step_lines()
     test_cli_correctness()
     test_cli_characterization()
 
