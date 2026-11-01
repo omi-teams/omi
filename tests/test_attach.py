@@ -442,7 +442,63 @@ def test_state_sync_conflict():
         assert omi.common.core.git(home, "diff", "--name-only", "--diff-filter=U") == task.relative_to(home).as_posix()
 
 
+def test_attach_gitattributes():
+    with tempfile.TemporaryDirectory() as d:
+        base = Path(d).resolve()
+        code, home = base / "code", base / "state"
+        code.mkdir()
+        git(code, "init", "-q", "-b", "main")
+        git(code, "remote", "add", "origin", "git@EXAMPLE.org:team/sample.git")
+        env = {"OMI_STATE": str(home), "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        with patch.dict(os.environ, env):
+            detached_cli(code, "attach")
+            assert (home / ".gitattributes").read_bytes() == b"* text=auto eol=lf\n"
+            assert omi.common.core.git(home, "ls-files", "--", ".gitattributes") == ".gitattributes"
+            (home / ".gitattributes").write_bytes(b"custom\n")
+            code2 = base / "code2"
+            code2.mkdir()
+            git(code2, "init", "-q", "-b", "main")
+            git(code2, "remote", "add", "origin", "git@EXAMPLE.org:team/other.git")
+            detached_cli(code2, "attach")
+            assert (home / ".gitattributes").read_bytes() == b"custom\n"
+
+
+def test_lf_writes():
+    import ast
+    from omi.project import tasks
+    src = Path(omi.__file__).parent
+    for f in src.rglob("*.py"):
+        for node in ast.walk(ast.parse(f.read_text(encoding="utf-8"))):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+                continue
+            kw = {k.arg: k.value for k in node.keywords}
+            name, where = node.func.attr, f"{f}:{node.lineno}"
+            helper = (name == "write_text" and isinstance(node.func.value, ast.Name)
+                      and node.func.value.id == "core" and f.name != "core.py")
+            if name == "write_text" and not helper:
+                assert "newline" in kw and ast.literal_eval(kw["newline"]) == "\n", f"{where} write_text without newline"
+            if name == "read_text":
+                assert "newline" not in kw, f"{where} read_text with newline"
+            if name == "open":
+                mode = node.args[0] if node.args else kw.get("mode")
+                if isinstance(mode, ast.Constant) and isinstance(mode.value, str) and set(mode.value) & set("wax"):
+                    assert "newline" in kw and ast.literal_eval(kw["newline"]) == "\n", f"{where} open without newline"
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "x.md"
+        omi.common.core.write_text(path, "a\nb\n")
+        assert b"\r" not in path.read_bytes()
+        task = Path(d) / "TASK-1.md"
+        task.write_bytes(b"---\nid: TASK-1\n---\n## Goal\nx\n")
+        tasks.append_note(task, "Reports", "- note")
+        tasks.record_usage(task, "omi-agent-engineer", "m", "low", (1, 2, 3), 4)
+        data = task.read_bytes()
+        assert b"## Reports" in data and b"## Usage" in data and b"\r" not in data
+
+
 def main():
+    test_attach_gitattributes()
+    test_lf_writes()
     test_detached_in_repo_warning()
     test_detached_in_repo_no_warning()
     test_in_repo_status_unchanged()

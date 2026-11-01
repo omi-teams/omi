@@ -130,7 +130,7 @@ def revert_front(task, before):
     text = task.read_text(encoding="utf-8") if task.exists() else None
     cur = front_of(text) if text is not None else None
     if cur is None:
-        task.write_text(before if text is None else f"---{old}---\n{text}", encoding="utf-8")
+        task.write_text(before if text is None else f"---{old}---\n{text}", encoding="utf-8", newline="\n")
         return ["frontmatter"]
     olines, lines, changed = old.split("\n"), cur.split("\n"), []
     for key in FRONT_OWNED:
@@ -143,7 +143,7 @@ def revert_front(task, before):
         for i, ln in want:
             lines.insert(min(i, len(lines) - 1), ln)
     if changed:
-        task.write_text(f"---{chr(10).join(lines)}---{text.split('---', 2)[2]}", encoding="utf-8")
+        task.write_text(f"---{chr(10).join(lines)}---{text.split('---', 2)[2]}", encoding="utf-8", newline="\n")
     return changed
 
 
@@ -195,7 +195,7 @@ def sync_scope(wt, task, tid):
             break
     else:
         lines.insert(len(lines) - 1, line)
-    task.write_text(f"{head}---{chr(10).join(lines)}---{rest}", encoding="utf-8")
+    task.write_text(f"{head}---{chr(10).join(lines)}---{rest}", encoding="utf-8", newline="\n")
     print(f"SCOPE SYNCED: {core.parse(dev).get('scope')}")
 
 
@@ -327,7 +327,7 @@ def step(root, tid, action, why=None, now=None, to=None):
         msg = f"{tid}: step {cur} skipped"
     else:
         sys.exit("usage: omi step <TASK-ID> next|done|back|skip|approve|reopen --why <reason>")
-    task.write_text(text, encoding="utf-8")
+    task.write_text(text, encoding="utf-8", newline="\n")
     print(msg)
     if not project.detached and task == Path(root) / ".omi" / "tasks" / f"{tid}.md":  # the task branch's copy is committed with the branch
         commit_task_file(Path(root), task, f"chore({tid}): step {core.parse(text).get('step')} {action}")
@@ -428,7 +428,7 @@ def append_note(task, heading, line):
         text = f"{head.rstrip()}\n\n## {heading}\n{line}\n\n## Usage{rest}"
     else:
         text = f"{text.rstrip()}\n\n## {heading}\n{line}\n"
-    task.write_text(text, encoding="utf-8")
+    task.write_text(text, encoding="utf-8", newline="\n")
 
 
 def note(root, tid, step_id, verdict, text):
@@ -468,7 +468,7 @@ def record_usage(task, role, model, effort, nums, seconds, skills="-", verdict="
         text = f"{head}\n## Usage{body.rstrip()}\n{row}\n" + (f"\n## {tail}" if sep else "")
     else:
         text = f"{text.rstrip()}\n\n## Usage\n{USAGE_HEAD}\n|---|---|---|---|---|---|---|---|---|\n{row}\n"
-    task.write_text(text, encoding="utf-8")
+    task.write_text(text, encoding="utf-8", newline="\n")
 
 
 def usage_totals(text):
