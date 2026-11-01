@@ -163,12 +163,18 @@ def test_semantic_palette_and_approved_mockups() -> None:
     assert "max-width:390px" in (mockups / "task-phone.html").read_text(encoding="utf-8")
 
 
+def run_node(node: str, script: str, *args: str, **kwargs) -> subprocess.CompletedProcess:
+    # Scripts go through stdin: `node -e` hits the Windows command-line length limit.
+    return subprocess.run([node, "-", *args], input="process.argv.splice(1, 1);" + script,
+                          capture_output=True, text=True, encoding="utf-8", errors="replace", **kwargs)
+
+
 def test_runtime() -> None:
     node = shutil.which("node")
     if not node:
         print("skip test_runtime: node missing (DOM behavior unverified)")
         return
-    run = subprocess.run([node, "-e", RUNTIME_TEST, str(WEB / "app.js")], capture_output=True, text=True)
+    run = run_node(node, RUNTIME_TEST, str(WEB / "app.js"))
     assert run.returncode == 0, run.stdout + run.stderr
     print(run.stdout.strip())
 
@@ -182,8 +188,7 @@ def test_browser_layout_and_keyboard() -> None:
     # Hook checkouts can be read-only; use the system temp directory for screenshots.
     with tempfile.TemporaryDirectory() as tmp:
         env = {**os.environ, "OMI_BOARD_SCREENS": os.environ.get("OMI_BOARD_SCREENS") or tmp}
-        run = subprocess.run([node, "-e", BROWSER_TEST, str(WEB), str(AXE)],
-                             cwd=ROOT, env=env, capture_output=True, text=True)
+        run = run_node(node, BROWSER_TEST, str(WEB), str(AXE), cwd=ROOT, env=env)
     assert run.returncode == 0, run.stdout + run.stderr
     print(run.stdout.strip())
 
@@ -233,8 +238,7 @@ Module._load = function(name, ...args) {
     for missing, required, fails in (("playwright", "", False), ("playwright", "1", True),
                                      ("nested-dependency", "", True), ("chromium", "", True)):
         env = {**os.environ, "OMI_BROWSER_REQUIRED": required, "OMI_TEST_MISSING": missing}
-        run = subprocess.run([node, "-e", stub + BROWSER_TEST, str(WEB), str(AXE)],
-                             cwd=ROOT, env=env, capture_output=True, text=True)
+        run = run_node(node, stub + BROWSER_TEST, str(WEB), str(AXE), cwd=ROOT, env=env)
         assert (run.returncode != 0) == fails, run.stdout + run.stderr
         assert ("skip test_browser" in run.stdout) == (not fails), run.stdout + run.stderr
         assert missing in run.stdout + run.stderr
@@ -316,7 +320,8 @@ let interval, intervalMs, calls=0, versionCalls=0, versionSha='abc123456789', fa
 let now=0;
 class Clock extends Date { static now() { return now; } }
 const window={isSecureContext:true,localStorage:{getItem:()=>null,setItem:()=>{}},scrollY:0,scrolled:null,scrollTo(x,y){this.scrolled=y;},listeners:{},addEventListener(k,f){this.listeners[k]=f;}};
-const location={hash:'#/'};
+const location={hash:'#/',get href(){return 'http:'+'//omi.test/'+this.hash;}};
+window.history={pushState:(_state,_title,hash)=>{location.hash=hash;},replaceState:(_state,_title,hash)=>{location.hash=hash;}};
 """ + API_FIXTURES + r"""
 let data={projects:[summary],source:remoteSource};
 let projectData=dashboard;
@@ -561,7 +566,9 @@ async function advance(polls) {
   fail=true;location.hash='#/p/missing';await invoke('route()');
   assert(elements.err.textContent.includes('Thử lại'));
   assert.equal(find(elements.view,'skeleton').length,0);
-  assert.equal(elements.view.textContent,'missing');
+  assert(elements.view.textContent.includes('missing'));
+  assert.equal(document.getElementById('board-search').disabled,true);
+  assert(elements.view.textContent.includes('Bộ lọc khả dụng sau khi tải dữ liệu.'));
   // Cost page: text only, tokens-only note without prices, badges not by colour alone.
   const row=(o)=>({input:10,output:5,cache:1,runs:2,tokens:16,cost:null,review_rounds:3,fails:0,top:null,...o});
   const costData={has_prices:false,tasks:[row({id:'TASK-1',title:'<b>x</b>',plan:'P',tool:'claude',model:'m',top:1,fails:2})],
@@ -658,7 +665,103 @@ async function advance(polls) {
     assert.equal(notices.length,count+1);
     await invoke('route()');assert.equal(notices.length,count+1);
   }
-  console.log('ok: API views, mockup DOM, safe text, version changes/unchanged/hidden, polling, recovery, focus, races');
+  // TASK-129: combined client filters, URL round-trip, contextual ancestors and leaf counts.
+  fail=false;data=hierarchy;location.hash='#/p/omi';await invoke('route()');
+  const filterTasks=Object.values(hierarchy.kanban).flat();
+  const filterItems=[
+    {...detail,id:'TASK-A',frontmatter:{title:'Board tiếng Việt',plan:'P & /?',role:'~builder'}},
+    {...detail,id:'TASK-B',status:'done',frontmatter:{title:'Other'}},
+    {...detail,id:'EPIC-A',type:'epic',frontmatter:{title:'Board parent',plan:'P & /?',role:'~builder'}}
+  ];
+  const runFilter=state=>invoke(`(${JSON.stringify(filterItems)}).filter(t=>matchesFilters(t,${JSON.stringify(state)})).map(t=>t.id)`);
+  assert.deepEqual([...runFilter({q:'  BOARD ',status:'in-progress',type:'task',plan:'P & /?',role:'~~builder'})],['TASK-A']);
+  assert.deepEqual([...runFilter({q:'task-b',status:'done',plan:'~none',role:'~none'})],['TASK-B']);
+  assert.deepEqual([...runFilter({q:'tieng'})],[]); // Diacritics remain meaningful.
+  assert.deepEqual([...runFilter({q:'tiếng'})],['TASK-A']);
+  assert.deepEqual([...runFilter({q:'board',status:'done'})],[]);
+  const shared={q:'Việt & /? <script>',status:'in-progress',type:'task',plan:'P & /?',role:'~~builder'};
+  const hash=invoke(`projectHref('omi')+filterQuery(${JSON.stringify(shared)})`);
+  const restored=invoke(`readFilters(${JSON.stringify(hash)},${JSON.stringify(filterItems)})`);
+  assert.equal(JSON.stringify(restored.state),JSON.stringify(shared));assert.equal(restored.invalid,false);
+  const invalid=invoke(`readFilters('#/p/omi?unknown=x&q=%E0%A4&status=bad&type=epic&plan=removed&role=~none&type=task',${JSON.stringify(filterItems)})`);
+  assert.equal(invalid.invalid,true);assert.equal(JSON.stringify(invalid.state),JSON.stringify({type:'epic',role:'~none'}));
+  const repeated=invoke(`readFilters('#/p/omi?q=first&q=second&status=done&status=planned',${JSON.stringify(filterItems)})`);
+  assert.equal(repeated.state.q,'first');assert.equal(repeated.state.status,'done');
+  const q=document.getElementById('board-search');
+  const initialFilterCalls=calls;
+  q.focus();q.value='TASK-115';q.listeners.input();
+  assert.equal(find(elements.view,'filter-summary')[0].textContent,'Đang lọc: từ khóa “TASK-115”');
+  assert.equal(calls,initialFilterCalls);assert.equal(document.getElementById('board-search'),q);assert.equal(document.activeElement,q);
+  assert.equal(find(elements.view,'card').length,1);
+  assert.equal(find(elements.view,'context-label').length,3);
+  assert(find(elements.view,'tree')[0].textContent.includes('MILESTONE-001'));
+  assert(find(elements.view,'tree')[0].children[0].attrs.open==='');
+  assert(find(elements.view,'card')[0].children[1].attrs.href.endsWith('?q=TASK-115'));
+  const select=document.getElementById('filter-status');select.value='done';select.listeners.change();
+  assert.equal(find(elements.view,'card').length,0);assert(elements.view.textContent.includes('Không tìm thấy công việc phù hợp.'));
+  const emptyReset=find(elements.view,'no-results')[0].children.find(n=>n.tagName==='button');
+  emptyReset.listeners.click();assert.equal(q.value,'');assert.equal(document.activeElement,q);assert.equal(location.hash,'#/p/omi');
+  q.value='FR-001';q.listeners.input();assert.equal(find(elements.view,'card').length,0);
+  assert(elements.view.textContent.includes('Không có task lá khớp bộ lọc trên Kanban.'));
+  assert.equal(find(elements.view,'context-label').length,2);
+  q.listeners.keydown({key:'Escape',preventDefault(){}});assert.equal(q.value,'');
+  const keyEvent={key:'/',target:document.body,preventDefault(){this.prevented=true;}};
+  document.activeElement=document.body;document.listeners.keydown(keyEvent);assert.equal(document.activeElement,q);assert(keyEvent.prevented);
+  for(const extra of [{ctrlKey:true},{metaKey:true},{altKey:true},{shiftKey:true},{isComposing:true},{target:q},{target:{tagName:'select'}},{target:{isContentEditable:true}}]) {
+    document.activeElement=document.body;document.listeners.keydown({...keyEvent,...extra});assert.equal(document.activeElement,document.body);
+  }
+  location.hash='#/p/omi?status=done';await window.listeners.hashchange();
+  assert.equal(calls,initialFilterCalls);assert.equal(find(elements.view,'card').length,4);assert.equal(document.getElementById('filter-status').value,'done');
+  // Simulate opening the shared hash anew; linked controls/results are restored on load.
+  invoke('loadedDashboard=null');await invoke('route()');assert.equal(find(elements.view,'card').length,4);
+  const share=find(elements.view,'filter-actions')[0].children[1];let copiedUrl;
+  window.navigator={clipboard:{writeText:async text=>{copiedUrl=text;}}};
+  await share.listeners.click();assert.equal(copiedUrl,location.href);assert(elements.view.textContent.includes('Đã sao chép liên kết.'));
+  window.navigator.clipboard.writeText=async()=>{throw Error('denied');};await share.listeners.click();
+  assert.equal(document.getElementById('share-url').value,location.href);assert.equal(document.getElementById('share-url').attrs.readonly,'');
+  assert(elements.view.textContent.includes('Không sao chép được. Chọn và sao chép liên kết bên dưới.'));
+  // Reconcile stale metadata on refresh without clearing still-valid fields.
+  location.hash='#/p/omi';await invoke('route()');
+  assert.equal(document.getElementById('share-url'),undefined);
+  assert(!elements.view.textContent.includes('Không sao chép được. Chọn và sao chép liên kết bên dưới.'));
+  const previousTree=find(elements.view,'tree')[0].children[0];previousTree.open=false;previousTree.listeners.toggle();
+  let searchControl=document.getElementById('board-search');searchControl.value='TASK-115';searchControl.listeners.input();
+  assert.equal(find(elements.view,'tree')[0].children[0].attrs.open,'');
+  searchControl.value='';searchControl.listeners.input();
+  // Clearing every filter restores the saved disclosure state.
+  find(elements.view,'filter-actions')[0].children[0].listeners.click();
+  assert.equal(find(elements.view,'tree')[0].children[0].attrs.open,undefined);
+  location.hash='#/p/omi?type=task&plan=PLAN-006';await invoke('route()');
+  data={...hierarchy,kanban:Object.fromEntries(Object.entries(hierarchy.kanban).map(([key,items])=>[key,items.map(t=>({...t,frontmatter:{...t.frontmatter,plan:'NEW'}}))]))};
+  await invoke('route()');
+  assert.equal(document.getElementById('filter-plan').value,'');assert.equal(document.getElementById('filter-type').value,'task');
+  assert(elements.view.textContent.includes('Một số bộ lọc không còn khả dụng đã được bỏ qua.'));
+  assert.equal(location.hash,'#/p/omi?type=task');
+  fail=true;await elements.refresh.listeners.click();
+  assert.equal(document.getElementById('board-search').disabled,false);
+  assert(elements.err.textContent.includes('Không làm mới được. Đang hiển thị dữ liệu lần tải trước.'));
+  fail=false;data=hierarchy;await invoke('route()');
+  const available=invoke(`filterOptions(${JSON.stringify(filterItems)})`);
+  assert.equal(JSON.stringify(available.role),JSON.stringify([['~none','Chưa có vai trò'],['~~builder','~builder']]));
+  location.hash='#/p/omi?status=done&q=%E0%A4&type=wrong';await invoke('route()');
+  assert.equal(location.hash,'#/p/omi?status=done');assert.equal(document.getElementById('filter-status').value,'done');
+  assert(elements.view.textContent.includes('Một số bộ lọc không còn khả dụng đã được bỏ qua.'));
+  // The detail request remains a real task endpoint, with filters on its return links.
+  location.hash='#/p/omi/t/TASK-115?status=done';data=detail;await invoke('route()');
+  assert(all(elements.view).some(n=>n.tagName==='a' && n.attrs.href==='#/p/omi?status=done'));
+  data={...hierarchy,kanban:{}};location.hash='#/p/omi';await invoke('route()');
+  assert(elements.view.textContent.includes('Chưa có công việc trong dự án này.'));
+  assert.equal(find(elements.view,'filter-actions')[0].children[0].disabled,true);
+  data={...dashboard,kanban:{'in-progress':[{...detail,frontmatter:{...frontmatter,plan:' P '}}]}};await invoke('route()');
+  const exactPlan=document.getElementById('filter-plan');exactPlan.value=' P ';exactPlan.listeners.change();
+  assert.equal(location.hash,'#/p/omi?plan=%20P%20');assert.equal(find(elements.view,'card').length,1);
+  // A delayed announcement from before a refresh cannot overwrite the new counts.
+  const searchBeforeRefresh=document.getElementById('board-search');searchBeforeRefresh.value='TASK';searchBeforeRefresh.listeners.input();
+  const announcement=timeouts.find(t=>t.ms===250);
+  data={...data,kanban:{}};await invoke('route()');
+  const refreshedCount=find(elements.view,'filter-count')[0].textContent;announcement.f();
+  assert.equal(find(elements.view,'filter-count')[0].textContent,refreshedCount);
+  console.log('ok: API views, mockup DOM, safe text, polling, recovery, focus, races, combined filters, hash round-trip, hierarchy context, keyboard, sharing');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 """
 
@@ -820,6 +923,57 @@ catch(e) {
       }
     }
 
+    // TASK-129: approved toolbar geometry, keyboard, history and shareable task navigation.
+    for(const width of [320,375,768,1000,1280]) {
+      await page.setViewportSize({width,height:900});
+      await page.goto('http://omi.test/#/p/omi?q=TASK-115&type=task&plan=PLAN-006');
+      await page.locator('.filter-count').filter({hasText:'1 / 8'}).waitFor();
+      assert.equal(await page.locator('#share-url').count(),0);
+      const search=page.getByRole('searchbox',{name:'Tìm ID hoặc tiêu đề'});
+      assert.equal(await search.inputValue(),'TASK-115');
+      assert.equal(await page.locator('#filter-plan').inputValue(),'PLAN-006');
+      assert.equal(await page.locator('.context-label').count(),3);
+      assert.equal(await page.locator('.card').count(),1);
+      assert.equal(await page.locator('.filters').evaluate(n=>getComputedStyle(n).gridTemplateColumns.split(' ').length),width<768?1:width<=1000?2:5);
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`filters overflow ${width}`);
+      assert(await search.evaluate(n=>n.getBoundingClientRect().height>=44));
+      if(screens && [375,1280].includes(width)) await page.screenshot({path:path.join(screens,`filters-${width}.png`),fullPage:true});
+      await page.evaluate(axeSource);await audit(`filters ${width} light`);
+      await page.emulateMedia({colorScheme:'dark'});await audit(`filters ${width} dark`);await page.emulateMedia({colorScheme:'light'});
+      await page.locator('#refresh').focus();await page.keyboard.press('/');assert(await search.evaluate(n=>n===document.activeElement));
+      await page.keyboard.press('Escape');assert.equal(await search.inputValue(),'');
+      assert.equal(await page.locator('#filter-type').inputValue(),'task');assert.equal(await page.locator('#filter-plan').inputValue(),'PLAN-006');
+      await search.fill('no matches');await page.getByText('Không tìm thấy công việc phù hợp.',{exact:true}).waitFor();
+      assert(await search.evaluate(n=>n===document.activeElement));
+      await page.locator('.no-results button').click();assert(await search.evaluate(n=>n===document.activeElement));
+      assert.equal(await search.inputValue(),'');assert.equal(await page.locator('#filter-plan').inputValue(),'');
+      // Real Back/Forward should only update the local results and retain search focus.
+      let requests=0;const countRequest=request=>{if(request.url().includes('/api/projects'))requests++;};
+      page.on('request',countRequest);
+      await page.locator('#filter-status').selectOption('done');
+      await search.focus();await page.goBack();
+      await page.waitForFunction(()=>document.getElementById('filter-status').value==='');
+      assert(await search.evaluate(n=>n===document.activeElement));
+      await page.goForward();await page.waitForFunction(()=>document.getElementById('filter-status').value==='done');
+      assert.equal(requests,0);page.off('request',countRequest);
+      await page.reload();await page.locator('.filter-count').filter({hasText:'4 / 8'}).waitFor();
+      assert.equal(await page.locator('#filter-status').inputValue(),'done');
+      await page.evaluate(()=>{location.hash='#/p/omi/t/TASK-115?status=done';});await page.locator('.layout').waitFor();
+      assert(page.url().endsWith('?status=done'));assert.equal(await page.getByRole('link',{name:'← Về dự án omi'}).getAttribute('href'),'#/p/omi?status=done');
+      await page.getByRole('link',{name:'← Về dự án omi'}).click();await page.locator('.filter-count').filter({hasText:'4 / 8'}).waitFor();
+      await page.evaluate(()=>Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{window.sharedUrl=text;}}}));
+      await page.getByRole('button',{name:'Sao chép liên kết',exact:true}).click();
+      await page.getByText('Đã sao chép liên kết.',{exact:true}).waitFor();assert.equal(await page.evaluate(()=>window.sharedUrl),page.url());
+      await page.evaluate(()=>{navigator.clipboard.writeText=async()=>{throw Error('denied');};});
+      await page.getByRole('button',{name:'Sao chép liên kết',exact:true}).click();
+      assert.equal(await page.getByLabel('Liên kết chế độ xem').inputValue(),page.url());
+      assert(await page.getByLabel('Liên kết chế độ xem').evaluate(n=>n.readOnly));
+      if(width===1280) {
+        await page.evaluate(()=>{document.body.style.zoom='2';});
+        assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'filters 200% zoom overflow');
+        await page.evaluate(()=>{document.body.style.zoom='';});
+      }
+    }
     await page.addInitScript(()=>{
       window.permissionRequests=0;window.notifications=[];
       Object.defineProperty(window,'isSecureContext',{value:true});
@@ -897,7 +1051,7 @@ catch(e) {
         assert(fs.statSync(path.join(screens,`${name}-${width}.png`)).size>0);
     }
     assert.deepEqual(errors,[]);
-    console.log('ok: browser layouts at 320/360/390/768/1280px, inbox at 320/375/1280px and 200% zoom, phone summaries, overflow disclosure, dark mode, CSP, keyboard controls, axe (light/dark), print, GET-only requests');
+    console.log('ok: browser layouts at 320/360/390/768/1280px, inbox at 320/375/1280px and 200% zoom, phone summaries, overflow disclosure, dark mode, CSP, keyboard controls, axe (light/dark), print, GET-only requests, filters/history/sharing at 320/375/768/1000/1280px');
   } finally { await browser.close(); }
 })().catch(e=>{console.error(e);process.exitCode=1;});
 """
