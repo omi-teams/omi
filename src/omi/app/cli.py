@@ -75,7 +75,8 @@ def status(cwd="."):
         missing_test = False
     if missing_test:
         print('no `test` command in .omi/config.json; set one, e.g. "test": "python3 -m pytest -q"')
-    ts = tasks.tasks(project)
+    ts = tasks.rolled_up(tasks.tasks(project))
+    kids = tasks.children_map(ts)
     finished = []
     for pid, m in catalogs.load_plans(root, strict=False).items():
         members = [t for t in ts.values() if t.get("plan") == pid]
@@ -95,7 +96,7 @@ def status(cwd="."):
     print(f"done: {len(done)}/{len(ts)}")
     for st in STATUSES:
         for k, m in ts.items():
-            if m.get("status", "planned") == st:
+            if m.get("status", "planned") == st and k not in kids:
                 try:
                     steps = workflows.get_workflow(root, m.get("workflow") or workflows.DEFAULT_WORKFLOW)
                 except SystemExit:
@@ -116,8 +117,16 @@ def status(cwd="."):
                         print(f"  {line}")
                 if tasks.usage_totals(m["_text"]):
                     print("  " + tasks.usage_totals(m["_text"]))
+    if kids:
+        print("tree:")
+        show = lambda k, depth: (print(f"{'  ' * depth}{k} [{ts[k].get('type') or 'task'}] {ts[k]['status']} {ts[k].get('title', '')}"
+                                       + (f" ({sum(ts[c]['status'] == 'done' for c in kids[k])}/{len(kids[k])} done)" if k in kids else "")),
+                                 [show(c, depth + 1) for c in kids.get(k, [])])
+        for k, m in ts.items():
+            if m.get("parent") not in ts:
+                show(k, 0)
     nxt = next((k for k, m in ts.items()
-                if m.get("status", "planned") == "planned" and set(core.split(m.get("depends"))) <= done), None)
+                if m.get("status", "planned") == "planned" and k not in kids and set(core.split(m.get("depends"))) <= done), None)
     print(f"next: {nxt or 'none ready'}")
     docker.print_workers(project)
 
@@ -253,6 +262,7 @@ def dispatch(argv: list[str] | None = None) -> None:
         words = [w for i, w in enumerate(rest[1:]) if w not in ("--step", "--verdict") and rest[i] not in ("--step", "--verdict")]
         tasks.note(state.resolve(core.main_checkout(".") or Path(".").resolve()), rest[0], step_id, verdict, " ".join(words))
     elif cmd == "run" and len(rest) >= 2 and not rest[1].startswith("--"):
+        tasks.check_runnable(state.resolve(core.main_checkout(".") or Path(".").resolve()), rest[1])
         sys.exit(run.run_cmd(rest[0], rest[1], rest))
     elif cmd == "hook" and len(rest) == 2:
         sys.exit(hooks.hook_cmd(*rest))

@@ -39,6 +39,67 @@ def plan_status(stored: str, statuses: list[str]) -> str:
     return "done" if statuses and all(st == "done" for st in statuses) else stored
 
 
+TYPES = ("milestone", "epic", "fr", "nfr", "task")
+
+
+def children_map(found):
+    """{parent id: [child ids]} for the tasks whose `parent:` exists."""
+    kids = {}
+    for tid, m in found.items():
+        if m.get("parent") in found:
+            kids.setdefault(m["parent"], []).append(tid)
+    return kids
+
+
+def tree_errors(found):
+    """Messages naming each task with an unknown `type`, a missing `parent` or a parent cycle."""
+    out = []
+    for tid, m in found.items():
+        if (m.get("type") or "task") not in TYPES:
+            out.append(f"{tid}: unknown type `{m['type']}` (use {'|'.join(TYPES)})")
+        seen, cur = [tid], m.get("parent")
+        if cur and cur not in found:
+            out.append(f"{tid}: parent {cur} does not exist")
+        while cur in found:
+            if cur in seen:
+                out.append(f"{tid}: parent cycle {' -> '.join([*seen, cur])}")
+                break
+            seen.append(cur)
+            cur = found[cur].get("parent")
+    return out
+
+
+def derived_status(found):
+    """{id: status}: a task with children gets done/blocked/planned/in-progress from them (recursive), else its own."""
+    kids, memo = children_map(found), {}
+
+    def status(tid, seen=()):
+        ch = [c for c in kids.get(tid, []) if c not in seen and c != tid]
+        if not ch:
+            return found[tid].get("status", "planned")
+        if tid not in memo:
+            sts = [status(c, (*seen, tid)) for c in ch]
+            memo[tid] = ("done" if all(x == "done" for x in sts) else "blocked" if "blocked" in sts
+                         else "planned" if all(x == "planned" for x in sts) else "in-progress")
+        return memo[tid]
+    return {tid: status(tid) for tid in found}
+
+
+def rolled_up(found):
+    """Exit on an invalid hierarchy; else the tasks with the derived status in place of the stored one."""
+    errors = tree_errors(found)
+    if errors:
+        sys.exit("invalid task hierarchy:\n" + "\n".join(errors))
+    return {tid: m | {"status": st} for (tid, m), st in zip(found.items(), derived_status(found).values())}
+
+
+def check_runnable(project, tid):
+    """Exit when the task has children (it is only a rolled-up container) or the hierarchy is invalid."""
+    found = rolled_up(tasks(project))
+    if tid in children_map(found):
+        sys.exit(f"{tid} has child tasks ({', '.join(children_map(found)[tid])}); run one of them. Nothing changed.")
+
+
 def unticked(text):
     """Unticked `- [ ]` lines of the `## Acceptance criteria` section."""
     sec = text.partition("\n## Acceptance criteria\n")[2].split("\n## ", 1)[0]

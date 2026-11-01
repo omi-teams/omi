@@ -67,7 +67,8 @@ def _detail(snap: source.Snapshot, root: Path, id: str, text: str) -> dict:
     path = root / ".omi" / "workflows" / f"{wid}.md"
     definitions = workflows.workflow_steps(snap.read(path)) if path in snap.paths else []
     ph = tasks.phase({**meta, "_text": text}, definitions)
-    return {"id": id, "frontmatter": meta, "workflow_steps": definitions,
+    return {"id": id, "frontmatter": meta, "type": meta.get("type") or "task", "parent": meta.get("parent") or None,
+            "children": [], "status": meta.get("status", "planned"), "workflow_steps": definitions,
             "phase": {"key": ph["key"], "label": ph["label"]}, "step_index": ph["step_index"],
             "step_count": ph["step_count"], "review_round": ph["review_round"],
             "current_step": meta.get("step") or None,
@@ -94,12 +95,12 @@ def _plans(snap: source.Snapshot, root: Path, details: list[dict]) -> list[dict]
 
 def _waiting(root: Path, details: list[dict]) -> list[dict]:
     waiting = []
-    done = {t["id"] for t in details if t["frontmatter"].get("status") == "done"}
-    next_task = next((t["id"] for t in details if t["frontmatter"].get("status", "planned") == "planned"
+    done = {t["id"] for t in details if t["status"] == "done"}
+    next_task = next((t["id"] for t in details if t["status"] == "planned" and not t["children"]
                       and set(core.split(t["frontmatter"].get("depends"))) <= done), None)
     for t in details:
         m = t["frontmatter"]
-        status, step = m.get("status", "planned"), m.get("step", "")
+        status, step = t["status"], m.get("step", "")
         reasons = []
         if status == "blocked":
             reasons.append(("blocked", ""))
@@ -125,9 +126,13 @@ def project(name: str) -> dict:
 def _project(snap: source.Snapshot, name: str) -> dict:
     root = snap.root(_name(name, project_name=True))
     details = [_detail(snap, root, f.stem, snap.read(f)) for f in snap.files(root / ".omi" / "tasks", "*.md") if f.name != "_template.md" and _name(f.stem)]
+    found = {t["id"]: t["frontmatter"] for t in details}
+    kids, derived = tasks.children_map(found), tasks.derived_status(found)
+    for t in details:
+        t |= {"children": kids.get(t["id"], []), "status": derived[t["id"]]}
     kanban = {status: [] for status in STATUSES}
     for t in details:
-        kanban.setdefault(t["frontmatter"].get("status", "planned"), []).append(t)
+        kanban.setdefault(t["status"], []).append(t)
     activity = []
     for t in details:
         for section in ("steps", "reports"):
