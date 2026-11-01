@@ -479,7 +479,60 @@ def test_cost_mixed_tools_per_task() -> None:
         assert not view["has_prices"] and view["totals"]["cost"] is None
 
 
+def test_inbox_detection() -> None:
+    base = {"id": "TASK-115", "status": "in-progress", "current_step": "accept",
+            "frontmatter": {"title": "<script>task</script>"}, "workflow_steps": [{"id": "accept", "gate": "po"}],
+            "steps": "- accept started 2026-11-01 12:00", "reports": "", "checkpoint": "", "usage": {"rows": []}}
+    gate = data._inbox(base)
+    assert gate == [{"id": "TASK-115", "title": "<script>task</script>", "reason": "po_gate", "gate": "accept",
+                     "text": "Duyệt bước accept", "since": "2026-11-01 12:00", "command": "omi-task TASK-115"}]
+    for event in ("done", "skipped"):
+        assert not data._inbox({**base, "steps": base["steps"] + f"\n- accept {event} 2026-11-01 12:01"})
+    assert not data._inbox({**base, "status": "done"})
+    assert not data._inbox({**base, "steps": base["steps"] + "\nPO approval accept: Approved"})
+    design = {**base, "current_step": "approve-mockup", "workflow_steps": [{"id": "approve-mockup", "gate": "po"}], "steps": ""}
+    assert data._inbox(design)[0]["since"] is None
+    worker = {**base, "current_step": "build", "steps": ""}
+    for marker, reason in (("NEEDS SCOPE", "needs_scope"), ("QUOTA", "quota")):
+        report = f"2026-11-01 12:00 omi-agent-engineer (codex):\n> {marker}: need PO decision"
+        item = data._inbox({**worker, "reports": report})[0]
+        assert item["reason"] == reason and item["since"] == "2026-11-01 12:00"
+        assert data._inbox({**worker, "checkpoint": f"Next: {marker}: ask PO"})[0]["since"] is None
+        assert not data._inbox({**worker, "reports": report + "\n2026-11-01 13:00 engineer:\n> DONE"})
+        assert not data._inbox({**worker, "reports": report, "steps": "- build started 2026-11-01 13:00"})
+    assert not data._inbox({**worker, "checkpoint": "QUOTA: tool hit limit; engineer continued with codex on partial diff."})
+    assert not data._inbox({**worker, "reports": "2026-11-01 12:00 engineer:\n> historical QUOTA and NEEDS SCOPE are resolved"})
+    assert not data._inbox({**worker, "checkpoint": "QUOTA: stopped; resume required",
+                            "usage": {"rows": [{"role": "omi-agent-engineer", "verdict": "-"}]}})
+    rows = [{"role": "omi-agent-reviewer", "verdict": "FAIL abc1234"}] * 2
+    review = {**worker, "usage": {"rows": rows}, "reports": "2026-11-01 12:00 Coordinator (review) FAIL:\n> Waiting for PO decision"}
+    assert data._inbox(review)[0]["reason"] == "review_fail"
+    assert not data._inbox({**review, "usage": {"rows": rows[:1]}})
+    assert not data._inbox({**review, "reports": "2026-11-01 13:00 engineer:\n> DONE"})
+    assert not data._inbox({**review, "usage": {"rows": rows + [{"role": "omi-agent-reviewer", "verdict": "PASS def5678"}]}})
+    combined = data._inbox({**base, "checkpoint": "Next: NEEDS SCOPE: add a file\nQUOTA: resume required"})
+    assert {i["reason"] for i in combined} == {"po_gate", "needs_scope", "quota"}
+
+
+def test_inbox_aggregation() -> None:
+    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+        home = Path(directory)
+        fixture(home)
+        for project, stamp in (("other", "2026-10-28 12:00"), ("sample", "2026-10-29 12:00")):
+            root = home / "projects" / project
+            write(root / ".omi/workflows/feature.md", "---\nsteps:\n- id: accept | gate: po\n---\n")
+            write(root / ".omi/tasks/TASK-002.md", "---\nid: TASK-002\nstatus: in-progress\nworkflow: feature\nstep: accept\n---\n## Steps\n- accept started " + stamp + "\n")
+        remote(home)
+        before = {f: f.read_bytes() for f in (home / "projects").rglob("*.md")}
+        inbox = data.projects()["inbox"]
+        assert [(i["project"], i["id"], i["since"]) for i in inbox] == [
+            ("other", "TASK-002", "2026-10-28 12:00"), ("sample", "TASK-002", "2026-10-29 12:00")]
+        assert before == {f: f.read_bytes() for f in before}
+
+
 def main():
+    test_inbox_detection()
+    test_inbox_aggregation()
     test_views()
     test_plan_status_derived()
     test_hierarchy()

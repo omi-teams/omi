@@ -110,7 +110,7 @@ def test_app_js_behaviors() -> None:
         assert needle in js, needle
     html = (WEB / "index.html").read_text(encoding="utf-8")
     assert 'role="status"' in html and 'id="refresh"' in html and "Làm mới" in html
-    for removed in ("auto-refresh", "countdown", "localStorage", "30000", "Làm mới sau"):
+    for removed in ("auto-refresh", "countdown", "30000", "Làm mới sau"):
         assert removed not in js + html + (WEB / "app.css").read_text(encoding="utf-8"), removed
     assert "setInterval(pollVersion, 3000)" in js
 
@@ -274,6 +274,11 @@ const hierarchy={...crowded,kanban:{...crowded.kanban,'in-progress':[
   {...detail,id:'EPIC-001',type:'epic',parent:'MILESTONE-001',children:['FR-001']},
   {...detail,id:'FR-001',type:'fr',parent:'EPIC-001',children:['TASK-115']}
 ]}};
+const inboxFixture=['po_gate','po_gate','needs_scope','quota','review_fail'].map((reason,index)=>({
+  project:index===1?'other':'omi',id:`TASK-${115+index}`,title:index===0?frontmatter.title:'Yêu cầu PO quyết định',
+  reason,...(reason==='po_gate'?{gate:index===0?'accept':'approve-mockup'}:{}),text:reason==='po_gate'?'Duyệt bước accept':'Cần PO quyết định; xem chi tiết task.',
+  since:index===4?null:`2026-11-01 1${index}:00`,command:`omi-task TASK-${115+index}`}));
+
 
 """
 
@@ -297,7 +302,7 @@ class Element {
   addEventListener(k, f) { this.listeners[k] = f; }
   focus() { document.activeElement = this; }
 }
-const elements = Object.fromEntries(['view','nav','status','err','refresh','main','source'].map(id => [id,new Element('div')]));
+const elements = Object.fromEntries(['view','nav','status','err','refresh','main','source','inbox-count'].map(id => [id,new Element('div')]));
 function all(root) { return [root, ...root.children.flatMap(all)]; }
 function find(root, cls) { return all(root).filter(n => (n.attrs.class || '').split(' ').includes(cls)); }
 const document = {
@@ -310,13 +315,15 @@ document.activeElement = document.body;
 let interval, intervalMs, calls=0, versionCalls=0, versionSha='abc123456789', fail=false, pending=null;
 let now=0;
 class Clock extends Date { static now() { return now; } }
-const window={scrollY:0,scrolled:null,scrollTo(x,y){this.scrolled=y;},listeners:{},addEventListener(k,f){this.listeners[k]=f;}};
+const window={isSecureContext:true,localStorage:{getItem:()=>null,setItem:()=>{}},scrollY:0,scrolled:null,scrollTo(x,y){this.scrolled=y;},listeners:{},addEventListener(k,f){this.listeners[k]=f;}};
 const location={hash:'#/'};
 """ + API_FIXTURES + r"""
 let data={projects:[summary],source:remoteSource};
 let projectData=dashboard;
+let globalInbox=[];
 let timeouts=[];
 async function fetch(path,opts) {
+  if(path==='/api/projects' && location.hash.startsWith('#/p/')) return {ok:true,text:async()=>JSON.stringify({projects:[summary],source:data.source || remoteSource,inbox:globalInbox})};
   if((location.hash==='#/' || location.hash.includes('/t/')) && path==='/api/projects/omi') return {ok:true,text:async()=>JSON.stringify(projectData)};
   if(path.endsWith('/version')) versionCalls++; else calls++;
   if(pending) return pending(path,opts);
@@ -569,6 +576,72 @@ async function advance(polls) {
   find(page[1],'btn')[1].listeners.click();
   const priced=invoke(`costPage('omi',${JSON.stringify({...costData,has_prices:true,totals:row({cost:null})})})`).map(n=>n.textContent).join('|');
   assert(priced.includes('Thiếu giá')&&priced.includes('chưa đủ giá'));
+
+  // Inbox baseline, click-only permission, stable identity, and copy fallbacks.
+  fail=false;
+  let permissionRequests=0, notices=[], copied=[];
+  window.Notification=class {
+    static permission='default';
+    static async requestPermission(){permissionRequests++;this.permission='granted';return 'granted';}
+    constructor(title,options){this.title=title;this.options=options;notices.push(this);}
+    close(){}
+  };
+  window.navigator={clipboard:{writeText:async text=>copied.push(text)}};
+  window.focus=()=>{window.focused=true;};
+  const item={project:'omi',id:'TASK-115',title:'<img src=x onerror=evil()>',reason:'po_gate',since:'2026-11-01 12:00',command:'omi-task TASK-115',text:'Approve accept'};
+  const openInbox=async items=>{data={projects:[summary],source:remoteSource,inbox:items};location.hash='#/inbox';await invoke('route()');};
+  await openInbox([item]);
+  assert(invoke(`inboxPage(${JSON.stringify([item,{...item,reason:'quota'}])})`).map(n=>n.textContent).join('').includes('2 việc · 1 task'));
+  assert.equal(permissionRequests,0);assert.equal(notices.length,0);
+  assert.equal(elements['inbox-count'].textContent,'1');assert.equal(document.title,'(1) Hộp thư PO — omi board');
+  assert.equal(all(elements.view).filter(n=>n.tagName==='img').length,0);
+  const settings=()=>all(elements.view).find(n=>n.attrs.id==='notification-settings');
+  const notificationButton=()=>all(settings()).find(n=>n.tagName==='button');
+  await notificationButton().listeners.click();
+  assert.equal(permissionRequests,1);assert.equal(notices.length,0);assert(notificationButton().textContent.includes('Tắt'));
+  const copyButton=()=>all(elements.view).find(n=>n.attrs['data-control']?.startsWith('['));
+  await copyButton().listeners.click();assert.deepEqual(copied,['omi-task TASK-115']);assert(elements.view.textContent.includes('Đã sao chép: omi-task TASK-115'));
+  window.navigator.clipboard.writeText=async()=>{throw Error('denied');};
+  await copyButton().listeners.click();assert(elements.view.textContent.includes('Không sao chép được.'));assert.equal(copyButton().disabled,false);
+  const next={...item,id:'TASK-116',command:'omi-task TASK-116',reason:'needs_scope'};
+  await openInbox([item,next]);assert.equal(notices.length,1);
+  await openInbox([{...item,text:'changed copy'},next]);assert.equal(notices.length,1);
+  await openInbox([]);await openInbox([item,next]);assert.equal(notices.length,1);
+  // Turning off/on, unchanged refresh and route changes never replay seen items.
+  await notificationButton().listeners.click();await notificationButton().listeners.click();
+  await invoke('route()');assert.equal(notices.length,1);
+  const episode={...next,since:'2026-11-01 13:00'};
+  copyButton().focus();window.scrollY=320;
+  await openInbox([item,episode]);assert.equal(notices.length,2);assert.equal(document.activeElement,copyButton());assert.equal(window.scrolled,320);
+  copyButton().focus();await openInbox([episode]);assert.equal(document.activeElement.attrs.id,'inbox-title');
+  notices[0].onclick();assert(window.focused);assert.equal(location.hash,'#/inbox');
+  // Partial/failed refresh keeps the old complete snapshot and seen set intact.
+  const beforeInbox=invoke('JSON.stringify(inboxItems)');
+  fail=true;await invoke('route()');assert.equal(invoke('JSON.stringify(inboxItems)'),beforeInbox);
+  fail=false;
+  window.Notification.permission='denied';invoke('renderNotificationSettings()');assert.equal(notificationButton().disabled,true);
+  assert(settings().textContent.includes('bị chặn'));assert.equal(permissionRequests,2);
+  window.Notification.permission='default';window.Notification.requestPermission=async()=>{permissionRequests++;return 'default';};
+  invoke('renderNotificationSettings()');await notificationButton().listeners.click();assert(settings().textContent.includes('Chưa cấp quyền'));
+  window.isSecureContext=false;invoke('renderNotificationSettings()');assert.equal(notificationButton().disabled,true);
+  window.isSecureContext=true;window.localStorage={getItem:()=>null,setItem:()=>{throw Error('storage denied');}};
+  invoke('renderNotificationSettings()');await notificationButton().listeners.click();assert(settings().textContent.includes('Tùy chọn chỉ áp dụng cho tab này'));
+  // First snapshot after reload is silent even when the persisted opt-in is on.
+  window.Notification.permission='granted';invoke('inboxItems=null; notifyEnabled=true');
+  await openInbox([{...episode,project:'other'}]);assert.equal(notices.length,2);
+  window.Notification=class {static permission='granted';constructor(){throw Error('unavailable');}};
+  await openInbox([{...episode,id:'TASK-117'}]);assert(settings().textContent.includes('Không tạo được thông báo'));
+
+  await invoke('route()');assert.equal(notices.length,2);
+  // Global polling refreshes other projects even from a project route.
+  window.Notification=class {static permission='granted';constructor(title,options){notices.push({title,options});}};
+  globalInbox=[{...episode,project:'third',id:'TASK-118'}, {...episode,project:'fourth',id:'TASK-118'}];
+  data=dashboard;location.hash='#/p/omi';await invoke('route()');
+  assert.equal(notices.length,3);assert.equal(notices[2].title,'2 việc mới chờ PO');
+  assert(document.title.startsWith('(2) '));
+  await invoke('pollVersion()');assert.equal(notices.length,3);
+  globalInbox=[...globalInbox,{...episode,project:'fifth'}];versionSha='other-project-change';
+  await invoke('pollVersion()');assert.equal(notices.length,4);assert.equal(elements['inbox-count'].textContent,'3');
   console.log('ok: API views, mockup DOM, safe text, version changes/unchanged/hidden, polling, recovery, focus, races');
 })().catch(e=>{console.error(e);process.exitCode=1;});
 """
@@ -625,7 +698,7 @@ catch(e) {
       }
       if(url.pathname.startsWith('/api/')) {
         if(url.pathname==='/api/projects/omi/cost') return route.fulfill({json:{...costFixture[costMode],source:remoteSource}});
-        const data=url.pathname.endsWith('/version')?{sha:remoteSource.sha}:url.pathname.endsWith('/tasks/TASK-115')?workflowDetail:url.pathname==='/api/projects/omi'?hierarchy:{projects:[summary],source:remoteSource};
+        const data=url.pathname.endsWith('/version')?{sha:remoteSource.sha}:url.pathname.endsWith('/tasks/TASK-115')?workflowDetail:url.pathname==='/api/projects/omi'?hierarchy:{projects:[summary],source:remoteSource,inbox:inboxFixture};
         return route.fulfill({json:data});
       }
       const name=url.pathname==='/'?'index.html':url.pathname.slice(1);
@@ -651,10 +724,9 @@ catch(e) {
         const header=await page.locator('.top').boundingBox();
         assert.equal(await page.locator('#countdown, #auto, .switch').count(),0);
         assert(await page.getByRole('button',{name:'Làm mới',exact:true}).isVisible());
-        assert.equal(await page.locator('.top').evaluate(n=>getComputedStyle(n).position),'sticky');
-        assert(await page.locator('html').evaluate(n=>parseFloat(getComputedStyle(n).scrollPaddingTop))>header.height);
+        assert.equal(await page.locator('.top').evaluate(n=>getComputedStyle(n).position),'static');
         // The timestamp wraps onto its own line on phones.
-        if(width<768) assert(header.height<160,`compact phone header ${width} ${hash}: ${header.height}px`);
+        if(width<768) assert(header.height<240,`compact phone header ${width} ${hash}: ${header.height}px`);
         if(hash==='#/p/omi') {
           const columns=await page.locator('.col:visible').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().x));
           assert.equal(new Set(columns).size,width<768?1:2);
@@ -680,7 +752,7 @@ catch(e) {
         await page.locator('.skip').focus();
         await page.keyboard.press('Enter');
         assert.equal(await page.evaluate(()=>document.activeElement.id),'main');
-        assert((await page.locator('#main').boundingBox()).y>=(await page.locator('.top').boundingBox()).height,'skip target clears header');
+        assert(await page.locator('#main').evaluate(n=>n===document.activeElement),'skip target focused');
         await page.locator('#refresh').focus();
         await page.keyboard.press('Enter');
         await page.waitForFunction(()=>!document.getElementById('refresh').disabled);
@@ -731,6 +803,56 @@ catch(e) {
         }
       }
     }
+
+    await page.addInitScript(()=>{
+      window.permissionRequests=0;window.notifications=[];
+      Object.defineProperty(window,'isSecureContext',{value:true});
+      Object.defineProperty(window,'Notification',{value:class {
+        static permission='default';
+        static async requestPermission(){window.permissionRequests++;this.permission='granted';return 'granted';}
+        constructor(title,opts){window.notifications.push({title,opts});}
+      }});
+      window.localStorage.removeItem('omi-board-notifications');
+      Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{window.copiedCommand=text;}}});
+    });
+    for(const width of [320,375,1280]) {
+      await page.setViewportSize({width,height:900});
+      await page.goto(`http://omi.test/?inbox=${width}#/inbox`);
+      await page.locator('.inbox-items>li').first().waitFor();
+      assert.equal(await page.locator('.inbox-items>li').count(),5);
+      assert.equal(await page.title(),'(5) Hộp thư PO — omi board');
+      assert.equal(await page.locator('#inbox-count').innerText(),'5');
+      assert.equal(await page.evaluate(()=>window.permissionRequests),0);
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`inbox overflow ${width}`);
+      const columns=await page.locator('.inbox-items>li').first().evaluate(n=>getComputedStyle(n).gridTemplateColumns.split(' ').length);
+      assert.equal(columns,width<768?1:3);
+      assert(await page.locator('.inbox-items .chip').first().evaluate(n=>n.getBoundingClientRect().height<30),'compact approved reason badge');
+      assert.equal(await page.locator('.inbox-items time').count(),4);
+      assert((await page.locator('.inbox-items').innerText()).includes('Chờ: chưa rõ thời điểm'));
+      assert.equal(await page.locator('#view img,#view script').count(),0);
+      await page.evaluate(axeSource);await audit(`inbox ${width} light`);
+      if(screens) await page.screenshot({path:path.join(screens,`inbox-${width}.png`),fullPage:true});
+      await page.getByRole('button',{name:'Bật thông báo',exact:true}).focus();
+      await page.keyboard.press('Space');
+      await page.getByRole('button',{name:'Tắt thông báo',exact:true}).waitFor();
+      assert.equal(await page.evaluate(()=>window.permissionRequests),1);
+      assert.equal(await page.evaluate(()=>window.notifications.length),0);
+      const copy=page.getByRole('button',{name:'Sao chép omi-task TASK-115 · omi',exact:true});
+      await copy.focus();await page.keyboard.press('Enter');
+      await page.getByText('Đã sao chép: omi-task TASK-115',{exact:true}).waitFor();
+      assert.equal(await page.evaluate(()=>window.copiedCommand),'omi-task TASK-115');
+      await page.evaluate(()=>{navigator.clipboard.writeText=async()=>{throw Error('denied');};});
+      await copy.click();await page.getByText('Không sao chép được. Chọn và sao chép lệnh hiển thị bên trên.',{exact:true}).waitFor();
+      assert(await copy.evaluate(n=>n===document.activeElement));
+      await page.emulateMedia({colorScheme:'dark'});await audit(`inbox ${width} dark`);
+      await page.emulateMedia({colorScheme:'light'});
+      // Two hundred percent zoom on the desktop must still fit its viewport.
+      if(width===1280) {
+        await page.evaluate(()=>{document.body.style.zoom='2';});
+        assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'inbox zoom overflow');
+        await page.evaluate(()=>{document.body.style.zoom='';});
+      }
+    }
     for(const mode of ['priced','tokens','partial']) {
       costMode=mode;
       for(const width of [320,390,1280]) {
@@ -759,7 +881,7 @@ catch(e) {
         assert(fs.statSync(path.join(screens,`${name}-${width}.png`)).size>0);
     }
     assert.deepEqual(errors,[]);
-    console.log('ok: browser layouts at 320/360/390/768/1280px, sticky header, phone summaries, overflow disclosure, dark mode, CSP, keyboard controls, axe (light/dark), print, GET-only requests');
+    console.log('ok: browser layouts at 320/360/390/768/1280px, inbox at 320/375/1280px and 200% zoom, phone summaries, overflow disclosure, dark mode, CSP, keyboard controls, axe (light/dark), print, GET-only requests');
   } finally { await browser.close(); }
 })().catch(e=>{console.error(e);process.exitCode=1;});
 """
