@@ -330,7 +330,9 @@ def test_improve_creation_and_workflows() -> None:
                 out = detached_cli(wt, *args)
             tid = f"TASK-{index}"
             assert tid in out.splitlines(), out
-            text = (target / f".omi/tasks/{tid}.md").read_text(encoding="utf-8")
+            created = target / f".omi/tasks/{tid}.md"
+            assert b"\r" not in created.read_bytes(), "new improvement tasks must use LF line endings"
+            text = created.read_text(encoding="utf-8")
             front = omi.common.core.parse(text)
             assert front["id"] == tid and front["status"] == "planned" and front["workflow"] == workflow
             assert f"title: {summary}\n" in text

@@ -71,7 +71,7 @@ def improve(args: list[str], cwd: str | Path = ".") -> None:
         new_id = f"TASK-{number:03d}"
         task = directory / f"{new_id}.md"
         try:
-            with task.open("x", encoding="utf-8") as stream:
+            with task.open("x", encoding="utf-8", newline="\n") as stream:
                 stream.write(f"---\nid: {new_id}\ntitle: {summary}\nstatus: planned\ntype: task\n"
                              f"workflow: {WORKFLOWS[opts.kind]}\nsource_project: {source}\n"
                              "role: omi-agent-engineer\nskills: []\nrefs: []\n---\n"
