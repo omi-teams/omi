@@ -62,7 +62,7 @@ def ensure_cache_excluded(wt: Path) -> None:
     existing = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
     if ".omi-cache/" not in existing.splitlines():
         exclude.parent.mkdir(parents=True, exist_ok=True)
-        with exclude.open("a", encoding="utf-8") as f:
+        with exclude.open("a", encoding="utf-8", newline="\n") as f:
             f.write(("\n" if existing and not existing.endswith("\n") else "") + ".omi-cache/\n")
 
 
