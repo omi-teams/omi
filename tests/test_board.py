@@ -149,6 +149,25 @@ def test_plan_status_derived():
         assert "status: active" in (root / ".omi/plans/PLAN-001.md").read_text(encoding="utf-8")
 
 
+def test_hierarchy():
+    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+        home = Path(directory)
+        root = home / "projects" / "sample"
+        for tid, extra in (("TASK-001", "type: milestone\nstatus: planned\n"), ("TASK-002", "type: epic\nparent: TASK-001\nstatus: planned\n"),
+                           ("TASK-003", "parent: TASK-002\nstatus: done\n"), ("TASK-004", "parent: TASK-002\nstatus: blocked\n"),
+                           ("TASK-005", "parent: TASK-001\nstatus: planned\n")):
+            write(root / f".omi/tasks/{tid}.md", f"---\nid: {tid}\ntitle: T\n{extra}---\n")
+        remote(home)
+        view = data.project("sample")
+        got = {t["id"]: (t["type"], t["parent"], t["children"], t["status"]) for items in view["kanban"].values() for t in items}
+        assert got == {"TASK-001": ("milestone", None, ["TASK-002", "TASK-005"], "blocked"),
+                       "TASK-002": ("epic", "TASK-001", ["TASK-003", "TASK-004"], "blocked"),
+                       "TASK-003": ("task", "TASK-002", [], "done"), "TASK-004": ("task", "TASK-002", [], "blocked"),
+                       "TASK-005": ("task", "TASK-001", [], "planned")}, got
+        assert {t["id"] for t in view["kanban"]["blocked"]} == {"TASK-001", "TASK-002", "TASK-004"}
+        assert [w["id"] for w in view["po_waiting"] if w["reason"] == "next_task"] == ["TASK-005"]
+
+
 def test_shared_fetch():
     with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
         home = Path(directory)
@@ -359,6 +378,7 @@ def test_empty_and_layer():
 def main():
     test_views()
     test_plan_status_derived()
+    test_hierarchy()
     test_shared_fetch()
     test_version()
     test_path_redaction()

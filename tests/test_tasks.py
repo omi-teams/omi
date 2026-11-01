@@ -19,6 +19,51 @@ def test_plan_status():
     assert tasks.plan_status("done", []) == "done"
 
 
+def test_hierarchy():
+    t = lambda status="planned", **kw: {"status": status, **kw}
+    assert tasks.tree_errors({"A": {}, "B": t(type="", parent="A")}) == [] and tasks.derived_status({"A": {}}) == {"A": "planned"}
+    assert tasks.tree_errors({"A": t(type="story")}) == ["A: unknown type `story` (use milestone|epic|fr|nfr|task)"]
+    assert tasks.tree_errors({"A": t(parent="Z")}) == ["A: parent Z does not exist"]
+    cyc = tasks.tree_errors({"A": t(parent="B"), "B": t(parent="A"), "C": t(parent="C")})
+    assert "A: parent cycle A -> B -> A" in cyc and "C: parent cycle C -> C" in cyc
+    ds = lambda *sts: tasks.derived_status({"P": t("done"), **{f"C{i}": t(s, parent="P") for i, s in enumerate(sts)}})["P"]
+    assert (ds("done", "done"), ds("done", "blocked", "planned"), ds("planned", "planned"),
+            ds("done", "planned"), ds("in-progress", "planned"), ds("review")) == ("done", "blocked", "planned", "in-progress", "in-progress", "in-progress")
+    deep = {"M": t("done"), "E": t("done", parent="M"), "T1": t("done", parent="E"), "T2": t("blocked", parent="E")}
+    assert tasks.derived_status(deep) == {"M": "blocked", "E": "blocked", "T1": "done", "T2": "blocked"}
+    with patch.object(sys, "stderr", io.StringIO()):
+        try:
+            tasks.rolled_up({"A": t(parent="Z")})
+        except SystemExit as e:
+            assert "A: parent Z does not exist" in str(e.code)
+        else:
+            raise AssertionError("invalid hierarchy accepted")
+
+
+def test_hierarchy_status_and_run():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        for tid, extra in (("TASK-001", "type: epic\nstatus: planned\n"), ("TASK-002", "parent: TASK-001\nstatus: done\n"),
+                           ("TASK-003", "parent: TASK-001\nstatus: planned\n")):
+            f = root / ".omi" / "tasks" / f"{tid}.md"
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(f"---\nid: {tid}\ntitle: T\n{extra}---\n", encoding="utf-8")
+        git(root, "init", "-q")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), patch.object(Path, "cwd", return_value=root):
+            omi.app.cli.status(str(root))
+        text = out.getvalue()
+        assert "tree:\nTASK-001 [epic] in-progress T (1/2 done)\n  TASK-002 [task] done T\n  TASK-003 [task] planned T\n" in text, text
+        assert text.endswith("next: TASK-003\n") and "[Đang làm] TASK-001" not in text, text
+        try:
+            tasks.check_runnable(root, "TASK-001")
+        except SystemExit as e:
+            assert "has child tasks (TASK-002, TASK-003)" in str(e.code)
+        else:
+            raise AssertionError("parent runnable")
+        tasks.check_runnable(root, "TASK-003")
+
+
 def test_roles():
     with tempfile.TemporaryDirectory() as t:
         root = Path(t)
@@ -631,6 +676,8 @@ def test_auto_accept():
 
 
 def main():
+    test_hierarchy()
+    test_hierarchy_status_and_run()
     test_plan_status()
     test_step_approve_reopen()
     test_auto_accept()
