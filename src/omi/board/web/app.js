@@ -486,10 +486,12 @@ function timelineSection(id, d) {
 }
 function filesSection(files) {
   if (!files?.length) return [];
-  return [section(`Tệp đã đổi · ${files.length}`, [el("ul", null, {class: "files mono"}, files.map((f) => {
+  const panel = section(`Tệp đã đổi · ${files.length}`, [el("ul", null, {class: "files mono"}, files.map((f) => {
     const cut = f.lastIndexOf("/") + 1;
     return el("li", null, {}, [el("span", f.slice(0, cut), {class: "dir"}), el("span", f.slice(cut))]);
-  }))], "so với development", "panel", "files-h")];
+  }))], null, "panel", "files-h");
+  panel.children[0].append(el("span", null, {class: "muted small"}, [el("span", "Ghi bởi "), el("code", "omi step"), el("span", " · so với development")]));
+  return [panel];
 }
 function timelineLoading() {
   return el("section", null, {class: "panel", "aria-busy": "true", "aria-labelledby": "tl-h"}, [el("h2", "Dòng thời gian", {id: "tl-h"}),
@@ -524,7 +526,7 @@ function taskPage(name, id, d) {
     workflow(d), box("layout", [box("main", [
       section("Mục tiêu", [el("p", d.goal || "—", {class: "goal"})]),
       section("Tiêu chí nghiệm thu", [criteria], `${d.criteria.filter((c) => c.checked).length}/${d.criteria.length} xong`),
-      section("Checkpoint", [pre(d.checkpoint)]), ...timelineSection(id, d), ...filesSection(d.files),
+      section("Checkpoint", [pre(d.checkpoint)]), ...timelineSection(id, d).slice(0, 1), ...filesSection(d.files), ...timelineSection(id, d).slice(1),
       section(`Báo cáo (${reports.length})`, reports.length ? reports : [empty("Chưa có báo cáo.")])]),
     el("aside", null, {class: "side"}, [section("Thông tin", [meta]), section("Sử dụng", [taskUsage(d.usage)],
       `${num(d.usage.runs)} lượt · ${num(d.usage.review_rounds)} vòng review`)])])];

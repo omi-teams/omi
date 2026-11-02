@@ -155,6 +155,12 @@ def test_step_records_behind() -> None:
         omi.project.tasks.step(root, "TASK-001", "done")
         assert re.search(r"^behind: 21$", task.read_text(encoding="utf-8"), re.M)
         assert re.search(r"^files: src/a\.py$", task.read_text(encoding="utf-8"), re.M)
+        git(root, "checkout", "-q", "-b", "task/TASK-002", "development")  # empty diff: no dangling `files: `
+        task2 = root / ".omi/tasks/TASK-002.md"
+        task2.write_text("---\nid: TASK-002\nworkflow: omi-flow-feature\n---\n## Steps\n", encoding="utf-8")
+        git(root, "checkout", "-q", "development")
+        omi.project.tasks.step(root, "TASK-002", "next")
+        assert "files:" not in task2.read_text(encoding="utf-8")
 
 
 def test_cli_characterization():

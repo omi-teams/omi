@@ -513,7 +513,8 @@ async function advance(polls) {
   assert.equal(all(tl).filter(n=>n.tagName==='progress'&&n.attrs['aria-hidden']==='true').length,4);
   assert.equal(find(tl,'mk').filter(n=>n.attrs.class.includes('memo'))[0].attrs['aria-hidden'],'true');
   const raw=find(elements.view,'raw')[0];assert.equal(raw.tagName,'details');assert.equal(raw.attrs.open,undefined);assert(raw.children[0].textContent==='Văn bản gốc');
-  assert(elements.view.textContent.includes('Tệp đã đổi · 3'));
+  assert(elements.view.textContent.includes('Tệp đã đổi · 3')&&elements.view.textContent.includes('Ghi bởi omi step'));
+  const tx=elements.view.textContent;assert(tx.indexOf('Dòng thời gian')<tx.indexOf('Tệp đã đổi')&&tx.indexOf('Tệp đã đổi')<tx.indexOf('Văn bản gốc'));
   const fileItems=find(elements.view,'files')[0].children;assert.equal(fileItems[0].children[0].textContent,'src/omi/board/web/');assert.equal(fileItems[0].children[1].textContent,'app.js');
   assert.equal(fileItems[2].children[0].textContent,'');assert.equal(fileItems[2].children[1].textContent,'README.md');
   data=noFilesDetail;await invoke('route()');assert(!elements.view.textContent.includes('Tệp đã đổi'));assert.equal(find(elements.view,'tl').length,1);
