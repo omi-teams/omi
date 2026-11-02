@@ -271,6 +271,17 @@ const summary={source:remoteSource,name:'omi',branch:'main',plans:[plan],task_co
 const totals={runs:1,input:10,output:1234,cache:5000,review_rounds:0};
 const dashboard={...summary,kanban:{planned:[], 'in-progress':[detail],review:[],blocked:[],done:[]},po_waiting:[{id:'TASK-115',reason:'po_gate',text:'accept'}],activity:[{id:'TASK-115',text:'build done',time:'2026-10-30 14:52'}],decisions:['- 2026-10-30: Approved'],usage:{totals,models:{sonnet:totals}}};
 const workflowDetail={...detail,current_step:'review',workflow_steps:['plan','design','build','review',{id:'accept',gate:'po'},'qa']};
+const tlRound=(n,role,stamp,verdict,body,open=false)=>({n,role,stamp,verdict,body,open});
+const tlRows=[{kind:'step',name:'plan',start:'2026-11-02 16:29',end:'2026-11-02 16:29',state:'done',seconds:0,duration:'0 giây',percent:0,po:false,fail:false,rounds:[]},
+  {kind:'step',name:'approve-mockup',start:'2026-11-02 16:39',end:'2026-11-02 16:41',state:'done',seconds:123,duration:'2 phút 3 giây',percent:7,po:true,fail:false,rounds:[]},
+  {kind:'step',name:'build',start:'2026-11-02 16:41',end:'2026-11-02 17:46',state:'done',seconds:3900,duration:'1 giờ 5 phút',percent:100,po:false,fail:false,rounds:[tlRound(1,'engineer','2026-11-02 17:45','DONE','DONE\nFiles: <b>x</b>')]},
+  {kind:'step',name:'review',start:'2026-11-02 17:46',end:'2026-11-02 18:11',state:'done',seconds:1480,duration:'24 phút 40 giây',percent:38,po:false,fail:true,rounds:[tlRound(1,'reviewer','2026-11-02 18:01','FAIL','FAIL\nfile:line - bug',true),tlRound(2,'reviewer','2026-11-02 18:10','PASS','PASS')]},
+  {kind:'note',text:'Auto accept: review PASS',start:'2026-11-02 18:11'},
+  {kind:'step',name:'qa',start:'2026-11-02 18:11',end:null,state:'running',seconds:760,duration:'12 phút 40 giây',percent:20,po:false,fail:false,rounds:[]}];
+const timelineDetail={...workflowDetail,steps:'- plan started 2026-11-02 16:29',files:['src/omi/board/web/app.js','tests/test_board_web.py','README.md'],
+  timeline:{rows:tlRows,now:'18:23',summary:{seconds:6286,duration:'1 giờ 44 phút',steps:5,done:4,running:1,rounds:3,fails:1}}};
+const noFilesDetail={...timelineDetail,files:[]};
+const noStepsDetail={...workflowDetail,steps:'',files:[],timeline:{rows:[],now:'18:23',summary:{seconds:0,duration:'0 giây',steps:0,done:0,running:0,rounds:0,fails:0}}};
 const crowded={...dashboard,kanban:{...dashboard.kanban,done:Array.from({length:4},(_,i)=>({...detail,id:`TASK-${110+i}`,status:'done',phase:{key:'done',label:'Xong'},frontmatter:{...frontmatter,status:'done'}}))}};
 const hierarchy={...crowded,kanban:{...crowded.kanban,'in-progress':[
   {...detail,parent:'FR-001'},
@@ -463,7 +474,7 @@ async function advance(polls) {
   assert.equal(find(elements.view,'layout').length,1);
   assert.equal(find(elements.view,'main').length,1);assert.equal(find(elements.view,'side').length,1);
   assert.equal(find(elements.view,'ck').length,2);assert.equal(find(elements.view,'checked').length,1);
-  const reps=all(elements.view).filter(n=>n.tagName==='details');assert.equal(reps.length,2);
+  const reps=all(elements.view).filter(n=>n.tagName==='details'&&!(n.attrs.class||'').includes('raw'));assert.equal(reps.length,2);
   assert.equal(reps[0].attrs.open,'');assert.equal(reps[1].attrs.open,undefined);
   assert(reps[0].children[0].textContent.startsWith('2026-10-30 15:00 Coordinator (review) FAIL'));
   assert(reps[1].children[0].textContent.includes('engineer (claude)')&&reps[1].children[0].textContent.includes('DONE'));
@@ -472,14 +483,14 @@ async function advance(polls) {
   reps[1].open=true;reps[1].listeners.toggle();window.scrollY=420;
   const oldSummary=reps[1].children[0];oldSummary.setAttribute('open','stale');oldSummary.focus();
   data={...detail,goal:'Changed goal'};await invoke('route()');
-  const again=all(elements.view).filter(n=>n.tagName==='details');
+  const again=all(elements.view).filter(n=>n.tagName==='details'&&!(n.attrs.class||'').includes('raw'));
   assert.equal(again[0].attrs.open,'');assert.equal(again[1].attrs.open,'');assert.equal(window.scrolled,420);
   assert.notEqual(again[1].children[0],oldSummary);
   assert.equal(document.activeElement,again[1].children[0]);
   assert.equal(again[1].children[0].getAttribute('open'),null);
   assert.equal(oldSummary.isConnected,false);
   reps[0].open=false;reps[0].listeners.toggle();data={...detail,goal:'Changed again'};await invoke('route()');
-  assert.equal(all(elements.view).filter(n=>n.tagName==='details')[0].attrs.open,undefined);
+  assert.equal(all(elements.view).filter(n=>n.tagName==='details'&&!(n.attrs.class||'').includes('raw'))[0].attrs.open,undefined);
   data=detail;
   assert.equal(find(elements.view,'steps').length,0);assert(elements.view.textContent.includes('Chưa có định nghĩa quy trình.'));
   data=workflowDetail;await invoke('route()');
@@ -487,6 +498,29 @@ async function advance(polls) {
   assert.equal(stepper.children[3].attrs['aria-current'],'step');assert(stepper.textContent.includes('PO duyệt'));
   assert(elements.view.textContent.includes('Bước 4/6'));
   assert.equal(find(stepper,'done').length,3);
+  // TASK-132: timeline rows, review rounds, changed files and the empty state.
+  data=timelineDetail;await invoke('route()');
+  const tl=find(elements.view,'tl')[0];assert.equal(tl.tagName,'ol');assert.equal(tl.children.length,6);
+  const tlText=tl.children.map(n=>n.textContent);
+  assert(tlText[0].startsWith('02/11 · 16:29')&&tlText[0].includes('plan')&&tlText[0].includes('0 giây'));
+  assert(tlText[1].includes('◇ PO duyệt')&&tlText[1].includes('2 phút 3 giây'));
+  assert(tlText[3].includes('✕ Có vòng FAIL')&&tlText[3].includes('Vòng 2')&&tlText[3].includes('reviewer · 18:10'));
+  assert(tlText[4].includes('Auto accept: review PASS'));
+  assert(tlText[5].includes('● Đang chạy')&&tlText[5].includes('đang chạy · 12 phút 40 giây')&&tlText[5].includes('Tính đến 18:23'));
+  const rounds=all(tl).filter(n=>n.tagName==='details');assert.equal(rounds.length,3);
+  assert.equal(rounds[0].attrs.open,undefined);assert.equal(rounds[1].attrs.open,'');assert.equal(rounds[2].attrs.open,undefined);
+  assert(rounds[0].textContent.includes('<b>x</b>'));assert.equal(all(tl).filter(n=>n.tagName==='b').length,0);
+  assert.equal(all(tl).filter(n=>n.tagName==='progress'&&n.attrs['aria-hidden']==='true').length,4);
+  assert.equal(find(tl,'mk').filter(n=>n.attrs.class.includes('memo'))[0].attrs['aria-hidden'],'true');
+  const raw=find(elements.view,'raw')[0];assert.equal(raw.tagName,'details');assert.equal(raw.attrs.open,undefined);assert(raw.children[0].textContent==='Văn bản gốc');
+  assert(elements.view.textContent.includes('Tệp đã đổi · 3'));
+  const fileItems=find(elements.view,'files')[0].children;assert.equal(fileItems[0].children[0].textContent,'src/omi/board/web/');assert.equal(fileItems[0].children[1].textContent,'app.js');
+  assert.equal(fileItems[2].children[0].textContent,'');assert.equal(fileItems[2].children[1].textContent,'README.md');
+  data=noFilesDetail;await invoke('route()');assert(!elements.view.textContent.includes('Tệp đã đổi'));assert.equal(find(elements.view,'tl').length,1);
+  data={...noFilesDetail,files:undefined};await invoke('route()');assert(!elements.view.textContent.includes('Tệp đã đổi'));
+  data=noStepsDetail;await invoke('route()');assert.equal(find(elements.view,'tl').length,0);
+  assert(elements.view.textContent.includes('Chưa có bước nào được ghi'));assert.equal(find(elements.view,'raw').length,1);
+  data=workflowDetail;await invoke('route()');assert(elements.view.textContent.includes('Chưa có bước nào được ghi'));
   data={...workflowDetail,current_step:'unknown',frontmatter:{...frontmatter,step:'unknown'}};await invoke('route()');
   assert(!elements.view.textContent.includes('Bước 0/'));
   assert(elements.view.textContent.includes('Không xác định bước hiện tại.'));
@@ -813,6 +847,8 @@ catch(e) {
       tokens:{...base,has_prices:false,tasks:tasks.map(t=>({...t,cost:null})),totals:row({tokens:600,cost:null})},
       partial:{...base,has_prices:true,totals:row({tokens:600,cost:null})}};
     let costMode='priced';
+    let timelineMode=null,release=null,timelineHold=null;
+    const timelineFixture={full:timelineDetail,'no-files':noFilesDetail,'no-steps':noStepsDetail,loading:timelineDetail};
     const gnode=(id,title,status,layer,o={})=>({id,title,status,layer,depends:[],blocks:[],waiting:[],blocked_by:[],critical:false,...o});
     const gnodes=[gnode('TASK-124','Nguồn dữ liệu board','done',1,{blocks:['TASK-115'],critical:true}),
       gnode('TASK-126','Lược đồ trạng thái','done',1,{blocks:['TASK-127']}),
@@ -840,9 +876,10 @@ catch(e) {
         return route.abort();
       }
       if(url.pathname.startsWith('/api/')) {
+        if(timelineMode==='loading'&&url.pathname.endsWith('/tasks/TASK-115')) await timelineHold;
         if(url.pathname==='/api/projects/omi/graph') return route.fulfill({json:graphFixture[graphMode]});
         if(url.pathname==='/api/projects/omi/cost') return route.fulfill({json:{...costFixture[costMode],source:remoteSource}});
-        const data=url.pathname.endsWith('/version')?{sha:remoteSource.sha}:url.pathname.endsWith('/tasks/TASK-115')?workflowDetail:url.pathname==='/api/projects/omi'?(alertsOn?{...hierarchy,alerts:alertFixture.slice(0,alertsOn)}:hierarchy):{projects:[summary],source:remoteSource,inbox:inboxFixture};
+        const data=url.pathname.endsWith('/version')?{sha:remoteSource.sha}:url.pathname.endsWith('/tasks/TASK-115')?(timelineMode&&timelineFixture[timelineMode]||workflowDetail):url.pathname==='/api/projects/omi'?(alertsOn?{...hierarchy,alerts:alertFixture.slice(0,alertsOn)}:hierarchy):{projects:[summary],source:remoteSource,inbox:inboxFixture};
         return route.fulfill({json:data});
       }
       const name=url.pathname==='/'?'index.html':url.pathname.slice(1);
@@ -927,11 +964,11 @@ catch(e) {
           assert.equal(await page.locator('.steps li').count(),6);
           assert.deepEqual(await page.locator('.steps [aria-current="step"] .sn').allTextContents(),['4']);
           assert(await page.locator('#view').innerText().then(text=>text.includes('Bước 4/6')));
-          assert.equal(await page.locator('details').first().getAttribute('open'),'');
-          const marker=()=>page.locator('details summary').first().evaluate(n=>getComputedStyle(n,'::before').content);
+          assert.equal(await page.locator('details:not(.raw)').first().getAttribute('open'),'');
+          const marker=()=>page.locator('details:not(.raw) summary').first().evaluate(n=>getComputedStyle(n,'::before').content);
           assert.equal(await marker(),'"▾"');
-          await page.locator('summary').first().focus();await page.keyboard.press('Enter');
-          assert.equal(await page.locator('details').first().getAttribute('open'),null);
+          await page.locator('details:not(.raw) summary').first().focus();await page.keyboard.press('Enter');
+          assert.equal(await page.locator('details:not(.raw)').first().getAttribute('open'),null);
           assert.equal(await marker(),'"▸"');
         }
         if(pageName!=='projects') {
@@ -1151,10 +1188,46 @@ catch(e) {
         }
       }
     }
+    // TASK-132: task timeline at desktop and phone width (full, no files, no steps, loading), one screenshot per mockup screen.
+    for(const mode of ['full','no-files','no-steps','loading']) {
+      timelineMode=mode;
+      for(const width of [1280,390]) {
+        await page.setViewportSize({width,height:900});
+        if(mode==='loading') timelineHold=new Promise(r=>{release=r;});
+        await page.goto(`http://omi.test/?timeline=${mode}&width=${width}#/p/omi`);
+        await page.locator('h1').waitFor();
+        await page.evaluate(()=>{location.hash='#/p/omi/t/TASK-115';});
+        if(mode==='loading') {
+          const busy=page.locator('section[aria-busy="true"]');await busy.waitFor();
+          assert.equal(await busy.locator('[role="status"]').innerText(),'Đang tải…');
+        } else {
+          await page.locator('#status').filter({hasText:'Cập nhật lần cuối'}).waitFor();
+          await page.locator(mode==='no-steps'?'.empty-box':'.tl').waitFor();
+          assert.equal(await page.locator('.tl').count(),mode==='no-steps'?0:1);
+          assert.equal(await page.locator('.files').count(),mode==='full'?1:0);
+          assert.equal(await page.locator('details.raw').count(),1);
+          if(mode!=='no-steps') {
+            assert.equal(await page.locator('.tl progress[aria-hidden="true"]').count(),4);
+            assert.equal(await page.locator('.tl details[open]').count(),1);
+            assert((await page.locator('.tl').innerText()).includes('đang chạy · 12 phút 40 giây'));
+          }
+        }
+        assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`overflow timeline ${mode} ${width}`);
+        assert.equal(await page.locator('#view script, #view img').count(),0);
+        if(screens) await page.screenshot({path:path.join(screens,`timeline-${mode}-${width}.png`),fullPage:true});
+        await page.evaluate(axeSource);await audit(`timeline ${mode} ${width} light`);
+        await page.emulateMedia({colorScheme:'dark'});await audit(`timeline ${mode} ${width} dark`);
+        await page.emulateMedia({colorScheme:'light'});
+        if(mode==='loading') release();
+      }
+    }
+    timelineMode=null;
     graphMode='full';
     if(screens) {
       for(const name of ['projects','dashboard','task']) for(const width of [320,360,390,768,1280])
         assert(fs.statSync(path.join(screens,`${name}-${width}.png`)).size>0);
+      for(const mode of ['full','no-files','no-steps','loading']) for(const width of [1280,390])
+        assert(fs.statSync(path.join(screens,`timeline-${mode}-${width}.png`)).size>0);
       for(const name of ['graph-375','graph-1280','graph-cycle-1280','graph-empty-1280','graph-empty-375'])
         assert(fs.statSync(path.join(screens,`${name}.png`)).size>0);
     }

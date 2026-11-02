@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ..common import core
 from ..project import tasks, workflows
-from . import source
+from . import source, timeline
 
 
 STATUSES = ("planned", "in-progress", "review", "blocked", "done")
@@ -79,7 +79,9 @@ def _detail(snap: source.Snapshot, root: Path, id: str, text: str) -> dict:
             "criteria": [{"text": m[2], "checked": m[1].lower() == "x"}
                          for m in re.finditer(r"^- \[([ xX])\] (.*)$", _section(text, "Acceptance criteria"), re.M)],
             "checkpoint": tasks.checkpoint(text), "steps": _section(text, "Steps"),
-            "reports": _section(text, "Reports"), "usage": _usage(text)}
+            "reports": _section(text, "Reports"), "usage": _usage(text),
+            "timeline": timeline.build(_section(text, "Steps"), _section(text, "Reports"), _now()),
+            "files": core.split(meta.get("files"))}
 
 
 def _inbox(t: dict) -> list[dict]:

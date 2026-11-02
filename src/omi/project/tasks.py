@@ -331,6 +331,9 @@ def step(root, tid, action, why=None, now=None, to=None):
         project.code, "rev-parse", "--verify", "-q", f"refs/heads/task/{tid}") else None
     if behind is not None and behind.isdigit():  # read by the board's branch-lag alert
         text = set_front(text, "behind", behind)
+        diff = core.git(project.code, "diff", "--name-only", f"development...task/{tid}")  # read by the board's changed-files list
+        if diff is not None:
+            text = set_front(text, "files", ", ".join(diff.splitlines()))
     task.write_text(text, encoding="utf-8", newline="\n")
     print(msg)
     if not project.detached and task == Path(root) / ".omi" / "tasks" / f"{tid}.md":  # the task branch's copy is committed with the branch
