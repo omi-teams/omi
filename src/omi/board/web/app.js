@@ -450,6 +450,54 @@ function taskUsage(usage) {
     el("dd", `${num(usage.runs)} lượt · Output: ${num(usage.output ?? usage.rows.reduce((n, r) => n + (/^\d+$/.test(r.output) ? Number(r.output) : 0), 0))}`)]));
   return list;
 }
+const TL_STATE = {done: ["✓ Xong", "done"], running: ["● Đang chạy", "working"], skipped: ["Bỏ qua", "planned"]};
+const TL_VERDICT = {DONE: ["✓ DONE", "done"], PASS: ["✓ PASS", "done"], FAIL: ["✕ FAIL", "blocked"], BLOCKED: ["BLOCKED", "blocked"], "NEEDS SCOPE": ["NEEDS SCOPE", "warn"]};
+const TL_MARK = {done: "✓", running: "●", skipped: "–", fail: "✕", memo: "·"};
+function tlWhen(stamp) {
+  const m = /^\d{4}-(\d\d)-(\d\d) (\d\d:\d\d)/.exec(stamp || "");
+  return m ? `${m[2]}/${m[1]} · ${m[3]}` : "";
+}
+function tlRow(id, r, now) {
+  const when = el("span", tlWhen(r.start), {class: "when"});
+  if (r.kind === "note") return el("li", null, {class: "tl-note"}, [when, el("span", "·", {class: "mk memo", "aria-hidden": "true"}), box("ev", [el("span", r.text, {class: "small muted"})])]);
+  const kind = r.fail ? "fail" : r.state;
+  const [label, tone] = TL_STATE[r.state];
+  const top = [el("span", r.name, {class: "name"}), ...(r.po ? [chip("◇ PO duyệt", "warn")] : []), ...(r.fail ? [chip("✕ Có vòng FAIL", "blocked")] : []), chip(label, tone),
+    el("span", r.state === "running" ? `đang chạy · ${r.duration}` : r.duration, {class: "dur"})];
+  const rounds = (r.rounds || []).map((x) => {
+    const [vl, vt] = TL_VERDICT[x.verdict] || [x.verdict || "—", "planned"];
+    return disclosure(`round:${id}:${r.name}:${x.stamp}:${x.n}`, el("summary", null, {}, [el("span", `Vòng ${x.n}`, {class: "name"}),
+      el("span", `${x.role} · ${x.stamp.slice(11, 16)}`, {class: "small muted"}), chip(vl, vt)]), [pre(x.body)], x.open, "round");
+  });
+  return el("li", null, {}, [when, el("span", TL_MARK[kind], {class: `mk ${kind}`, "aria-hidden": "true"}), box("ev", [box("tl-top", top),
+    ...(r.percent ? [el("progress", null, {class: "track bar-t", max: "100", value: String(r.percent), "aria-hidden": "true"})] : []),
+    ...(r.state === "running" ? [el("p", `Tính đến ${now}, cập nhật khi làm mới board.`, {class: "small muted"})] : []), ...rounds])]);
+}
+function timelineSection(id, d) {
+  const t = d.timeline || {rows: []};
+  const raw = disclosure(`raw:${id}`, el("summary", "Văn bản gốc"), [pre(d.steps)], false, "panel raw");
+  if (!t.rows.length) return [section("Dòng thời gian", [el("div", null, {class: "empty-box"}, [el("p", "Chưa có bước nào được ghi", {class: "strong"}),
+    el("p", "Dòng thời gian xuất hiện khi omi step ghi dòng “started” đầu tiên vào mục ## Steps của task.", {class: "muted small"})])], null, "panel", "tl-h"), raw];
+  const s = t.summary;
+  return [section("Dòng thời gian", [box("sum", [el("span", `Tổng thời gian: ${t.summary.duration}`),
+    el("span", `Bước: ${s.steps} (${s.done} xong${s.running ? `, ${s.running} đang chạy` : ""})`),
+    ...(s.rounds ? [el("span", `Review: ${s.rounds} vòng${s.fails ? ` · ${s.fails} FAIL` : ""}`)] : [])]),
+    el("ol", null, {class: "tl"}, t.rows.map((r) => tlRow(id, r, t.now)))], "Giờ địa phương · cũ → mới", "panel", "tl-h"), raw];
+}
+function filesSection(files) {
+  if (!files?.length) return [];
+  const panel = section(`Tệp đã đổi · ${files.length}`, [el("ul", null, {class: "files mono"}, files.map((f) => {
+    const cut = f.lastIndexOf("/") + 1;
+    return el("li", null, {}, [el("span", f.slice(0, cut), {class: "dir"}), el("span", f.slice(cut))]);
+  }))], null, "panel", "files-h");
+  panel.children[0].append(el("span", null, {class: "muted small"}, [el("span", "Ghi bởi "), el("code", "omi step"), el("span", " · so với development")]));
+  return [panel];
+}
+function timelineLoading() {
+  return el("section", null, {class: "panel", "aria-busy": "true", "aria-labelledby": "tl-h"}, [el("h2", "Dòng thời gian", {id: "tl-h"}),
+    el("p", "Đang tải…", {class: "muted small", role: "status"}),
+    ...["", " short", ""].map((c) => el("div", null, {class: `skeleton${c}`, "aria-hidden": "true"}))]);
+}
 function taskPage(name, id, d) {
   const f = d.frontmatter;
   const criteria = el("ul", null, {class: "crit"}, d.criteria.map((c) => el("li", null, {}, [
@@ -478,7 +526,7 @@ function taskPage(name, id, d) {
     workflow(d), box("layout", [box("main", [
       section("Mục tiêu", [el("p", d.goal || "—", {class: "goal"})]),
       section("Tiêu chí nghiệm thu", [criteria], `${d.criteria.filter((c) => c.checked).length}/${d.criteria.length} xong`),
-      section("Checkpoint", [pre(d.checkpoint)]), section("Các bước", [pre(d.steps)]),
+      section("Checkpoint", [pre(d.checkpoint)]), ...timelineSection(id, d).slice(0, 1), ...filesSection(d.files), ...timelineSection(id, d).slice(1),
       section(`Báo cáo (${reports.length})`, reports.length ? reports : [empty("Chưa có báo cáo.")])]),
     el("aside", null, {class: "side"}, [section("Thông tin", [meta]), section("Sử dụng", [taskUsage(d.usage)],
       `${num(d.usage.runs)} lượt · ${num(d.usage.review_rounds)} vòng review`)])])];
@@ -741,7 +789,7 @@ async function route(button = null) {
     if (changed) {
       filterUI = null;
       view.replaceChildren(heading(isInbox ? "Hộp thư PO" : costs ? "Chi phí và quota" : graph ? "Đồ thị phụ thuộc" : id || name || "Dự án"),
-      ...(name && !id && !costs && !graph ? filterWorkspace(name, [], true) : [el("div", null, {class: "skeleton", "aria-hidden": "true"}), el("p", "Đang tải…")]));
+      ...(name && !id && !costs && !graph ? filterWorkspace(name, [], true) : id ? [timelineLoading()] : [el("div", null, {class: "skeleton", "aria-hidden": "true"}), el("p", "Đang tải…")]));
     }
     const path = name ? `/api/projects/${enc(name)}${id ? "/tasks/" + enc(id) : costs ? "/cost" : graph ? "/graph" : ""}` : "/api/projects";
     const response = await fetch(path, {cache: "no-store", signal: abort.signal});

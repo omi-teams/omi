@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import helpers
 from helpers import git
-from omi.board import data, source
+from omi.board import data, source, timeline
 
 
 def write(path, text):
@@ -571,6 +571,58 @@ def test_inbox_aggregation() -> None:
         assert before == {f: f.read_bytes() for f in before}
 
 
+STEPS = """- plan started 2026-11-02 16:29
+- plan done 2026-11-02 16:29
+- approve started 2026-11-02 16:30
+PO approval approve: ok
+- approve done 2026-11-02 16:32:03
+- build started 2026-11-02 16:41
+- build done 2026-11-02 17:46
+- review started 2026-11-02 17:46
+- review done 2026-11-02 18:11
+Auto accept: review PASS
+- qa started 2026-11-02 18:11"""
+REPORTS = """2026-11-02 17:40 omi-agent-engineer (claude):
+> DONE
+> Tests ok
+2026-11-02 17:41 hook post-run passed:
+> ok
+2026-11-02 18:01 omi-agent-reviewer (claude):
+> FAIL
+> file:line - bug
+2026-11-02 18:10 omi-agent-reviewer (claude):
+> VERDICT: PASS
+2026-11-01 10:00 omi-agent-designer-ui (claude):
+> BLOCKED needs input"""
+
+
+def test_timeline() -> None:
+    assert [timeline.duration(s) for s in (0, 59, 61, 3600, 3723, 7200 + 59)] == ["0 giây", "59 giây", "1 phút 1 giây", "1 giờ", "1 giờ 2 phút", "2 giờ"]
+    t = timeline.build(STEPS, REPORTS, data.datetime(2026, 11, 2, 18, 23, 40))
+    rows = t["rows"]
+    assert [r.get("name", r.get("text")) for r in rows] == ["plan", "approve", "PO approval approve: ok", "build", "review", "Auto accept: review PASS", "qa"]
+    by = {r["name"]: r for r in rows if r["kind"] == "step"}
+    assert by["plan"]["duration"] == "0 giây" and by["approve"]["duration"] == "2 phút 3 giây" and by["approve"]["po"] and not by["plan"]["po"]
+    assert by["build"]["duration"] == "1 giờ 5 phút" and by["build"]["percent"] == 100
+    assert by["qa"]["state"] == "running" and by["qa"]["duration"] == "12 phút 40 giây" and t["now"] == "18:23"
+    note = next(r for r in rows if r.get("text") == "Auto accept: review PASS")
+    assert note["kind"] == "note" and note["start"] == "2026-11-02 18:11"
+    assert [(x["n"], x["role"], x["verdict"], x["open"]) for x in by["build"]["rounds"]] == [(1, "engineer", "DONE", False)]
+    assert [(x["n"], x["verdict"], x["open"]) for x in by["review"]["rounds"]] == [(1, "FAIL", True), (2, "PASS", False)]
+    assert by["review"]["fail"] and not by["build"]["fail"] and by["review"]["rounds"][0]["body"] == "FAIL\nfile:line - bug"
+    assert t["summary"]["steps"] == 5 and t["summary"]["running"] == 1 and t["summary"]["rounds"] == 3 and t["summary"]["fails"] == 1
+    empty = timeline.build("", "", data.datetime(2026, 11, 2))
+    assert empty["rows"] == [] and empty["summary"]["steps"] == 0
+
+
+def test_task_detail_files() -> None:
+    text = "---\nid: TASK-001\nfiles: src/a.py, tests/b.py\n---\n## Steps\n- build started 2026-11-02 16:00\n"
+    snap = type("S", (), {"paths": set()})()
+    detail = data._detail(snap, Path("p"), "TASK-001", text)
+    assert detail["files"] == ["src/a.py", "tests/b.py"] and detail["timeline"]["rows"][0]["name"] == "build"
+    assert data._detail(snap, Path("p"), "TASK-001", text.replace("files: src/a.py, tests/b.py\n", ""))["files"] == []
+
+
 def test_alerts() -> None:
     row = {"role": "omi-agent-reviewer", "verdict": "FAIL abc1234"}
 
@@ -669,6 +721,8 @@ def main():
     test_cost()
     test_cost_legacy_usage()
     test_cost_mixed_tools_per_task()
+    test_timeline()
+    test_task_detail_files()
     test_alerts()
     test_alerts_config()
     test_graph_layers_and_critical_path()
