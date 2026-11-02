@@ -598,7 +598,6 @@ function inboxPage(items) {
 const SVGNS = "http:" + "//www.w3.org/2000/svg"; // XML namespace id, never fetched
 const NODE = {w: 176, h: 60, dx: 224, dy: 84};
 const nodeClass = (s) => ({"in-progress": "working"}[s] || (STATUS[s] ? s : "planned"));
-const clip = (text, max) => text.length > max ? text.slice(0, max - 1) + "…" : text;
 function svg(tag, attrs, text, kids) {
   const node = document.createElementNS(SVGNS, tag);
   if (text !== undefined && text !== null) node.textContent = text;
@@ -631,8 +630,8 @@ function graphChart(name, g) {
       svg("title", {}, `${n.id} · ${n.title || "—"} · ${status}${n.critical ? " · trên đường găng" : ""}`),
       svg("rect", {x, y, width: NODE.w, height: NODE.h, rx: 8}),
       svg("text", {class: "g-id", x: x + 10, y: y + 18}, n.id),
-      svg("text", {class: "g-ti", x: x + 10, y: y + 36}, clip(n.title || "—", 22)),
-      svg("text", {class: "g-st", x: x + 10, y: y + 52}, clip(status, 25)),
+      svg("text", {class: "g-ti", x: x + 10, y: y + 36}, n.title || "—"),
+      svg("text", {class: "g-st", x: x + 10, y: y + 52}, status),
       ...(n.critical ? [svg("text", {class: "g-star", x: x + NODE.w - 20, y: y + 18, "aria-hidden": "true"}, "★")] : [])]);
   });
   return el("div", null, {class: "g-chart"}, [svg("svg", {width, height, viewBox: `0 0 ${width} ${height}`, "aria-hidden": "true", focusable: "false"}, null,
@@ -640,6 +639,17 @@ function graphChart(name, g) {
 }
 // No scope in the URL: the first active plan, else every task.
 const graphScope = (d, scope) => d.scopes[scope] ? scope : d.plans.find((p) => p.status === "active")?.id || "all";
+// Shorten node text to the box by measured width; hidden (phone) charts measure 0 and are refitted on resize.
+function fitGraph() {
+  for (const node of view.querySelectorAll(".g-ti, .g-st")) {
+    const full = node.getAttribute("data-full") ?? node.textContent;
+    node.setAttribute("data-full", full);
+    node.textContent = full;
+    let cut = full.length;
+    while (cut > 1 && node.getComputedTextLength() > NODE.w - 20) node.textContent = full.slice(0, --cut).trimEnd() + "…";
+  }
+}
+window.addEventListener("resize", () => { if (view.querySelector?.(".g-chart")) fitGraph(); });
 const idList = (ids) => ids.length ? ids.join(", ") : "không có";
 function graphItem(name, n) {
   const relations = [`Phụ thuộc: ${idList(n.depends)}`, `Chặn: ${idList(n.blocks)}`,
@@ -789,6 +799,7 @@ async function route(button = null) {
     const focusInView = !changed && view.contains(focused);
     view.replaceChildren(...nodes);
     if (loadedDashboard) carryFilters(name, filterUI.state);
+    if (graph) fitGraph();
     if (isInbox) {
       renderNotificationSettings();
       const listTitle = view.querySelectorAll("h2")[1];
