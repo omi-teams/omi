@@ -450,6 +450,10 @@ def test_round_limit_and_replan():
             put(["FAIL abc1234", "FAIL abc1234 root:new"])
             assert back(po="x") == 0 and omi.common.core.parse(task.read_text(encoding="utf-8"))["step"] == "build"
             out.truncate(0)
+            put(["FAIL abc1234 root:same", "FAIL abc1234 root:same"])  # at the limit, no override: the re-plan still goes through
+            assert back() == 0 and omi.common.core.parse(task.read_text(encoding="utf-8"))["step"] == "architect"
+            assert "REPLAN: same root cause" in out.getvalue() and "override" not in task.read_text(encoding="utf-8")
+            out.truncate(0)
             put(["FAIL abc1234", "FAIL abc1234 root:same"], override)
             assert back() == 0
             new = task.read_text(encoding="utf-8")

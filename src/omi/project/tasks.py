@@ -284,16 +284,18 @@ def step(root, tid, action, why=None, now=None, to=None, po=None):
     stamp = (now or datetime.datetime.now()).strftime("%Y-%m-%d %H:%M")
     replan = ""
     if action == "back" and cur:
-        text = round_gate(root, tid, text, po)
-        if to is None and events.get(cur) not in ("done", "skipped") and steps[at]["gate"] == "review" and failed_rounds(text) >= 2 and same_root(text, steps[at]["role"]):
-            replan = "REPLAN: same root cause"
-            to = next((s["id"] for s in steps[:at] if s["role"] == "omi-agent-architect"), None)
+        arch = next((s["id"] for s in steps[:at] if s["role"] == "omi-agent-architect"), None)
+        if to is None and events.get(cur) not in ("done", "skipped") and steps[at]["gate"] == "review" and failed_rounds(text) >= 2 \
+                and same_root(text, steps[at]["role"]):
+            replan, to = "REPLAN: same root cause", arch
             if to is None:
                 if not (po or "").strip():
                     sys.exit(f"{replan}; workflow {wid} has no architect step, ask the PO and pass --po. Nothing changed.")
                 text = add_step_log(text, f"PO replan override {cur}: {' '.join(po.split())}")
             else:
-                why = why or "same root cause"
+                why = why or "same root cause"  # a re-plan is the alternative to another build round: no round gate here
+        if not (replan and to):
+            text = round_gate(root, tid, text, po)
     if action == "reopen":
         if any(events.get(s) == "started" for s in ids):
             sys.exit(f"{tid}: a step is running; cannot reopen. Nothing changed.")
