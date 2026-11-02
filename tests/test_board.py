@@ -610,6 +610,47 @@ def test_alerts_config() -> None:
         assert data.projects()["projects"][0]["name"] == "sample"
 
 
+def graph_items(*specs):
+    return [{"id": id, "status": status, "frontmatter": {"title": id.lower(), "depends": depends, "plan": plan}}
+            for id, status, depends, plan in specs]
+
+
+def test_graph_layers_and_critical_path() -> None:
+    g = data._graph(graph_items(("A", "done", "", "P"), ("B", "done", "A", "P"), ("C", "blocked", "A, B", "P"),
+                                ("D", "planned", "C, B", "P"), ("E", "planned", "B", "P"), ("F", "planned", "", "P")))
+    assert {n["id"]: n["layer"] for n in g["nodes"]} == {"A": 1, "F": 1, "B": 2, "C": 3, "E": 3, "D": 4}
+    assert g["critical_path"] == ["A", "B", "C", "D"] and not g["cycles"] and not g["empty"]
+    assert [(e["from"], e["to"]) for e in g["edges"] if e["critical"]] == [("A", "B"), ("B", "C"), ("C", "D")]
+    c, d = (next(n for n in g["nodes"] if n["id"] == i) for i in "CD")
+    assert c["blocked_by"] == [] and c["blocks"] == ["D"] and d["waiting"] == ["C"] and d["critical"]
+    assert g["summary"] == {"tasks": 6, "layers": 4, "blocked": 1, "critical_left": 2, "critical": 4, "cycle_tasks": 0}
+    assert data._graph(graph_items(("A", "planned", "", ""), ("B", "planned", "", "")))["empty"]
+    # Dependencies outside the scope (another plan, unknown ids) do not create edges.
+    assert data._graph(graph_items(("A", "planned", "OTHER-1", "")))["empty"]
+
+
+def test_graph_cycles() -> None:
+    g = data._graph(graph_items(("A", "planned", "", ""), ("X", "planned", "Z, A", ""), ("Y", "planned", "X", ""),
+                                ("Z", "planned", "Y", ""), ("S", "planned", "S", ""), ("T", "planned", "Z", "")))
+    assert g["cycles"] == [["S", "S"], ["X", "Y", "Z", "X"]]
+    assert [n["id"] for n in g["nodes"]] == ["A", "T"] and g["summary"]["cycle_tasks"] == 4
+    assert g["nodes"][1]["layer"] == 1 and not g["empty"]
+
+
+def test_graph_view() -> None:
+    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+        home = Path(directory)
+        fixture(home)
+        remote(home)
+        view = data.graph("sample")
+        assert view["plans"] == [{"id": "PLAN-001", "title": "Plan", "status": "active"}]
+        assert set(view["scopes"]) == {"all", "PLAN-001"} and view["scopes"]["all"] == view["scopes"]["PLAN-001"]
+        graph = view["scopes"]["all"]
+        assert [(e["from"], e["to"]) for e in graph["edges"]] == [("TASK-001", "TASK-004"), ("TASK-003", "TASK-005")]
+        assert graph["summary"]["blocked"] == 1 and graph["critical_path"] == ["TASK-001", "TASK-004"]
+        assert next(n for n in graph["nodes"] if n["id"] == "TASK-005")["waiting"] == ["TASK-003"]
+
+
 def main():
     test_inbox_detection()
     test_inbox_aggregation()
@@ -630,6 +671,9 @@ def main():
     test_cost_mixed_tools_per_task()
     test_alerts()
     test_alerts_config()
+    test_graph_layers_and_critical_path()
+    test_graph_cycles()
+    test_graph_view()
 
 
 if __name__ == "__main__":

@@ -342,6 +342,115 @@ def cost(name: str) -> dict:
         "totals": _row(model_rows)})
 
 
+def _cycles(deps: dict[str, list[str]]) -> tuple[list[list[str]], set[str]]:
+    """One cycle (`A → B → A` as [A, B, A]) per strongly connected group, starting at its lowest id, and all cyclic ids."""
+    index, low, stack, on, groups = {}, {}, [], set(), []
+
+    def visit(v: str) -> None:
+        index[v] = low[v] = len(index)
+        stack.append(v)
+        on.add(v)
+        for w in deps[v]:
+            if w not in index:
+                visit(w)
+                low[v] = min(low[v], low[w])
+            elif w in on:
+                low[v] = min(low[v], index[w])
+        if low[v] == index[v]:
+            group = set()
+            while True:
+                w = stack.pop()
+                on.discard(w)
+                group.add(w)
+                if w == v:
+                    break
+            if len(group) > 1 or v in deps[v]:
+                groups.append(group)
+
+    for v in sorted(deps):
+        if v not in index:
+            visit(v)
+    result = []
+    for group in sorted(groups, key=min):
+        start = min(group)
+        path, seen = [start], {start}
+
+        def walk(v: str) -> bool:
+            for w in sorted(d for d in deps[v] if d in group):
+                if w == start:
+                    return True
+                if w not in seen:
+                    seen.add(w)
+                    path.append(w)
+                    if walk(w):
+                        return True
+                    path.pop()
+            return False
+
+        walk(start)
+        # `deps` points at prerequisites; show the chain in blocking order.
+        result.append([start, *reversed(path[1:]), start])
+    return result, set().union(*groups)
+
+
+def _graph(items: list[dict]) -> dict:
+    """Layered dependency graph of `items` (id, title, status, depends): layers, cycles, critical path."""
+    ids = {t["id"] for t in items}
+    deps = {t["id"]: sorted(d for d in set(core.split(t["frontmatter"].get("depends"))) if d in ids) for t in items}
+    cycles, cyclic = _cycles(deps)
+    layer: dict[str, int] = {}
+
+    def depth(id: str) -> int:
+        if id not in layer:
+            layer[id] = 1 + max((depth(d) for d in deps[id] if d not in cyclic), default=0)
+        return layer[id]
+
+    nodes = {t["id"]: t for t in items if t["id"] not in cyclic}
+    for id in nodes:
+        depth(id)
+    status = {t["id"]: t["status"] for t in items}
+    last = max(layer.values(), default=0)
+    critical = []
+    if last:
+        id = min(i for i in nodes if layer[i] == last)
+        while True:
+            critical.append(id)
+            before = [d for d in deps[id] if d not in cyclic and layer[d] == layer[id] - 1]
+            if not before:
+                break
+            id = min(before)
+        critical.reverse()
+    on_path = set(critical)
+    blocks = {id: [] for id in nodes}
+    for id in sorted(nodes):
+        for d in deps[id]:
+            if d in blocks:
+                blocks[d].append(id)
+    out = []
+    for id in sorted(nodes, key=lambda i: (layer[i], i)):
+        waiting = [d for d in deps[id] if d in nodes and status[d] != "done"]
+        out.append({"id": id, "title": nodes[id]["frontmatter"].get("title", ""), "status": status[id], "layer": layer[id],
+                    "depends": [d for d in deps[id] if d in nodes], "blocks": blocks[id], "waiting": waiting,
+                    "blocked_by": waiting if status[id] == "blocked" else [], "critical": id in on_path})
+    edges = [{"from": d, "to": n["id"], "critical": d in on_path and n["id"] in on_path and layer[d] == layer[n["id"]] - 1}
+             for n in out for d in n["depends"]]
+    return {"empty": not any(deps.values()), "nodes": out, "edges": edges, "cycles": cycles, "critical_path": critical,
+            "summary": {"tasks": len(out), "layers": last, "blocked": sum(n["status"] == "blocked" for n in out),
+                        "critical_left": sum(status[i] != "done" for i in critical), "critical": len(critical),
+                        "cycle_tasks": len(cyclic)}}
+
+
+def graph(name: str) -> dict:
+    """Dependency graphs per plan and for all tasks, from one immutable remote snapshot."""
+    snap = source.snapshot()
+    view = _project(snap, name)
+    items = sorted((t for ts in view["kanban"].values() for t in ts), key=lambda t: t["id"])
+    scopes = {"all": _graph(items)} | {p["id"]: _graph([t for t in items if t["frontmatter"].get("plan") == p["id"]])
+                                      for p in view["plans"]}
+    return snap.response({"name": name, "plans": [{"id": p["id"], "title": p.get("title", ""), "status": p["status"]}
+                                                  for p in view["plans"]], "scopes": scopes})
+
+
 def projects() -> dict:
     """List project summaries and their shared remote source."""
     snap = source.snapshot()
