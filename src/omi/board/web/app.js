@@ -332,8 +332,45 @@ function healthAlerts(name, alerts) {
     el("p", null, {class: "do"}, [el("b", "Việc nên làm:"), el("span", " " + a.action)])]));
   return [section(`Cảnh báo sức khỏe (${num(alerts.length)})`, [el("ul", null, {}, items)], "Việc có dấu hiệu bị kẹt", "health", "health-h")];
 }
+// Weekly report: a pure Markdown builder (d = project view, cost = /cost view, now = Date).
+function weeklyReport(name, d, cost, now) {
+  const day = (ms) => new Date(ms).toISOString().slice(0, 10);
+  const since = day(now.getTime() - 7 * 86400000);
+  const tasks = Object.values(d.kanban).flat().filter((t) => !(t.children || []).length);
+  const line = (t) => `- ${t.id}: ${String(t.frontmatter.title || "").replace(/\s+/g, " ")}`;
+  const list = (items, mapper) => items.length ? items.map(mapper) : ["- Không có."];
+  const byStatus = (s) => tasks.filter((t) => statusOf(t) === s);
+  const recent = new Set(d.activity.filter((a) => a.time && a.time.slice(0, 10) >= since).map((a) => a.id));
+  const done = byStatus("done");
+  const doneIds = new Set(done.map((t) => t.id));
+  const next = byStatus("planned").filter((t) => String(t.frontmatter.depends || "").split(/[,\s]+/).filter(Boolean).every((x) => doneIds.has(x)));
+  const decisions = d.decisions.map((x) => x.replace(/^- /, "")).filter((x) => /^\d{4}-\d\d-\d\d/.test(x) && x.slice(0, 10) >= since);
+  const t = cost.totals;
+  return [`# Báo cáo tuần: ${name}`, `Từ ${since} đến ${day(now.getTime())}`,
+    "## Việc đã xong", ...list(done.filter((x) => recent.has(x.id)), line),
+    "## Đang làm", ...list(byStatus("in-progress").concat(byStatus("review")), line),
+    "## Bị chặn", ...list(byStatus("blocked"), line),
+    "## Quyết định", ...list(decisions, (x) => `- ${x}`),
+    "## Token và chi phí (toàn dự án)", `- Token vào: ${num(t.input)}; ra: ${num(t.output)}; cache: ${num(t.cache)}; lượt chạy: ${num(t.runs)}`,
+    `- Chi phí: ${cost.has_prices ? usd(t.cost) : "Chưa có giá"}`,
+    "## Việc kế tiếp", ...list(next, line)].join("\n\n").replace(/\n\n(?=- )/g, "\n") + "\n";
+}
+async function downloadReport(name, d, button) {
+  button.disabled = true;
+  try {
+    const response = await fetch(`/api/projects/${enc(name)}/cost`, {cache: "no-store"});
+    if (!response.ok) throw new Error(String(response.status));
+    const now = new Date();
+    const href = URL.createObjectURL(new Blob([weeklyReport(name, d, await response.json(), now)], {type: "text/markdown;charset=utf-8"}));
+    const a = el("a", null, {href, download: `bao-cao-tuan-${name}-${now.toISOString().slice(0, 10)}.md`});
+    a.click();
+    URL.revokeObjectURL(href);
+  } catch (e) { showError(e); } finally { button.disabled = false; }
+}
 function dashboard(name, d) {
   const tasks = Object.values(d.kanban).flat();
+  const report = el("button", "Tải báo cáo tuần", {type: "button", class: "btn"});
+  report.addEventListener("click", () => downloadReport(name, d, report));
   const waiting = d.po_waiting.map((w) => {
     const t = tasks.find((t) => t.id === w.id);
     return box("poi", [link(w.id, taskHref(name, w.id), "mono strong"), el("span", t?.frontmatter.title || "", {class: "strong"}),
@@ -352,7 +389,7 @@ function dashboard(name, d) {
   const u = d.usage;
   return [box("heading", [box("stack", [heading(name),
     el("span", "origin/main", {class: "muted small mono"})]),
-    box("chips", [link("Chi phí và quota →", `${projectHref(name)}/cost`, "small"), link("Đồ thị phụ thuộc →", `${projectHref(name)}/graph`, "small"), chip(d.source.sha.slice(0, 7), "mono")])]),
+    box("chips", [report, link("Chi phí và quota →", `${projectHref(name)}/cost`, "small"), link("Đồ thị phụ thuộc →", `${projectHref(name)}/graph`, "small"), chip(d.source.sha.slice(0, 7), "mono")])]),
     ...healthAlerts(name, d.alerts || []),
     section(`Chờ PO (${num(d.po_waiting_count)})`, waiting.length ? waiting : [empty("Không có việc chờ PO.")], "Những việc cần anh/chị quyết", "po"),
     box("stats", stats.map(([n, label], i) => box("stat", [el("div", num(n), {class: "n"}, i === 3 ? [el("span", ` / ${num(Object.values(count).reduce((a, b) => a + b, 0))}`, {class: "denom"})] : []), el("div", label, {class: "l"})]))),

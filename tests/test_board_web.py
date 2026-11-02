@@ -378,6 +378,40 @@ async function advance(polls) {
   const unknown=invoke('home([{name:"unknown",plans:[],task_counts:{},po_waiting_count:0}])');
   assert(unknown[1].textContent.includes('Nhánh: Chưa rõ'));
   assert(!unknown[1].textContent.includes('Đồng bộ'));
+  const mk=(id,status,title,extra={})=>({...detail,id,status,frontmatter:{title,status,...extra}});
+  const weekly={...dashboard,kanban:{planned:[mk('TASK-4','planned','Việc kế tiếp',{depends:'TASK-1'}),mk('TASK-5','planned','Chờ việc khác',{depends:'TASK-3'})],
+    'in-progress':[mk('TASK-3','in-progress','Đang\nlàm')],review:[],blocked:[mk('TASK-6','blocked','Bị kẹt')],
+    done:[mk('TASK-1','done','Xong tuần này'),mk('TASK-2','done','Xong tháng trước')]},
+    activity:[{id:'TASK-1',time:'2026-11-01 10:00',text:'x'},{id:'TASK-2',time:'2026-09-01 10:00',text:'y'}],
+    decisions:['- 2026-11-02: Chọn A','- 2026-09-01: Cũ']};
+  const cost={has_prices:true,totals:{input:10,output:1234,cache:5000,runs:3,cost:1.5}};
+  window.weekly=[weekly,cost];
+  const md=invoke('weeklyReport("omi",window.weekly[0],window.weekly[1],new Date("2026-11-03T00:00:00Z"))');
+  assert.equal(md,`# Báo cáo tuần: omi
+
+Từ 2026-10-27 đến 2026-11-03
+
+## Việc đã xong
+- TASK-1: Xong tuần này
+
+## Đang làm
+- TASK-3: Đang làm
+
+## Bị chặn
+- TASK-6: Bị kẹt
+
+## Quyết định
+- 2026-11-02: Chọn A
+
+## Token và chi phí (toàn dự án)
+- Token vào: 10; ra: 1.234; cache: 5.000; lượt chạy: 3
+- Chi phí: ≈ US$1,50
+
+## Việc kế tiếp
+- TASK-4: Việc kế tiếp
+`);
+  assert(invoke('weeklyReport("omi",{kanban:{},activity:[],decisions:[]},{totals:{}},new Date())').includes('## Bị chặn\n- Không có.'));
+  assert(find(invoke('dashboard("omi",window.weekly[0])')[0],'chips')[0].children.some(n=>n.textContent==='Tải báo cáo tuần'));
   assert.equal(intervalMs,3000);
   const original=elements.view.children[0];
   const focused=find(elements.view,'pc')[0];focused.focus();
