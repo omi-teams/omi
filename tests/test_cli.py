@@ -132,6 +132,25 @@ def test_cli_correctness():
         assert omi.project.tasks.step(root, "TASK-001", "done") == 0
 
 
+def test_step_records_behind() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        omi.setup.upgrade.init(root)
+        task = root / ".omi/tasks/TASK-001.md"
+        task.parent.mkdir(parents=True, exist_ok=True)
+        task.write_text("---\nid: TASK-001\nworkflow: omi-flow-feature\n---\n## Steps\n", encoding="utf-8")
+        git(root, "add", ".")
+        git(root, "commit", "-qm", "base")
+        git(root, "branch", "-M", "development")
+        omi.project.tasks.step(root, "TASK-001", "next")
+        assert "behind:" not in task.read_text(encoding="utf-8")  # no task branch: field untouched
+        git(root, "branch", "task/TASK-001")
+        for i in range(21):
+            git(root, "commit", "-q", "--allow-empty", "-m", f"dev {i}")
+        omi.project.tasks.step(root, "TASK-001", "done")
+        assert re.search(r"^behind: 21$", task.read_text(encoding="utf-8"), re.M)
+
+
 def test_cli_characterization():
     """Pins exit code and key output of every USAGE command through `python -m omi` (no internals, no gh/docker on PATH)."""
     src = str(Path(__file__).resolve().parents[1] / "src")
@@ -407,6 +426,7 @@ def main():
     test_improve_fallback_and_validation()
     test_improve_status_count()
     test_status_phase_and_step_lines()
+    test_step_records_behind()
     test_cli_correctness()
     test_cli_characterization()
 

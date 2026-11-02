@@ -3,6 +3,7 @@
 import hashlib
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 
 from ..common import core
@@ -180,6 +181,54 @@ def _waiting(root: Path, details: list[dict]) -> list[dict]:
     return waiting
 
 
+STALE_DAYS = 3
+BEHIND_LIMIT = 20
+
+
+def _now() -> datetime:
+    return datetime.now()
+
+
+def _stale_days(snap: source.Snapshot, root: Path) -> float:
+    """`board_stale_days` from `.omi/config.json`; STALE_DAYS when absent or invalid."""
+    path = root / ".omi" / "config.json"
+    try:
+        days = json.loads(snap.read(path)).get("board_stale_days") if path in snap.paths else None
+    except (json.JSONDecodeError, AttributeError):
+        return STALE_DAYS
+    return days if isinstance(days, (int, float)) and not isinstance(days, bool) and days > 0 else STALE_DAYS
+
+
+def _alerts(details: list[dict], stale_days: float) -> list[dict]:
+    """Stuck-work flags. Activity is the newest Steps/Reports stamp (state only); branch lag is the task's `behind:` field."""
+    status = {t["id"]: t["status"] for t in details}
+    now, result = _now(), []
+    for t in details:
+        if t["status"] == "done":
+            continue
+        m, tid = t["frontmatter"], t["id"]
+
+        def add(kind: str, chip: str, reason: str, action: str) -> None:
+            result.append({"id": tid, "title": m.get("title", ""), "kind": kind, "chip": chip, "reason": reason, "action": action})
+
+        stamps = re.findall(r"\d{4}-\d\d-\d\d[ T]\d\d:\d\d", t["steps"] + "\n" + t["reports"])
+        if t["status"] == "in-progress" and stamps:
+            idle = (now - datetime.fromisoformat(max(stamps))).total_seconds() / 86400
+            if idle > stale_days:
+                add("stale", "Không hoạt động", f"Đang làm nhưng {int(idle)} ngày chưa có Steps hay commit mới (ngưỡng: {stale_days:g} ngày).",
+                    "Hỏi agent phụ trách, hoặc chuyển task về chưa bắt đầu.")
+        fails = sum(r["role"] == "omi-agent-reviewer" and r.get("verdict", "").startswith("FAIL") for r in t["usage"]["rows"])
+        if fails >= 2:
+            add("review_fail", f"Review FAIL ×{fails}", f"Đã bị review FAIL {fails} lần.", "Đọc báo cáo review gần nhất; cân nhắc chia nhỏ task.")
+        behind = str(m.get("behind", ""))
+        if behind.isdigit() and int(behind) > BEHIND_LIMIT:
+            add("behind", "Nhánh tụt hậu", f"Nhánh task chậm {behind} commit so với development (ngưỡng: {BEHIND_LIMIT}).", "Rebase nhánh lên development.")
+        blocked = [d for d in core.split(m.get("depends")) if status.get(d) == "blocked"]
+        if blocked:
+            add("blocked_dep", "Phụ thuộc bị chặn", f"Phụ thuộc {', '.join(blocked)}, task này đang bị chặn.", f"Gỡ chặn {', '.join(blocked)} trước khi bắt đầu.")
+    return result
+
+
 def project(name: str) -> dict:
     """Return a dashboard from one immutable remote snapshot."""
     snap = source.snapshot()
@@ -214,6 +263,7 @@ def _project(snap: source.Snapshot, name: str) -> dict:
             "plans": _plans(snap, root, details), "kanban": kanban,
             "task_counts": {status: len(items) for status, items in kanban.items()},
             "inbox": [item for t in details for item in _inbox(t)],
+            "alerts": _alerts(details, _stale_days(snap, root)),
             "po_waiting": waiting, "po_waiting_count": len({item["id"] for item in waiting}),
             "activity": activity, "decisions": sorted(decisions, reverse=True),
             "usage": {"tasks": {t["id"]: t["usage"] for t in details},

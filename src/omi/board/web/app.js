@@ -41,9 +41,9 @@ const chip = (text, cls) => el("span", text, {class: `chip ${cls || ""}`});
 const empty = (text) => el("p", text || "Trống", {class: "empty"});
 const heading = (text) => el("h1", text, {id: "title", tabindex: "-1"});
 const pre = (text) => el("pre", text || "—");
-function section(text, kids, note, cls) {
-  return el("section", null, {class: cls || "panel"}, [
-    box("ph", [el("h2", text), ...(note ? [el("span", note, {class: "muted small"})] : [])]), ...kids]);
+function section(text, kids, note, cls, hid) {
+  return el("section", null, {class: cls || "panel", ...(hid ? {"aria-labelledby": hid} : {})}, [
+    box("ph", [el("h2", text, hid ? {id: hid} : {}), ...(note ? [el("span", note, {class: "muted small"})] : [])]), ...kids]);
 }
 function progress(done, total) {
   return el("progress", null, {class: "track", max: String(total || 1), value: String(done || 0),
@@ -322,6 +322,16 @@ function taskResults(name, tasks, state) {
     taskTree(name, tasks.filter(t => visible.has(t.id)), activeFilters(state) ? matches : null)]),
     section("Kanban", [el("p", "Chỉ task lá · thứ tự pha cố định · cột trống thu gọn", {class: "muted small"}), board])];
 }
+function healthAlerts(name, alerts) {
+  if (!alerts.length) return [];
+  const items = alerts.map((a) => el("li", null, {class: "alert"}, [
+    box("who", [link(a.id, taskHref(name, a.id), "mono strong"), el("span", a.title, {class: "strong"}),
+      el("span", null, {class: "chip warn"}, [el("span", "⚠", {"aria-hidden": "true"}), el("span", " " + a.chip)])]),
+    link("Xem task →", taskHref(name, a.id), "go small"),
+    el("p", a.reason, {class: "why"}),
+    el("p", null, {class: "do"}, [el("b", "Việc nên làm:"), el("span", " " + a.action)])]));
+  return [section(`Cảnh báo sức khỏe (${num(alerts.length)})`, [el("ul", null, {}, items)], "Việc có dấu hiệu bị kẹt", "health", "health-h")];
+}
 function dashboard(name, d) {
   const tasks = Object.values(d.kanban).flat();
   const waiting = d.po_waiting.map((w) => {
@@ -343,6 +353,7 @@ function dashboard(name, d) {
   return [box("heading", [box("stack", [heading(name),
     el("span", "origin/main", {class: "muted small mono"})]),
     box("chips", [link("Chi phí và quota →", `${projectHref(name)}/cost`, "small"), chip(d.source.sha.slice(0, 7), "mono")])]),
+    ...healthAlerts(name, d.alerts || []),
     section(`Chờ PO (${num(d.po_waiting_count)})`, waiting.length ? waiting : [empty("Không có việc chờ PO.")], "Những việc cần anh/chị quyết", "po"),
     box("stats", stats.map(([n, label], i) => box("stat", [el("div", num(n), {class: "n"}, i === 3 ? [el("span", ` / ${num(Object.values(count).reduce((a, b) => a + b, 0))}`, {class: "denom"})] : []), el("div", label, {class: "l"})]))),
     section("Kế hoạch", [box("", d.plans.length ? d.plans.map(planRow) : [empty("Chưa có kế hoạch.")])], `${num(d.plans.length)} kế hoạch · ${num(d.plans.filter((p) => p.status === "active").length)} đang chạy`),
