@@ -571,6 +571,45 @@ def test_inbox_aggregation() -> None:
         assert before == {f: f.read_bytes() for f in before}
 
 
+def test_alerts() -> None:
+    row = {"role": "omi-agent-reviewer", "verdict": "FAIL abc1234"}
+
+    def task(id, status="in-progress", steps="- build started 2026-11-01 12:00", rows=(), **meta):
+        return {"id": id, "status": status, "steps": steps, "reports": "", "usage": {"rows": list(rows)},
+                "frontmatter": {"title": "t", **meta}}
+
+    details = [task("TASK-001"), task("TASK-002", rows=[row, row]), task("TASK-003", behind="21"), task("TASK-004", behind="20"),
+               task("TASK-005", "blocked"), task("TASK-006", "planned", depends="TASK-005"), task("TASK-007", rows=[row]),
+               task("TASK-008", "done", rows=[row, row]), task("TASK-009", "planned", steps="- x started 2020-01-01 00:00")]
+    with patch.object(data, "_now", lambda: data.datetime(2026, 11, 4, 11, 0)):  # 2d23h after the stamp
+        assert {a["id"] for a in data._alerts(details, 3)} == {"TASK-002", "TASK-003", "TASK-006"}
+        stale = data._alerts(details, 2)
+        assert [a["kind"] for a in stale if a["id"] == "TASK-001"] == ["stale"] and "ngưỡng: 2 ngày" in stale[0]["reason"]
+    kinds = {a["id"]: a["kind"] for a in data._alerts(details, 3)}
+    assert kinds["TASK-002"] == "review_fail" and kinds["TASK-003"] == "behind" and kinds["TASK-006"] == "blocked_dep"
+    assert next(a for a in data._alerts(details, 3) if a["id"] == "TASK-002")["chip"] == "Review FAIL ×2"
+    assert data._alerts([task("TASK-010", steps="")], 3) == []
+
+
+def test_alerts_config() -> None:
+    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+        home = Path(directory)
+        root = fixture(home)
+        remote(home)
+        now = data.datetime(2026, 11, 2, 12, 0)  # TASK-002 last stamp: 2026-10-29 13:00, 3d23h ago
+        with patch.object(data, "_now", lambda: now):
+            view = data.project("sample")
+            assert [(a["id"], a["kind"]) for a in view["alerts"]] == [("TASK-002", "stale"), ("TASK-005", "blocked_dep")]
+            assert "ngưỡng: 3 ngày" in view["alerts"][0]["reason"]
+            write(root / ".omi/config.json", json.dumps({"board_stale_days": 5}))
+            publish(home)
+            assert [a["kind"] for a in data.project("sample")["alerts"]] == ["blocked_dep"]
+            write(root / ".omi/config.json", "{bad")
+            publish(home)
+            assert [a["kind"] for a in data.project("sample")["alerts"]] == ["stale", "blocked_dep"]
+        assert data.projects()["projects"][0]["name"] == "sample"
+
+
 def main():
     test_inbox_detection()
     test_inbox_aggregation()
@@ -589,6 +628,8 @@ def main():
     test_cost()
     test_cost_legacy_usage()
     test_cost_mixed_tools_per_task()
+    test_alerts()
+    test_alerts_config()
 
 
 if __name__ == "__main__":

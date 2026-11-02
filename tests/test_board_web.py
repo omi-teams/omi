@@ -559,6 +559,12 @@ async function advance(polls) {
   data={projects:[summary],source:remoteSource};await elements.refresh.listeners.click();assert.equal(find(elements.view,'pc').length,1);
   data={...dashboard,po_waiting:[],plans:[],activity:[],decisions:[]};location.hash='#/p/omi';await invoke('route()');
   for(const text of ['Không có việc chờ PO.','Chưa có kế hoạch.','Chưa có hoạt động.','Chưa có quyết định.']) assert(elements.view.textContent.includes(text));
+  assert(!elements.view.textContent.includes('Cảnh báo sức khỏe'));
+  data={...data,alerts:[{id:'TASK-118',title:'<b>x</b>',kind:'stale',chip:'Không hoạt động',reason:'5 ngày (ngưỡng: 3 ngày).',action:'Hỏi agent.'}]};await invoke('route()');
+  assert(elements.view.textContent.includes('Cảnh báo sức khỏe (1)'));
+  assert(elements.view.textContent.includes('<b>x</b>') && elements.view.textContent.includes('Việc nên làm: Hỏi agent.'));
+  assert.equal(find(elements.view,'alert').length,1);
+  data={...data,alerts:[]};await invoke('route()');
   data={...data,source:{...remoteSource,stale:true}};await invoke('route()');
   assert(elements.err.textContent.startsWith('Dữ liệu cũ - không kết nối được GitHub (lúc '));
   await invoke('route()');assert(elements.err.textContent.startsWith('Dữ liệu cũ - không kết nối được GitHub'));
