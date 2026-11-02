@@ -19,7 +19,7 @@ steps:
 - accept: Coordinator; automatic after review PASS.
 
 ## Review-fail rule
-Each FAIL goes back to build with the findings. After 2 FAILs, run the next build with the architect (opus/high) advising, or switch the engineer to opus. A third FAIL: stop and ask the PO (pick-list: rescope, change approach, drop).
+Each FAIL goes back to build with the findings. Enforced in code: after `max_fix_rounds` (2) failed rounds `omi step <ID> back` and `omi run` refuse with `ROUND LIMIT` until the PO's words for this task and round are given (`--po "<words>"`, one more round; pick-list: rescope, change approach, drop). From round 2 a FAIL whose report ends `ROOT: same` prints `REPLAN: same root cause`; this workflow has no architect step, so `back` needs `--po`.
 
 ## PO gates
 `accept` is automatic: `omi step <ID> done` records `Auto accept: review PASS` under `## Steps` when every review-type step passed (or an explicit `PO approval accept:` line exists), and refuses otherwise. Use `omi-flow-feature-sensitive` (PO gate) for security-sensitive work. Merge to staging/main stays with the PO.

@@ -27,7 +27,7 @@ steps:
 - A fix that needs files outside `scope`: report `NEEDS SCOPE`.
 
 ## Review-fail rule
-Each FAIL goes back to hotfix with the findings. After 2 FAILs, prefer rollback over a third attempt and ask the PO (pick-list: rollback, rescope, change approach).
+Each FAIL goes back to hotfix with the findings. Enforced in code: after `max_fix_rounds` (2) failed rounds `omi step <ID> back` and `omi run` refuse with `ROUND LIMIT` until the PO's words for this task and round are given (`--po "<words>"`, one more round; pick-list: rescope, change approach, drop). Prefer rollback over another attempt (pick-list: rollback, rescope, change approach). From round 2 a FAIL with `ROOT: same` prints `REPLAN: same root cause` and `back` needs `--po`.
 
 ## PO gates
 `merge-prod` needs `PO approval merge-prod: <PO's words>` under `## Steps`; `omi step` refuses otherwise. The production merge, revert or redeploy is never done without it.

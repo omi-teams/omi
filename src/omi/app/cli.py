@@ -36,9 +36,9 @@ USAGE = """usage: omi <command>
   rules        validate .omi/rules and write .omi/rules/CATALOG.md (rules auto-load by task scope)
   agents       write .omi/agents/CATALOG.md (one line per role)
   workflows [--check]   write .omi/workflows/CATALOG.md (one line per workflow); --check validates every workflow
-  step <TASK-ID> next|done|back|skip|approve|reopen --why <reason>   record the task's workflow step (gates cannot be skipped; back --to <step> --why: return to an earlier agent step, e.g. architect)
+  step <TASK-ID> next|done|back|skip|approve|reopen --why <reason>   record the task's workflow step (gates cannot be skipped; back --to <step> --why: return to an earlier agent step, e.g. architect; --po "<PO's words>" allows one round past max_fix_rounds)
   note <TASK-ID> --step <step> --verdict <verdict> "<text>"   record a Coordinator decision under the task's ## Reports
-  run <role> <TASK-ID> [--model M] [--effort E] [--tool claude|codex] [--fresh]   run a role in Docker (--fresh: no engineer session resume; read roles: ro worktree, after the deterministic checks)
+  run <role> <TASK-ID> [--model M] [--effort E] [--tool claude|codex] [--fresh] [--po "<PO's words>"]   run a role in Docker (--fresh: no engineer session resume; read roles: ro worktree, after the deterministic checks)
   hook pre-run|post-run|pre-merge <TASK-ID>   run .omi/hooks/<event> (from the main checkout) in Docker against the task worktree; exits with its code
   parallel <TASK-ID> <TASK-ID> [...]   check that tasks can run in parallel (depends, status, scope overlap)
   worker <wt> <task-file> [--model M] [--effort E]   run the engineer in the Docker worker
@@ -257,17 +257,22 @@ def dispatch(argv: list[str] | None = None) -> None:
         workflows.check_all_workflows(root) if rest[:1] == ["--check"] else workflows.workflows_catalog(root)
     elif cmd == "step" and len(rest) >= 2:
         to = core.flag(rest, "--to")
-        words = [w for i, w in enumerate(rest) if not (w == "--to" and to) and not (to and i and rest[i - 1] == "--to" and w == to)]
+        po = core.flag(rest, "--po")
+        drop = {j for i, w in enumerate(rest[:-1]) if w in ("--to", "--po") for j in (i, i + 1)}
+        words = [w for i, w in enumerate(rest) if i not in drop]
         why = " ".join(words[words.index("--why") + 1:]) if "--why" in words else None
         if "--to" in rest and (rest[1] != "back" or not to or to.startswith("--")):
             sys.exit(f"usage: omi step {rest[0]} back --to <step> --why <reason>. Nothing changed.")
-        sys.exit(tasks.step(state.resolve(core.main_checkout(".") or Path(".").resolve()), rest[0], rest[1], why, to=to))
+        sys.exit(tasks.step(state.resolve(core.main_checkout(".") or Path(".").resolve()), rest[0], rest[1], why, to=to, po=po))
     elif cmd == "note" and rest:
         step_id, verdict = core.flag(rest, "--step"), core.flag(rest, "--verdict")
         words = [w for i, w in enumerate(rest[1:]) if w not in ("--step", "--verdict") and rest[i] not in ("--step", "--verdict")]
         tasks.note(state.resolve(core.main_checkout(".") or Path(".").resolve()), rest[0], step_id, verdict, " ".join(words))
     elif cmd == "run" and len(rest) >= 2 and not rest[1].startswith("--"):
-        tasks.check_runnable(state.resolve(core.main_checkout(".") or Path(".").resolve()), rest[1])
+        project = state.resolve(core.main_checkout(".") or Path(".").resolve())
+        tasks.check_runnable(project, rest[1])
+        if catalogs.get_role(project.state, rest[0])["access"] == "write":
+            tasks.run_gate(project, rest[1], core.flag(rest, "--po"))
         sys.exit(run.run_cmd(rest[0], rest[1], rest))
     elif cmd == "hook" and len(rest) == 2:
         sys.exit(hooks.hook_cmd(*rest))
