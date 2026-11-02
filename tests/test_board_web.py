@@ -813,6 +813,21 @@ catch(e) {
       tokens:{...base,has_prices:false,tasks:tasks.map(t=>({...t,cost:null})),totals:row({tokens:600,cost:null})},
       partial:{...base,has_prices:true,totals:row({tokens:600,cost:null})}};
     let costMode='priced';
+    const gnode=(id,title,status,layer,o={})=>({id,title,status,layer,depends:[],blocks:[],waiting:[],blocked_by:[],critical:false,...o});
+    const gnodes=[gnode('TASK-124','Nguồn dữ liệu board','done',1,{blocks:['TASK-115'],critical:true}),
+      gnode('TASK-126','Lược đồ trạng thái','done',1,{blocks:['TASK-127']}),
+      gnode('TASK-115','Dashboard dự án','in-progress',2,{depends:['TASK-124'],blocks:['TASK-130'],critical:true}),
+      gnode('TASK-127','Thông báo trình duyệt cho mọi người dùng bảng điều khiển','review',2,{depends:['TASK-126'],blocks:['TASK-131']}),
+      gnode('TASK-130','Cảnh báo sức khỏe','blocked',3,{depends:['TASK-115'],blocks:['TASK-131'],waiting:['TASK-115'],blocked_by:['TASK-115'],critical:true}),
+      gnode('TASK-131','Biểu đồ phụ thuộc','planned',4,{depends:['TASK-130','TASK-127'],waiting:['TASK-130','TASK-127'],critical:true})];
+    const gedges=[['TASK-124','TASK-115',1],['TASK-126','TASK-127',0],['TASK-115','TASK-130',1],['TASK-130','TASK-131',1],['TASK-127','TASK-131',0]].map(([from,to,critical])=>({from,to,critical:!!critical}));
+    const ggraph={empty:false,nodes:gnodes,edges:gedges,cycles:[],critical_path:['TASK-124','TASK-115','TASK-130','TASK-131'],
+      summary:{tasks:6,layers:4,blocked:1,critical:4,critical_left:3,cycle_tasks:0}};
+    const gscopes=(graph)=>({source:remoteSource,name:'omi',plans:[{id:'PLAN-007',title:'Đồ thị',status:'active'}],scopes:{all:graph,'PLAN-007':graph}});
+    const graphFixture={full:gscopes(ggraph),
+      cycle:gscopes({...ggraph,cycles:[['TASK-140','TASK-141','TASK-142','TASK-140']],summary:{...ggraph.summary,cycle_tasks:3}}),
+      empty:gscopes({empty:true,nodes:[],edges:[],cycles:[],critical_path:[],summary:{tasks:2,layers:1,blocked:0,critical:1,critical_left:1,cycle_tasks:0}})};
+    let graphMode='full';
     const alertFixture=[['stale','Không hoạt động'],['review_fail','Review FAIL ×2'],['behind','Nhánh tụt hậu'],['blocked_dep','Phụ thuộc bị chặn']]
       .map(([kind,chip],i)=>({id:`TASK-11${i}`,title:`Việc ${i}`,kind,chip,reason:'Lý do (ngưỡng: 3 ngày).',action:'Hỏi agent phụ trách.'}));
     let alertsOn=0;
@@ -825,6 +840,7 @@ catch(e) {
         return route.abort();
       }
       if(url.pathname.startsWith('/api/')) {
+        if(url.pathname==='/api/projects/omi/graph') return route.fulfill({json:graphFixture[graphMode]});
         if(url.pathname==='/api/projects/omi/cost') return route.fulfill({json:{...costFixture[costMode],source:remoteSource}});
         const data=url.pathname.endsWith('/version')?{sha:remoteSource.sha}:url.pathname.endsWith('/tasks/TASK-115')?workflowDetail:url.pathname==='/api/projects/omi'?(alertsOn?{...hierarchy,alerts:alertFixture.slice(0,alertsOn)}:hierarchy):{projects:[summary],source:remoteSource,inbox:inboxFixture};
         return route.fulfill({json:data});
@@ -1079,12 +1095,71 @@ catch(e) {
         await page.emulateMedia({colorScheme:'light'});
       }
     }
+    // TASK-131: dependency graph (wide SVG + list, phone list only, cycle banner, empty state).
+    await page.setViewportSize({width:1280,height:900});
+    await page.goto('http://omi.test/#/p/omi');
+    assert.equal(await page.getByRole('link',{name:'Đồ thị phụ thuộc →'}).getAttribute('href'),'#/p/omi/graph');
+    for(const mode of ['full','cycle','empty']) {
+      graphMode=mode;
+      for(const width of mode==='full'?[320,375,768,1280]:[375,1280]) {
+        await page.setViewportSize({width,height:900});
+        await page.goto(`http://omi.test/?graph=${mode}&width=${width}#/p/omi/graph/PLAN-007`);
+        await page.locator(mode==='empty'?'.g-blank':'.g-summary').waitFor();
+        assert.equal(await page.locator('h1').innerText(),'Đồ thị phụ thuộc');
+        assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`overflow graph ${mode} ${width}`);
+        assert.equal(await page.locator('[style]').count(),0);
+        assert.equal(await page.locator('#view script, #view img, #view foreignObject').count(),0);
+        assert.equal(await page.locator('.g-plans a').allInnerTexts().then(a=>a.join('|')),'PLAN-007|Tất cả');
+        assert.equal(await page.locator('.g-plans [aria-current="page"]').innerText(),'PLAN-007');
+        if(mode==='empty') {
+          assert.equal(await page.locator('svg').filter({has:page.locator('.g-node')}).count(),0);
+          assert((await page.locator('.g-blank').innerText()).includes('Chưa có task nào khai báo phụ thuộc.'));
+        } else {
+          const wide=width>=768;
+          assert.equal(await page.locator('.g-wide').isVisible(),wide,`graph svg visibility ${width}`);
+          assert.equal(await page.locator('.g-wide').getAttribute('aria-hidden'),'true');
+          assert.equal(await page.locator('.g-it').count(),6);
+          assert.equal(await page.locator('.g-it.crit').count(),4);
+          assert.equal(await page.locator('.g-it.blocked').count(),1);
+          const list=await page.locator('.g-layers').innerText();
+          assert(list.includes('Bị chặn bởi: TASK-115') && list.includes('Đang chờ: TASK-130, TASK-127') && list.includes('Tầng 4'));
+          assert.equal(await page.locator('.g-summary').innerText().then(s=>s.replace(/\s+/g,' ')),'6 task 4 tầng 1 bị chặn 4 task trên đường găng (còn 3 chưa xong)');
+          assert.equal(await page.locator('.g-warn').count(),mode==='cycle'?1:0);
+          if(mode==='cycle') assert((await page.locator('.g-warn').innerText()).includes('TASK-140 → TASK-141 → TASK-142 → TASK-140'));
+          if(width<768) assert((await page.locator('.g-it .go').first().boundingBox()).height>=44,'graph touch target');
+          if(wide) {
+            assert.equal(await page.locator('.g-node').count(),6);
+            assert.equal(await page.locator('.g-edge').count(),5);
+            assert.equal(await page.locator('.g-edge.crit').count(),3);
+            assert.equal(await page.locator('.g-node.blocked rect').evaluate(n=>getComputedStyle(n).strokeDasharray!=='none'),true);
+            const fits=await page.locator('.g-ti, .g-st').evaluateAll(nodes=>nodes.every(n=>n.getBBox().width<=160));
+            assert(fits,'graph node text stays inside the box');
+            assert.equal(await page.locator('.g-ti').filter({hasText:'…'}).count(),1);
+          }
+        }
+        await page.evaluate(axeSource);await audit(`graph ${mode} ${width} light`);
+        await page.emulateMedia({colorScheme:'dark'});await audit(`graph ${mode} ${width} dark`);
+        await page.emulateMedia({colorScheme:'light'});
+        if(screens) await page.screenshot({path:path.join(screens,`graph-${mode==='full'?'':mode+'-'}${width}.png`),fullPage:true});
+        if(mode==='full'&&width===1280) {
+          await page.locator('.g-plans a').last().click();
+          await page.waitForFunction(()=>location.hash==='#/p/omi/graph/all');
+          await page.locator('.g-plans [aria-current="page"]').filter({hasText:'Tất cả'}).waitFor();
+          await page.locator('a.g-node').filter({hasText:'TASK-115'}).click();
+          await page.waitForFunction(()=>location.hash==='#/p/omi/t/TASK-115');
+          await page.locator('.layout').waitFor();
+        }
+      }
+    }
+    graphMode='full';
     if(screens) {
       for(const name of ['projects','dashboard','task']) for(const width of [320,360,390,768,1280])
         assert(fs.statSync(path.join(screens,`${name}-${width}.png`)).size>0);
+      for(const name of ['graph-375','graph-1280','graph-cycle-1280','graph-empty-1280','graph-empty-375'])
+        assert(fs.statSync(path.join(screens,`${name}.png`)).size>0);
     }
     assert.deepEqual(errors,[]);
-    console.log('ok: browser layouts at 320/360/390/768/1280px, inbox at 320/375/1280px and 200% zoom, phone summaries, overflow disclosure, dark mode, CSP, keyboard controls, axe (light/dark), print, GET-only requests, filters/history/sharing at 320/375/768/1000/1280px');
+    console.log('ok: browser layouts at 320/360/390/768/1280px, inbox at 320/375/1280px and 200% zoom, phone summaries, overflow disclosure, dark mode, CSP, keyboard controls, axe (light/dark), print, GET-only requests, filters/history/sharing at 320/375/768/1000/1280px, dependency graph (SVG, list, cycle, empty) at 320/375/768/1280px');
   } finally { await browser.close(); }
 })().catch(e=>{console.error(e);process.exitCode=1;});
 """
