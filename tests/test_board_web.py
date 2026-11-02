@@ -815,7 +815,7 @@ catch(e) {
     let costMode='priced';
     const alertFixture=[['stale','Không hoạt động'],['review_fail','Review FAIL ×2'],['behind','Nhánh tụt hậu'],['blocked_dep','Phụ thuộc bị chặn']]
       .map(([kind,chip],i)=>({id:`TASK-11${i}`,title:`Việc ${i}`,kind,chip,reason:'Lý do (ngưỡng: 3 ngày).',action:'Hỏi agent phụ trách.'}));
-    let alertsOn=false;
+    let alertsOn=0;
     const errors=[];page.on('pageerror', e=>errors.push(e.message));
     page.on('console', msg=>{if(msg.type()==='error') errors.push(msg.text());});
     await page.route('**/*',async route=>{
@@ -826,7 +826,7 @@ catch(e) {
       }
       if(url.pathname.startsWith('/api/')) {
         if(url.pathname==='/api/projects/omi/cost') return route.fulfill({json:{...costFixture[costMode],source:remoteSource}});
-        const data=url.pathname.endsWith('/version')?{sha:remoteSource.sha}:url.pathname.endsWith('/tasks/TASK-115')?workflowDetail:url.pathname==='/api/projects/omi'?(alertsOn?{...hierarchy,alerts:alertFixture}:hierarchy):{projects:[summary],source:remoteSource,inbox:inboxFixture};
+        const data=url.pathname.endsWith('/version')?{sha:remoteSource.sha}:url.pathname.endsWith('/tasks/TASK-115')?workflowDetail:url.pathname==='/api/projects/omi'?(alertsOn?{...hierarchy,alerts:alertFixture.slice(0,alertsOn)}:hierarchy):{projects:[summary],source:remoteSource,inbox:inboxFixture};
         return route.fulfill({json:data});
       }
       const name=url.pathname==='/'?'index.html':url.pathname.slice(1);
@@ -994,25 +994,30 @@ catch(e) {
       window.localStorage.removeItem('omi-board-notifications');
       Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{window.copiedCommand=text;}}});
     });
-    alertsOn=true;
-    for(const width of [375,1280]) {
-      await page.setViewportSize({width,height:900});
-      await page.goto(`http://omi.test/?alerts=${width}#/p/omi`);
-      await page.locator('.alert').first().waitFor();
-      assert.equal(await page.locator('.alert').count(),4);
-      assert.equal(await page.locator('section.health').getAttribute('aria-labelledby'),'health-h');
-      assert.equal(await page.locator('#health-h').innerText(),'Cảnh báo sức khỏe (4)');
-      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`alerts overflow ${width}`);
-      const go=await page.locator('.alert .go').first().boundingBox();
-      if(width<768) assert(go.height>=44,`alert target ${go.height}`);
-      for(const scheme of ['light','dark']) {
-        await page.emulateMedia({colorScheme:scheme});
-        await page.evaluate(axeSource);await audit(`alerts ${width} ${scheme}`);
-        if(screens) await page.screenshot({path:path.join(screens,`alerts-${width}-${scheme}.png`),fullPage:true});
+    for(const [count,label,schemes] of [[4,'alerts',['light','dark']],[1,'alerts-one',['light','dark']],[0,'alerts-empty',['light']]]) {
+      alertsOn=count;
+      for(const width of [375,1280]) {
+        await page.setViewportSize({width,height:900});
+        await page.goto(`http://omi.test/?${label}=${width}#/p/omi`);
+        await page.locator('#status').filter({hasText:'Cập nhật lần cuối'}).waitFor();
+        assert.equal(await page.locator('.alert').count(),count);
+        assert.equal(await page.locator('section.health').count(),count?1:0);
+        assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${label} overflow ${width}`);
+        if(count) {
+          assert.equal(await page.locator('section.health').getAttribute('aria-labelledby'),'health-h');
+          assert.equal(await page.locator('#health-h').innerText(),`Cảnh báo sức khỏe (${count})`);
+          const go=await page.locator('.alert .go').first().boundingBox();
+          if(width<768) assert(go.height>=44,`alert target ${go.height}`);
+        }
+        for(const scheme of schemes) {
+          await page.emulateMedia({colorScheme:scheme});
+          await page.evaluate(axeSource);await audit(`${label} ${width} ${scheme}`);
+          if(screens) await page.screenshot({path:path.join(screens,`${label}-${width}-${scheme}.png`),fullPage:true});
+        }
+        await page.emulateMedia({colorScheme:'light'});
       }
-      await page.emulateMedia({colorScheme:'light'});
     }
-    alertsOn=false;
+    alertsOn=0;
     for(const width of [320,375,1280]) {
       await page.setViewportSize({width,height:900});
       await page.goto(`http://omi.test/?inbox=${width}#/inbox`);
