@@ -327,6 +327,10 @@ def step(root, tid, action, why=None, now=None, to=None):
         msg = f"{tid}: step {cur} skipped"
     else:
         sys.exit("usage: omi step <TASK-ID> next|done|back|skip|approve|reopen --why <reason>")
+    behind = core.git(project.code, "rev-list", "--count", f"task/{tid}..development") if core.git(
+        project.code, "rev-parse", "--verify", "-q", f"refs/heads/task/{tid}") else None
+    if behind is not None and behind.isdigit():  # read by the board's branch-lag alert
+        text = set_front(text, "behind", behind)
     task.write_text(text, encoding="utf-8", newline="\n")
     print(msg)
     if not project.detached and task == Path(root) / ".omi" / "tasks" / f"{tid}.md":  # the task branch's copy is committed with the branch
