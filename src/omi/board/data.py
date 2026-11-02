@@ -3,7 +3,7 @@
 import hashlib
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 from ..common import core
@@ -186,7 +186,7 @@ BEHIND_LIMIT = 20
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now()
 
 
 def _stale_days(snap: source.Snapshot, root: Path) -> float:

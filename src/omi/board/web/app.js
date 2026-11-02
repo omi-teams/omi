@@ -41,9 +41,9 @@ const chip = (text, cls) => el("span", text, {class: `chip ${cls || ""}`});
 const empty = (text) => el("p", text || "Trống", {class: "empty"});
 const heading = (text) => el("h1", text, {id: "title", tabindex: "-1"});
 const pre = (text) => el("pre", text || "—");
-function section(text, kids, note, cls) {
-  return el("section", null, {class: cls || "panel"}, [
-    box("ph", [el("h2", text), ...(note ? [el("span", note, {class: "muted small"})] : [])]), ...kids]);
+function section(text, kids, note, cls, hid) {
+  return el("section", null, {class: cls || "panel", ...(hid ? {"aria-labelledby": hid} : {})}, [
+    box("ph", [el("h2", text, hid ? {id: hid} : {}), ...(note ? [el("span", note, {class: "muted small"})] : [])]), ...kids]);
 }
 function progress(done, total) {
   return el("progress", null, {class: "track", max: String(total || 1), value: String(done || 0),
@@ -330,7 +330,7 @@ function healthAlerts(name, alerts) {
     link("Xem task →", taskHref(name, a.id), "go small"),
     el("p", a.reason, {class: "why"}),
     el("p", null, {class: "do"}, [el("b", "Việc nên làm:"), el("span", " " + a.action)])]));
-  return [section(`Cảnh báo sức khỏe (${num(alerts.length)})`, [el("ul", null, {}, items)], "Việc có dấu hiệu bị kẹt", "health")];
+  return [section(`Cảnh báo sức khỏe (${num(alerts.length)})`, [el("ul", null, {}, items)], "Việc có dấu hiệu bị kẹt", "health", "health-h")];
 }
 function dashboard(name, d) {
   const tasks = Object.values(d.kanban).flat();
