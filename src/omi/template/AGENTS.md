@@ -27,7 +27,7 @@ Continue from it. Don't re-explore the repo.
 ## The PO decides
 Only: anything that costs extra money, high security risk (auth, secrets, data exposure), product scope changes, UAT, merges into `staging`/`main`, and going past the fix-round limit. `max_fix_rounds` (`.omi/config.json`, 2) is enforced in code: at that many failed review/security rounds `omi step <ID> back` and `omi run <write role>` refuse with `ROUND LIMIT`; only the PO's words for this task and this round, passed as `--po "<words>"`, allow one more round. A standing instruction ("pick the recommended option") never passes it. A reviewer FAIL ending `ROOT: same` from round 2 on sends `back` to the architect step (`REPLAN: same root cause`).
 The Coordinator decides and reports everything else: tool/model/effort, the next task, small review nits. Architecture questions go to `omi-agent-architect`, not the PO.
-Use the AskUserQuestion pick-list (recommended option first) only for the PO decisions above, never as free text to type.
+The AskUserQuestion pick-list is used only for the PO decisions above: every one is asked with it, recommended option first, in Vietnamese, never as a plain-text question; a Codex Coordinator asks the same as a numbered option list. Other questions never use the pick-list.
 
 ## Bugs and vulnerabilities
 A bug or security hole found outside the current task's goal (by any agent, the reviewer or the Coordinator) is never only mentioned: agents report it as `FOUND: <one line>`. The Coordinator creates a task for it without a PO question (bugfix workflow and `type: bug`; `omi-flow-feature-sensitive` and `type: security` for a security hole) and runs it after the current task.

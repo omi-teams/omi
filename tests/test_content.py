@@ -544,7 +544,14 @@ def test_ui_mockup_generated_catalogs() -> None:
             assert (template / kind / "CATALOG.md").read_text(encoding="utf-8") == generated, f"stale template {kind} catalog"
 
 
+def test_po_decisions_use_pick_list() -> None:
+    line = next(x for x in (omi.common.core.TEMPLATE / "AGENTS.md").read_text(encoding="utf-8").splitlines() if x.startswith("The AskUserQuestion pick-list is used only"))
+    for words in ("only for the PO decisions above", "every one is asked", "AskUserQuestion pick-list", "recommended option first", "in Vietnamese", "never as a plain-text question", "numbered option list", "Other questions never use the pick-list"):
+        assert words in line, words
+
+
 def main():
+    test_po_decisions_use_pick_list()
     test_ui_mockup_contract()
     test_ui_mockup_review_contract()
     test_qa_host_criteria_do_not_fail()
