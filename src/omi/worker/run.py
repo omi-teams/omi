@@ -251,7 +251,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
     read = am["access"] == "read"
     mounts = [f"{project.state}:/state"] if project.detached else []
     problems = deterministic_checks(wt, main, task.stem) if read else []
-    if problems and role in tasks.REVIEW_ROLES:  # other read roles (architect) are consulted when checks fail
+    if problems and role in (*tasks.REVIEW_ROLES, "omi-agent-qa-tester"):  # other read roles (architect) are consulted when checks fail
         print(f"{role} not started; fix these first:\n" + "\n".join(problems))
         return 4
     image = docker.ensure_image(main)

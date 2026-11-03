@@ -283,6 +283,7 @@ def test_tool_choice_and_quota_switch():
                 assert rc == 0 and any("tests failed" in a for a in calls[0]), (rc, calls)
                 calls.clear()
                 assert omi.worker.run.run_role("omi-agent-reviewer", wt, task) == 4 and not calls
+                assert omi.worker.run.run_role("omi-agent-qa-tester", wt, task) == 4 and not calls
             finally:
                 omi.worker.run.deterministic_checks = det
             front(tool="codex", model="opus")
