@@ -430,6 +430,20 @@ def test_ui_mockup_review_contract() -> None:
     assert "name both files in the evidence" in qa
 
 
+def test_qa_host_criteria_do_not_fail() -> None:
+    agents = omi.common.core.TEMPLATE / "dot-omi" / "agents"
+    reviewer = (agents / "omi-agent-reviewer.md").read_text(encoding="utf-8")
+    qa = (agents / "omi-agent-qa-tester.md").read_text(encoding="utf-8")
+    rule = ("a criterion whose text names the host (e.g. \"on the Windows host\") cannot run in your container; "
+            "report it `HOST <criterion>`, it does not block PASS. A mixed criterion is split: verify the worker part, "
+            "mark only the host part `HOST`")
+    assert rule in reviewer
+    assert rule in qa
+    assert "citing the task's host-test row" in qa
+    assert "`RESULT` is FAIL only when an item is ✗" in qa
+    assert "AC: <criterion> ✓|✗|HOST <evidence" in qa
+
+
 def test_ui_mockup_workflow() -> None:
     with tempfile.TemporaryDirectory() as d, contextlib.redirect_stdout(io.StringIO()):
         root = Path(d).resolve()
@@ -521,6 +535,7 @@ def test_ui_mockup_generated_catalogs() -> None:
 def main():
     test_ui_mockup_contract()
     test_ui_mockup_review_contract()
+    test_qa_host_criteria_do_not_fail()
     test_ui_mockup_workflow()
     test_ui_mockup_generated_catalogs()
     test_final_po_gate_requires_completed_criteria()
