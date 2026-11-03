@@ -422,9 +422,10 @@ def test_ui_mockup_review_contract() -> None:
         agent = omi.common.core.meta(agents / f"omi-agent-{role}.md")
         assert agent["access"] == "read"
         for requirement in ("PO-approved repo HTML in `.omi/tasks/<ID>-mockup/`",
-                            "approval", "## Steps", "FAIL on clear mismatches in layout, components or colours",
-                            "cannot receive PASS"):
+                            "approval", "## Steps"):
             assert requirement in agent["_text"], (role, requirement)
+    assert "FAIL on clear mismatches in layout, components or colours" in omi.common.core.meta(
+        agents / "omi-agent-qa-tester.md")["_text"]
     qa = (agents / "omi-agent-qa-tester.md").read_text(encoding="utf-8")
     assert "mockup and build screenshots side by side per screen at matching viewport sizes, including phone width" in qa
     assert "name both files in the evidence" in qa
@@ -442,6 +443,17 @@ def test_qa_host_criteria_do_not_fail() -> None:
     assert "citing the task's host-test row" in qa
     assert "`RESULT` is FAIL only when an item is ✗" in qa
     assert "AC: <criterion> ✓|✗|HOST <evidence" in qa
+
+
+def test_reviewer_mockup_evidence_is_qa() -> None:
+    root = omi.common.core.TEMPLATE / "dot-omi"
+    reviewer = (root / "agents" / "omi-agent-reviewer.md").read_text(encoding="utf-8")
+    assert "report that part of the criterion as `QA <criterion>`; it does not block PASS" in reviewer
+    assert "✓|✗|UNVERIFIED|HOST|QA <evidence>" in reviewer
+    assert "comparison evidence cannot receive PASS" not in reviewer
+    flow = (root / "workflows" / "omi-flow-feature-ui.md").read_text(encoding="utf-8")
+    assert "`QA <criterion>`, which does not block PASS" in flow
+    assert "qa-tester owns the screenshot comparison" in flow
 
 
 def test_ui_mockup_workflow() -> None:

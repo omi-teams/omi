@@ -30,7 +30,7 @@ A FAIL at review or qa goes back to build with the findings. Enforced in code: a
 ## Mockup contract
 The repo files in `.omi/tasks/<ID>-mockup/` are the only source of truth: plain self-contained `.html`, one per screen plus a phone-width mockup. They open directly in any browser without an account, network or external tool; no Figma or hosted canvas is required. Use only what the target stack allows; no CDN or web fonts unless the task explicitly allows them.
 
-The designer adds the acceptance criterion "pages match the PO-approved mockup in `.omi/tasks/<ID>-mockup/`" to the task. Build follows those approved files. Reviewer and qa-tester compare layout, components and colours, and FAIL on clear mismatches; QA captures mockup and build screenshots side by side per screen, including phone width.
+The designer adds the acceptance criterion "pages match the PO-approved mockup in `.omi/tasks/<ID>-mockup/`" to the task. Build follows those approved files. The reviewer checks the code against the mockup and the approval, and FAILs on clear mismatches or a missing mockup or approval; the render comparison is not available at review, so the reviewer marks it `QA <criterion>`, which does not block PASS. The qa-tester owns the screenshot comparison: it captures mockup and build screenshots side by side per screen, including phone width, and FAILs on mismatch.
 
 ## PO gates
 `approve-mockup` requires the PO to open and approve the repo HTML files; the Coordinator records `PO approval approve-mockup: <PO words and approved files>` under `## Steps` before build. If the mockups change, obtain fresh PO approval before implementing the change.

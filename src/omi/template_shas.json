@@ -383,6 +383,10 @@
     "docker/proxy.py": "0ba39b820fc01693be64aa4b00b516902842f0c0f82fda2a4b21237684b828ec"
   },
   "0.5.0": {
+    "AGENTS.md": "b0f5bf142107335f2515d1c0981cdf82c8062ae7c1d6691f63a0ead7e37b2b6f",
+    "docker/Dockerfile": "f40f8bb7d09dcf5a096a693aba060b6c789fe8299783712a011ca5254cd17546",
+    "docker/prove.sh": "511315ec4046be60bed75c1149c10093a90078d350c538ef5fdda0715d008d22",
+    "docker/proxy.py": "0ba39b820fc01693be64aa4b00b516902842f0c0f82fda2a4b21237684b828ec",
     ".claude/settings.json": "bb82110c2fdb62932040ad7c42387123cc6f947578492571ab37e2947ec8fb7f",
     ".claude/skills/omi-idea/SKILL.md": "04713479983aeb18bf49052409dc391fc9292cad5604e4511dcea3cac7367228",
     ".claude/skills/omi-release/SKILL.md": "0031e8637f6cb93806949282f51bd7b9b76fd476044734dae211f44be2ea774b",
@@ -396,7 +400,7 @@
     ".omi/agents/omi-agent-engineer.md": "f7243c1158c930648c35a1ef46c0c1cc8d423996b0e7500edf54adde489f146c",
     ".omi/agents/omi-agent-qa-tester.md": "5830fb790fdd78185fbf4139305f9c6fa659099be13f95c8903946c911c3dbbd",
     ".omi/agents/omi-agent-researcher.md": "72c06d4ea6ff70d97cdfa885444c8f22868edd067282f2cce99d14f145f54ba5",
-    ".omi/agents/omi-agent-reviewer.md": "217d5a7ddf79fd5ecaf528700c48033a738d8a5e0d4a6516cc1e1d7e948630b1",
+    ".omi/agents/omi-agent-reviewer.md": "8fb5c980b6712c5e182eb497af593100a0c7c1eb1e658278c3ec83a4f69487db",
     ".omi/agents/omi-agent-security-reviewer.md": "4cfa97dc184e2ee09cfa4d6cc2fdb91852d1dfe8284e412f4ed358bd2ada4f60",
     ".omi/config.json": "a4f83434046b8d29cfe076a3a8d5dcabf2d1e72edfac51699dffbb877290b51b",
     ".omi/decisions.md": "ebcde066e22de9b7f5c1ff3d551d5849334fd09fe97954f14b43067428702aef",
@@ -434,16 +438,12 @@
     ".omi/workflows/omi-flow-change-request.md": "96ddf6b47746030e0f337147f3dcfe3fd5eba26e8ef8c9f37f4e8cf463256ff0",
     ".omi/workflows/omi-flow-docs-only.md": "0d8b0d742c2d4b9bd32c3dd91bebc89f935a2bb2d8745abda98c73bb0f02731f",
     ".omi/workflows/omi-flow-feature-sensitive.md": "c1825f5df1cb7bf8c34d4c516a9dadc333b8871c4d41acb0276a996098dc5136",
-    ".omi/workflows/omi-flow-feature-ui.md": "204625a0c2ddd52c72aeb10d7b43f6ca6212a2990e5855ea9fb130b9b42f967d",
+    ".omi/workflows/omi-flow-feature-ui.md": "384219ad4cb8b156bfc289bbae4609c402b88f288aab3ab534610bf48764176e",
     ".omi/workflows/omi-flow-feature.md": "87cdc0db261c4ca5c94c614fbf17c3989da582cdec512ae5cf27b3287dcc5134",
     ".omi/workflows/omi-flow-incident.md": "756720136d33f83085d15728ba2c80e05c3205a784c8f4522a3bc4c3701c3213",
     ".omi/workflows/omi-flow-promote.md": "8696154f7614a46f67f99ec9fbc727310ecf967325f94667e98de0419f1a9e22",
     ".omi/workflows/omi-flow-refactor.md": "e18642b5707e119d597eba275fc41e7e63cdb36b4322fcd1b28eda1c88a497b8",
     ".omi/workflows/omi-flow-release.md": "bd75e993b2e7807cda9b34b26df0419b1322e59c0f4d23bce77839f3f8d81cd9",
-    ".omi/workflows/omi-flow-spike.md": "38e43d2a9f1508ddfc89e2bbce349443675c97a8f3d8185b7f25165cc3c900e3",
-    "AGENTS.md": "b0f5bf142107335f2515d1c0981cdf82c8062ae7c1d6691f63a0ead7e37b2b6f",
-    "docker/Dockerfile": "f40f8bb7d09dcf5a096a693aba060b6c789fe8299783712a011ca5254cd17546",
-    "docker/prove.sh": "511315ec4046be60bed75c1149c10093a90078d350c538ef5fdda0715d008d22",
-    "docker/proxy.py": "0ba39b820fc01693be64aa4b00b516902842f0c0f82fda2a4b21237684b828ec"
+    ".omi/workflows/omi-flow-spike.md": "38e43d2a9f1508ddfc89e2bbce349443675c97a8f3d8185b7f25165cc3c900e3"
   }
 }
