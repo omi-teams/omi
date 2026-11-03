@@ -546,6 +546,8 @@ def test_clean_per_task_and_running_guard():
                 if "-a" not in cmd:  # running_workers
                     return R("TASK-121\treviewer\tm\te\t2026-11-03T09:00:00\n" if running["on"] else "")
                 return R("t136\n" if "label=omi-task=TASK-136" in cmd else "t136\nt121\n")
+            if cmd[:3] == ["docker", "network", "ls"]:
+                return R("n136\n" if "label=omi-task=TASK-136" in cmd else "n136\nn121\n")
             if cmd[:3] == ["docker", "volume", "ls"]:
                 return R("v136\n" if "label=omi-task=TASK-136" in cmd else "v136\nv121\n")
             return R()
@@ -557,7 +559,10 @@ def test_clean_per_task_and_running_guard():
             assert ["docker", "volume", "rm", "v121"] not in calls
             ps = next(c for c in calls if c[:3] == ["docker", "ps", "-a"])
             assert f"label=omi-repo={key}" in ps and "label=omi-task=TASK-136" in ps
-            assert not any(c[:2] in (["docker", "network"], ["docker", "rmi"], ["docker", "images"]) for c in calls)
+            nls = next(c for c in calls if c[:3] == ["docker", "network", "ls"])
+            assert f"label=omi-repo={key}" in nls and "label=omi-task=TASK-136" in nls
+            assert ["docker", "network", "rm", "n136"] in calls and ["docker", "network", "rm", "n121"] not in calls
+            assert not any(c[:2] in (["docker", "rmi"], ["docker", "images"]) for c in calls)
             for kw in ({}, {"all_images": True}):
                 calls.clear()
                 try:
@@ -569,6 +574,8 @@ def test_clean_per_task_and_running_guard():
             calls.clear()
             omi.worker.docker.clean(force=True)
             assert ["docker", "rm", "-f", "t136", "t121"] in calls
+            running_rows = omi.worker.docker.running_workers(main)  # the proxy (omi-role=proxy, no model/effort) is not a worker
+            assert running_rows == [["TASK-121", "reviewer", "m", "e", "2026-11-03T09:00:00"]]
             calls.clear()
             fail = run
             def run_fail(cmd, **kw):
@@ -810,7 +817,7 @@ def test_network_allowlist():
     try:
         # worst real name: a long codex model ID at xhigh effort
         long = omi.worker.docker.container_name("my-repo", "omi-agent-engineer", "TASK-052", "codex", "gpt-5.1-codex-mini-high-preview-2026-10-26", "xhigh")
-        with real_egress(Path("/My Repo"), long, "img", ["api.anthropic.com"]) as (net, proxy):
+        with real_egress(Path("/My Repo"), long, "img", ["api.anthropic.com"], "TASK-9") as (net, proxy):
             assert (net, proxy) == (f"omi-net-{long}", "omi-proxy") and len(f"{long}-proxy") > 63
             host = omi.worker.docker.worker_argv(Path("/w"), "img", ["x"], long, network=net, proxy=proxy)
             assert "HTTPS_PROXY=http://omi-proxy:3128" in host
@@ -824,6 +831,7 @@ def test_network_allowlist():
     assert not any("TOKEN" in a or ":/work" in a for a in create) and f"omi-repo={omi.worker.docker.repo_key(Path('/My Repo'))}" in create
     assert f"com.docker.compose.project={omi.worker.docker.compose_labels(long, 'proxy')['com.docker.compose.project']}" in create
     assert "com.docker.compose.service=proxy" in create
+    assert "omi-role=proxy" in create and "omi-task=TASK-9" in create and "omi-task=TASK-9" in inside[0]
     assert [c[1] for c in inside if c[1] in ("create", "start")] == ["create", "start"]
     assert next(c for c in inside if c[1:3] == ["network", "connect"])[3:5] == ["--alias", "omi-proxy"]
     assert any(c[1:3] == ["network", "connect"] for c in inside)

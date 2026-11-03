@@ -64,12 +64,12 @@ def name_taken(err, name):
 
 
 @contextlib.contextmanager
-def egress(main, name, image, allow):
+def egress(main, name, image, allow, task=None):
     """Internal docker network plus a CONNECT-only allowlist proxy (docker/proxy.py, no token, no worktree);
     yields (network, proxy host name on that network). What this run created is removed on exit; hosts the proxy refused are reported.
     A name already in use raises NameTaken and removes nothing, so another run's proxy or network is never touched."""
     net, proxy, repo = f"omi-net-{name}", f"{name}-proxy", repo_key(main)
-    labels = ["--label", "omi-worker=1", "--label", f"omi-repo={repo}"]
+    labels = ["--label", "omi-worker=1", "--label", f"omi-repo={repo}", "--label", f"omi-task={task or 'none'}"]
     script = core.TEMPLATE / "docker" / "proxy.py"
     docker = lambda *a: subprocess.run(["docker", *a], capture_output=True, encoding="utf-8", errors="replace")
     logs, made = "", {"net": False, "proxy": False}
@@ -80,7 +80,7 @@ def egress(main, name, image, allow):
                 raise NameTaken(net)
             sys.exit(f"cannot create the worker network: {r.stderr.strip()}. Nothing changed.")
         made["net"] = True
-        proxy_labels = [x for k, v in compose_labels(name, "proxy").items() for x in ("--label", f"{k}={v}")]
+        proxy_labels = [x for k, v in {"omi-role": "proxy", **compose_labels(name, "proxy")}.items() for x in ("--label", f"{k}={v}")]
         for cmd in (["create", "--name", proxy, *labels, *proxy_labels, "--user", "node", "--read-only", "--cap-drop", "ALL",
                      "--security-opt", "no-new-privileges", "-v", f"{script}:/proxy.py:ro", image,
                      "python3", "/proxy.py", *allow],
@@ -188,7 +188,8 @@ def running_workers(main, strict=False):
         return None if strict else []
     if r.returncode:
         return None if strict else []
-    return [l.split("\t") for l in r.stdout.splitlines() if l.count("\t") == 4]
+    rows = [l.split("\t") for l in r.stdout.splitlines() if l.count("\t") == 4]
+    return [x for x in rows if x[1] != "proxy"]
 
 
 def full_volumes(main):
@@ -280,13 +281,13 @@ def clean(cwd=".", all_images=False, task=None, force=False):
     if ids:
         subprocess.run(["docker", "rm", "-f", *ids], capture_output=True)
     vols = session.clear(repo_key(main), task)  # after the containers: a volume in use cannot go
-    nets, imgs = [], []
+    r = subprocess.run(["docker", "network", "ls", "-q", "--filter", f"label=omi-repo={repo_key(main)}",
+                        *(["--filter", f"label=omi-task={task}"] if task else [])],
+                       capture_output=True, encoding="utf-8", errors="replace")
+    nets, imgs = r.stdout.split(), []
+    if nets:
+        subprocess.run(["docker", "network", "rm", *nets], capture_output=True)
     if not task:
-        r = subprocess.run(["docker", "network", "ls", "-q", "--filter", f"label=omi-repo={repo_key(main)}"],
-                           capture_output=True, encoding="utf-8", errors="replace")
-        nets = r.stdout.split()
-        if nets:
-            subprocess.run(["docker", "network", "rm", *nets], capture_output=True)
         imgs = old_images(main, None if all_images else image_tag(main)[1])
         for i in imgs:
             subprocess.run(["docker", "rmi", i], capture_output=True)
