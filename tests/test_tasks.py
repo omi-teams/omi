@@ -834,6 +834,14 @@ def test_host_test():
             assert "uncommitted" in str(exc) and "## Usage" not in task.read_text(encoding="utf-8")
         else:
             raise AssertionError("dirty worktree must be refused")
+        real_git = omi.common.core.git
+        with patch("omi.common.core.git", side_effect=lambda cwd, *a: None if a[0] == "status" else real_git(cwd, *a)):  # status fails: not "clean"
+            try:
+                host_test("x")
+            except SystemExit as exc:
+                assert "cannot read the git status" in str(exc) and "## Usage" not in task.read_text(encoding="utf-8")
+            else:
+                raise AssertionError("a failed git status must be refused")
         git(wt, "commit", "-am", "more")
         sha = omi.common.core.git(wt, "rev-parse", "--short=7", "HEAD")
         # set: the reviewer gate refuses while no host test ran for this commit
