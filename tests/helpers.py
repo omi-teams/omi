@@ -14,6 +14,9 @@ import omi  # noqa: E402
 
 os.environ["CODEX_HOME"] = tempfile.mkdtemp()  # no host ChatGPT login unless a test writes one
 os.environ["CLAUDE_CONFIG_DIR"] = tempfile.mkdtemp()  # no host Claude Code login unless a test writes one
+os.environ["HOME"] = os.environ["USERPROFILE"] = tempfile.mkdtemp()  # no developer home files
+for _who in ("AUTHOR", "COMMITTER"):  # keep a git identity without ~/.gitconfig
+    os.environ[f"GIT_{_who}_NAME"], os.environ[f"GIT_{_who}_EMAIL"] = "t", "t@t"
 
 real_egress = omi.worker.docker.egress  # other tests run workers with docker mocked: no proxy
 

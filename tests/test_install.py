@@ -330,24 +330,6 @@ def test_install_user_guard_malformed_pretool():
                 assert snapshot == {p.relative_to(home): p.read_bytes() for p in home.rglob("*") if p.is_file()}
 
 
-def main():
-    test_install_user_guard_fresh()
-    test_install_user_guard_existing_hooks()
-    test_install_user_guard_malformed_pretool()
-    test_install_user_recorded_interpreter()
-    test_install_user_legacy_manifest()
-    test_install_user_write_failure()
-    test_install_user_invalid_manifest_cli()
-    test_install_user()
-    test_install_user_removal_preserves_edits()
-    test_install_user_invalid_input()
-    test_install_user_existing_integration()
-
-
-if __name__ == "__main__":
-    main()
-
-
 def test_install_user_accepts_template_equal_skill_and_status_warns():
     with tempfile.TemporaryDirectory() as d, patch("pathlib.Path.home", return_value=Path(d)):
         home = Path(d)
@@ -374,3 +356,23 @@ def test_install_user_accepts_template_equal_skill_and_status_warns():
         with contextlib.redirect_stdout(io.StringIO()):
             install.install_user(remove=True)
         assert agents.read_text(encoding="utf-8") == "My rules\n"
+
+
+def main():
+    test_install_user_guard_fresh()
+    test_install_user_guard_existing_hooks()
+    test_install_user_guard_malformed_pretool()
+    test_install_user_recorded_interpreter()
+    test_install_user_legacy_manifest()
+    test_install_user_write_failure()
+    test_install_user_invalid_manifest_cli()
+    test_install_user()
+    test_install_user_removal_preserves_edits()
+    test_install_user_invalid_input()
+    test_install_user_existing_integration()
+    test_install_user_accepts_template_equal_skill_and_status_warns()
+
+
+if __name__ == "__main__":
+    main()
+
