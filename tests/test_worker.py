@@ -527,6 +527,70 @@ def test_session_resume():
                 os.environ[omi.worker.creds.TOKEN_ENV] = old_tok
 
 
+def test_clean_per_task_and_running_guard():
+    real, realmc = subprocess.run, omi.common.core.main_checkout
+    calls = []
+
+    class R:
+        def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
+
+    with tempfile.TemporaryDirectory() as d:
+        main = Path(d) / "repo"
+        main.mkdir()
+        key = omi.worker.docker.repo_key(main)
+        running = {"on": True}
+
+        def run(cmd, **kw):
+            calls.append(cmd)
+            if cmd[:2] == ["docker", "ps"]:
+                if "-a" not in cmd:  # running_workers
+                    return R("TASK-121\treviewer\tm\te\t2026-11-03T09:00:00\n" if running["on"] else "")
+                return R("t136\n" if "label=omi-task=TASK-136" in cmd else "t136\nt121\n")
+            if cmd[:3] == ["docker", "volume", "ls"]:
+                return R("v136\n" if "label=omi-task=TASK-136" in cmd else "v136\nv121\n")
+            return R()
+
+        subprocess.run, omi.common.core.main_checkout = run, lambda _: main
+        try:
+            omi.worker.docker.clean(task="TASK-136")  # runs fine while TASK-121 is running
+            assert ["docker", "rm", "-f", "t136"] in calls and ["docker", "volume", "rm", "v136"] in calls
+            assert ["docker", "volume", "rm", "v121"] not in calls
+            ps = next(c for c in calls if c[:3] == ["docker", "ps", "-a"])
+            assert f"label=omi-repo={key}" in ps and "label=omi-task=TASK-136" in ps
+            assert not any(c[:2] in (["docker", "network"], ["docker", "rmi"], ["docker", "images"]) for c in calls)
+            for kw in ({}, {"all_images": True}):
+                calls.clear()
+                try:
+                    omi.worker.docker.clean(**kw)
+                    assert False, "no refusal"
+                except SystemExit as e:
+                    assert str(e.code) == "RUNNING: TASK-121 reviewer; use omi clean <ID>, or --force"
+                assert not any(c[:2] in (["docker", "rm"], ["docker", "volume"]) for c in calls)
+            calls.clear()
+            omi.worker.docker.clean(force=True)
+            assert ["docker", "rm", "-f", "t136", "t121"] in calls
+            calls.clear()
+            fail = run
+            def run_fail(cmd, **kw):
+                return R("", 1) if cmd[:2] == ["docker", "ps"] and "-a" not in cmd else fail(cmd, **kw)
+            subprocess.run = run_fail  # docker ps fails: the guard cannot tell, so it refuses
+            try:
+                omi.worker.docker.clean()
+                assert False, "no refusal"
+            except SystemExit as e:
+                assert str(e.code) == "cannot list running workers; use omi clean <ID>, or --force"
+            assert not any(c[:2] == ["docker", "rm"] for c in calls)
+            omi.worker.docker.clean(force=True)
+            assert ["docker", "rm", "-f", "t136", "t121"] in calls
+            subprocess.run = run
+            running["on"] = False  # stopped containers do not block
+            calls.clear()
+            omi.worker.docker.clean()
+            assert ["docker", "rm", "-f", "t136", "t121"] in calls
+        finally:
+            subprocess.run, omi.common.core.main_checkout = real, realmc
+
+
 def test_prove_exit_and_hosts():
     ok = "PASS claude CLI reaches\nPASS codex CLI reaches\nPASS write\n"
     assert omi.worker.docker.prove_rc(ok, 0) == 0 and omi.worker.docker.prove_rc(ok, 5) == 5
@@ -948,6 +1012,7 @@ def main():
     test_network_allowlist()
     test_prove_exit_and_hosts()
     test_clean_and_old_images()
+    test_clean_per_task_and_running_guard()
 
 
 if __name__ == "__main__":

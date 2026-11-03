@@ -132,7 +132,8 @@ def scrub(repo, tid, tool, image, secret_value):
     return rc != 1
 
 
-def clear(repo):
-    """Remove this repo's session volumes; returns how many went."""
-    r = _docker("volume", "ls", "-q", "--filter", "label=omi-session=1", "--filter", f"label=omi-repo={repo}")
+def clear(repo, tid=None):
+    """Remove this repo's session volumes (only task `tid`'s when given); returns how many went."""
+    task = ["--filter", f"label=omi-task={tid}"] if tid else []
+    r = _docker("volume", "ls", "-q", "--filter", "label=omi-session=1", "--filter", f"label=omi-repo={repo}", *task)
     return sum(drop(v) for v in (r.stdout.split() if r.returncode == 0 else []))
