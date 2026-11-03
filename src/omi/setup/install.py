@@ -38,6 +38,36 @@ def coordinator_rules() -> str:
             "not the code checkout.\n\n" + rules)
 
 
+def codex_instructions() -> str:
+    """Point Codex at the live rules instead of embedding a copy that goes stale."""
+    return ("These Coordinator instructions apply only in an attached omi repository. "
+            "At the start of a session there, run `python -m omi session-start` and follow its "
+            "output; if it prints nothing, ignore this block.")
+
+
+def _skill_payloads() -> dict[str, bytes]:
+    root = core.TEMPLATE / "dot-claude" / "skills"
+    return {str(Path(".claude/skills") / p.relative_to(root)): p.read_bytes()
+            for p in sorted(root.rglob("*")) if p.is_file()}
+
+
+def stale_user_integration() -> list[str]:
+    """Name installed user files that differ from the current template (empty if not installed)."""
+    home = Path.home()
+    if not (home / ".omi" / "install-user.json").exists():
+        return []
+    stale = [Path(rel).as_posix() for rel, data in _skill_payloads().items()
+             if not (home / rel).is_file() or (home / rel).read_bytes() != data]
+    agents = home / ".codex" / "AGENTS.md"
+    try:
+        current = _block(agents.read_text(encoding="utf-8")) if agents.exists() else ""
+    except (OSError, UnicodeError, state.StateError):
+        current = ""
+    if current != START + "\n" + codex_instructions() + "\n" + END:
+        stale.append(".codex/AGENTS.md")
+    return stale
+
+
 def _object(path: Path) -> dict:
     try:
         value = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
@@ -196,10 +226,7 @@ def install_user(remove: bool = False) -> None:
                 pass  # Leave directories that now contain user files.
         print("removed omi user integration")
         return
-    sources = sorted((core.TEMPLATE / "dot-claude" / "skills").rglob("*"))
-    sources = [p for p in sources if p.is_file()]
-    payloads = {str(Path(".claude/skills") / p.relative_to(core.TEMPLATE / "dot-claude/skills")): p.read_bytes()
-                for p in sources}
+    payloads = _skill_payloads()
     if not record:
         record = {"skills": {}, "settings_created": not settings.exists(), "agents_created": not agents.exists(),
                   "hooks_created": "hooks" not in config, "session_created": "SessionStart" not in hooks,
@@ -217,7 +244,8 @@ def install_user(remove: bool = False) -> None:
     for rel, data in payloads.items():
         path = home / rel
         item = record["skills"].get(rel)
-        if item and path.exists() and hashlib.sha256(path.read_bytes()).hexdigest() != item["sha256"]:
+        if (item and path.exists() and path.read_bytes() != data
+                and hashlib.sha256(path.read_bytes()).hexdigest() != item["sha256"]):
             raise state.StateError(f"modified installed skill: {path}; preserve or remove it before reinstalling")
         if not item:
             record["skills"][rel] = {"before": base64.b64encode(path.read_bytes()).decode("ascii") if path.exists() else None}
@@ -244,7 +272,7 @@ def install_user(remove: bool = False) -> None:
         if settings.exists() and not backup.exists():
             _write(backup, settings.read_bytes())
         _json(settings, updated)
-    block = START + "\n" + coordinator_rules().rstrip() + "\n" + END
+    block = START + "\n" + codex_instructions() + "\n" + END
     text = text.replace(old_block, block, 1) if old_block else text + record["prefix"] + block
     _write(agents, text.encode("utf-8"))
     print("installed omi user integration")
