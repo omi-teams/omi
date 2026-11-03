@@ -56,7 +56,7 @@ def stale_user_integration() -> list[str]:
     home = Path.home()
     if not (home / ".omi" / "install-user.json").exists():
         return []
-    stale = [rel for rel, data in _skill_payloads().items()
+    stale = [Path(rel).as_posix() for rel, data in _skill_payloads().items()
              if not (home / rel).is_file() or (home / rel).read_bytes() != data]
     agents = home / ".codex" / "AGENTS.md"
     try:
