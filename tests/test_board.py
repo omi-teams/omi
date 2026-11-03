@@ -3,6 +3,9 @@ import json
 import os
 import subprocess
 import tempfile
+import threading
+import time
+from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
@@ -11,6 +14,17 @@ from unittest.mock import patch
 import helpers
 from helpers import git
 from omi.board import data, source, timeline
+
+
+@contextmanager
+def state_dir(env=True):
+    """Temp state home; waits for background fetches before removal (Windows cannot delete a busy dir)."""
+    with tempfile.TemporaryDirectory() as directory:
+        try:
+            with patch.dict(os.environ, {"OMI_STATE": directory} if env else {}):
+                yield directory
+        finally:
+            source.wait_fetches()
 
 
 def write(path, text):
@@ -47,6 +61,21 @@ def remote(home):
     return origin
 
 
+def settle():
+    """Wait for the background fetch and drop the version cache so the next request sees its result."""
+    source.wait_fetches()
+    source._CACHE.clear()
+
+
+def poll(home, call):
+    """Expire the version cache and let the background fetch land; the second request sees its result."""
+    for _ in range(2):
+        with patch("omi.board.source.time.monotonic", return_value=source._CACHE[home][0] + 11):
+            result = call()
+        source.wait_fetches()
+    return result
+
+
 def publish(home):
     git(home, "add", ".")
     git(home, "commit", "-qm", "state update")
@@ -55,7 +84,7 @@ def publish(home):
 
 
 def test_views():
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         root = fixture(home)
         decisions = root / ".omi/decisions.md"
@@ -71,6 +100,7 @@ def test_views():
         assert detail["phase"] == {"key": "po", "label": "Chờ PO"} and (detail["step_index"], detail["step_count"], detail["review_round"]) == (1, 1, None)
         assert data.task("sample", "TASK-003")["phase"]["key"] == "blocked"
         assert detail["usage"]["input"] == 10 and detail["usage"]["review_rounds"] == 1
+        settle()
         view = data.project("sample")
         assert view["plans"][0]["done"] == 1 and view["plans"][0]["total"] == 5
         assert view["task_counts"] == {"planned": 2, "in-progress": 1, "blocked": 1, "review": 0, "done": 1}
@@ -95,6 +125,7 @@ def test_views():
         git(home, "commit", "-qm", "unpushed")
         source._CACHE.clear()
         assert data.task("sample", "TASK-002")["goal"] == "Ship it"
+        source.wait_fetches()  # a running background fetch must not race the repo change
         git(home, "push", "-q", "origin", "main")
         source._CACHE.clear()
         pushed = data.task("sample", "TASK-002")
@@ -107,35 +138,37 @@ def test_views():
         old_sha = pushed["source"]["sha"]
         publish(producer)
         assert data.core.git(home, "rev-parse", "origin/main") == old_sha
+        data.task("sample", "TASK-002")
+        settle()
         pushed = data.task("sample", "TASK-002")
         assert pushed["goal"] == "Pushed elsewhere" and pushed["source"]["sha"] != old_sha
         # Neither successful nor failed fetch alters HEAD, index or local files.
         write(path, "local dirty data")
         head = data.core.git(home, "rev-parse", "HEAD")
         status = data.core.git(home, "status", "--porcelain")
-        with patch("omi.board.source.time.monotonic", return_value=source._CACHE[home][0] + 11):
-            assert data.task("sample", "TASK-002")["goal"] == pushed["goal"]
+        assert poll(home, lambda: data.task("sample", "TASK-002"))["goal"] == pushed["goal"]
         assert path.read_text(encoding="utf-8") == "local dirty data"
         assert data.core.git(home, "rev-parse", "HEAD") == head
         assert data.core.git(home, "status", "--porcelain") == status
-        pushed = data.task("sample", "TASK-002")
+        pushed = poll(home, lambda: data.task("sample", "TASK-002"))
+        landed = source._FETCHES[home]["at"]
+        source.wait_fetches()  # a running background fetch must not race the repo change
         git(home, "remote", "set-url", "origin", str(origin / "unavailable"))
-        with patch("omi.board.source.time.monotonic", return_value=source._CACHE[home][0] + 11):
-            stale = data.task("sample", "TASK-002")
+        stale = poll(home, lambda: data.task("sample", "TASK-002"))
         assert stale["goal"] == pushed["goal"]
         assert stale["source"]["stale"] is True
-        assert stale["source"]["fetched_at"] == pushed["source"]["fetched_at"]
+        assert stale["source"]["fetched_at"] == landed
         assert stale["source"]["sha"] == pushed["source"]["sha"]
         assert path.read_text(encoding="utf-8") == "local dirty data"
         assert data.core.git(home, "rev-parse", "HEAD") == head
         assert data.core.git(home, "status", "--porcelain") == status
+        source.wait_fetches()  # a running background fetch must not race the repo change
         git(home, "remote", "set-url", "origin", str(origin))
-        with patch("omi.board.source.time.monotonic", return_value=source._CACHE[home][0] + 11):
-            assert data.task("sample", "TASK-002")["source"]["stale"] is False
+        assert poll(home, lambda: data.task("sample", "TASK-002"))["source"]["stale"] is False
 
 
 def test_plan_status_derived():
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         root = home / "projects" / "sample"
         for pid, stored in (("PLAN-001", "active"), ("PLAN-002", "active"), ("PLAN-003", "active"), ("PLAN-004", "done")):
@@ -151,7 +184,7 @@ def test_plan_status_derived():
 
 
 def test_hierarchy():
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         root = home / "projects" / "sample"
         for tid, extra in (("TASK-001", "type: milestone\nstatus: planned\n"), ("TASK-002", "type: epic\nparent: TASK-001\nstatus: planned\n"),
@@ -170,22 +203,25 @@ def test_hierarchy():
 
 
 def test_shared_fetch():
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         fixture(home)
         remote(home)
         real_git, real_fetch = source.core.git, source._fetch
-        with patch("omi.board.source.core.git", wraps=real_git) as calls, patch("omi.board.source._fetch", wraps=real_fetch) as fetches, \
+        with patch("omi.board.source.core.git", wraps=real_git) as calls, patch("omi.board.source._fetch", side_effect=lambda h: (time.sleep(0.5), real_fetch(h))[1]) as fetches, \
                 patch("omi.board.source.time.monotonic", return_value=100):
             with ThreadPoolExecutor(max_workers=6) as pool:
                 views = list(pool.map(lambda _: data.projects(), range(12)))
             assert all(v["source"] == views[0]["source"] for v in views)
+            source.wait_fetches()  # tests schedule the background fetch: join before every count
             assert fetches.call_count == 1
             with patch("omi.board.source.time.monotonic", return_value=101):
                 data.projects()
+            source.wait_fetches()
             assert fetches.call_count == 1
             with patch("omi.board.source.time.monotonic", return_value=102):
                 data.projects()
+            source.wait_fetches()
             assert fetches.call_count == 2
             assert {c.args[1] for c in calls.call_args_list} <= {"rev-parse", "remote", "ls-tree", "show"}
         for url, expected in (("https://user:token@github.com/omi-teams/omi-state?token=secret", "https://github.com/omi-teams/omi-state"),
@@ -196,7 +232,7 @@ def test_shared_fetch():
 
 
 def test_version() -> None:
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         root = fixture(home)
         remote(home)
@@ -213,6 +249,7 @@ def test_version() -> None:
         git(home, "commit", "-qm", "local change")
         source._CACHE.clear()
         assert data.version()["sha"] == first["sha"]
+        source.wait_fetches()  # a running background fetch must not race the repo change
         git(home, "push", "-q", "origin", "main")
         # Version and full data share the same fetch cache and expiry.
         assert data.version()["sha"] == first["sha"]
@@ -231,7 +268,7 @@ def test_version() -> None:
 
 
 def test_path_redaction() -> None:
-    with tempfile.TemporaryDirectory() as directory:
+    with state_dir(env=False) as directory:
         home = Path(directory) / "cache"
         home.mkdir()
         fixture(home)
@@ -254,8 +291,64 @@ def test_path_redaction() -> None:
             assert snap.response({v: [v] for v in variants})["[state]"] == ["[state]"]
 
 
+def test_snapshot_one_git_process() -> None:
+    with state_dir() as directory:
+        home = Path(directory)
+        fixture(home)
+        remote(home)
+        snap = source.snapshot()
+        real_run, argvs = subprocess.run, []
+
+        def spy(argv, *a, **kw):
+            argvs.append(argv)
+            return real_run(argv, *a, **kw)
+        with patch("omi.common.core.subprocess.run", side_effect=spy):
+            texts = {p: snap.read(p) for p in snap.paths}
+        assert len(texts) > 5 and all(text for text in texts.values())
+        assert len(argvs) == 1 and "cat-file" in argvs[0] and "--batch" in argvs[0], argvs
+        # No new state commit: a later poll reads no blobs from git.
+        source._CACHE.clear()
+        with patch("omi.common.core.subprocess.run", side_effect=spy):
+            again = source.snapshot()
+            assert {p: again.read(p) for p in again.paths} == texts
+        assert not any("cat-file" in a for a in argvs[1:]), argvs
+
+
+def test_request_does_not_wait_for_fetch() -> None:
+    with state_dir() as directory:
+        home = Path(directory)
+        fixture(home)
+        remote(home)
+        release = threading.Event()
+        with patch("omi.board.source._fetch", side_effect=lambda _: release.wait(10)):
+            started = time.monotonic()
+            view = data.projects()
+            assert time.monotonic() - started < 5 and not release.is_set()
+            assert view["source"]["stale"] is True and view["source"]["sha"]
+            release.set()
+            source._WORKERS[home].join()
+        assert source._FETCHES[home]["ok"] is True
+
+
+def test_projects_cached_per_commit_and_minute() -> None:
+    with state_dir() as directory:
+        home = Path(directory)
+        fixture(home)
+        remote(home)
+        now = datetime(2026, 11, 3, 10, 30, 5)
+        later = now.replace(minute=31)
+        with patch("omi.board.data._now", return_value=now):
+            first = data.projects()
+            with patch("omi.board.data._detail", side_effect=AssertionError("parsed again")):
+                assert data.projects()["projects"] == first["projects"]
+        with patch("omi.board.data._now", return_value=later), \
+                patch("omi.board.data._detail", wraps=data._detail) as details:
+            data.projects()
+            assert details.called
+
+
 def test_unavailable_snapshot():
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         source._CACHE.clear()
         with patch("omi.board.source.core.git", return_value=None), patch("omi.board.source._fetch", return_value=False) as fetches, \
                 patch("omi.board.source.time.monotonic", return_value=100):
@@ -270,11 +363,13 @@ def test_unavailable_snapshot():
 
 
 def test_fetch_timeout_serves_stale():
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         fixture(home)
         remote(home)
-        fresh = data.projects()["source"]
+        data.projects()
+        fresh = poll(home, data.projects)["source"]
+        landed = source._FETCHES[home]["at"]
         seen, real_run = [], subprocess.run
 
         def hang(argv, **kw):  # only the fetch hangs; other git calls still read the cache
@@ -282,17 +377,16 @@ def test_fetch_timeout_serves_stale():
                 return real_run(argv, **kw)
             seen.append((argv, kw))
             raise subprocess.TimeoutExpired(argv, kw["timeout"])
-        with patch("omi.board.source.subprocess.run", side_effect=hang), \
-                patch("omi.board.source.time.monotonic", return_value=source._CACHE[home][0] + 11):
-            stale = data.projects()["source"]
-        (argv, kw), = seen
+        with patch("omi.board.source.subprocess.run", side_effect=hang):
+            stale = poll(home, data.projects)["source"]
+        argv, kw = seen[0]
         assert "fetch" in argv and kw["env"]["GIT_TERMINAL_PROMPT"] == "0" and kw["timeout"] == source.FETCH_TIMEOUT
         assert kw["env"]["GCM_INTERACTIVE"] == "never" and kw["stdout"] == kw["stderr"] == subprocess.DEVNULL and "capture_output" not in kw
-        assert stale["stale"] is True and stale["sha"] == fresh["sha"] and stale["fetched_at"] == fresh["fetched_at"]
+        assert stale["stale"] is True and stale["sha"] == fresh["sha"] and stale["fetched_at"] == landed
 
 
 def test_workflow_detail():
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         root = fixture(Path(directory))
         steps = [{"id": id, "gate": "po" if id == "accept" else "none"}
                  for id in ("plan", "design", "build", "review", "accept", "qa")]
@@ -322,7 +416,7 @@ def test_workflow_detail():
 
 
 def test_path_refusal():
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         root = fixture(home)
         remote(home)
@@ -367,7 +461,7 @@ def refuses(call):
 
 
 def test_empty_and_layer():
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         write(home / "README.md", "empty state")
         remote(home)
@@ -387,7 +481,7 @@ def usage_task(root, id, plan, tool, rows):
 
 
 def test_cost():
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         root = home / "projects" / "sample"
         usage_task(root, "TASK-001", "PLAN-001", "claude", [
@@ -433,7 +527,7 @@ def test_cost_legacy_usage() -> None:
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 1669 | 148530 | 35s | - |
 """
     )
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         root = home / "projects/sample"
         for id, table in zip(("TASK-026", "TASK-035"), tables):
@@ -460,7 +554,7 @@ def test_cost_mixed_tools_per_task() -> None:
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 4791246 | 22961 | 4713600 | 306s | 0/2 | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 3495 | 302635 | 495s | - | PASS 6499fb8 |
 """
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         root = home / "projects/sample"
         write(root / ".omi/tasks/TASK-125.md", "---\nid: TASK-125\nplan: PLAN-007\ntool: codex\n---\n## Usage\n" + table + "\n")
@@ -561,7 +655,7 @@ def test_inbox_detection() -> None:
 
 
 def test_inbox_aggregation() -> None:
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         fixture(home)
         for project, stamp in (("other", "2026-10-28 12:00"), ("sample", "2026-10-29 12:00")):
@@ -649,7 +743,7 @@ def test_alerts() -> None:
 
 
 def test_alerts_config() -> None:
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         root = fixture(home)
         remote(home)
@@ -695,7 +789,7 @@ def test_graph_cycles() -> None:
 
 
 def test_graph_view() -> None:
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         fixture(home)
         remote(home)
@@ -723,6 +817,9 @@ def main():
     test_path_refusal()
     test_snapshot_symlink_unavailable()
     test_empty_and_layer()
+    test_snapshot_one_git_process()
+    test_request_does_not_wait_for_fetch()
+    test_projects_cached_per_commit_and_minute()
     test_cost()
     test_cost_legacy_usage()
     test_cost_mixed_tools_per_task()

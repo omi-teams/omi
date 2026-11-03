@@ -237,7 +237,22 @@ def project(name: str) -> dict:
     return snap.response(_project(snap, name))
 
 
+_PROJECTS = {}  # (home, sha, minute) -> {name: view}; only the latest key is kept
+
+
 def _project(snap: source.Snapshot, name: str) -> dict:
+    """Parse a project once per commit and clock minute (timelines use the clock); callers must not mutate the view."""
+    key = (snap.home, snap.source["sha"], _now().replace(second=0, microsecond=0))
+    if key not in _PROJECTS:
+        _PROJECTS.clear()
+        _PROJECTS[key] = {}
+    views = _PROJECTS[key]
+    if name not in views:
+        views[name] = _build_project(snap, name)
+    return views[name]
+
+
+def _build_project(snap: source.Snapshot, name: str) -> dict:
     root = snap.root(_name(name, project_name=True))
     details = [_detail(snap, root, f.stem, snap.read(f)) for f in snap.files(root / ".omi" / "tasks", "*.md") if f.name != "_template.md" and _name(f.stem)]
     found = {t["id"]: t["frontmatter"] for t in details}
