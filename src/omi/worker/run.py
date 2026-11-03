@@ -250,11 +250,10 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
     ensure_cache_excluded(wt)
     read = am["access"] == "read"
     mounts = [f"{project.state}:/state"] if project.detached else []
-    if read:
-        problems = deterministic_checks(wt, main, task.stem)
-        if problems:
-            print(f"{role} not started; fix these first:\n" + "\n".join(problems))
-            return 4
+    problems = deterministic_checks(wt, main, task.stem) if read else []
+    if problems and role in (*tasks.REVIEW_ROLES, "omi-agent-qa-tester"):  # other read roles (architect) are consulted when checks fail
+        print(f"{role} not started; fix these first:\n" + "\n".join(problems))
+        return 4
     image = docker.ensure_image(main)
     res = None if read else hooks.run_hook(wt, main, "pre-run", task.stem, image)  # hooks guard write roles only
     if res:
@@ -269,6 +268,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         prompt_skills += ("\nDetached state: /state is read-only. Do not edit the task or catalogs. "
                           "Include checkpoint updates in your final report; the Coordinator records them.")
     prompt_skills += "\nTests: " + test_prompt_line(wt, main)
+    if problems:
+        prompt_skills += "\nThe pre-review checks currently fail:\n" + "\n".join(problems)
     text = am["_text"]
     if project.detached:
         text += ("\nFor this detached run, replace instructions to edit the task or its Checkpoint "
