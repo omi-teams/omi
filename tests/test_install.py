@@ -30,7 +30,7 @@ def test_install_user():
         assert len(config["hooks"]["SessionStart"]) == 2
         assert settings.with_name("settings.json.omi-bak").read_bytes() == original
         text = agents.read_text(encoding="utf-8")
-        assert text.count("<!-- omi -->") == 1 and omi.setup.install.coordinator_rules().rstrip() in text
+        assert text.count("<!-- omi -->") == 1 and "python -m omi session-start" in text and "Approve" not in text
         for source in (omi.common.core.TEMPLATE / "dot-claude/skills").rglob("*"):
             if source.is_file():
                 assert (home / ".claude/skills" / source.relative_to(omi.common.core.TEMPLATE / "dot-claude/skills")).read_bytes() == source.read_bytes()
@@ -92,7 +92,7 @@ def test_install_user_existing_integration():
         agents.write_text(before, encoding="utf-8")
         with contextlib.redirect_stdout(io.StringIO()):
             omi.setup.install.install_user()
-            with patch("omi.setup.install.coordinator_rules", return_value="Updated rules"):
+            with patch("omi.setup.install.codex_instructions", return_value="Updated rules"):
                 omi.setup.install.install_user()
             assert agents.read_text(encoding="utf-8") == "Before\n<!-- omi -->\nUpdated rules\n<!-- /omi -->\nAfter"
             omi.setup.install.install_user(remove=True)
@@ -346,3 +346,31 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def test_install_user_accepts_template_equal_skill_and_status_warns():
+    with tempfile.TemporaryDirectory() as d, patch("pathlib.Path.home", return_value=Path(d)):
+        home = Path(d)
+        install = omi.setup.install
+        assert install.stale_user_integration() == []
+        with contextlib.redirect_stdout(io.StringIO()):
+            install.install_user()
+        assert install.stale_user_integration() == []
+        skill = home / ".claude/skills/omi-task/SKILL.md"
+        template = skill.read_bytes()
+        skill.write_bytes(b"old template")
+        agents = home / ".codex/AGENTS.md"
+        agents.write_text("My rules\n" + agents.read_text(encoding="utf-8").replace("session-start", "old"), encoding="utf-8")
+        stale = install.stale_user_integration()
+        assert ".claude/skills/omi-task/SKILL.md" in stale and ".codex/AGENTS.md" in stale
+        # a copy equal to the current template is not "modified": reinstall updates the record
+        skill.write_bytes(template)
+        with contextlib.redirect_stdout(io.StringIO()):
+            install.install_user()
+        record = json.loads((home / ".omi/install-user.json").read_text(encoding="utf-8"))
+        assert record["skills"][".claude/skills/omi-task/SKILL.md"]["sha256"] == omi.setup.install.hashlib.sha256(template).hexdigest()
+        assert install.stale_user_integration() == []
+        assert agents.read_text(encoding="utf-8").startswith("My rules\n")
+        with contextlib.redirect_stdout(io.StringIO()):
+            install.install_user(remove=True)
+        assert agents.read_text(encoding="utf-8") == "My rules\n"

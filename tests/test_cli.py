@@ -73,6 +73,12 @@ def test_cli_correctness():
         with contextlib.redirect_stdout(buf):
             omi.app.cli.status(root)
         assert "no `test` command" not in buf.getvalue()
+        # status warns when the installed user integration is behind the template
+        for stale, shown in (([".codex/AGENTS.md"], True), ([], False)):
+            buf = io.StringIO()
+            with patch("omi.setup.install.stale_user_integration", return_value=stale), contextlib.redirect_stdout(buf):
+                omi.app.cli.status(root)
+            assert ("run `python -m omi install-user`" in buf.getvalue()) == shown
     # #8 PO approval with or without a leading `- `
     assert omi.project.tasks.po_approved("x\n## Steps\n- PO approval accept: ok\n", "accept")
     assert omi.project.tasks.po_approved("x\n## Steps\nPO approval accept: ok\n", "accept")
