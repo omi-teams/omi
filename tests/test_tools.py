@@ -274,6 +274,17 @@ def test_tool_choice_and_quota_switch():
             finally:
                 omi.worker.run.deterministic_checks = det
                 task.write_text("---\nid: TASK-001\nscope: src/**\n---\n## Checkpoint\n", encoding="utf-8")
+            # Failing checks refuse review roles but not the architect, whose prompt notes them.
+            det, omi.worker.run.deterministic_checks = omi.worker.run.deterministic_checks, lambda *a: ["tests failed"]
+            try:
+                outs[:] = [R(ok_claude)]
+                calls.clear()
+                rc = omi.worker.run.run_role("omi-agent-architect", wt, task)
+                assert rc == 0 and any("tests failed" in a for a in calls[0]), (rc, calls)
+                calls.clear()
+                assert omi.worker.run.run_role("omi-agent-reviewer", wt, task) == 4 and not calls
+            finally:
+                omi.worker.run.deterministic_checks = det
             front(tool="codex", model="opus")
             # model/effort are Coordinator-owned frontmatter
             hook[:] = [lambda: task.write_text(task.read_text().replace("model: opus", "model: haiku"), encoding="utf-8")]
