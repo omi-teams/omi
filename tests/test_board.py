@@ -4,6 +4,7 @@ import os
 import subprocess
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -300,7 +301,11 @@ def test_workflow_detail():
         remote(Path(directory))
         detail = data.task("sample", "TASK-002")
         assert detail["workflow_steps"] == steps and detail["current_step"] == "accept"
-        assert data.project("sample")["kanban"]["in-progress"][0] == {k: v for k, v in detail.items() if k != "source"}
+        # The timeline is clock-based: a minute passing between the two reads must not matter.
+        with patch.object(data, "_now", side_effect=[datetime(2026, 10, 29, 12, 5), datetime(2026, 10, 29, 12, 6)] * 4):
+            detail = data.task("sample", "TASK-002")
+            card = data.project("sample")["kanban"]["in-progress"][0]
+        assert {k: v for k, v in card.items() if k != "timeline"} == {k: v for k, v in detail.items() if k not in ("source", "timeline")}
         # Default, missing and changed definitions are read from state, never inferred from history.
         assert data.task("sample", "TASK-001")["workflow_steps"] == []
         write(root / ".omi/workflows/omi-flow-feature.md", definition)
