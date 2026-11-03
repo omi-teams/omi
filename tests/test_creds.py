@@ -330,7 +330,7 @@ def test_codex_chatgpt_run():
     allowed = []
 
     @contextlib.contextmanager
-    def egress(main, name, image, allow):
+    def egress(main, name, image, allow, task=None):
         allowed.append(allow)
         yield "test-net", "test-proxy"
 

@@ -25,7 +25,7 @@ real_egress = omi.worker.docker.egress  # other tests run workers with docker mo
 
 
 @contextlib.contextmanager
-def no_egress(main, name, image, allow):
+def no_egress(main, name, image, allow, task=None):
     yield f"omi-net-{name}", f"{name}-proxy"
 
 

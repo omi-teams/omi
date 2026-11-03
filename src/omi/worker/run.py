@@ -295,7 +295,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         t0 = time.monotonic()
 
         def run_once(name):
-            with docker.egress(main, name, image, docker.allow_for(main, t, chatgpt=chatgpt)) as (net, proxy):
+            with docker.egress(main, name, image, docker.allow_for(main, t, chatgpt=chatgpt), task.stem) as (net, proxy):
                 with subprocess.Popen(docker.worker_argv(wt, image, cmd, name, repo,
                                                   {**docker.worker_labels(role, task.stem, mdl, eff), **docker.compose_labels(name, "agent")}, ro=read,
                                                   mounts=mounts, extra=sess, env_names=(env_name,), network=net, proxy=proxy,
