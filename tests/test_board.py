@@ -314,6 +314,39 @@ def test_snapshot_one_git_process() -> None:
         assert not any("cat-file" in a for a in argvs[1:]), argvs
 
 
+def test_snapshot_load_hardened() -> None:
+    with state_dir() as directory:
+        home = Path(directory)
+        fixture(home)
+        remote(home)
+        snap = source.snapshot()
+        for effect in (subprocess.TimeoutExpired("git", 1), subprocess.CalledProcessError(1, "git")):
+            with patch("omi.board.source.subprocess.run", side_effect=effect):
+                try:
+                    snap._load()
+                    raise AssertionError("expected OSError")
+                except OSError as exc:
+                    assert str(exc) == "state file unavailable"
+        for out in (b"abc blob 99\nshort\n", b"no newline"):
+            with patch("omi.board.source.subprocess.run", return_value=subprocess.CompletedProcess([], 0, stdout=out)):
+                try:
+                    snap._load()
+                    raise AssertionError("expected OSError")
+                except OSError as exc:
+                    assert str(exc) == "state file unavailable"
+
+
+def test_newline_path_skipped() -> None:
+    with state_dir() as directory:
+        home = Path(directory)
+        fixture(home)
+        (home / "bad\nname.md").write_text("x", encoding="utf-8")
+        remote(home)
+        snap = source.snapshot()
+        assert not any("\n" in str(p) for p in snap.paths)
+        assert len(snap.paths) > 5 and all(snap.read(p) for p in snap.paths)
+
+
 def test_request_does_not_wait_for_fetch() -> None:
     with state_dir() as directory:
         home = Path(directory)
@@ -818,6 +851,8 @@ def main():
     test_snapshot_symlink_unavailable()
     test_empty_and_layer()
     test_snapshot_one_git_process()
+    test_snapshot_load_hardened()
+    test_newline_path_skipped()
     test_request_does_not_wait_for_fetch()
     test_projects_cached_per_commit_and_minute()
     test_cost()

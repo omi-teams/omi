@@ -18,6 +18,7 @@ _CACHE = {}
 _FETCHES = {}  # home -> {ok, at} of the last completed fetch
 _WORKERS = {}  # home -> background fetch thread
 _SNAPSHOTS = {}  # home -> latest Snapshot; a poll with an unchanged commit does no git reads
+READ_TIMEOUT = 30  # seconds for the batch blob read, which holds the snapshot's blob lock
 FETCH_TIMEOUT = 15  # seconds; the lock holds other board requests meanwhile
 
 
@@ -47,7 +48,7 @@ class Snapshot:
             if not entry:
                 continue
             info, path = entry.split("\t", 1)
-            if info.split()[0] in ("100644", "100755"):
+            if info.split()[0] in ("100644", "100755") and "\n" not in path:  # a newline would split its batch request line
                 self.paths.add(Path(path))
 
     def read(self, path: Path) -> str:
@@ -66,18 +67,20 @@ class Snapshot:
         request = "".join(f"{self.source['sha']}:{p.as_posix()}\n" for p in paths)
         try:
             out = subprocess.run(["git", "-C", str(self.home), "cat-file", "--batch"], input=request.encode("utf-8"),
-                                 capture_output=True, check=True).stdout
-        except (OSError, subprocess.CalledProcessError) as exc:
+                                 capture_output=True, check=True, timeout=READ_TIMEOUT).stdout
+            blobs, pos = {}, 0
+            for path in paths:
+                end = out.index(b"\n", pos)
+                header = out[pos:end].split()
+                pos = end + 1
+                if len(header) == 3 and header[1] == b"blob":
+                    size = int(header[2])
+                    if pos + size > len(out):
+                        raise ValueError("truncated blob")
+                    blobs[path] = out[pos:pos + size].decode("utf-8", errors="replace").strip()
+                    pos += size + 1
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
             raise OSError("state file unavailable") from exc
-        blobs, pos = {}, 0
-        for path in paths:
-            end = out.index(b"\n", pos)
-            header = out[pos:end].split()
-            pos = end + 1
-            if len(header) == 3 and header[1] == b"blob":
-                size = int(header[2])
-                blobs[path] = out[pos:pos + size].decode("utf-8", errors="replace").strip()
-                pos += size + 1
         return blobs
 
     def files(self, path: Path, pattern: str) -> list[Path]:
