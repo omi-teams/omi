@@ -154,9 +154,12 @@ def test_semantic_palette_and_approved_mockups() -> None:
     for theme in re.findall(r":root\{([^}]+)", css):
         pairs = dict(re.findall(r"--([a-z]+-(?:fg|bg)):#([a-f0-9]{6})", theme))
         for token in ("planned", "planning", "design", "working", "review", "qa", "po", "blocked", "done",
-                      "milestone", "epic", "fr", "nfr", "task"):
+                      "milestone", "epic", "fr", "nfr", "task", "bug", "security", "incident", "change", "spike", "chore"):
             low, high = sorted(luminance(pairs[f"{token}-{suffix}"]) for suffix in ("fg", "bg"))
             assert (high + .05) / (low + .05) >= 4.5, token
+    js = (ROOT / "src/omi/board/web/app.js").read_text(encoding="utf-8")
+    for label in ("Bug", "Security", "Incident", "Change", "Spike", "Chore"):
+        assert f'{label.lower()}: "{label}"' in js and f".chip.{label.lower()}{{" in css, label
     mockups = ROOT / ".omi/tasks/TASK-125-mockup"
     for name in ("projects", "dashboard", "task", "dashboard-phone", "task-phone", "spec"):
         assert (mockups / f"{name}.html").is_file(), name

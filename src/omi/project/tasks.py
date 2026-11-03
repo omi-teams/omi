@@ -115,7 +115,9 @@ def plan_status(stored: str, statuses: list[str]) -> str:
     return "done" if statuses and all(st == "done" for st in statuses) else stored
 
 
-TYPES = ("milestone", "epic", "fr", "nfr", "task")
+TYPES = ("milestone", "epic", "fr", "nfr", "task", "bug", "security", "incident", "change", "spike", "chore")
+TYPE_WORKFLOWS = {"bug": "omi-flow-bugfix", "security": "omi-flow-feature-sensitive", "incident": "omi-flow-incident",
+                  "change": "omi-flow-change-request", "spike": "omi-flow-spike", "chore": "omi-flow-refactor"}  # type -> its workflow
 
 
 def children_map(found):
@@ -245,6 +247,14 @@ def warn_sensitive(m):
             print(f"WARN: scope touches {seg} - consider omi-flow-feature-sensitive")
 
 
+def warn_type_workflow(m):
+    """Print a warning (never fail) when the task's type and workflow disagree (`omi-flow-feature-sensitive` may also carry a plain task)."""
+    typ, wid = m.get("type") or "task", m.get("workflow") or workflows.DEFAULT_WORKFLOW
+    owner = next((t for t, w in TYPE_WORKFLOWS.items() if w == wid), None)
+    if typ in TYPE_WORKFLOWS and TYPE_WORKFLOWS[typ] != wid or owner and owner != typ and wid != "omi-flow-feature-sensitive":
+        print(f"WARN: type `{typ}` does not match workflow {wid}" + (f" (type `{owner}` expected)" if owner else f" (use {TYPE_WORKFLOWS[typ]})"))
+
+
 def commit_task_file(root, task, msg):
     """Commit only the task file on the development checkout; other staged or unstaged changes stay as they are."""
     rel = task.relative_to(root).as_posix()
@@ -364,6 +374,7 @@ def step(root, tid, action, why=None, now=None, to=None, po=None):
         if new["role"] != workflows.COORDINATOR:
             catalogs.get_role(root, m.get("role") or "omi-agent-engineer")  # unknown task role fails too
         catalogs.check_skills(root, workflows.step_skill_ids(root, new, m))
+        warn_type_workflow(m)
         if cur == "plan":
             warn_sensitive(m)
         text = add_step_log(set_front(text, "step", new["id"]), f"- {new['id']} started {stamp}")

@@ -11,6 +11,7 @@ from ..state import resolve as state, sync as state_sync
 
 
 WORKFLOWS = {"bug": "omi-flow-bugfix", "security": "omi-flow-feature-sensitive", "idea": "omi-flow-feature"}
+TYPES = {"bug": "bug", "security": "security", "idea": "task"}
 
 
 def omi_project() -> state.Project | None:
@@ -72,7 +73,7 @@ def improve(args: list[str], cwd: str | Path = ".") -> None:
         task = directory / f"{new_id}.md"
         try:
             with task.open("x", encoding="utf-8", newline="\n") as stream:
-                stream.write(f"---\nid: {new_id}\ntitle: {summary}\nstatus: planned\ntype: task\n"
+                stream.write(f"---\nid: {new_id}\ntitle: {summary}\nstatus: planned\ntype: {TYPES[opts.kind]}\n"
                              f"workflow: {WORKFLOWS[opts.kind]}\nsource_project: {source}\n"
                              "role: omi-agent-engineer\nskills: []\nrefs: []\n---\n"
                              f"## Goal\n{goal}\n## Acceptance criteria\n- [ ] Resolve the reported finding.\n\n"
