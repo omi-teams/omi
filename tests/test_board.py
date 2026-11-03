@@ -125,6 +125,7 @@ def test_views():
         git(home, "commit", "-qm", "unpushed")
         source._CACHE.clear()
         assert data.task("sample", "TASK-002")["goal"] == "Ship it"
+        source.wait_fetches()  # a running background fetch must not race the repo change
         git(home, "push", "-q", "origin", "main")
         source._CACHE.clear()
         pushed = data.task("sample", "TASK-002")
@@ -151,6 +152,7 @@ def test_views():
         assert data.core.git(home, "status", "--porcelain") == status
         pushed = poll(home, lambda: data.task("sample", "TASK-002"))
         landed = source._FETCHES[home]["at"]
+        source.wait_fetches()  # a running background fetch must not race the repo change
         git(home, "remote", "set-url", "origin", str(origin / "unavailable"))
         stale = poll(home, lambda: data.task("sample", "TASK-002"))
         assert stale["goal"] == pushed["goal"]
@@ -160,6 +162,7 @@ def test_views():
         assert path.read_text(encoding="utf-8") == "local dirty data"
         assert data.core.git(home, "rev-parse", "HEAD") == head
         assert data.core.git(home, "status", "--porcelain") == status
+        source.wait_fetches()  # a running background fetch must not race the repo change
         git(home, "remote", "set-url", "origin", str(origin))
         assert poll(home, lambda: data.task("sample", "TASK-002"))["source"]["stale"] is False
 
@@ -205,17 +208,20 @@ def test_shared_fetch():
         fixture(home)
         remote(home)
         real_git, real_fetch = source.core.git, source._fetch
-        with patch("omi.board.source.core.git", wraps=real_git) as calls, patch("omi.board.source._fetch", wraps=real_fetch) as fetches, \
+        with patch("omi.board.source.core.git", wraps=real_git) as calls, patch("omi.board.source._fetch", side_effect=lambda h: (time.sleep(0.5), real_fetch(h))[1]) as fetches, \
                 patch("omi.board.source.time.monotonic", return_value=100):
             with ThreadPoolExecutor(max_workers=6) as pool:
                 views = list(pool.map(lambda _: data.projects(), range(12)))
             assert all(v["source"] == views[0]["source"] for v in views)
+            source.wait_fetches()  # tests schedule the background fetch: join before every count
             assert fetches.call_count == 1
             with patch("omi.board.source.time.monotonic", return_value=101):
                 data.projects()
+            source.wait_fetches()
             assert fetches.call_count == 1
             with patch("omi.board.source.time.monotonic", return_value=102):
                 data.projects()
+            source.wait_fetches()
             assert fetches.call_count == 2
             assert {c.args[1] for c in calls.call_args_list} <= {"rev-parse", "remote", "ls-tree", "show"}
         for url, expected in (("https://user:token@github.com/omi-teams/omi-state?token=secret", "https://github.com/omi-teams/omi-state"),
@@ -243,6 +249,7 @@ def test_version() -> None:
         git(home, "commit", "-qm", "local change")
         source._CACHE.clear()
         assert data.version()["sha"] == first["sha"]
+        source.wait_fetches()  # a running background fetch must not race the repo change
         git(home, "push", "-q", "origin", "main")
         # Version and full data share the same fetch cache and expiry.
         assert data.version()["sha"] == first["sha"]

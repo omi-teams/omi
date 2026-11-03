@@ -125,7 +125,7 @@ def _background_fetch(home: Path) -> None:
 
 
 def wait_fetches(timeout: float = FETCH_TIMEOUT + 5) -> None:
-    """Join the background fetch threads (tests: a busy repo directory cannot be removed on Windows)."""
+    """Join the background fetch threads (tests: call before asserting fetch effects, mutating the repo or removing its directory)."""
     for worker in list(_WORKERS.values()):
         worker.join(timeout)
 
