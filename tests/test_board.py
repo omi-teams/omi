@@ -314,6 +314,48 @@ def test_snapshot_one_git_process() -> None:
         assert not any("cat-file" in a for a in argvs[1:]), argvs
 
 
+def test_snapshot_load_hardened() -> None:
+    with state_dir() as directory:
+        home = Path(directory)
+        fixture(home)
+        remote(home)
+        snap = source.snapshot()
+        for effect in (subprocess.TimeoutExpired("git", 1), subprocess.CalledProcessError(1, "git")):
+            with patch("omi.board.source.subprocess.run", side_effect=effect):
+                try:
+                    snap._load()
+                    raise AssertionError("expected OSError")
+                except OSError as exc:
+                    assert str(exc) == "state file unavailable"
+        for out in (b"abc blob 99\nshort\n", b"no newline"):
+            with patch("omi.board.source.subprocess.run", return_value=subprocess.CompletedProcess([], 0, stdout=out)):
+                try:
+                    snap._load()
+                    raise AssertionError("expected OSError")
+                except OSError as exc:
+                    assert str(exc) == "state file unavailable"
+
+
+def test_newline_path_skipped() -> None:
+    with state_dir() as directory:
+        home = Path(directory)
+        fixture(home)
+        remote(home)
+        # Windows cannot create such a file and Git for Windows rejects it in update-index, so build the tree with mktree.
+        def out(*args, data=None):
+            return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=home, input=data, check=True,
+                                  capture_output=True).stdout
+        blob = out("hash-object", "-w", "--stdin", data=b"x").decode().strip()
+        tree = out("mktree", "-z", data=out("ls-tree", "-z", "HEAD") + f"100644 blob {blob}\tbad\nname.md\0".encode()).decode().strip()
+        commit = out("commit-tree", tree, "-p", "HEAD", "-m", "newline path").decode().strip()
+        out("reset", "--soft", commit)
+        git(home, "push", "-q", "origin", "main")
+        source._CACHE.clear()
+        snap = source.snapshot()
+        assert not any("\n" in str(p) for p in snap.paths)
+        assert len(snap.paths) > 5 and all(snap.read(p) for p in snap.paths)
+
+
 def test_request_does_not_wait_for_fetch() -> None:
     with state_dir() as directory:
         home = Path(directory)
@@ -818,6 +860,8 @@ def main():
     test_snapshot_symlink_unavailable()
     test_empty_and_layer()
     test_snapshot_one_git_process()
+    test_snapshot_load_hardened()
+    test_newline_path_skipped()
     test_request_does_not_wait_for_fetch()
     test_projects_cached_per_commit_and_minute()
     test_cost()
