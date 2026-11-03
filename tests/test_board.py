@@ -341,11 +341,14 @@ def test_newline_path_skipped() -> None:
         home = Path(directory)
         fixture(home)
         remote(home)
-        # Windows cannot create such a file, so put it into the tree through the index only.
-        blob = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=home, input=b"x", check=True,
-                              capture_output=True).stdout.decode().strip()
-        git(home, "update-index", "--add", "--cacheinfo", f"100644,{blob},bad\nname.md")
-        git(home, "commit", "-qm", "newline path")
+        # Windows cannot create such a file and Git for Windows rejects it in update-index, so build the tree with mktree.
+        def out(*args, data=None):
+            return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=home, input=data, check=True,
+                                  capture_output=True).stdout
+        blob = out("hash-object", "-w", "--stdin", data=b"x").decode().strip()
+        tree = out("mktree", "-z", data=out("ls-tree", "-z", "HEAD") + f"100644 blob {blob}\tbad\nname.md\0".encode()).decode().strip()
+        commit = out("commit-tree", tree, "-p", "HEAD", "-m", "newline path").decode().strip()
+        out("reset", "--soft", commit)
         git(home, "push", "-q", "origin", "main")
         source._CACHE.clear()
         snap = source.snapshot()
