@@ -141,12 +141,23 @@ def test_cli_correctness():
 def test_step_po_flag() -> None:
     with tempfile.TemporaryDirectory() as d, patch("omi.project.tasks.step", return_value=0) as step_mock, \
             patch("omi.state.resolve.resolve"), patch("omi.common.core.main_checkout", return_value=Path(d)):
-        for args in (["--why", "bad", "round", "--po", "PO says go", "--to", "architect"], ["--po", "PO says go", "--to", "architect", "--why", "bad", "round"]):
+        for args in (["--po", "PO says go", "--to", "architect", "--why", "bad", "round"],):
             try:
                 omi.app.cli.dispatch(["step", "TASK-001", "back", *args])
             except SystemExit:
                 pass
             assert step_mock.call_args.args[1:4] == ("TASK-001", "back", "bad round") and step_mock.call_args.kwargs == {"to": "architect", "po": "PO says go"}, step_mock.call_args
+
+
+def test_step_why_keeps_flag_words() -> None:
+    with tempfile.TemporaryDirectory() as d, patch("omi.project.tasks.step", return_value=0) as step_mock, \
+            patch("omi.state.resolve.resolve"), patch("omi.common.core.main_checkout", return_value=Path(d)):
+        try:
+            omi.app.cli.dispatch(["step", "TASK-001", "back", "--to", "build", "--why", "retry without --po x and --to y"])
+        except SystemExit:
+            pass
+        assert step_mock.call_args.args[1:4] == ("TASK-001", "back", "retry without --po x and --to y")
+        assert step_mock.call_args.kwargs == {"to": "build", "po": None}
 
 
 def test_clean_args() -> None:
@@ -315,7 +326,7 @@ def test_cli_characterization():
             0, "TASK-001: step review failed; back to build (omi-agent-engineer), then `omi step TASK-001 done` and `next`\n", "")
         assert cli(root, "step", "TASK-001", "done")[0] == 0 and cli(root, "step", "TASK-001", "next")[0] == 0 and cli(root, "step", "TASK-001", "done")[0] == 0
         assert cli(root, "step", "TASK-001", "next")[0] == 0
-        assert cli(root, "step", "TASK-001", "back", "--why", "late", "reason", "--to", "build")[0] == 0
+        assert cli(root, "step", "TASK-001", "back", "--to", "build", "--why", "late", "reason")[0] == 0
         text = (root / ".omi" / "tasks" / "TASK-001.md").read_text(encoding="utf-8")
         assert "workflow back to build" in text and ": late reason\n" in text and "--to" not in text.split("## Steps")[1]
         text = (root / ".omi" / "tasks" / "TASK-001.md").read_text(encoding="utf-8")
