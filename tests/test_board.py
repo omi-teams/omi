@@ -435,11 +435,10 @@ def test_workflow_detail():
         definition = "---\nsteps:\n" + "".join(f"- id: {s['id']} | gate: {s['gate']}\n" for s in steps) + "---\n"
         write(root / ".omi/workflows/feature.md", definition)
         remote(Path(directory))
-        detail = data.task("sample", "TASK-002")
-        assert detail["workflow_steps"] == steps and detail["current_step"] == "accept"
-        # The timeline is clock-based: a minute passing between the two reads must not matter.
-        with patch.object(data, "_now", side_effect=[datetime(2026, 10, 29, 12, 5), datetime(2026, 10, 29, 12, 6)] * 4):
+        # The timeline is clock-based: pin the clock so both reads see the same running-step seconds.
+        with patch.object(data, "_now", return_value=datetime(2026, 10, 29, 12, 5)):
             detail = data.task("sample", "TASK-002")
+            assert detail["workflow_steps"] == steps and detail["current_step"] == "accept"
             card = data.project("sample")["kanban"]["in-progress"][0]
         assert {k: v for k, v in card.items() if k != "timeline"} == {k: v for k, v in detail.items() if k not in ("source", "timeline")}
         # Default, missing and changed definitions are read from state, never inferred from history.

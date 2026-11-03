@@ -185,9 +185,11 @@ def unticked(text):
 
 
 def set_front(text, key, value):
+    """Set a frontmatter field; an empty value removes it."""
     _, front, body = text.split("---", 2)
     lines = [ln for ln in front.split("\n") if ln.partition(":")[0].strip() != key]
-    lines.insert(len(lines) - 1, f"{key}: {value}")
+    if value:
+        lines.insert(len(lines) - 1, f"{key}: {value}")
     return f"---{chr(10).join(lines)}---{body}"
 
 
@@ -437,8 +439,7 @@ def step(root, tid, action, why=None, now=None, to=None, po=None):
         # read by the board's changed-files list; `files:` is a comma list, so paths containing a comma are left out
         diff = core.git(project.code, "-c", "core.quotepath=off", "diff", "--name-only", f"development...task/{tid}")
         names = [f for f in (diff or "").splitlines() if "," not in f]
-        if names:
-            text = set_front(text, "files", ", ".join(names))
+        text = set_front(text, "files", ", ".join(names))  # an empty diff drops a stale list
     task.write_text(text, encoding="utf-8", newline="\n")
     print(msg)
     if replan:

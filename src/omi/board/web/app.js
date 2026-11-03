@@ -363,8 +363,9 @@ async function downloadReport(name, d, button) {
     const now = new Date();
     const href = URL.createObjectURL(new Blob([weeklyReport(name, d, await response.json(), now)], {type: "text/markdown;charset=utf-8"}));
     const a = el("a", null, {href, download: `bao-cao-tuan-${name}-${now.toISOString().slice(0, 10)}.md`});
+    document.body.append(a);
     a.click();
-    URL.revokeObjectURL(href);
+    setTimeout(() => { a.remove(); URL.revokeObjectURL(href); }, 1000);
   } catch (e) { showError(e); } finally { button.disabled = false; }
 }
 function dashboard(name, d) {
@@ -536,7 +537,7 @@ function timelineLoading() {
     ...["", " short", ""].map((c) => el("div", null, {class: `skeleton${c}`, "aria-hidden": "true"}))]);
 }
 function taskPage(name, id, d) {
-  const f = d.frontmatter;
+  const f = d.frontmatter, timeline = timelineSection(id, d);
   const criteria = el("ul", null, {class: "crit"}, d.criteria.map((c) => el("li", null, {}, [
     el("span", c.checked ? "✓" : "", {class: `ck ${c.checked ? "checked" : ""}`, role: "img", "aria-label": c.checked ? "Xong" : "Chưa"}), el("span", c.text)])));
   const reports = d.reports.split(/\n(?=\d{4}-\d\d-\d\d[^\n]*:)/).filter(Boolean).reverse().map((r, i) => {
@@ -563,7 +564,7 @@ function taskPage(name, id, d) {
     workflow(d), box("layout", [box("main", [
       section("Mục tiêu", [el("p", d.goal || "—", {class: "goal"})]),
       section("Tiêu chí nghiệm thu", [criteria], `${d.criteria.filter((c) => c.checked).length}/${d.criteria.length} xong`),
-      section("Checkpoint", [pre(d.checkpoint)]), ...timelineSection(id, d).slice(0, 1), ...filesSection(d.files), ...timelineSection(id, d).slice(1),
+      section("Checkpoint", [pre(d.checkpoint)]), ...timeline.slice(0, 1), ...filesSection(d.files), ...timeline.slice(1),
       section(`Báo cáo (${reports.length})`, reports.length ? reports : [empty("Chưa có báo cáo.")])]),
     el("aside", null, {class: "side"}, [section("Thông tin", [meta]), section("Sử dụng", [taskUsage(d.usage)],
       `${num(d.usage.runs)} lượt · ${num(d.usage.review_rounds)} vòng review`)])])];
