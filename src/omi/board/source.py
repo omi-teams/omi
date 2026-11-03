@@ -15,6 +15,8 @@ from ..state import resolve as state
 
 _LOCK = threading.Lock()
 _CACHE = {}
+_FETCHES = {}  # home -> {ok, at} of the last completed fetch
+_WORKERS = {}  # home -> background fetch thread
 _SNAPSHOTS = {}  # home -> latest Snapshot; a poll with an unchanged commit does no git reads
 FETCH_TIMEOUT = 15  # seconds; the lock holds other board requests meanwhile
 
@@ -116,19 +118,31 @@ def _fetch(home: Path) -> bool:
         return False
 
 
+def _background_fetch(home: Path) -> None:
+    ok = _fetch(home)
+    with _LOCK:
+        _FETCHES[home] = {"ok": ok, "at": datetime.now(timezone.utc).isoformat() if ok else _FETCHES[home]["at"]}
+
+
 def version() -> dict:
-    """Share fetch attempts across requests; expire before the next three-second poll."""
+    """Serve the local origin/main at once; fetch in the background, at most every two seconds."""
     home = state.state_home()
     with _LOCK:
         now = time.monotonic()
         cached = _CACHE.get(home)
         if cached is None or now - cached[0] >= 2:
-            previous = cached[1] if cached else {}
-            fetched = _fetch(home)
-            sha = core.git(home, "rev-parse", "--verify", "refs/remotes/origin/main^{commit}") if fetched or not previous else previous["sha"]
+            last = _FETCHES.setdefault(home, {"ok": False, "at": None})
+            sha = core.git(home, "rev-parse", "--verify", "refs/remotes/origin/main^{commit}")
+            if not sha:  # nothing local to serve yet: this fetch has to block
+                last |= {"ok": _fetch(home)}
+                if last["ok"]:
+                    last["at"] = datetime.now(timezone.utc).isoformat()
+                    sha = core.git(home, "rev-parse", "--verify", "refs/remotes/origin/main^{commit}")
+            elif not (_WORKERS.get(home) and _WORKERS[home].is_alive()):
+                _WORKERS[home] = threading.Thread(target=_background_fetch, args=(home,), daemon=True)
+                _WORKERS[home].start()
             source = {"repo": _repo(core.git(home, "remote", "get-url", "origin") or ""), "sha": sha,
-                      "fetched_at": datetime.now(timezone.utc).isoformat() if fetched else previous.get("fetched_at"),
-                      "stale": not fetched}
+                      "fetched_at": last["at"], "stale": not last["ok"]}
             _CACHE[home] = (time.monotonic(), source)
         if not _CACHE[home][1]["sha"]:
             raise OSError("origin/main unavailable")

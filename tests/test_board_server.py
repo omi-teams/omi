@@ -40,7 +40,7 @@ def test_server():
             status, res, body = request(port, "GET", "/api/projects")
             assert status == 200 and json.loads(body)["projects"][0]["name"] == "sample"
             assert res.getheader("Content-Type") == "application/json"
-            assert json.loads(body)["source"]["stale"] is False
+            assert json.loads(body)["source"]["stale"] is True  # served before the first background fetch completed
             for path in ("/api/projects", "/api/projects/sample", "/api/projects/sample/tasks/TASK-002",
                          "/api/version", "/api/projects/sample/version"):
                 if path.endswith("/version"):

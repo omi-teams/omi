@@ -3,6 +3,8 @@ import json
 import os
 import subprocess
 import tempfile
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
@@ -47,6 +49,23 @@ def remote(home):
     return origin
 
 
+def settle():
+    """Wait for the background fetch and drop the version cache so the next request sees its result."""
+    for worker in list(source._WORKERS.values()):
+        worker.join()
+    source._CACHE.clear()
+
+
+def poll(home, call):
+    """Expire the version cache and let the background fetch land; the second request sees its result."""
+    for _ in range(2):
+        with patch("omi.board.source.time.monotonic", return_value=source._CACHE[home][0] + 11):
+            result = call()
+        for worker in list(source._WORKERS.values()):
+            worker.join()
+    return result
+
+
 def publish(home):
     git(home, "add", ".")
     git(home, "commit", "-qm", "state update")
@@ -71,6 +90,7 @@ def test_views():
         assert detail["phase"] == {"key": "po", "label": "Chờ PO"} and (detail["step_index"], detail["step_count"], detail["review_round"]) == (1, 1, None)
         assert data.task("sample", "TASK-003")["phase"]["key"] == "blocked"
         assert detail["usage"]["input"] == 10 and detail["usage"]["review_rounds"] == 1
+        settle()
         view = data.project("sample")
         assert view["plans"][0]["done"] == 1 and view["plans"][0]["total"] == 5
         assert view["task_counts"] == {"planned": 2, "in-progress": 1, "blocked": 1, "review": 0, "done": 1}
@@ -107,31 +127,31 @@ def test_views():
         old_sha = pushed["source"]["sha"]
         publish(producer)
         assert data.core.git(home, "rev-parse", "origin/main") == old_sha
+        data.task("sample", "TASK-002")
+        settle()
         pushed = data.task("sample", "TASK-002")
         assert pushed["goal"] == "Pushed elsewhere" and pushed["source"]["sha"] != old_sha
         # Neither successful nor failed fetch alters HEAD, index or local files.
         write(path, "local dirty data")
         head = data.core.git(home, "rev-parse", "HEAD")
         status = data.core.git(home, "status", "--porcelain")
-        with patch("omi.board.source.time.monotonic", return_value=source._CACHE[home][0] + 11):
-            assert data.task("sample", "TASK-002")["goal"] == pushed["goal"]
+        assert poll(home, lambda: data.task("sample", "TASK-002"))["goal"] == pushed["goal"]
         assert path.read_text(encoding="utf-8") == "local dirty data"
         assert data.core.git(home, "rev-parse", "HEAD") == head
         assert data.core.git(home, "status", "--porcelain") == status
-        pushed = data.task("sample", "TASK-002")
+        pushed = poll(home, lambda: data.task("sample", "TASK-002"))
+        landed = source._FETCHES[home]["at"]
         git(home, "remote", "set-url", "origin", str(origin / "unavailable"))
-        with patch("omi.board.source.time.monotonic", return_value=source._CACHE[home][0] + 11):
-            stale = data.task("sample", "TASK-002")
+        stale = poll(home, lambda: data.task("sample", "TASK-002"))
         assert stale["goal"] == pushed["goal"]
         assert stale["source"]["stale"] is True
-        assert stale["source"]["fetched_at"] == pushed["source"]["fetched_at"]
+        assert stale["source"]["fetched_at"] == landed
         assert stale["source"]["sha"] == pushed["source"]["sha"]
         assert path.read_text(encoding="utf-8") == "local dirty data"
         assert data.core.git(home, "rev-parse", "HEAD") == head
         assert data.core.git(home, "status", "--porcelain") == status
         git(home, "remote", "set-url", "origin", str(origin))
-        with patch("omi.board.source.time.monotonic", return_value=source._CACHE[home][0] + 11):
-            assert data.task("sample", "TASK-002")["source"]["stale"] is False
+        assert poll(home, lambda: data.task("sample", "TASK-002"))["source"]["stale"] is False
 
 
 def test_plan_status_derived():
@@ -277,6 +297,36 @@ def test_snapshot_one_git_process() -> None:
         assert not any("cat-file" in a for a in argvs[1:]), argvs
 
 
+def test_request_does_not_wait_for_fetch() -> None:
+    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+        home = Path(directory)
+        fixture(home)
+        remote(home)
+        release = threading.Event()
+        with patch("omi.board.source._fetch", side_effect=lambda _: release.wait(10)):
+            started = time.monotonic()
+            view = data.projects()
+            assert time.monotonic() - started < 5 and not release.is_set()
+            assert view["source"]["stale"] is True and view["source"]["sha"]
+            release.set()
+            source._WORKERS[home].join()
+        assert source._FETCHES[home]["ok"] is True
+
+
+def test_projects_cached_per_commit_and_minute() -> None:
+    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+        home = Path(directory)
+        fixture(home)
+        remote(home)
+        first = data.projects()
+        with patch("omi.board.data._detail", side_effect=AssertionError("parsed again")):
+            assert data.projects()["projects"] == first["projects"]
+        with patch("omi.board.data._now", return_value=data._now().replace(minute=(data._now().minute + 1) % 60)), \
+                patch("omi.board.data._detail", wraps=data._detail) as details:
+            data.projects()
+            assert details.called
+
+
 def test_unavailable_snapshot():
     with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
         source._CACHE.clear()
@@ -297,7 +347,9 @@ def test_fetch_timeout_serves_stale():
         home = Path(directory)
         fixture(home)
         remote(home)
-        fresh = data.projects()["source"]
+        data.projects()
+        fresh = poll(home, data.projects)["source"]
+        landed = source._FETCHES[home]["at"]
         seen, real_run = [], subprocess.run
 
         def hang(argv, **kw):  # only the fetch hangs; other git calls still read the cache
@@ -305,13 +357,12 @@ def test_fetch_timeout_serves_stale():
                 return real_run(argv, **kw)
             seen.append((argv, kw))
             raise subprocess.TimeoutExpired(argv, kw["timeout"])
-        with patch("omi.board.source.subprocess.run", side_effect=hang), \
-                patch("omi.board.source.time.monotonic", return_value=source._CACHE[home][0] + 11):
-            stale = data.projects()["source"]
-        (argv, kw), = seen
+        with patch("omi.board.source.subprocess.run", side_effect=hang):
+            stale = poll(home, data.projects)["source"]
+        argv, kw = seen[0]
         assert "fetch" in argv and kw["env"]["GIT_TERMINAL_PROMPT"] == "0" and kw["timeout"] == source.FETCH_TIMEOUT
         assert kw["env"]["GCM_INTERACTIVE"] == "never" and kw["stdout"] == kw["stderr"] == subprocess.DEVNULL and "capture_output" not in kw
-        assert stale["stale"] is True and stale["sha"] == fresh["sha"] and stale["fetched_at"] == fresh["fetched_at"]
+        assert stale["stale"] is True and stale["sha"] == fresh["sha"] and stale["fetched_at"] == landed
 
 
 def test_workflow_detail():
@@ -747,6 +798,8 @@ def main():
     test_snapshot_symlink_unavailable()
     test_empty_and_layer()
     test_snapshot_one_git_process()
+    test_request_does_not_wait_for_fetch()
+    test_projects_cached_per_commit_and_minute()
     test_cost()
     test_cost_legacy_usage()
     test_cost_mixed_tools_per_task()
