@@ -350,7 +350,7 @@ def test_install_user_accepts_template_equal_skill_and_status_warns():
         with contextlib.redirect_stdout(io.StringIO()):
             install.install_user()
         record = json.loads((home / ".omi/install-user.json").read_text(encoding="utf-8"))
-        assert record["skills"][".claude/skills/omi-task/SKILL.md"]["sha256"] == omi.setup.install.hashlib.sha256(template).hexdigest()
+        assert record["skills"][str(Path(".claude/skills/omi-task/SKILL.md"))]["sha256"] == omi.setup.install.hashlib.sha256(template).hexdigest()
         assert install.stale_user_integration() == []
         assert agents.read_text(encoding="utf-8").startswith("My rules\n")
         with contextlib.redirect_stdout(io.StringIO()):
