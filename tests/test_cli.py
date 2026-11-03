@@ -143,6 +143,14 @@ def test_step_po_flag() -> None:
             assert step_mock.call_args.args[1:4] == ("TASK-001", "back", "bad round") and step_mock.call_args.kwargs == {"to": "architect", "po": "PO says go"}, step_mock.call_args
 
 
+def test_clean_args() -> None:
+    with tempfile.TemporaryDirectory() as d, patch("omi.worker.docker.clean") as clean, \
+            patch("omi.state.resolve.resolve"), patch("omi.common.core.main_checkout", return_value=Path(d)):
+        for args, want in ((["TASK-1", "--force"], (False, "TASK-1", True)), ([], (False, None, False)), (["--all"], (True, None, False))):
+            omi.app.cli.dispatch(["clean", *args])
+            assert clean.call_args.kwargs == {"all_images": want[0], "task": want[1], "force": want[2]}, clean.call_args
+
+
 def test_step_records_behind() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d).resolve()
@@ -450,6 +458,7 @@ def main():
     test_improve_status_count()
     test_status_phase_and_step_lines()
     test_step_po_flag()
+    test_clean_args()
     test_step_records_behind()
     test_cli_correctness()
     test_cli_characterization()

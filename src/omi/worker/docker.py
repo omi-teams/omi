@@ -178,15 +178,17 @@ def worker_labels(role, task, model, effort):
             "omi-started": datetime.datetime.now().isoformat(timespec="seconds")}
 
 
-def running_workers(main):
-    """Rows (task, role, model, effort, started) of this repo's running worker containers; empty without docker."""
+def running_workers(main, strict=False):
+    """Rows (task, role, model, effort, started) of this repo's running worker containers; empty without docker (strict: None then)."""
     fmt = "\t".join("{{.Label \"%s\"}}" % k for k in ("omi-task", "omi-role", "omi-model", "omi-effort", "omi-started"))
     try:
         r = subprocess.run(["docker", "ps", "--filter", "label=omi-worker=1", "--filter", f"label=omi-repo={repo_key(main)}",
                             "--format", fmt], capture_output=True, encoding="utf-8", errors="replace")
     except OSError:
-        return []
-    return [l.split("\t") for l in r.stdout.splitlines() if l.count("\t") == 4] if r.returncode == 0 else []
+        return None if strict else []
+    if r.returncode:
+        return None if strict else []
+    return [l.split("\t") for l in r.stdout.splitlines() if l.count("\t") == 4]
 
 
 def full_volumes(main):
@@ -266,7 +268,10 @@ def clean(cwd=".", all_images=False, task=None, force=False):
     """Remove this repo's worker containers, engineer session volumes and every worker image except the current one (all_images: that too).
     With `task`: only that task's containers and volumes. Without it, refuses while a worker runs unless `force`."""
     main = state.resolve(core.main_checkout(cwd) or Path(cwd).resolve()).state
-    if not task and not force and (rows := running_workers(main)):
+    rows = [] if task or force else running_workers(main, strict=True)
+    if rows is None:
+        sys.exit("cannot list running workers; use omi clean <ID>, or --force")
+    if rows:
         sys.exit("RUNNING: " + ", ".join(f"{r[0]} {r[1]}" for r in rows) + "; use omi clean <ID>, or --force")
     r = subprocess.run(["docker", "ps", "-a", "-q", "--filter", "label=omi-worker=1",
                         "--filter", f"label=omi-repo={repo_key(main)}", *(["--filter", f"label=omi-task={task}"] if task else [])],

@@ -569,6 +569,20 @@ def test_clean_per_task_and_running_guard():
             calls.clear()
             omi.worker.docker.clean(force=True)
             assert ["docker", "rm", "-f", "t136", "t121"] in calls
+            calls.clear()
+            fail = run
+            def run_fail(cmd, **kw):
+                return R("", 1) if cmd[:2] == ["docker", "ps"] and "-a" not in cmd else fail(cmd, **kw)
+            subprocess.run = run_fail  # docker ps fails: the guard cannot tell, so it refuses
+            try:
+                omi.worker.docker.clean()
+                assert False, "no refusal"
+            except SystemExit as e:
+                assert str(e.code) == "cannot list running workers; use omi clean <ID>, or --force"
+            assert not any(c[:2] == ["docker", "rm"] for c in calls)
+            omi.worker.docker.clean(force=True)
+            assert ["docker", "rm", "-f", "t136", "t121"] in calls
+            subprocess.run = run
             running["on"] = False  # stopped containers do not block
             calls.clear()
             omi.worker.docker.clean()
