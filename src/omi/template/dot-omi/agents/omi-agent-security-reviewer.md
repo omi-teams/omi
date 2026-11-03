@@ -23,3 +23,4 @@ ROOT: same | new | n/a
 ```
 `ROOT: same` = the findings are new instances of a root cause an earlier round already named (see `## Checkpoint`); `new` = a different cause; `n/a` = PASS or first round. Last line, not counted in the 8.
 Most severe first; real problems only. Policy call, exposed secret (location only), oversize diff: `NEEDS DECISION: <question>`.
+Your final message must repeat the complete output block above, never refer to an earlier message ("see above", "unchanged").

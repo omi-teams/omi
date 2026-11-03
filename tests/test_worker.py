@@ -1005,8 +1005,27 @@ def test_verdict_of_forms():
     assert v("the verdict is unchanged: FAIL") is None
 
 
+def test_full_report_keeps_earlier_block():
+    block = "VERDICT: FAIL\n- a.py:1 bug -> fix\nROOT: new"
+    final = "VERDICT: PASS. The verdict and all other findings are unchanged from the report above."
+    claude = "\n".join(json.dumps(e) for e in (
+        {"type": "assistant", "message": {"content": [{"type": "text", "text": block}]}},
+        {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {}}]}},
+        {"type": "assistant", "message": {"content": [{"type": "text", "text": final}]}},
+        {"type": "result", "result": final, "usage": {}}))
+    codex = "\n".join(json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": x}}) for x in (block, final))
+    for tool, out in (("claude", claude), ("codex", codex)):
+        assert omi.worker.tools.full_report(tool, out, final) == f"{block}\n\n{final}"
+        assert omi.worker.tools.verdict_of(omi.worker.tools.full_report(tool, out, final)) == "PASS"
+        assert omi.worker.tools.full_report(tool, out, block) == block
+    complete = "VERDICT: PASS\nROOT: n/a"
+    assert omi.worker.tools.full_report("codex", codex, complete) == complete
+    assert omi.worker.tools.full_report("codex", "", final) == final
+
+
 def main():
     test_verdict_of_forms()
+    test_full_report_keeps_earlier_block()
     test_pr_comment()
     test_worker_cache_tmpfs_and_full_volumes()
     test_download_cache_gitignore()
