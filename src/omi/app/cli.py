@@ -142,7 +142,7 @@ def main(argv: list[str] | None = None) -> None:
         if cmd != "guard":  # guard handles StateError itself and must exit 2 (blocking), not 1
             state.registry()
         mutates = cmd in {"init", "upgrade", "skills", "rules", "plans", "references", "agents",
-                          "workflows", "step", "run", "hook", "worker"}
+                          "workflows", "step", "note", "host-test", "run", "hook", "worker"}
         target = args[1] if cmd == "init" and len(args) > 1 else "."
         project = state.resolve(target) if mutates else None
         if project and project.detached:

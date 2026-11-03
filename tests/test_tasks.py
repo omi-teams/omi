@@ -798,6 +798,9 @@ def test_host_test():
         task = wt / ".omi" / "tasks" / "TASK-1.md"
         task.parent.mkdir(parents=True)
         task.write_text("---\nid: TASK-1\n---\n## Steps\n- build done 2026-11-03 10:00\n", encoding="utf-8")
+        (wt / "code.py").write_text("x = 1\n", encoding="utf-8")
+        git(wt, "add", "-A")
+        git(wt, "commit", "-m", "work")
         sha = omi.common.core.git(wt, "rev-parse", "--short=7", "HEAD")
         project = omi.state.resolve.Project(root, root)
         cfg = root / ".omi" / "config.json"
@@ -823,6 +826,16 @@ def test_host_test():
         code, out = host_test("")
         assert code == 0 and "skipped" in out and "## Usage" not in task.read_text(encoding="utf-8")
         gate()
+        # uncommitted code: refused, no row
+        (wt / "code.py").write_text("x = 2\n", encoding="utf-8")
+        try:
+            host_test("x")
+        except SystemExit as exc:
+            assert "uncommitted" in str(exc) and "## Usage" not in task.read_text(encoding="utf-8")
+        else:
+            raise AssertionError("dirty worktree must be refused")
+        git(wt, "commit", "-am", "more")
+        sha = omi.common.core.git(wt, "rev-parse", "--short=7", "HEAD")
         # set: the reviewer gate refuses while no host test ran for this commit
         cfg.write_text(json.dumps({"host_test": "x"}), encoding="utf-8")
         refuses("HOST TEST MISSING")

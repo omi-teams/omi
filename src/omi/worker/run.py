@@ -155,6 +155,8 @@ def host_test(project, tid):
     wt = core.task_worktrees(project.code).get(tid)
     if not wt:
         sys.exit(f"no worktree for {tid}: create it first (git worktree add). Nothing changed.")
+    if core.git(wt, "status", "--porcelain", "--", ".", f":(exclude).omi/tasks/{tid}.md"):  # the task file gets this run's row
+        sys.exit(f"{tid} worktree has uncommitted changes: commit first, so the result covers HEAD. Nothing changed.")
     t0 = time.monotonic()
     try:
         r = subprocess.run(shell_command(cmd), cwd=wt, capture_output=True, encoding="utf-8", errors="replace")
