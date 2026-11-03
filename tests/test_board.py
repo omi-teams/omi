@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
@@ -13,6 +14,17 @@ from unittest.mock import patch
 import helpers
 from helpers import git
 from omi.board import data, source, timeline
+
+
+@contextmanager
+def state_dir(env=True):
+    """Temp state home; waits for background fetches before removal (Windows cannot delete a busy dir)."""
+    with tempfile.TemporaryDirectory() as directory:
+        try:
+            with patch.dict(os.environ, {"OMI_STATE": directory} if env else {}):
+                yield directory
+        finally:
+            source.wait_fetches()
 
 
 def write(path, text):
@@ -51,8 +63,7 @@ def remote(home):
 
 def settle():
     """Wait for the background fetch and drop the version cache so the next request sees its result."""
-    for worker in list(source._WORKERS.values()):
-        worker.join()
+    source.wait_fetches()
     source._CACHE.clear()
 
 
@@ -61,8 +72,7 @@ def poll(home, call):
     for _ in range(2):
         with patch("omi.board.source.time.monotonic", return_value=source._CACHE[home][0] + 11):
             result = call()
-        for worker in list(source._WORKERS.values()):
-            worker.join()
+        source.wait_fetches()
     return result
 
 
@@ -74,7 +84,7 @@ def publish(home):
 
 
 def test_views():
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         root = fixture(home)
         decisions = root / ".omi/decisions.md"
@@ -155,7 +165,7 @@ def test_views():
 
 
 def test_plan_status_derived():
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         root = home / "projects" / "sample"
         for pid, stored in (("PLAN-001", "active"), ("PLAN-002", "active"), ("PLAN-003", "active"), ("PLAN-004", "done")):
@@ -171,7 +181,7 @@ def test_plan_status_derived():
 
 
 def test_hierarchy():
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         root = home / "projects" / "sample"
         for tid, extra in (("TASK-001", "type: milestone\nstatus: planned\n"), ("TASK-002", "type: epic\nparent: TASK-001\nstatus: planned\n"),
@@ -190,7 +200,7 @@ def test_hierarchy():
 
 
 def test_shared_fetch():
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         fixture(home)
         remote(home)
@@ -216,7 +226,7 @@ def test_shared_fetch():
 
 
 def test_version() -> None:
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         root = fixture(home)
         remote(home)
@@ -251,7 +261,7 @@ def test_version() -> None:
 
 
 def test_path_redaction() -> None:
-    with tempfile.TemporaryDirectory() as directory:
+    with state_dir(env=False) as directory:
         home = Path(directory) / "cache"
         home.mkdir()
         fixture(home)
@@ -275,7 +285,7 @@ def test_path_redaction() -> None:
 
 
 def test_snapshot_one_git_process() -> None:
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         fixture(home)
         remote(home)
@@ -298,7 +308,7 @@ def test_snapshot_one_git_process() -> None:
 
 
 def test_request_does_not_wait_for_fetch() -> None:
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         fixture(home)
         remote(home)
@@ -314,21 +324,24 @@ def test_request_does_not_wait_for_fetch() -> None:
 
 
 def test_projects_cached_per_commit_and_minute() -> None:
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         fixture(home)
         remote(home)
-        first = data.projects()
-        with patch("omi.board.data._detail", side_effect=AssertionError("parsed again")):
-            assert data.projects()["projects"] == first["projects"]
-        with patch("omi.board.data._now", return_value=data._now().replace(minute=(data._now().minute + 1) % 60)), \
+        now = datetime(2026, 11, 3, 10, 30, 5)
+        later = now.replace(minute=31)
+        with patch("omi.board.data._now", return_value=now):
+            first = data.projects()
+            with patch("omi.board.data._detail", side_effect=AssertionError("parsed again")):
+                assert data.projects()["projects"] == first["projects"]
+        with patch("omi.board.data._now", return_value=later), \
                 patch("omi.board.data._detail", wraps=data._detail) as details:
             data.projects()
             assert details.called
 
 
 def test_unavailable_snapshot():
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         source._CACHE.clear()
         with patch("omi.board.source.core.git", return_value=None), patch("omi.board.source._fetch", return_value=False) as fetches, \
                 patch("omi.board.source.time.monotonic", return_value=100):
@@ -343,7 +356,7 @@ def test_unavailable_snapshot():
 
 
 def test_fetch_timeout_serves_stale():
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         fixture(home)
         remote(home)
@@ -366,7 +379,7 @@ def test_fetch_timeout_serves_stale():
 
 
 def test_workflow_detail():
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         root = fixture(Path(directory))
         steps = [{"id": id, "gate": "po" if id == "accept" else "none"}
                  for id in ("plan", "design", "build", "review", "accept", "qa")]
@@ -396,7 +409,7 @@ def test_workflow_detail():
 
 
 def test_path_refusal():
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         root = fixture(home)
         remote(home)
@@ -441,7 +454,7 @@ def refuses(call):
 
 
 def test_empty_and_layer():
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         write(home / "README.md", "empty state")
         remote(home)
@@ -461,7 +474,7 @@ def usage_task(root, id, plan, tool, rows):
 
 
 def test_cost():
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         root = home / "projects" / "sample"
         usage_task(root, "TASK-001", "PLAN-001", "claude", [
@@ -507,7 +520,7 @@ def test_cost_legacy_usage() -> None:
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 1669 | 148530 | 35s | - |
 """
     )
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         root = home / "projects/sample"
         for id, table in zip(("TASK-026", "TASK-035"), tables):
@@ -534,7 +547,7 @@ def test_cost_mixed_tools_per_task() -> None:
 | omi-agent-engineer | gpt-6.1-sol (codex) | medium | 4791246 | 22961 | 4713600 | 306s | 0/2 | - |
 | omi-agent-reviewer | claude-sonnet-5-5 | medium | 12 | 3495 | 302635 | 495s | - | PASS 6499fb8 |
 """
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         root = home / "projects/sample"
         write(root / ".omi/tasks/TASK-125.md", "---\nid: TASK-125\nplan: PLAN-007\ntool: codex\n---\n## Usage\n" + table + "\n")
@@ -635,7 +648,7 @@ def test_inbox_detection() -> None:
 
 
 def test_inbox_aggregation() -> None:
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         fixture(home)
         for project, stamp in (("other", "2026-10-28 12:00"), ("sample", "2026-10-29 12:00")):
@@ -723,7 +736,7 @@ def test_alerts() -> None:
 
 
 def test_alerts_config() -> None:
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         root = fixture(home)
         remote(home)
@@ -769,7 +782,7 @@ def test_graph_cycles() -> None:
 
 
 def test_graph_view() -> None:
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory)
         fixture(home)
         remote(home)

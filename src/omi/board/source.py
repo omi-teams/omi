@@ -124,6 +124,12 @@ def _background_fetch(home: Path) -> None:
         _FETCHES[home] = {"ok": ok, "at": datetime.now(timezone.utc).isoformat() if ok else _FETCHES[home]["at"]}
 
 
+def wait_fetches(timeout: float = FETCH_TIMEOUT + 5) -> None:
+    """Join the background fetch threads (tests: a busy repo directory cannot be removed on Windows)."""
+    for worker in list(_WORKERS.values()):
+        worker.join(timeout)
+
+
 def version() -> dict:
     """Serve the local origin/main at once; fetch in the background, at most every two seconds."""
     home = state.state_home()

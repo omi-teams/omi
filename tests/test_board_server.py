@@ -10,7 +10,7 @@ from unittest.mock import patch
 import helpers  # noqa: F401
 from helpers import omi
 from omi.board import server
-from test_board import fixture, write, remote
+from test_board import fixture, write, remote, state_dir
 
 
 def request(port, method, path, host=None):
@@ -23,7 +23,7 @@ def request(port, method, path, host=None):
 
 
 def test_server():
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         home = Path(directory) / "state"
         web = Path(directory) / "web"
         fixture(home)
@@ -120,7 +120,7 @@ def test_board_cli():
 
 
 def test_unreadable_task():
-    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+    with state_dir() as directory:
         httpd = server.make_server(0, Path(directory))
         threading.Thread(target=httpd.serve_forever, daemon=True).start()
         try:
