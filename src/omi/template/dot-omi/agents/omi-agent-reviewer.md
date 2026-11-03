@@ -25,3 +25,4 @@ ROOT: same | new | n/a
 ```
 `ROOT: same` = the findings are new instances of a root cause an earlier round already named (see `## Checkpoint`); `new` = a different cause; `n/a` = PASS or first round. It is the last line.
 List at most 10 findings, most severe first. Report real problems only: no style nits, no praise.
+Your final message must repeat the complete output block above, never refer to an earlier message ("see above", "unchanged").

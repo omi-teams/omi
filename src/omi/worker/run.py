@@ -334,6 +334,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             if dropped and task.exists():  # token in a transcript: forget the session, next run is fresh
                 task.write_text(session.LINE.sub("", task.read_text(encoding="utf-8")), encoding="utf-8", newline="\n")
         result, *nums = tools.parse_usage(t, r.stdout)
+        if read:
+            result = tools.full_report(t, r.stdout, result)
         done = skills_read(catalog, ids, tools.opened_files(t, r.stdout))
         verdict = (tools.verdict_of(result) or "n/a") if read else "-"
         head = core.git(wt, "rev-parse", "--short=7", "HEAD") if read and verdict != "n/a" else None

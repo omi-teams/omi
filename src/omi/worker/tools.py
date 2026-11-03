@@ -241,3 +241,31 @@ def verdict_of(report):
     """The last `VERDICT|RESULT: PASS|FAIL` line of a report, or None."""
     found = re.findall(r"^\W*(?:VERDICT|RESULT):\W*(PASS|FAIL)", report or "", re.M)
     return found[-1] if found else None
+
+
+def assistant_texts(tool, out):
+    """Text of each assistant message in the CLI's event stream, in order (claude `assistant` text blocks, codex `agent_message` items)."""
+    texts = []
+    for line in (out or "").splitlines():
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(e, dict):
+            continue
+        if tool == "claude" and e.get("type") == "assistant" and isinstance(e.get("message"), dict):
+            texts += [c["text"] for c in e["message"].get("content") or [] if isinstance(c, dict) and c.get("type") == "text"]
+        elif tool == "codex" and isinstance(e.get("item"), dict) and e["item"].get("type") == "agent_message":
+            texts.append(str(e["item"].get("text") or ""))
+    return texts
+
+
+def full_report(tool, out, result):
+    """A read role's report: the final message, preceded by the last earlier message with a complete block
+    (VERDICT line and closing ROOT line) when the final one is not complete (e.g. "unchanged from the report above")."""
+    def complete(text):
+        return verdict_of(text) is not None and re.search(r"^\W*ROOT:", text, re.M) is not None
+    if not result or complete(result):
+        return result
+    earlier = next((t for t in reversed(assistant_texts(tool, out)) if t != result and complete(t)), None)
+    return f"{earlier}\n\n{result}" if earlier else result
