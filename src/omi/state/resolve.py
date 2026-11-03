@@ -88,7 +88,7 @@ def task_text(project: Project, wt: str | Path, tid: str) -> str | None:
     """Authoritative scope input, never the agent-writable worktree task."""
     if project.detached:
         task = project.state / ".omi" / "tasks" / f"{tid}.md"
-        return task.read_text(encoding="utf-8") if task.exists() else None
+        return core.read_task(task) if task.exists() else None
     return core.git(wt, "show", f"development:.omi/tasks/{tid}.md")
 
 

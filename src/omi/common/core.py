@@ -26,8 +26,13 @@ def split(value):
     return [x.strip() for x in (value or "").split(",") if x.strip()]
 
 
+def read_task(path):
+    """Task file text without a leading UTF-8 BOM."""
+    return Path(path).read_text(encoding="utf-8-sig")
+
+
 def meta(path):
-    return parse(path.read_text(encoding="utf-8"))
+    return parse(read_task(path))
 
 
 def parse(text):
@@ -39,7 +44,8 @@ def parse(text):
         for line in text.split("---", 2)[1].splitlines():
             item = line.strip()
             if key and item.startswith("- "):  # YAML block list -> comma list
-                m[key] = f"{m[key]}, {item[2:].strip()}" if m[key] else item[2:].strip()
+                item = item[2:].split("#")[0].strip()
+                m[key] = f"{m[key]}, {item}" if m[key] else item
                 continue
             k, sep, value = line.partition(":")
             if sep:

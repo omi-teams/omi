@@ -210,7 +210,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
     catalogs.check_task_plan(catalog, tm)
     am = catalogs.get_role(main, role)
     if role in tasks.REVIEW_ROLES:
-        tasks.host_test_gate(project.state, task.stem, task.read_text(encoding="utf-8") if task.exists() else "",
+        tasks.host_test_gate(project.state, task.stem, core.read_task(task) if task.exists() else "",
                              core.git(wt, "rev-parse", "--short=7", "HEAD"))
     catalogs.get_role(main, tm.get("role") or "omi-agent-engineer")  # unknown task role fails too
     steps = workflows.get_workflow(catalog, tm.get("workflow") or workflows.DEFAULT_WORKFLOW) \
@@ -232,7 +232,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         sys.exit(f"no token: run `omi token set` (Windows), set {creds.TOKEN_ENV}, or log in to Claude Code on the host"
                  f"{f' ({secret[2]})' if secret[2] else ''}. Nothing changed.")
     tasks.sync_scope(wt, task, task.stem)  # before `before`, so revert_front keeps the synced scope
-    before = task.read_text(encoding="utf-8") if task.exists() else ""
+    before = core.read_task(task) if task.exists() else ""
     if cur and cur["role"] != role:
         print(f"WARNING: step {cur['id']} of {task.stem} is for {cur['role']}, not {role}; "
               f"if that step is finished run `omi step {task.stem} done` / `next` first")
@@ -332,7 +332,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         finally:  # Ctrl-C, a container error and the exit above included: no token may stay in the session volume
             dropped = not read and session.scrub(repo, task.stem, t, image, value)
             if dropped and task.exists():  # token in a transcript: forget the session, next run is fresh
-                task.write_text(session.LINE.sub("", task.read_text(encoding="utf-8")), encoding="utf-8", newline="\n")
+                task.write_text(session.LINE.sub("", core.read_task(task)), encoding="utf-8", newline="\n")
         result, *nums = tools.parse_usage(t, r.stdout)
         done = skills_read(catalog, ids, tools.opened_files(t, r.stdout))
         verdict = (tools.verdict_of(result) or "n/a") if read else "-"
@@ -344,7 +344,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         if tools.quota_hit(t, r.stdout, r.returncode):
             verdict = f"QUOTA->{'codex' if t == 'claude' else 'claude'}"
         if not read and not dropped and (sid := session.session_id(t, r.stdout)) and task.exists():
-            task.write_text(session.with_session(task.read_text(encoding="utf-8"), t, sid, role), encoding="utf-8", newline="\n")
+            task.write_text(session.with_session(core.read_task(task), t, sid, role), encoding="utf-8", newline="\n")
         tasks.record_usage(task, role, models[t] + (" (codex)" if t == "codex" else ""), efforts[t], nums,
                      time.monotonic() - t0, skills_cell(ids, done), verdict)
         return r, result, done
@@ -360,7 +360,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         if read:
             base = core.git(wt, "merge-base", "development", "HEAD") or "development"
             full = tree_diff(wt, base)
-            rounds, sha, named = tasks.prior_review(task.read_text(encoding="utf-8") if task.exists() else "")
+            rounds, sha, named = tasks.prior_review(core.read_task(task) if task.exists() else "")
             patch, note = full, "\nDiff: /review/diff.patch (read-only; git does not work in this container)"
             if sha and rounds < 2:
                 inc = tree_diff(wt, sha, None if project.detached else task_rel)
@@ -420,7 +420,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             if sid not in done:
                 print(f"SKILL NOT READ: {sid}")
         res = hooks.run_hook(wt, main, "post-run", task.stem, image) if not rc and not read else None
-        if res and res[0] and (sid := session.recorded(task.read_text(encoding="utf-8"), tool, role)) \
+        if res and res[0] and (sid := session.recorded(core.read_task(task), tool, role)) \
                 and session.available(repo, task.stem, tool, sid):  # one retry: the engineer fixes what the hook found
             print("post-run hook failed; resuming the engineer once to fix it")
             if (fix := attempt(tool, secret, resume=sid, hook_tail="\n".join(res[1].strip().splitlines()[-20:])))[0].returncode:

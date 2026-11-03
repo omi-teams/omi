@@ -35,7 +35,7 @@ def open_count(source: str) -> int:
     project = omi_project()
     if project is None:
         return 0
-    return sum(core.meta(f).get("status") != "done" and f"source_project: {source}" in f.read_text(encoding="utf-8").splitlines()
+    return sum(core.meta(f).get("status") != "done" and f"source_project: {source}" in core.read_task(f).splitlines()
                for f in (project.state / ".omi" / "tasks").glob("TASK-*.md"))
 
 
@@ -62,7 +62,7 @@ def improve(args: list[str], cwd: str | Path = ".") -> None:
     directory = project.state / ".omi" / "tasks"
     found = list(directory.glob("TASK-*.md"))
     for task in sorted(found):
-        text = task.read_text(encoding="utf-8")
+        text = core.read_task(task)
         if core.parse(text).get("status") != "done" and f"title: {summary}" in text.partition("\n---")[0].splitlines():
             print(task.stem)
             return
