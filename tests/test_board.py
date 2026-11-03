@@ -340,8 +340,14 @@ def test_newline_path_skipped() -> None:
     with state_dir() as directory:
         home = Path(directory)
         fixture(home)
-        (home / "bad\nname.md").write_text("x", encoding="utf-8")
         remote(home)
+        # Windows cannot create such a file, so put it into the tree through the index only.
+        blob = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=home, input=b"x", check=True,
+                              capture_output=True).stdout.decode().strip()
+        git(home, "update-index", "--add", "--cacheinfo", f"100644,{blob},bad\nname.md")
+        git(home, "commit", "-qm", "newline path")
+        git(home, "push", "-q", "origin", "main")
+        source._CACHE.clear()
         snap = source.snapshot()
         assert not any("\n" in str(p) for p in snap.paths)
         assert len(snap.paths) > 5 and all(snap.read(p) for p in snap.paths)
