@@ -2,7 +2,7 @@
 id: TASK-NNN
 title: Short imperative title
 status: planned
-type:  # optional: milestone|epic|fr|nfr|task (default task)
+type:  # optional: milestone|epic|fr|nfr|task|bug|security|incident|change|spike|chore (default task)
 parent:  # optional task id; a task with children gets its status from them (done/blocked/planned/in-progress), is never run or suggested next
 depends:
 plan:  # Coordinator-owned optional id from .omi/plans/CATALOG.md

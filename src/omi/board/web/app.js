@@ -88,7 +88,7 @@ function branchChip(branch) {
 }
 const PHASES = {not_started: "Chưa bắt đầu", planning: "Lên kế hoạch", design: "Thiết kế", working: "Đang làm",
   review: "Đang review", qa: "Đang QA", po: "Chờ PO", blocked: "Bị chặn", done: "Xong"};
-const TYPES = {milestone: "Milestone", epic: "Epic", fr: "FR", nfr: "NFR", task: "Task"};
+const TYPES = {milestone: "Milestone", epic: "Epic", fr: "FR", nfr: "NFR", task: "Task", bug: "Bug", security: "Security", incident: "Incident", change: "Change", spike: "Spike", chore: "Chore"};
 const typeChip = (t) => chip(TYPES[t.type] || t.type || "Task", t.type || "task");
 const statusOf = (t) => t.status || t.frontmatter.status || "planned";
 const statusChip = (t, derived = false) => chip(`${GLYPH[statusOf(t)] || "○"} ${STATUS[statusOf(t)] || statusOf(t)}${derived ? " · tổng hợp" : ""}`, statusOf(t) === "in-progress" ? "working" : statusOf(t));

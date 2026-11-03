@@ -378,8 +378,8 @@ def test_improve_creation_and_workflows() -> None:
         unrelated = project / "pending.txt"
         unrelated.write_text("leave staged", encoding="utf-8")
         git(home, "add", str(unrelated))
-        for index, (kind, workflow) in enumerate((("bug", "omi-flow-bugfix"), ("security", "omi-flow-feature-sensitive"),
-                                                 ("idea", "omi-flow-feature")), 124):
+        for index, (kind, workflow, typ) in enumerate((("bug", "omi-flow-bugfix", "bug"), ("security", "omi-flow-feature-sensitive", "security"),
+                                                      ("idea", "omi-flow-feature", "task")), 124):
             summary = f"Fix {kind}: preserve # and 'quotes'"
             with patch.dict(os.environ, {"OMI_AGENT": "omi-agent-reviewer"}):
                 args = ["improve", summary] + ([] if kind == "bug" else ["--kind", kind])
@@ -391,6 +391,7 @@ def test_improve_creation_and_workflows() -> None:
             text = created.read_text(encoding="utf-8")
             front = omi.common.core.parse(text)
             assert front["id"] == tid and front["status"] == "planned" and front["workflow"] == workflow
+            assert front["type"] == typ
             assert f"title: {summary}\n" in text
             assert "Source project: sample\nSource task: TASK-097\nSource agent: omi-agent-reviewer" in text
             assert omi.common.core.git(home, "show", "--pretty=format:", "--name-only", "HEAD") == f"projects/omi/.omi/tasks/{tid}.md"

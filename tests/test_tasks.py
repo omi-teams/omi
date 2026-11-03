@@ -23,7 +23,7 @@ def test_plan_status():
 def test_hierarchy():
     t = lambda status="planned", **kw: {"status": status, **kw}
     assert tasks.tree_errors({"A": {}, "B": t(type="", parent="A")}) == [] and tasks.derived_status({"A": {}}) == {"A": "planned"}
-    assert tasks.tree_errors({"A": t(type="story")}) == ["A: unknown type `story` (use milestone|epic|fr|nfr|task)"]
+    assert tasks.tree_errors({"A": t(type="story")}) == ["A: unknown type `story` (use milestone|epic|fr|nfr|task|bug|security|incident|change|spike|chore)"]
     assert tasks.tree_errors({"A": t(parent="Z")}) == ["A: parent Z does not exist"]
     cyc = tasks.tree_errors({"A": t(parent="B"), "B": t(parent="A"), "C": t(parent="C")})
     assert "A: parent cycle A -> B -> A" in cyc and "C: parent cycle C -> C" in cyc
@@ -204,6 +204,21 @@ def test_task_flow_commit_scope_sync_warn():
                 assert bool(sys.stdout.getvalue()) == hit, glob
             finally:
                 sys.stdout = saved
+
+
+def test_type_validation_and_workflow_warning():
+    t = lambda **k: {"status": "planned", **k}
+    for typ in ("bug", "security", "incident", "change", "spike", "chore"):
+        assert omi.project.tasks.tree_errors({"A": t(type=typ)}) == []
+    def warned(m):
+        with patch("sys.stdout", io.StringIO()) as out:
+            omi.project.tasks.warn_type_workflow(m)
+        return out.getvalue()
+    assert "type `task` does not match workflow omi-flow-incident" in warned({"type": "task", "workflow": "omi-flow-incident"})
+    assert "omi-flow-bugfix" in warned({"type": "bug", "workflow": "omi-flow-feature"})
+    for typ, wf in (("bug", "omi-flow-bugfix"), ("security", "omi-flow-feature-sensitive"), ("task", "omi-flow-feature-sensitive"),
+                    ("chore", "omi-flow-refactor"), ("task", "omi-flow-feature"), (None, None)):
+        assert not warned({"type": typ, "workflow": wf}), (typ, wf)
 
 
 def test_step_approve_reopen():
