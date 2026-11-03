@@ -27,7 +27,7 @@ USAGE = """usage: omi <command>
   board [--port N] [--no-open]   serve the read-only task board on 127.0.0.1 (default port 8765)
   guard        Claude Code PreToolUse hook: block writes outside task scope
   github       set up branches and rulesets: squad merges to development, only the PO to staging/main
-  clean [--all]   remove this repo's worker containers, engineer session volumes and old worker images (--all: the current image too)
+  clean [<ID>] [--all] [--force]   remove this repo's worker containers, engineer session volumes and old worker images (--all: the current image too); <ID>: only that task's containers and volumes; refuses while a worker runs unless --force
   skills [check <task-file>]   write .omi/skills/CATALOG.md; or check a task's skills against the budget
   skills --check   validate every skill against the contract (parts, size, source, no widened permissions)
   token set [--tool claude|codex]   store the `claude setup-token` value (or the OpenAI API key) in Windows Credential Manager
@@ -227,7 +227,8 @@ def dispatch(argv: list[str] | None = None) -> None:
         with contextlib.chdir(project.code if project.detached else Path.cwd()):
             github.github("--po" in rest)
     elif cmd == "clean":
-        docker.clean(all_images="--all" in rest)
+        ids = [a for a in rest if not a.startswith("--")]
+        docker.clean(all_images="--all" in rest, task=ids[0] if ids else None, force="--force" in rest)
     elif cmd == "skills":
         if rest[:1] == ["--check"]:
             catalogs.check_all_skills(root)

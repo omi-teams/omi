@@ -262,24 +262,29 @@ def ensure_image(main):
     return tag
 
 
-def clean(cwd=".", all_images=False):
-    """Remove this repo's worker containers, engineer session volumes and every worker image except the current one (all_images: that too)."""
+def clean(cwd=".", all_images=False, task=None, force=False):
+    """Remove this repo's worker containers, engineer session volumes and every worker image except the current one (all_images: that too).
+    With `task`: only that task's containers and volumes. Without it, refuses while a worker runs unless `force`."""
     main = state.resolve(core.main_checkout(cwd) or Path(cwd).resolve()).state
+    if not task and not force and (rows := running_workers(main)):
+        sys.exit("RUNNING: " + ", ".join(f"{r[0]} {r[1]}" for r in rows) + "; use omi clean <ID>, or --force")
     r = subprocess.run(["docker", "ps", "-a", "-q", "--filter", "label=omi-worker=1",
-                        "--filter", f"label=omi-repo={repo_key(main)}"],
+                        "--filter", f"label=omi-repo={repo_key(main)}", *(["--filter", f"label=omi-task={task}"] if task else [])],
                        capture_output=True, encoding="utf-8", errors="replace")
     ids = r.stdout.split()
     if ids:
         subprocess.run(["docker", "rm", "-f", *ids], capture_output=True)
-    vols = session.clear(repo_key(main))  # after the containers: a volume in use cannot go
-    r = subprocess.run(["docker", "network", "ls", "-q", "--filter", f"label=omi-repo={repo_key(main)}"],
-                       capture_output=True, encoding="utf-8", errors="replace")
-    nets = r.stdout.split()
-    if nets:
-        subprocess.run(["docker", "network", "rm", *nets], capture_output=True)
-    imgs = old_images(main, None if all_images else image_tag(main)[1])
-    for i in imgs:
-        subprocess.run(["docker", "rmi", i], capture_output=True)
+    vols = session.clear(repo_key(main), task)  # after the containers: a volume in use cannot go
+    nets, imgs = [], []
+    if not task:
+        r = subprocess.run(["docker", "network", "ls", "-q", "--filter", f"label=omi-repo={repo_key(main)}"],
+                           capture_output=True, encoding="utf-8", errors="replace")
+        nets = r.stdout.split()
+        if nets:
+            subprocess.run(["docker", "network", "rm", *nets], capture_output=True)
+        imgs = old_images(main, None if all_images else image_tag(main)[1])
+        for i in imgs:
+            subprocess.run(["docker", "rmi", i], capture_output=True)
     print(f"removed {len(ids)} container(s), {len(nets)} network(s), {len(imgs)} image(s), {vols} session volume(s)")
 
 
