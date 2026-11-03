@@ -46,8 +46,8 @@ def usage_rows(text):
 
 
 def failed_rounds(text):
-    """Review or security FAIL rows of `## Usage`."""
-    return sum(r[0] in REVIEW_ROLES and r[-1].startswith("FAIL") for r in usage_rows(text))
+    """Review, security or host-test FAIL rows of `## Usage`."""
+    return sum(r[0] in (*REVIEW_ROLES, "host-test") and r[-1].startswith("FAIL") for r in usage_rows(text))
 
 
 def root_of(report):
@@ -60,6 +60,27 @@ def same_root(text, role):
     """Whether the role's latest verdict is a FAIL recorded with `root:same`."""
     last = [r[-1] for r in usage_rows(text) if r[0] == role and r[-1][:4] in ("PASS", "FAIL")]
     return bool(last) and last[-1].startswith("FAIL") and "root:same" in last[-1].split()
+
+
+def host_test_command(root):
+    """`host_test` from .omi/config.json, empty when unset."""
+    try:
+        return json.loads((Path(root) / ".omi" / "config.json").read_text(encoding="utf-8")).get("host_test") or ""
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
+def host_test_gate(root, tid, text, head):
+    """Exit unless the last `host-test` row passed on commit `head`; no-op while `host_test` is empty."""
+    if not host_test_command(root):
+        return
+    rows = [r[-1] for r in usage_rows(text) if r[0] == "host-test"]
+    last = rows[-1] if rows else ""
+    if last == f"PASS {head}":
+        return
+    if last == f"FAIL {head}":
+        sys.exit(f"HOST TEST FAILED for {head}: fix it and run `python -m omi host-test {tid}` again before review. Nothing changed.")
+    sys.exit(f"HOST TEST MISSING for {head}: run `python -m omi host-test {tid}` on the host first. Nothing changed.")
 
 
 def round_gate(root, tid, text, po):

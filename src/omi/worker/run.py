@@ -80,15 +80,20 @@ def host_bash():
     return bash
 
 
+def shell_command(cmd):
+    """`cmd` through a shell, like in the containers, so `VAR=1 cmd` works."""
+    if core.WINDOWS:
+        bash = host_bash()
+        return [bash, "-c", cmd] if bash else f'cmd /d /s /c "{cmd}"'
+    return ["bash", "-c", cmd] if shutil.which("bash") else ["sh", "-c", cmd]
+
+
 def test_command(wt, main):
     """`test` from .omi/config.json, else tests/test_omi.py if present, else pytest if importable, else each tests/test_*.py as a script."""
     cfg = Path(main) / ".omi" / "config.json"
     cmd = (json.loads(cfg.read_text(encoding="utf-8")) if cfg.exists() else {}).get("test")
-    if cmd:  # through a shell, like in the containers, so `VAR=1 cmd` works
-        if core.WINDOWS:
-            bash = host_bash()
-            return [bash, "-c", cmd] if bash else f'cmd /d /s /c "{cmd}"'
-        return ["bash", "-c", cmd] if shutil.which("bash") else ["sh", "-c", cmd]
+    if cmd:
+        return shell_command(cmd)
     if (Path(wt) / "tests" / "test_omi.py").exists():
         argv = ["python", "tests/test_omi.py"]
     elif importlib.util.find_spec("pytest"):
@@ -140,6 +145,37 @@ def deterministic_checks(wt, main, tid):
     return problems
 
 
+def host_test(project, tid):
+    """`omi host-test <ID>`: run `host_test` on the host in the task's worktree and record a `host-test` row in `## Usage`.
+    Returns the exit code: 0 on pass or when `host_test` is empty."""
+    cmd = tasks.host_test_command(project.state)
+    if not cmd:
+        print("host_test is empty in .omi/config.json: skipped")
+        return 0
+    wt = core.task_worktrees(project.code).get(tid)
+    if not wt:
+        sys.exit(f"no worktree for {tid}: create it first (git worktree add). Nothing changed.")
+    dirty = core.git(wt, "status", "--porcelain", "--", ".", f":(exclude).omi/tasks/{tid}.md")  # the task file gets this run's row
+    if dirty is None:
+        sys.exit(f"cannot read the git status of {tid}'s worktree. Nothing changed.")
+    if dirty:
+        sys.exit(f"{tid} worktree has uncommitted changes: commit first, so the result covers HEAD. Nothing changed.")
+    t0 = time.monotonic()
+    try:
+        r = subprocess.run(shell_command(cmd), cwd=wt, capture_output=True, encoding="utf-8", errors="replace")
+        code, out = r.returncode, r.stdout + r.stderr
+    except OSError as e:
+        code, out = 1, f"host test failed to start: {e}"
+    sha = core.git(wt, "rev-parse", "--short=7", "HEAD") or "unknown"
+    tasks.record_usage(state.task_file(project, tid), "host-test", "-", None, (None, None, None), time.monotonic() - t0,
+                       "-", f"{'FAIL' if code else 'PASS'} {sha}")
+    if code:
+        print("HOST TEST FAILED\n" + "\n".join(out.strip().splitlines()[-20:]))
+        return 1
+    print(f"HOST TEST PASSED {sha}")
+    return 0
+
+
 def parse_step_settings(value: str, step_ids: list[str] | None = None) -> dict[str, dict[str, str]]:
     """Parse per-step tool/model/effort overrides, allowing empty parts."""
     settings = {}
@@ -173,6 +209,9 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
     tm = core.meta(task) if task.exists() else {}
     catalogs.check_task_plan(catalog, tm)
     am = catalogs.get_role(main, role)
+    if role in tasks.REVIEW_ROLES:
+        tasks.host_test_gate(project.state, task.stem, task.read_text(encoding="utf-8") if task.exists() else "",
+                             core.git(wt, "rev-parse", "--short=7", "HEAD"))
     catalogs.get_role(main, tm.get("role") or "omi-agent-engineer")  # unknown task role fails too
     steps = workflows.get_workflow(catalog, tm.get("workflow") or workflows.DEFAULT_WORKFLOW) \
         if tm.get("step") or tm.get("step_settings") else []

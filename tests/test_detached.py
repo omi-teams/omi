@@ -88,6 +88,24 @@ def test_detached_commands_and_steps():
         assert not (code / ".omi").exists() and not (wt / ".omi").exists()
 
 
+def test_detached_host_test_and_note_commit_state():
+    with detached_project() as (code, project, wt, task):
+        home = project.parents[1]
+        git(home, "add", ".")
+        git(home, "commit", "-qm", "base")
+        cfg = project / ".omi" / "config.json"
+        data = json.loads(cfg.read_text(encoding="utf-8"))
+        data["host_test"] = "python3 -c 'print(1)'"
+        cfg.write_text(json.dumps(data), encoding="utf-8")
+        git(home, "commit", "-qam", "host_test")
+        detached_cli(wt, "host-test", task.stem)
+        assert "| host-test |" in task.read_text(encoding="utf-8")
+        assert omi.common.core.git(home, "status", "--porcelain") == ""
+        detached_cli(wt, "note", task.stem, "--step", "build", "--verdict", "PASS", "checked")
+        assert "checked" in task.read_text(encoding="utf-8")
+        assert omi.common.core.git(home, "status", "--porcelain") == ""
+
+
 def test_detached_project_commands():
     from unittest.mock import patch
     with detached_project() as (code, project, wt, task):
@@ -264,6 +282,7 @@ def main():
     test_detached_resolution()
     test_detached_commands_and_steps()
     test_detached_project_commands()
+    test_detached_host_test_and_note_commit_state()
     test_detached_scope_and_guard()
     test_detached_run_and_hooks()
     test_detached_default_hook_config()

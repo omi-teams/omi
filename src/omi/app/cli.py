@@ -36,6 +36,7 @@ USAGE = """usage: omi <command>
   rules        validate .omi/rules and write .omi/rules/CATALOG.md (rules auto-load by task scope)
   agents       write .omi/agents/CATALOG.md (one line per role)
   workflows [--check]   write .omi/workflows/CATALOG.md (one line per workflow); --check validates every workflow
+  host-test <TASK-ID>   run `host_test` (.omi/config.json) on the host in the task's worktree; failure prints HOST TEST FAILED and counts as a fix round
   step <TASK-ID> next|done|back|skip|approve|reopen --why <reason>   record the task's workflow step (gates cannot be skipped; back --to <step> --why: return to an earlier agent step, e.g. architect; --po "<PO's words>" allows one round past max_fix_rounds)
   note <TASK-ID> --step <step> --verdict <verdict> "<text>"   record a Coordinator decision under the task's ## Reports
   run <role> <TASK-ID> [--model M] [--effort E] [--tool claude|codex] [--fresh] [--po "<PO's words>"]   run a role in Docker (--fresh: no engineer session resume; read roles: ro worktree, after the deterministic checks)
@@ -141,7 +142,7 @@ def main(argv: list[str] | None = None) -> None:
         if cmd != "guard":  # guard handles StateError itself and must exit 2 (blocking), not 1
             state.registry()
         mutates = cmd in {"init", "upgrade", "skills", "rules", "plans", "references", "agents",
-                          "workflows", "step", "run", "hook", "worker"}
+                          "workflows", "step", "note", "host-test", "run", "hook", "worker"}
         target = args[1] if cmd == "init" and len(args) > 1 else "."
         project = state.resolve(target) if mutates else None
         if project and project.detached:
@@ -274,6 +275,8 @@ def dispatch(argv: list[str] | None = None) -> None:
         if catalogs.get_role(project.state, rest[0])["access"] == "write":
             tasks.run_gate(project, rest[1], core.flag(rest, "--po"))
         sys.exit(run.run_cmd(rest[0], rest[1], rest))
+    elif cmd == "host-test" and len(rest) == 1:
+        sys.exit(run.host_test(state.resolve(core.main_checkout(".") or Path(".").resolve()), rest[0]))
     elif cmd == "hook" and len(rest) == 2:
         sys.exit(hooks.hook_cmd(*rest))
     elif cmd == "guard":

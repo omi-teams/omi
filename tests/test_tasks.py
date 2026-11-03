@@ -772,6 +772,104 @@ def test_auto_accept():
         assert omi.project.workflows.get_workflow(root, "omi-flow-feature-sensitive")[-1]["gate"] == "po"
 
 
+def test_review_prompts_and_host_test_docs():
+    tpl = omi.common.core.TEMPLATE
+    for name in ("omi-agent-reviewer", "omi-agent-security-reviewer"):
+        text = (tpl / "dot-omi/agents" / f"{name}.md").read_text(encoding="utf-8")
+        for word in ("Windows", "Ctrl-C", "file permissions", "secrets in outputs", "NEW-SEVERE", "Known issues"):
+            assert word in text, (name, word)
+    skill = (tpl / "dot-claude/skills/omi-task/SKILL.md").read_text(encoding="utf-8")
+    assert skill.index("omi host-test <ID>") > skill.index("commit on the host") and "HOST TEST FAILED" in skill
+    assert "Trust boundary" in (tpl / "AGENTS.md").read_text(encoding="utf-8")
+    assert json.loads((tpl / "dot-omi/config.json").read_text(encoding="utf-8"))["host_test"] == ""
+
+
+def test_host_test():
+    row = lambda role, v: f"| {role} | m | high | 1 | 1 | 1 | 1s | - | {v} |\n"
+    head = "\n## Usage\n| role | model | effort | input | output | cache | duration | skills read | verdict |\n|---|---|---|---|---|---|---|---|---|\n"
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve() / "repo"
+        root.mkdir()
+        git(root, "init", "-b", "development")
+        (root / ".omi").mkdir()
+        git(root, "commit", "--allow-empty", "-m", "init")
+        wt = Path(d).resolve() / "wt"
+        git(root, "worktree", "add", "-b", "task/TASK-1", str(wt))
+        task = wt / ".omi" / "tasks" / "TASK-1.md"
+        task.parent.mkdir(parents=True)
+        task.write_text("---\nid: TASK-1\n---\n## Steps\n- build done 2026-11-03 10:00\n", encoding="utf-8")
+        (wt / "code.py").write_text("x = 1\n", encoding="utf-8")
+        git(wt, "add", "-A")
+        git(wt, "commit", "-m", "work")
+        sha = omi.common.core.git(wt, "rev-parse", "--short=7", "HEAD")
+        project = omi.state.resolve.Project(root, root)
+        cfg = root / ".omi" / "config.json"
+        python = sys.executable.replace("\\", "/")
+
+        def host_test(command):
+            cfg.write_text(json.dumps({"host_test": command}), encoding="utf-8")
+            with patch("sys.stdout", io.StringIO()) as out:
+                return omi.worker.run.host_test(project, "TASK-1"), out.getvalue()
+
+        def gate(text=None):
+            tasks.host_test_gate(root, "TASK-1", task.read_text(encoding="utf-8") if text is None else text, sha)
+
+        def refuses(word, text=None):
+            try:
+                gate(text)
+            except SystemExit as exc:
+                assert word in str(exc), str(exc)
+                return
+            raise AssertionError(f"should refuse: {word}")
+
+        # empty host_test: skipped, no row, the reviewer gate is open
+        code, out = host_test("")
+        assert code == 0 and "skipped" in out and "## Usage" not in task.read_text(encoding="utf-8")
+        gate()
+        # uncommitted code: refused, no row
+        (wt / "code.py").write_text("x = 2\n", encoding="utf-8")
+        try:
+            host_test("x")
+        except SystemExit as exc:
+            assert "uncommitted" in str(exc) and "## Usage" not in task.read_text(encoding="utf-8")
+        else:
+            raise AssertionError("dirty worktree must be refused")
+        real_git = omi.common.core.git
+        with patch("omi.common.core.git", side_effect=lambda cwd, *a: None if a[0] == "status" else real_git(cwd, *a)):  # status fails: not "clean"
+            try:
+                host_test("x")
+            except SystemExit as exc:
+                assert "cannot read the git status" in str(exc) and "## Usage" not in task.read_text(encoding="utf-8")
+            else:
+                raise AssertionError("a failed git status must be refused")
+        git(wt, "commit", "-am", "more")
+        sha = omi.common.core.git(wt, "rev-parse", "--short=7", "HEAD")
+        # set: the reviewer gate refuses while no host test ran for this commit
+        cfg.write_text(json.dumps({"host_test": "x"}), encoding="utf-8")
+        refuses("HOST TEST MISSING")
+        refuses("HOST TEST MISSING", head + row("host-test", "PASS 0000000"))
+        # a pass is recorded and opens the gate
+        code, out = host_test(f'"{python}" -c "print(1)"')
+        assert code == 0 and f"HOST TEST PASSED {sha}" in out
+        assert tasks.usage_rows(task.read_text(encoding="utf-8"))[-1][0::8] == ["host-test", f"PASS {sha}"]
+        cfg.write_text(json.dumps({"host_test": "x"}), encoding="utf-8")
+        gate()
+        # a failure prints the output tail, exits non-zero, closes the gate and counts as a fix round
+        code, out = host_test(f'"{python}" -c "import sys;print(\'boom\');sys.exit(3)"')
+        assert code == 1 and out.startswith("HOST TEST FAILED") and "boom" in out
+        text = task.read_text(encoding="utf-8")
+        assert tasks.failed_rounds(text) == 1
+        cfg.write_text(json.dumps({"host_test": "x"}), encoding="utf-8")
+        refuses("HOST TEST FAILED")
+        text = text + row("omi-agent-reviewer", "FAIL abc1234")
+        try:
+            tasks.round_gate(root, "TASK-1", text, None)
+        except SystemExit as exc:
+            assert "ROUND LIMIT" in str(exc) and "failed 2 review rounds" in str(exc)
+        else:
+            raise AssertionError("host-test FAIL must count toward max_fix_rounds")
+
+
 def main():
     test_hierarchy()
     test_hierarchy_status_and_run()
@@ -782,6 +880,8 @@ def main():
     test_step_back_to()
     test_round_limit_and_replan()
     test_note()
+    test_host_test()
+    test_review_prompts_and_host_test_docs()
     test_task_skill_step_commands()
     test_parallel()
     test_workflows()
