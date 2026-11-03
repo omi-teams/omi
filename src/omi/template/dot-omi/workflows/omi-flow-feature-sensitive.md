@@ -23,7 +23,7 @@ steps:
 - accept: Coordinator; the PO decides.
 
 ## Review-fail rule
-A FAIL at review or security goes back to build with the findings. After 2 FAILs, escalate: architect (opus/high) re-plans, or the engineer runs on opus. A third FAIL: stop and ask the PO (rescope, change approach, drop).
+A FAIL at review or security goes back to build with the findings. Enforced in code: after `max_fix_rounds` (2) failed rounds `omi step <ID> back` and `omi run` refuse with `ROUND LIMIT` until the PO's words for this task and round are given (`--po "<words>"`, one more round; pick-list: rescope, change approach, drop). From round 2 a FAIL whose report ends `ROOT: same` makes `omi step back` return to architect (opus/high) to re-plan and prints `REPLAN: same root cause`.
 
 ## PO gates
 `accept` needs `PO approval accept: <PO's words>` under `## Steps`. Merge to staging/main stays with the PO.

@@ -299,6 +299,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         head = core.git(wt, "rev-parse", "--short=7", "HEAD") if read and verdict != "n/a" else None
         if head:
             verdict += " " + head
+        if verdict.startswith("FAIL") and (rt := tasks.root_of(result)):
+            verdict += f" root:{rt}"
         if tools.quota_hit(t, r.stdout, r.returncode):
             verdict = f"QUOTA->{'codex' if t == 'claude' else 'claude'}"
         if not read and not dropped and (sid := session.session_id(t, r.stdout)) and task.exists():

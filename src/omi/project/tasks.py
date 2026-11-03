@@ -1,6 +1,7 @@
 """Task files: step log and `omi step`, frontmatter, notes, usage table, parallel check, drift."""
 
 import datetime
+import json
 import re
 import sys
 from pathlib import Path
@@ -32,6 +33,60 @@ def last_verdict(text, role):
             if l.startswith("|") and not l.startswith("|---") and not l.startswith("| role")]
     last = [r[-1].split()[0] for r in rows if r[0] == role and r[-1][:4] in ("PASS", "FAIL")]
     return last[-1] if last else ""
+
+
+REVIEW_ROLES = ("omi-agent-reviewer", "omi-agent-security-reviewer")
+MAX_FIX_ROUNDS = 2  # .omi/config.json "max_fix_rounds" overrides (PO only)
+
+
+def usage_rows(text):
+    """Cells of each non-header row of `## Usage`, QUOTA rows excluded."""
+    return [[c.strip() for c in l.strip().strip("|").split("|")] for l in text.partition("\n## Usage")[2].split("\n## ", 1)[0].splitlines()
+            if l.startswith("|") and not l.startswith("|---") and not l.startswith("| role") and "| QUOTA->" not in l]
+
+
+def failed_rounds(text):
+    """Review or security FAIL rows of `## Usage`."""
+    return sum(r[0] in REVIEW_ROLES and r[-1].startswith("FAIL") for r in usage_rows(text))
+
+
+def root_of(report):
+    """`same`, `new` or `n/a` from the last `ROOT:` line of a reviewer report, or None."""
+    found = re.findall(r"^\W*ROOT:\W*(same|new|n/a)", report or "", re.M | re.I)
+    return found[-1].lower() if found else None
+
+
+def same_root(text, role):
+    """Whether the role's latest verdict is a FAIL recorded with `root:same`."""
+    last = [r[-1] for r in usage_rows(text) if r[0] == role and r[-1][:4] in ("PASS", "FAIL")]
+    return bool(last) and last[-1].startswith("FAIL") and "root:same" in last[-1].split()
+
+
+def round_gate(root, tid, text, po):
+    """Exit with `ROUND LIMIT` when the task has used up its failed review rounds, unless `po` (the PO's words) allows one more;
+    returns the text, with the `PO round override` line added when it was needed."""
+    try:
+        limit = int(json.loads((Path(root) / ".omi" / "config.json").read_text(encoding="utf-8")).get("max_fix_rounds", MAX_FIX_ROUNDS))
+    except (OSError, ValueError, AttributeError):
+        limit = MAX_FIX_ROUNDS
+    steps = text.partition("\n## Steps\n")[2].split("\n## ", 1)[0]
+    failed = failed_rounds(text)
+    if failed < max(limit, 1) + len(re.findall(r"^(?:- )?PO round override \d+: *\S", steps, re.M)):
+        return text
+    if not (po or "").strip():
+        sys.exit(f"ROUND LIMIT: {tid} failed {failed} review rounds; ask the PO")
+    return add_step_log(text, f"PO round override {failed + 1}: {' '.join(po.split())}")
+
+
+def run_gate(root, tid, po):
+    """`omi run <write role>`: the round limit check on the task file; logs the override when `po` allows one more round."""
+    project = state.resolve(root)
+    task = state.task_file(project, tid)
+    if task.exists():
+        text = task.read_text(encoding="utf-8")
+        new = round_gate(project.state, tid, text, po)
+        if new != text:
+            task.write_text(new, encoding="utf-8", newline="\n")
 
 
 def plan_status(stored: str, statuses: list[str]) -> str:
@@ -199,11 +254,13 @@ def sync_scope(wt, task, tid):
     print(f"SCOPE SYNCED: {core.parse(dev).get('scope')}")
 
 
-def step(root, tid, action, why=None, now=None, to=None):
+def step(root, tid, action, why=None, now=None, to=None, po=None):
     """Record a workflow step in the task file: `next` starts the following step, `done` closes the current one,
     `skip` closes it with a reason, `back` fails a started review gate and restarts the nearest earlier write step;
     `back` with `to` restarts that earlier agent step (e.g. architect) from any current step, with a reason.
     `approve` records PO words; `reopen` restarts the last write step of a completed workflow.
+    Either `back` stops at the round limit unless `po` (the PO's words) allows one more round; from round 2 a review FAIL
+    with `ROOT: same` sends plain `back` to the architect step instead (no architect step: `po` is required).
     Gate steps cannot be skipped; a `po` gate needs the PO approval line."""
     if not re.fullmatch(r"[A-Za-z0-9_-]+", tid):
         sys.exit(f"invalid task id `{tid}`: use letters, digits, `-` and `_`. Nothing changed.")
@@ -225,6 +282,20 @@ def step(root, tid, action, why=None, now=None, to=None):
         sys.exit(f"{tid}: at step {cur} but {', '.join(open_steps)} not done or skipped; steps cannot be jumped over. "
                  "Nothing changed.")
     stamp = (now or datetime.datetime.now()).strftime("%Y-%m-%d %H:%M")
+    replan = ""
+    if action == "back" and cur:
+        arch = next((s["id"] for s in steps[:at] if s["role"] == "omi-agent-architect"), None)
+        if to is None and events.get(cur) not in ("done", "skipped") and steps[at]["gate"] == "review" and failed_rounds(text) >= 2 \
+                and same_root(text, steps[at]["role"]):
+            replan, to = "REPLAN: same root cause", arch
+            if to is None:
+                if not (po or "").strip():
+                    sys.exit(f"{replan}; workflow {wid} has no architect step, ask the PO and pass --po. Nothing changed.")
+                text = add_step_log(text, f"PO replan override {cur}: {' '.join(po.split())}")
+            else:
+                why = why or "same root cause"  # a re-plan is the alternative to another build round: no round gate here
+        if not (replan and to):
+            text = round_gate(root, tid, text, po)
     if action == "reopen":
         if any(events.get(s) == "started" for s in ids):
             sys.exit(f"{tid}: a step is running; cannot reopen. Nothing changed.")
@@ -338,6 +409,8 @@ def step(root, tid, action, why=None, now=None, to=None):
             text = set_front(text, "files", ", ".join(names))
     task.write_text(text, encoding="utf-8", newline="\n")
     print(msg)
+    if replan:
+        print(replan)
     if not project.detached and task == Path(root) / ".omi" / "tasks" / f"{tid}.md":  # the task branch's copy is committed with the branch
         commit_task_file(Path(root), task, f"chore({tid}): step {core.parse(text).get('step')} {action}")
     return 0
@@ -497,7 +570,7 @@ def prior_review(text):
     """(earlier reviewer rounds, sha7 of the last one if it failed, repo paths named after the last `Review round`)."""
     rows = [[c.strip() for c in l.strip().strip("|").split("|")] for l in text.partition("\n## Usage")[2].splitlines()
             if l.startswith("| omi-agent-reviewer |") and "| QUOTA->" not in l]
-    last = re.fullmatch(r"FAIL ([0-9a-f]{7})", rows[-1][-1]) if rows else None
+    last = re.fullmatch(r"FAIL ([0-9a-f]{7})(?: root:\S+)?", rows[-1][-1]) if rows else None
     after = re.split(r"^.*Review round.*$", text.partition("\n## Usage")[0], flags=re.M)[-1] if "Review round" in text else ""
     after = after.split("\n## ", 1)[0]
     return len(rows), last and last.group(1), set(re.findall(r"[\w.-]+(?:/[\w.-]+)+|[\w-]+\.(?:py|md|json|toml|ya?ml|sh|txt|js|ts|cfg|ini)\b", after))

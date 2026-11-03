@@ -132,6 +132,17 @@ def test_cli_correctness():
         assert omi.project.tasks.step(root, "TASK-001", "done") == 0
 
 
+def test_step_po_flag() -> None:
+    with tempfile.TemporaryDirectory() as d, patch("omi.project.tasks.step", return_value=0) as step_mock, \
+            patch("omi.state.resolve.resolve"), patch("omi.common.core.main_checkout", return_value=Path(d)):
+        for args in (["--why", "bad", "round", "--po", "PO says go", "--to", "architect"], ["--po", "PO says go", "--to", "architect", "--why", "bad", "round"]):
+            try:
+                omi.app.cli.dispatch(["step", "TASK-001", "back", *args])
+            except SystemExit:
+                pass
+            assert step_mock.call_args.args[1:4] == ("TASK-001", "back", "bad round") and step_mock.call_args.kwargs == {"to": "architect", "po": "PO says go"}, step_mock.call_args
+
+
 def test_step_records_behind() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d).resolve()
@@ -438,6 +449,7 @@ def main():
     test_improve_fallback_and_validation()
     test_improve_status_count()
     test_status_phase_and_step_lines()
+    test_step_po_flag()
     test_step_records_behind()
     test_cli_correctness()
     test_cli_characterization()

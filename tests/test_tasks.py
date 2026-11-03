@@ -1,6 +1,7 @@
 import contextlib
 import datetime
 import io
+import json
 import re
 import os
 import subprocess
@@ -383,6 +384,102 @@ def test_step_back_to():
             assert not omi.project.tasks.po_approved(new, "accept")
 
 
+def test_round_limit_and_replan():
+    def rows(*verdicts):
+        return "".join(f"| omi-agent-reviewer | m | high | 1 | 1 | 1 | 1s | - | {v} |\n" for v in verdicts)
+
+    def fails(fn, *words):
+        try:
+            fn()
+        except SystemExit as exc:
+            assert all(w in str(exc) for w in words), str(exc)
+            return
+        raise AssertionError(f"should fail: {words}")
+
+    assert tasks.root_of("VERDICT: FAIL\n- x\nROOT: same") == "same" and tasks.root_of("VERDICT: PASS\nROOT: n/a\n") == "n/a"
+    assert tasks.root_of("VERDICT: FAIL\nno root line") is None
+    assert tasks.prior_review("\n## Usage\n| role |\n" + rows("FAIL abc1234 root:same"))[1] == "abc1234"
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        task = root / ".omi/tasks/TASK-139.md"
+        task.parent.mkdir(parents=True)
+        project = omi.state.resolve.Project(root, root, True)
+        now = datetime.datetime(2026, 11, 2, 12, 0)
+        flow = [("plan", "coordinator", "none"), ("architect", "omi-agent-architect", "none"), ("build", "omi-agent-engineer", "none"),
+                ("review", "omi-agent-reviewer", "review"), ("accept", "coordinator", "po")]
+        steps = lambda skip=(): [{"id": a, "role": b, "gate": c} for a, b, c in flow if a not in skip]
+        roles = lambda root, role: {"access": "write" if role == "omi-agent-engineer" else "read"}
+
+        def put(verdicts, log="", step="review", *, extra=""):
+            task.write_text(f"---\nid: TASK-139\nstatus: in-progress\nstep: {step}\n---\n## Steps\n- plan done 2026-11-02 10:00\n"
+                            f"- architect done 2026-11-02 10:00\n- build done 2026-11-02 10:00\n- review started 2026-11-02 10:00\n{log}\n"
+                            f"## Usage\n| role | model | effort | input | output | cache | duration | skills read | verdict |\n|---|---|---|---|---|---|---|---|---|\n"
+                            f"{rows(*verdicts)}{extra}", encoding="utf-8")
+            return task.read_text(encoding="utf-8")
+
+        def back(**kw):
+            return omi.project.tasks.step(project, "TASK-139", "back", now=now, **kw)
+
+        with patch("omi.project.workflows.get_workflow", side_effect=lambda r, w: steps()), \
+                patch("omi.project.catalogs.get_role", side_effect=roles), patch("sys.stdout", io.StringIO()) as out:
+            # below the limit, QUOTA rows do not count
+            put(["FAIL abc1234 root:new", "QUOTA->codex"])
+            assert back() == 0 and omi.common.core.parse(task.read_text(encoding="utf-8"))["step"] == "build"
+            # at the limit: refused, nothing changed, even for a standing instruction in --why
+            text = put(["FAIL abc1234", "FAIL abc1234 root:new"])
+            fails(back, "ROUND LIMIT: TASK-139 failed 2 review rounds; ask the PO")
+            fails(lambda: back(why="pick the recommended option"), "ROUND LIMIT")
+            fails(lambda: back(po=" "), "ROUND LIMIT")
+            fails(lambda: omi.project.tasks.run_gate(project, "TASK-139", None), "ROUND LIMIT")
+            assert task.read_text(encoding="utf-8") == text
+            # run gate with the PO's words logs the override and lets exactly one more round through
+            omi.project.tasks.run_gate(project, "TASK-139", "do one more, new approach")
+            assert "PO round override 3: do one more, new approach\n" in task.read_text(encoding="utf-8")
+            omi.project.tasks.run_gate(project, "TASK-139", None)
+            assert back() == 0 and omi.common.core.parse(task.read_text(encoding="utf-8"))["step"] == "build"
+            override = "PO round override 3: ok\n"
+            put(["FAIL abc1234", "FAIL abc1234", "FAIL abc1234"], override)
+            fails(back, "failed 3 review rounds")
+            assert back(po="again", to="architect", why="redo") == 0 and "PO round override 4: again" in task.read_text(encoding="utf-8")
+            # an override line elsewhere, or none for this round, is not a pass; --po below the limit logs nothing
+            put(["FAIL abc1234"])
+            assert back(po="unneeded") == 0 and "override" not in task.read_text(encoding="utf-8")
+            # same root cause from round 2 goes to the architect; round 1 and ROOT: new go to build
+            put(["FAIL abc1234 root:same"])
+            assert back() == 0 and omi.common.core.parse(task.read_text(encoding="utf-8"))["step"] == "build"
+            put(["FAIL abc1234", "FAIL abc1234 root:new"])
+            assert back(po="x") == 0 and omi.common.core.parse(task.read_text(encoding="utf-8"))["step"] == "build"
+            out.truncate(0)
+            put(["FAIL abc1234 root:same", "FAIL abc1234 root:same"])  # at the limit, no override: the re-plan still goes through
+            assert back() == 0 and omi.common.core.parse(task.read_text(encoding="utf-8"))["step"] == "architect"
+            assert "REPLAN: same root cause" in out.getvalue() and "override" not in task.read_text(encoding="utf-8")
+            out.truncate(0)
+            put(["FAIL abc1234", "FAIL abc1234 root:same"], override)
+            assert back() == 0
+            new = task.read_text(encoding="utf-8")
+            assert omi.common.core.parse(new)["step"] == "architect" and "REPLAN: same root cause" in out.getvalue()
+            assert omi.project.tasks.step_states(new)["review"] == "failed" and "- architect started 2026-11-02 12:00" in new
+        # no architect step: the line is printed and the PO's words are required
+        with patch("omi.project.workflows.get_workflow", side_effect=lambda r, w: steps(("architect",))), \
+                patch("omi.project.catalogs.get_role", side_effect=roles), patch("sys.stdout", io.StringIO()) as out:
+            text = put(["FAIL abc1234", "FAIL abc1234 root:same"], override)
+            fails(back, "REPLAN: same root cause", "--po")
+            assert task.read_text(encoding="utf-8") == text
+            assert back(po="ok to patch") == 0 and "REPLAN: same root cause" in out.getvalue()
+            new = task.read_text(encoding="utf-8")
+            assert omi.common.core.parse(new)["step"] == "build" and "PO replan override review: ok to patch" in new
+    with patch.object(sys, "argv", ["omi"]):
+        for name in ("reviewer", "security-reviewer"):
+            assert "ROOT: same | new | n/a" in (omi.common.core.TEMPLATE / f"dot-omi/agents/omi-agent-{name}.md").read_text(encoding="utf-8")
+    assert json.loads((omi.common.core.TEMPLATE / "dot-omi/config.json").read_text(encoding="utf-8"))["max_fix_rounds"] == 2
+    for f in (omi.common.core.TEMPLATE / "dot-omi/workflows").glob("omi-flow-*.md"):
+        text = f.read_text(encoding="utf-8")
+        if "## Review-fail rule" in text and f.stem != "omi-flow-change-request":
+            assert "ROUND LIMIT" in text.partition("## Review-fail rule")[2].partition("\n## ")[0], f.name
+    for rel in ("AGENTS.md", "dot-claude/skills/omi-task/SKILL.md"):
+        assert "ROUND LIMIT" in (omi.common.core.TEMPLATE / rel).read_text(encoding="utf-8") and "REPLAN: same root cause" in (omi.common.core.TEMPLATE / rel).read_text(encoding="utf-8")
+
+
 def test_task_skill_step_commands():
     template = omi.common.core.TEMPLATE / "dot-claude/skills/omi-task/SKILL.md"
     text = template.read_text(encoding="utf-8")
@@ -683,6 +780,7 @@ def main():
     test_auto_accept()
     test_reopen_last_write_step()
     test_step_back_to()
+    test_round_limit_and_replan()
     test_note()
     test_task_skill_step_commands()
     test_parallel()

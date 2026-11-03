@@ -17,5 +17,7 @@ Output (max 8 lines):
 VERDICT: PASS | FAIL
 - <file:line> <problem> | why: <reason> | verified: <how> -> <fix>
 UNVERIFIED: <suspicion, what would confirm it>
+ROOT: same | new | n/a
 ```
+`ROOT: same` = the findings are new instances of a root cause an earlier round already named (see `## Checkpoint`); `new` = a different cause; `n/a` = PASS or first round. Last line, not counted in the 8.
 Most severe first; real problems only. Policy call, exposed secret (location only), oversize diff: `NEEDS DECISION: <question>`.
