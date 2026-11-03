@@ -383,7 +383,7 @@
     "docker/proxy.py": "0ba39b820fc01693be64aa4b00b516902842f0c0f82fda2a4b21237684b828ec"
   },
   "0.5.0": {
-    "AGENTS.md": "b0f5bf142107335f2515d1c0981cdf82c8062ae7c1d6691f63a0ead7e37b2b6f",
+    "AGENTS.md": "85aca9f38f301b33fdaaf9ba698b61771e39202616f20d0bcbb5af365e5619f2",
     "docker/Dockerfile": "f40f8bb7d09dcf5a096a693aba060b6c789fe8299783712a011ca5254cd17546",
     "docker/prove.sh": "511315ec4046be60bed75c1149c10093a90078d350c538ef5fdda0715d008d22",
     "docker/proxy.py": "0ba39b820fc01693be64aa4b00b516902842f0c0f82fda2a4b21237684b828ec",
