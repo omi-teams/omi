@@ -104,7 +104,7 @@ def run_gate(root, tid, po):
     project = state.resolve(root)
     task = state.task_file(project, tid)
     if task.exists():
-        text = task.read_text(encoding="utf-8")
+        text = core.read_task(task)
         new = round_gate(project.state, tid, text, po)
         if new != text:
             task.write_text(new, encoding="utf-8", newline="\n")
@@ -198,7 +198,20 @@ FRONT_OWNED = ("step", "status", "workflow", "scope", "role", "skills", "refs", 
 
 def front_of(text):
     """The raw frontmatter block (between the `---` lines) of a task file, or None."""
+    text = text.removeprefix("\ufeff")
     return text.split("---", 2)[1] if text.startswith("---") and text.count("---") >= 2 else None
+
+
+def key_blocks(lines, key):
+    """[(index, [key line + its following `- ` list lines])] for every `key:` in frontmatter lines."""
+    found = []
+    for i, ln in enumerate(lines):
+        if ln.partition(":")[0].strip() == key:
+            j = i + 1
+            while j < len(lines) and lines[j].strip().startswith("- "):
+                j += 1
+            found.append((i, lines[i:j]))
+    return found
 
 
 def revert_front(task, before):
@@ -207,21 +220,22 @@ def revert_front(task, before):
     old = front_of(before)
     if old is None:
         return []
-    text = task.read_text(encoding="utf-8") if task.exists() else None
+    text = core.read_task(task) if task.exists() else None
     cur = front_of(text) if text is not None else None
     if cur is None:
         task.write_text(before if text is None else f"---{old}---\n{text}", encoding="utf-8", newline="\n")
         return ["frontmatter"]
     olines, lines, changed = old.split("\n"), cur.split("\n"), []
     for key in FRONT_OWNED:
-        mine = lambda ln: ln.partition(":")[0].strip() == key
-        want = [(i, ln) for i, ln in enumerate(olines) if mine(ln)]
-        if [ln for ln in lines if mine(ln)] == [ln for _, ln in want]:
+        want = key_blocks(olines, key)
+        if [b for _, b in key_blocks(lines, key)] == [b for _, b in want]:
             continue
         changed.append(key)
-        lines = [ln for ln in lines if not mine(ln)]
-        for i, ln in want:
-            lines.insert(min(i, len(lines) - 1), ln)
+        for i, b in reversed(key_blocks(lines, key)):
+            del lines[i:i + len(b)]
+        for i, b in want:
+            at = min(i, len(lines) - 1)
+            lines[at:at] = b
     if changed:
         task.write_text(f"---{chr(10).join(lines)}---{text.split('---', 2)[2]}", encoding="utf-8", newline="\n")
     return changed
@@ -271,18 +285,18 @@ def sync_scope(wt, task, tid):
     dev = core.git(wt, "show", f"development:.omi/tasks/{tid}.md")
     if not dev or not task.exists():
         return
-    line = next((ln for ln in (front_of(dev) or "").split("\n") if ln.partition(":")[0].strip() == "scope"), None)
-    text = task.read_text(encoding="utf-8")
-    if line is None or core.split(core.parse(dev).get("scope")) == core.split(core.parse(text).get("scope")):
+    block = next((b for _, b in key_blocks((front_of(dev) or "").split("\n"), "scope")), None)
+    text = core.read_task(task)
+    if block is None or core.split(core.parse(dev).get("scope")) == core.split(core.parse(text).get("scope")):
         return
     head, front, rest = text.split("---", 2)
     lines = front.split("\n")
-    for i, ln in enumerate(lines):
-        if ln.partition(":")[0].strip() == "scope":
-            lines[i] = line
-            break
+    old = key_blocks(lines, "scope")
+    if old:
+        i, b = old[0]
+        lines[i:i + len(b)] = block
     else:
-        lines.insert(len(lines) - 1, line)
+        lines[len(lines) - 1:len(lines) - 1] = block
     task.write_text(f"{head}---{chr(10).join(lines)}---{rest}", encoding="utf-8", newline="\n")
     print(f"SCOPE SYNCED: {core.parse(dev).get('scope')}")
 
@@ -533,7 +547,7 @@ def append_note(task, heading, line):
     """Append text to the task file's `## <heading>` section (created before `## Usage`, else at the end)."""
     if not task.exists():
         return
-    text, h = task.read_text(encoding="utf-8"), f"\n## {heading}"
+    text, h = core.read_task(task), f"\n## {heading}"
     if h in text:
         head, _, rest = text.partition(h)
         body, sep, tail = rest.partition("\n## ")
@@ -566,7 +580,7 @@ def record_usage(task, role, model, effort, nums, seconds, skills="-", verdict="
         return
     cell = lambda v: "n/a" if v is None else str(v)
     row = f"| {role} | {model} | {effort or 'n/a'} | {cell(nums[0])} | {cell(nums[1])} | {cell(nums[2])} | {round(seconds)}s | {skills} | {verdict} |"
-    text = task.read_text(encoding="utf-8")
+    text = core.read_task(task)
     if "\n## Usage" in text:
         head, _, rest = text.partition("\n## Usage")
         body, sep, tail = rest.partition("\n## ")

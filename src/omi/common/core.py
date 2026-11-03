@@ -26,18 +26,31 @@ def split(value):
     return [x.strip() for x in (value or "").split(",") if x.strip()]
 
 
+def read_task(path):
+    """Task file text without a leading UTF-8 BOM."""
+    return Path(path).read_text(encoding="utf-8-sig")
+
+
 def meta(path):
-    return parse(path.read_text(encoding="utf-8"))
+    return parse(read_task(path))
 
 
 def parse(text):
     """Frontmatter of a task file as a dict, plus the raw text under '_text'."""
+    text = text.removeprefix("\ufeff")
     m = {"_text": text}
     if text.startswith("---"):
+        key = None
         for line in text.split("---", 2)[1].splitlines():
-            key, sep, value = line.partition(":")
+            item = line.strip()
+            if key and item.startswith("- "):  # YAML block list -> comma list
+                item = item[2:].split("#")[0].strip()
+                m[key] = f"{m[key]}, {item}" if m[key] else item
+                continue
+            k, sep, value = line.partition(":")
             if sep:
-                m[key.strip()] = value.split("#")[0].strip()
+                key = k.strip()
+                m[key] = value.split("#")[0].strip()
     return m
 
 

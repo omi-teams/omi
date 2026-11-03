@@ -474,7 +474,42 @@ def test_improve_status_count() -> None:
             assert "omi improvements filed: 0 open" in detached_cli(wt, "status")
 
 
+def test_parse_block_list_and_bom() -> None:
+    m = omi.common.core.parse("---\nid: T\nscope:\n  - a/b.py\n  - c.py\nstatus: open\n---\nbody\n")
+    assert m["scope"] == "a/b.py, c.py" and m["status"] == "open", m
+    with tempfile.TemporaryDirectory() as d:
+        task = Path(d) / "T.md"
+        task.write_bytes("\ufeff---\nid: T\ntitle: x\nscope: a.py\nstatus: open\n---\n## Steps\n".encode("utf-8"))
+        m = omi.common.core.parse(task.read_text(encoding="utf-8"))
+        assert m["status"] == "open" and m["title"] == "x" and m["scope"] == "a.py", m
+        omi.project.tasks.append_note(task, "Notes", "hi")
+        assert not task.read_bytes().startswith(b"\xef\xbb\xbf") and b"title: x" in task.read_bytes()
+
+
+def test_block_list_scope_and_bom_writers() -> None:
+    core, tasks = omi.common.core, omi.project.tasks
+    bom = b"\xef\xbb\xbf"
+    orig = "---\nid: T\nscope:\n  - a.py  # x\n  - b.py\nstep: fix\n---\n## Checkpoint\nold\n"
+    assert core.parse(orig)["scope"] == "a.py, b.py"
+    with tempfile.TemporaryDirectory() as d:
+        task = Path(d) / "T.md"
+        task.write_bytes(bom + orig.encode("utf-8"))
+        before = core.read_task(task)  # the guard text omi run keeps
+        assert before == orig
+        task.write_bytes(bom + orig.replace("  - b.py\n", "  - z.py\n").replace("step: fix", "step: done").encode("utf-8"))
+        assert tasks.revert_front(task, before) == ["step", "scope"]
+        assert task.read_bytes() == orig.encode("utf-8")
+        # sync_scope: the development block list replaces a one-line scope in a BOM worktree file
+        task.write_bytes(bom + b"---\nid: T\nscope: old.py\nstep: fix\n---\nbody\n")
+        with patch("omi.state.resolve.resolve", return_value=type("P", (), {"detached": False})()), \
+                patch("omi.common.core.git", return_value=bom.decode() + orig):
+            tasks.sync_scope(Path(d), task, "T")
+        assert task.read_bytes() == b"---\nid: T\nscope:\n  - a.py  # x\n  - b.py\nstep: fix\n---\nbody\n"
+
+
 def main():
+    test_block_list_scope_and_bom_writers()
+    test_parse_block_list_and_bom()
     test_improve_creation_and_workflows()
     test_improve_duplicate()
     test_improve_fallback_and_validation()
