@@ -106,6 +106,29 @@ def test_detached_host_test_and_note_commit_state():
         assert omi.common.core.git(home, "status", "--porcelain") == ""
 
 
+def test_detached_commit_twice_and_failure_message():
+    with detached_project() as (code, project, wt, task):
+        home = project.parents[1]
+        found = omi.state.resolve.resolve(wt)
+        rel = task.relative_to(home).as_posix()
+        task.write_text(task.read_text(encoding="utf-8") + "x\n", encoding="utf-8")
+        omi.state.sync.commit(found, [rel], "first")
+        omi.state.sync.commit(found, [rel], "second")
+        assert omi.common.core.git(home, "status", "--porcelain", "--", rel) == ""
+        real = omi.state.sync.git
+        def failing(root, *args):
+            if args[0] == "commit":
+                return subprocess.CompletedProcess(args, 1, "OUT-TEXT", "ERR-TEXT")
+            return real(root, *args)
+        task.write_text(task.read_text(encoding="utf-8") + "y\n", encoding="utf-8")
+        with patch("omi.state.sync.git", failing):
+            try:
+                omi.state.sync.commit(found, [rel], "third")
+                raise AssertionError("expected StateError")
+            except omi.state.resolve.StateError as exc:
+                assert "OUT-TEXT" in str(exc) and "ERR-TEXT" in str(exc)
+
+
 def test_detached_project_commands():
     from unittest.mock import patch
     with detached_project() as (code, project, wt, task):
@@ -281,6 +304,7 @@ def main():
     test_user_session_start()
     test_detached_resolution()
     test_detached_commands_and_steps()
+    test_detached_commit_twice_and_failure_message()
     test_detached_project_commands()
     test_detached_host_test_and_note_commit_state()
     test_detached_scope_and_guard()
