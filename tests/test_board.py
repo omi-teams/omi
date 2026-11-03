@@ -254,6 +254,29 @@ def test_path_redaction() -> None:
             assert snap.response({v: [v] for v in variants})["[state]"] == ["[state]"]
 
 
+def test_snapshot_one_git_process() -> None:
+    with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
+        home = Path(directory)
+        fixture(home)
+        remote(home)
+        snap = source.snapshot()
+        real_run, argvs = subprocess.run, []
+
+        def spy(argv, *a, **kw):
+            argvs.append(argv)
+            return real_run(argv, *a, **kw)
+        with patch("omi.common.core.subprocess.run", side_effect=spy):
+            texts = {p: snap.read(p) for p in snap.paths}
+        assert len(texts) > 5 and all(text for text in texts.values())
+        assert len(argvs) == 1 and "cat-file" in argvs[0] and "--batch" in argvs[0], argvs
+        # No new state commit: a later poll reads no blobs from git.
+        source._CACHE.clear()
+        with patch("omi.common.core.subprocess.run", side_effect=spy):
+            again = source.snapshot()
+            assert {p: again.read(p) for p in again.paths} == texts
+        assert not any("cat-file" in a for a in argvs[1:]), argvs
+
+
 def test_unavailable_snapshot():
     with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OMI_STATE": directory}):
         source._CACHE.clear()
@@ -723,6 +746,7 @@ def main():
     test_path_refusal()
     test_snapshot_symlink_unavailable()
     test_empty_and_layer()
+    test_snapshot_one_git_process()
     test_cost()
     test_cost_legacy_usage()
     test_cost_mixed_tools_per_task()
