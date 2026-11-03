@@ -81,7 +81,11 @@ def commit(project: state.Project, paths: list[str], what: str) -> None:
             raise state.StateError("state commit failed: " + result.stderr.strip())
     result = git(root, "commit", "--only", "-m", f"chore({project.state.name}): {what}", "--", *paths)
     if result.returncode:
-        raise state.StateError("state commit failed: " + result.stderr.strip())
+        # Another run may have committed the same change: nothing left for these paths is success.
+        left = git(root, "status", "--porcelain", "--", *paths)
+        if left.returncode == 0 and not left.stdout.strip():
+            return
+        raise state.StateError("state commit failed: " + (result.stdout + result.stderr).strip())
 
 
 def push(project: state.Project) -> bool:
