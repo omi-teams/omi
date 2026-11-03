@@ -474,7 +474,20 @@ def test_improve_status_count() -> None:
             assert "omi improvements filed: 0 open" in detached_cli(wt, "status")
 
 
+def test_parse_block_list_and_bom() -> None:
+    m = omi.common.core.parse("---\nid: T\nscope:\n  - a/b.py\n  - c.py\nstatus: open\n---\nbody\n")
+    assert m["scope"] == "a/b.py, c.py" and m["status"] == "open", m
+    with tempfile.TemporaryDirectory() as d:
+        task = Path(d) / "T.md"
+        task.write_bytes("\ufeff---\nid: T\ntitle: x\nscope: a.py\nstatus: open\n---\n## Steps\n".encode("utf-8"))
+        m = omi.common.core.parse(task.read_text(encoding="utf-8"))
+        assert m["status"] == "open" and m["title"] == "x" and m["scope"] == "a.py", m
+        omi.project.tasks.append_note(task, "Notes", "hi")
+        assert not task.read_bytes().startswith(b"\xef\xbb\xbf") and b"title: x" in task.read_bytes()
+
+
 def main():
+    test_parse_block_list_and_bom()
     test_improve_creation_and_workflows()
     test_improve_duplicate()
     test_improve_fallback_and_validation()

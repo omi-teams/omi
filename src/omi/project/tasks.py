@@ -104,7 +104,7 @@ def run_gate(root, tid, po):
     project = state.resolve(root)
     task = state.task_file(project, tid)
     if task.exists():
-        text = task.read_text(encoding="utf-8")
+        text = task.read_text(encoding="utf-8-sig")
         new = round_gate(project.state, tid, text, po)
         if new != text:
             task.write_text(new, encoding="utf-8", newline="\n")
@@ -207,7 +207,7 @@ def revert_front(task, before):
     old = front_of(before)
     if old is None:
         return []
-    text = task.read_text(encoding="utf-8") if task.exists() else None
+    text = task.read_text(encoding="utf-8-sig") if task.exists() else None
     cur = front_of(text) if text is not None else None
     if cur is None:
         task.write_text(before if text is None else f"---{old}---\n{text}", encoding="utf-8", newline="\n")
@@ -272,7 +272,7 @@ def sync_scope(wt, task, tid):
     if not dev or not task.exists():
         return
     line = next((ln for ln in (front_of(dev) or "").split("\n") if ln.partition(":")[0].strip() == "scope"), None)
-    text = task.read_text(encoding="utf-8")
+    text = task.read_text(encoding="utf-8-sig")
     if line is None or core.split(core.parse(dev).get("scope")) == core.split(core.parse(text).get("scope")):
         return
     head, front, rest = text.split("---", 2)
@@ -533,7 +533,7 @@ def append_note(task, heading, line):
     """Append text to the task file's `## <heading>` section (created before `## Usage`, else at the end)."""
     if not task.exists():
         return
-    text, h = task.read_text(encoding="utf-8"), f"\n## {heading}"
+    text, h = task.read_text(encoding="utf-8-sig"), f"\n## {heading}"
     if h in text:
         head, _, rest = text.partition(h)
         body, sep, tail = rest.partition("\n## ")
@@ -566,7 +566,7 @@ def record_usage(task, role, model, effort, nums, seconds, skills="-", verdict="
         return
     cell = lambda v: "n/a" if v is None else str(v)
     row = f"| {role} | {model} | {effort or 'n/a'} | {cell(nums[0])} | {cell(nums[1])} | {cell(nums[2])} | {round(seconds)}s | {skills} | {verdict} |"
-    text = task.read_text(encoding="utf-8")
+    text = task.read_text(encoding="utf-8-sig")
     if "\n## Usage" in text:
         head, _, rest = text.partition("\n## Usage")
         body, sep, tail = rest.partition("\n## ")

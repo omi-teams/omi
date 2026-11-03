@@ -32,12 +32,19 @@ def meta(path):
 
 def parse(text):
     """Frontmatter of a task file as a dict, plus the raw text under '_text'."""
+    text = text.removeprefix("\ufeff")
     m = {"_text": text}
     if text.startswith("---"):
+        key = None
         for line in text.split("---", 2)[1].splitlines():
-            key, sep, value = line.partition(":")
+            item = line.strip()
+            if key and item.startswith("- "):  # YAML block list -> comma list
+                m[key] = f"{m[key]}, {item[2:].strip()}" if m[key] else item[2:].strip()
+                continue
+            k, sep, value = line.partition(":")
             if sep:
-                m[key.strip()] = value.split("#")[0].strip()
+                key = k.strip()
+                m[key] = value.split("#")[0].strip()
     return m
 
 
