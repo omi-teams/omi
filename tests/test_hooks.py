@@ -545,7 +545,25 @@ def test_host_only_criteria():
             assert "Host: <command> -> <result>" in text and "no merge without one `Host:` line" in text
 
 
+def test_ci_structure_fetch():
+    ci = (Path(__file__).parents[1] / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    # PRs targeting development use a detached merge ref and still need the local branch.
+    assert re.search(r"- name: Fetch development for the structure check\n"
+                     r"        if: github\.ref != 'refs/heads/development'\n"
+                     r"        run: git fetch origin development:development", ci)
+
+
+def test_ci_structure_skip_notice():
+    ci = (Path(__file__).parents[1] / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    # A failed checkout with a key must fail the job, rather than claim a missing key.
+    assert re.search(r"- name: Structure check skipped\n"
+                     r"        if: env\.HAS_STATE_KEY != 'true'\n", ci)
+    assert "continue-on-error:" not in ci
+
+
 def main():
+    test_ci_structure_fetch()
+    test_ci_structure_skip_notice()
     test_host_only_criteria()
     test_windows_test_shell()
     test_hooks()

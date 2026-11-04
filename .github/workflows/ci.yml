@@ -21,7 +21,7 @@ jobs:
           fetch-depth: 0
 
       - name: Fetch development for the structure check
-        if: github.ref_name != 'development' && github.base_ref != 'development'
+        if: github.ref != 'refs/heads/development'
         run: git fetch origin development:development
 
       - uses: actions/setup-python@v6
@@ -66,7 +66,7 @@ jobs:
           if [ "$EVENT" = pull_request ]; then python -m omi structure check --changed; else python -m omi structure check; fi
 
       - name: Structure check skipped
-        if: steps.state.outcome != 'success'
+        if: env.HAS_STATE_KEY != 'true'
         run: echo "::notice::OMI_STATE_READ_KEY unavailable (fork PR); structure check skipped"
 
       - name: Upload board screenshots
