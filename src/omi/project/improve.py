@@ -13,7 +13,7 @@ from ..state import resolve as state, sync as state_sync
 WORKFLOWS = {"bug": "omi-flow-bugfix", "security": "omi-flow-feature-sensitive", "idea": "omi-flow-feature"}
 TYPES = {"bug": "bug", "security": "security", "idea": "task"}
 SHAPES = {"bug": "Symptom: {s}\nExpected: the behaviour the spec or accepted criteria of the source task state\nEvidence: reported by {a} while working on {t}\n",
-          "security": "Impact: {s}\nBoundary crossed: not yet stated; the engineer names it\nEvidence: reported by {a} while working on {t} (secrets redacted)\n"}  # body shapes of omi-skill-issue-types
+          "security": "Impact: {s}\nBoundary crossed: to be filled by the engineer\nHow verified: to be filled by the engineer\nEvidence: reported by {a} while working on {t} (secrets redacted)\n"}  # body shapes of omi-skill-issue-types
 
 
 def omi_project() -> state.Project | None:
