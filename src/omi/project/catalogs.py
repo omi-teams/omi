@@ -245,7 +245,7 @@ def check_task_plan(root, m):
 
 
 def load_references(root):
-    """Reference files and validation errors, keyed by file name."""
+    """Reference files and validation errors, keyed by file stem (`patterns/<stem>` for pattern files)."""
     found = {}
     base = Path(root) / ".omi" / "references"
     for f in sorted([*base.glob("*.md"), *base.glob("patterns/*.md")]):
@@ -254,7 +254,7 @@ def load_references(root):
         m = core.meta(f)
         errs = ([f"id `{m.get('id')}` differs from file name"] if m.get("id") != f.stem else []) \
             + ([] if m.get("summary") else ["missing `summary`"])
-        found[f.stem] = (f, errs)
+        found[f.stem if f.parent == base else f"{f.parent.name}/{f.stem}"] = (f, errs)
     return found
 
 

@@ -1,4 +1,5 @@
 import io
+import re
 import shutil
 import contextlib
 import os
@@ -252,12 +253,16 @@ def test_references():
             assert (refs / f"{rid}.md").is_file()
             assert f"- {rid}:" in (refs / "CATALOG.md").read_text()
         pat = refs / "patterns"
-        pat.mkdir()
-        (pat / "adapter.md").write_text("---\nid: adapter\nsummary: Adapter pattern\n---\nbody", encoding="utf-8")
+        (pat / "custom.md").write_text("---\nid: custom\nsummary: Custom pattern\n---\nbody", encoding="utf-8")
         omi.project.catalogs.references_catalog(root)
-        assert "- adapter: Adapter pattern" in (refs / "CATALOG.md").read_text()
-        (pat / "adapter.md").unlink()
-        pat.rmdir()
+        assert "- patterns/custom: Custom pattern" in (refs / "CATALOG.md").read_text()
+        # A pattern file never shadows a top-level reference of the same stem.
+        (refs / "custom.md").write_text("---\nid: custom\nsummary: Top level\n---\nbody", encoding="utf-8")
+        assert set(omi.project.catalogs.load_references(root)) >= {"custom", "patterns/custom"}
+        omi.project.catalogs.references_catalog(root)
+        assert omi.project.catalogs.task_references(root, {"refs": "patterns/custom"}) == [pat / "custom.md"]
+        (refs / "custom.md").unlink()
+        (pat / "custom.md").unlink()
         omi.project.catalogs.references_catalog(root)
         assert omi.project.catalogs.task_references(root, {}) == []
         assert omi.project.catalogs.reference_prompt(root, []) == ""
@@ -267,7 +272,7 @@ def test_references():
         cli = [sys.executable, "-m", "omi", "references"]
         env = dict(os.environ, PYTHONPATH=str(Path(omi.__file__).parent.parent))
         result = subprocess.run(cli, cwd=root, env=env, capture_output=True, text=True)
-        assert result.returncode == 0 and "2 references" in result.stdout, result.stderr
+        assert result.returncode == 0 and "9 references" in result.stdout, result.stderr
         cat = (refs / "CATALOG.md").read_text()
         for header in ("id: other\nsummary:", "summary: example"):
             (refs / "bad.md").write_text(f"---\n{header}\n---\nbody")
@@ -588,6 +593,21 @@ def test_ui_mockup_generated_catalogs() -> None:
             assert (template / kind / "CATALOG.md").read_text(encoding="utf-8") == generated, f"stale template {kind} catalog"
 
 
+def test_pattern_library() -> None:
+    patterns = omi.common.core.TEMPLATE / "dot-omi" / "references" / "patterns"
+    names = {"repository", "strategy", "adapter", "factory", "state", "cqrs", "anti-patterns"}
+    assert {f.stem for f in patterns.glob("*.md")} == names
+    for f in patterns.glob("*.md"):
+        text = f.read_text(encoding="utf-8")
+        assert omi.common.core.meta(f).get("id") == f.stem
+        heads = [h.strip().lower() for h in re.findall(r"^## (.+)$", text, re.M)]
+        for part in ("when to use", "when not to use", "signs to remove it", "sources"):
+            assert part in heads, f"{f.name}: missing {part}"
+        assert re.search(r"https://\S+", text.split("## Sources")[-1]), f"{f.name}: no cited source"
+    catalog = (patterns.parent / "CATALOG.md").read_text(encoding="utf-8")
+    assert all(f"- patterns/{n}:" in catalog for n in names)
+
+
 def test_po_decisions_use_pick_list() -> None:
     line = next(x for x in (omi.common.core.TEMPLATE / "AGENTS.md").read_text(encoding="utf-8").splitlines() if x.startswith("The AskUserQuestion pick-list is used only"))
     for words in ("only for the PO decisions above", "every one is asked", "AskUserQuestion pick-list", "recommended option first", "in Vietnamese", "never as a plain-text question", "numbered option list", "Other questions never use the pick-list"):
@@ -604,6 +624,7 @@ def test_scope_questions_not_sent_to_po() -> None:
 
 def main():
     test_scope_questions_not_sent_to_po()
+    test_pattern_library()
     test_po_decisions_use_pick_list()
     test_ui_mockup_contract()
     test_ui_mockup_review_contract()
