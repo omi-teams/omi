@@ -608,6 +608,18 @@ def test_pattern_library() -> None:
     assert all(f"- patterns/{n}:" in catalog for n in names)
 
 
+def test_structure_rules_in_roles() -> None:
+    agents = omi.common.core.TEMPLATE / "dot-omi" / "agents"
+    architect = (agents / "omi-agent-architect.md").read_text(encoding="utf-8")
+    for words in ("## File plan", "- edit|create <path> (<layer>)", "Pattern: <name> - <force> - <why simpler is not enough>",
+                  "patterns/<name>.md", "committed by the Coordinator before build"):
+        assert words in architect, words
+    reviewer = (agents / "omi-agent-reviewer.md").read_text(encoding="utf-8")
+    for words in ("several responsibilities in one file", "not the concept", "business logic in an adapter", "needless patterns",
+                  "interface with one implementation"):
+        assert words in reviewer, words
+
+
 def test_po_decisions_use_pick_list() -> None:
     line = next(x for x in (omi.common.core.TEMPLATE / "AGENTS.md").read_text(encoding="utf-8").splitlines() if x.startswith("The AskUserQuestion pick-list is used only"))
     for words in ("only for the PO decisions above", "every one is asked", "AskUserQuestion pick-list", "recommended option first", "in Vietnamese", "never as a plain-text question", "numbered option list", "Other questions never use the pick-list"):
@@ -625,6 +637,7 @@ def test_scope_questions_not_sent_to_po() -> None:
 def main():
     test_scope_questions_not_sent_to_po()
     test_pattern_library()
+    test_structure_rules_in_roles()
     test_po_decisions_use_pick_list()
     test_ui_mockup_contract()
     test_ui_mockup_review_contract()

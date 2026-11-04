@@ -6,7 +6,7 @@ import re
 import sys
 from pathlib import Path
 
-from . import catalogs, tree, workflows
+from . import catalogs, structure, tree, workflows
 from ..common import core
 from ..state import resolve as state
 
@@ -362,6 +362,8 @@ def step(root, tid, action, why=None, now=None, to=None, po=None):
         text = add_step_log(text, f"- {prev['id']} started {stamp}")
         msg = f"{tid}: step {cur} failed; back to {prev['id']} ({prev['role']}), then `omi step {tid} done` and `next`"
     elif action == "done":
+        if err := structure.pattern_error(text):
+            sys.exit(f"{tid}: {err} Nothing changed.")
         if (re.findall(r"^\d{4}-\d\d-\d\d \d\d:\d\d hook post-run (FAILED|passed)", text, re.M) or [""])[-1] == "FAILED":
             sys.exit(f"{tid}: the last post-run hook failed; fix it and rerun `omi run` first. Nothing changed.")
         if steps[at]["gate"] == "po" and not po_approved(text, cur):
