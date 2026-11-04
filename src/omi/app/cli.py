@@ -31,7 +31,7 @@ USAGE = """usage: omi <command>
   skills [check <task-file>]   write .omi/skills/CATALOG.md; or check a task's skills against the budget
   skills --check   validate every skill against the contract (parts, size, source, no widened permissions)
   token set [--tool claude|codex]   store the `claude setup-token` value (or the OpenAI API key) in Windows Credential Manager
-  structure check [--changed|--baseline]   report files the .omi/structure.md map does not cover and imports against its layer or module rules; exit 1 on any not in .omi/structure-baseline.json (--baseline records them; --changed checks only files changed vs development, ignoring the baseline)
+  structure check [--changed|--baseline]   (structure init prints a proposed map from the tracked tree, never overwrites one) report files the .omi/structure.md map does not cover and imports against its layer or module rules; exit 1 on any not in .omi/structure-baseline.json (--baseline records them; --changed checks only files changed vs development, ignoring the baseline)
   plans        validate .omi/plans and write .omi/plans/CATALOG.md
   references   validate .omi/references and write .omi/references/CATALOG.md (task refs load as paths)
   rules        validate .omi/rules and write .omi/rules/CATALOG.md (rules auto-load by task scope)
@@ -264,6 +264,12 @@ def dispatch(argv: list[str] | None = None) -> None:
         project = state.resolve()
         try:
             sys.exit(structure.check(project.code, project.state, "--changed" in rest, "--baseline" in rest))
+        except structure.StructureError as exc:
+            sys.exit(f"OMI: {exc}")
+    elif cmd == "structure" and rest == ["init"]:
+        project = state.resolve()
+        try:
+            sys.exit(structure.init(project.code, project.state))
         except structure.StructureError as exc:
             sys.exit(f"OMI: {exc}")
     elif cmd == "step" and len(rest) >= 2:
