@@ -216,7 +216,7 @@ def test_tree_table():
     t = lambda typ, **kw: {"status": "planned", "type": typ, **kw}
     allowed = {"milestone": [], "epic": ["milestone"], "fr": ["epic", "milestone"], "nfr": ["epic", "milestone"],
                "incident": ["milestone", "epic"], "change": ["fr", "nfr", "epic", "milestone"],
-               "task": ["milestone", "epic", "fr", "nfr", "change"], "bug": ["fr", "nfr", "incident"], "security": ["incident"],
+               "task": ["milestone", "epic", "fr", "nfr", "change"], "bug": ["fr", "nfr", "incident"], "security": ["fr", "nfr", "incident"],
                "spike": ["milestone", "epic", "fr", "nfr"], "chore": ["milestone", "epic", "incident"]}
     for typ, parents in allowed.items():
         assert tree.tree_errors({"A": t(typ)}) == [], typ  # every type may be a root

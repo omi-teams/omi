@@ -43,10 +43,10 @@ Serves the Coordinator and any agent filing an issue: `omi-idea` step 5, `omi-ta
    |---|---|---|
    | milestone | none (root) | epic, fr, nfr, task, chore, spike |
    | epic | milestone or none | fr, nfr, task, chore, spike |
-   | fr, nfr | epic, milestone or none | task, spike, bug |
+   | fr, nfr | epic, milestone or none | task, spike, bug, security |
    | incident | none, milestone or epic | bug, security, chore (root-cause fixes) |
    | change | the fr / nfr / epic / milestone it changes | task (follow-up work) |
-   | task, bug, security, spike, chore | any of the above, or none | none (leaf) |
+   | task, bug, security, spike, chore | a type whose "children may be" lists it, or none | none (leaf) |
    A bug or security issue that breaks a known fr / nfr takes it as `parent`. A hole found while doing task X records `Source task: TASK-X` in its Goal and does not take X as parent (X is a leaf). `refs:` is only for `.omi/references/` documents, never task ids.
 3. Log it where it belongs:
    - A project issue: `.omi/tasks/TASK-NNN.md` from `_template.md` in that project's state (detached: `~/.omi/state/...`). Commit and push it the moment it is found, before any other step.

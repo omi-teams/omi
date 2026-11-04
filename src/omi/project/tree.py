@@ -11,8 +11,8 @@ PARENT_TYPES = {"milestone": (), "epic": ("milestone",), "fr": ("epic", "milesto
 CHILD_TYPES = {  # parent type -> other child types it may have; a type missing here is a leaf. Both tables: omi-skill-issue-types
     "milestone": ("epic", "fr", "nfr", "task", "chore", "spike"),
     "epic": ("fr", "nfr", "task", "chore", "spike"),
-    "fr": ("task", "spike", "bug"),
-    "nfr": ("task", "spike", "bug"),
+    "fr": ("task", "spike", "bug", "security"),
+    "nfr": ("task", "spike", "bug", "security"),
     "incident": ("bug", "security", "chore"),
     "change": ("task",),
 }
