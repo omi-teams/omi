@@ -1,10 +1,10 @@
 ---
 id: omi-flow-docs-only
-summary: Documentation-only change: docs-writer, then PO check; no reviewer (CI still runs). Use only when every changed path is under docs/**, .omi/tasks/** or is .omi/decisions.md; any other path needs feature.
+summary: Documentation-only change: docs-writer, then automatic accept; no reviewer (CI still runs). Use only when every changed path is under docs/**, .omi/tasks/** or is .omi/decisions.md; any other path needs feature.
 steps:
 - id: plan | role: coordinator | skills: omi-skill-task-brief | input: PO request | output: task file whose scope lists only docs/**, .omi/tasks/** or .omi/decisions.md | gate: none | stop: task file complete and PO picked it
 - id: write | role: omi-agent-docs-writer | skills: | input: task file, worktree | output: docs diff inside scope, Checkpoint updated | gate: none | stop: every criterion met; no path outside the allowed list changed
-- id: accept | role: coordinator | skills: | input: diff summary, CI result | output: PO approval line in ## Steps | gate: po | stop: PO accepts the result
+- id: accept | role: coordinator | skills: | input: diff summary, CI result | output: `Auto accept: review PASS` line in ## Steps | gate: auto | stop: every review-type step passed or an explicit PO approval line
 ---
 # Docs only
 
@@ -14,7 +14,7 @@ steps:
 ## Models
 - plan: Coordinator, sonnet/low.
 - write: docs-writer, sonnet/low.
-- accept: Coordinator; the PO decides.
+- accept: Coordinator; automatic after review PASS.
 
 ## Path rule
 Before `accept`, list the changed paths. Reviewer skipped only when every path is under `docs/**`, `.omi/tasks/**` or is `.omi/decisions.md`. If one is not, stop and restart the task on `omi-flow-feature`.
@@ -24,4 +24,4 @@ Before `accept`, list the changed paths. Reviewer skipped only when every path i
 - CI red: fix before `accept`.
 
 ## PO gates
-`accept` needs `PO approval accept: <PO's words>` under `## Steps`; `omi step` refuses otherwise. Merge to staging/main stays with the PO.
+`accept` is automatic: `omi step <ID> done` records `Auto accept: review PASS` under `## Steps` when every review-type step passed (or an explicit `PO approval accept:` line exists), and refuses otherwise. Merge to staging/main stays with the PO.

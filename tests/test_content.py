@@ -446,7 +446,7 @@ def test_ui_mockup_contract() -> None:
         assert requirement in text, requirement
     workflow = (template / "workflows" / "omi-flow-feature-ui.md").read_text(encoding="utf-8")
     assert 'adds the acceptance criterion "pages match the PO-approved mockup' in workflow
-    assert "PO approval approve-mockup:" in workflow
+    assert "`approve-mockup` is automatic after the designer/UI review PASS" in workflow
 
 
 def test_ui_mockup_review_contract() -> None:
@@ -495,7 +495,7 @@ def test_ui_mockup_workflow() -> None:
         omi.setup.upgrade.init(root)
         steps = omi.project.workflows.get_workflow(root, "omi-flow-feature-ui")
         assert [s["id"] for s in steps] == ["plan", "design", "approve-mockup", "build", "review", "qa", "accept"]
-        assert [s["id"] for s in steps if s["gate"] == "po"] == ["approve-mockup"]
+        assert steps[2]["gate"] == "auto" and not [s for s in steps if s["gate"] == "po"]
         assert ".omi/tasks/<ID>-mockup/" in steps[0]["output"]
         assert steps[2]["role"] == "coordinator"
         assert steps[-1]["gate"] == "auto"
@@ -510,7 +510,7 @@ def test_ui_mockup_workflow() -> None:
         step("done")
         step("next")
         assert omi.common.core.meta(task)["step"] == "approve-mockup"
-        for action, why, message in (("done", None, "PO approval approve-mockup:"),
+        for action, why, message in (("done", None, "is an auto gate"),
                                       ("skip", "skip design approval", "cannot be skipped"),
                                       ("next", None, "is not done")):
             before = task.read_text(encoding="utf-8")
@@ -519,9 +519,9 @@ def test_ui_mockup_workflow() -> None:
             except SystemExit as exc:
                 assert message in str(exc), str(exc)
             else:
-                raise AssertionError(f"mockup gate allowed {action} without PO approval")
+                raise AssertionError(f"mockup gate allowed {action} without a review PASS")
             assert task.read_text(encoding="utf-8") == before
-        step("approve", "Approved screen.html and phone.html")
+        task.write_text(task.read_text(encoding="utf-8") + "PO approval approve-mockup: Approved screen.html and phone.html\n", encoding="utf-8")
         # Implementation criteria must remain open when the PO approves a design.
         task.write_text(task.read_text(encoding="utf-8").replace(
             "## Steps", "## Acceptance criteria\n- [ ] pages match the PO-approved mockup in `.omi/tasks/TASK-122-mockup/`\n\n## Steps"),
@@ -533,26 +533,12 @@ def test_ui_mockup_workflow() -> None:
             "- [ ] pages match the PO-approved mockup in `.omi/tasks/TASK-122-mockup/`"]
 
 
-def test_final_po_gate_requires_completed_criteria() -> None:
-    with tempfile.TemporaryDirectory() as d, contextlib.redirect_stdout(io.StringIO()):
-        root = Path(d).resolve()
-        omi.setup.upgrade.init(root)
-        steps = omi.project.workflows.get_workflow(root, "omi-flow-feature-sensitive")
-        assert steps[-1]["id"] == "accept" and steps[-1]["gate"] == "po"
-        task = root / ".omi" / "tasks" / "TASK-122.md"
-        done = "".join(f"- {step['id']} done 2026-10-31 10:00\n" for step in steps[:-1])
-        for action, state in (("done", "started"), ("next", "done")):
-            text = ("---\nid: TASK-122\nworkflow: omi-flow-feature-sensitive\nstep: accept\n---\n"
-                    "## Acceptance criteria\n- [ ] implementation complete\n\n## Steps\n" + done
-                    + f"- accept {state} 2026-10-31 10:00\nPO approval accept: approved\n")
-            task.write_text(text, encoding="utf-8")
-            try:
-                omi.project.tasks.step(root, "TASK-122", action)
-            except SystemExit as exc:
-                assert "tick the reviewed acceptance criteria first" in str(exc), str(exc)
-            else:
-                raise AssertionError(f"final PO gate allowed {action} with unfinished criteria")
-            assert task.read_text(encoding="utf-8") == text
+def test_only_merge_workflows_have_po_gate() -> None:
+    root = omi.common.core.TEMPLATE / "dot-omi" / "workflows"
+    with_po = {f.stem: [s["id"] for s in omi.project.workflows.workflow_steps(f.read_text(encoding="utf-8")) if s.get("gate") == "po"]
+               for f in root.glob("omi-flow-*.md")}
+    assert {k: v for k, v in with_po.items() if v} == {
+        "omi-flow-promote": ["merge-main"], "omi-flow-release": ["merge-staging"], "omi-flow-incident": ["merge-prod"]}
 
 
 def test_issue_types_skill() -> None:
@@ -645,7 +631,7 @@ def main():
     test_ui_mockup_workflow()
     test_issue_types_skill()
     test_ui_mockup_generated_catalogs()
-    test_final_po_gate_requires_completed_criteria()
+    test_only_merge_workflows_have_po_gate()
     test_skills()
     test_rules()
     test_references()
