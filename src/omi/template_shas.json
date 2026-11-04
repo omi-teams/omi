@@ -442,7 +442,7 @@
     ".omi/workflows/omi-flow-refactor.md": "e18642b5707e119d597eba275fc41e7e63cdb36b4322fcd1b28eda1c88a497b8",
     ".omi/workflows/omi-flow-release.md": "bd75e993b2e7807cda9b34b26df0419b1322e59c0f4d23bce77839f3f8d81cd9",
     ".omi/workflows/omi-flow-spike.md": "38e43d2a9f1508ddfc89e2bbce349443675c97a8f3d8185b7f25165cc3c900e3",
-    "AGENTS.md": "fb43b9442e0547075618b24ef70222cf84adf952e920abfc7be2c7afd5583700",
+    "AGENTS.md": "4a46fbbe1e7c7e6da06ad9654867167b979a3ffc0fb8a82b69c8cae67c5d733a",
     "docker/Dockerfile": "f40f8bb7d09dcf5a096a693aba060b6c789fe8299783712a011ca5254cd17546",
     "docker/prove.sh": "511315ec4046be60bed75c1149c10093a90078d350c538ef5fdda0715d008d22",
     "docker/proxy.py": "0ba39b820fc01693be64aa4b00b516902842f0c0f82fda2a4b21237684b828ec"
