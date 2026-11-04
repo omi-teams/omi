@@ -509,6 +509,24 @@ def test_block_list_scope_and_bom_writers() -> None:
         assert task.read_bytes() == b"---\nid: T\nscope:\n  - a.py  # x\n  - b.py\nstep: fix\n---\nbody\n"
 
 
+def test_failure_report() -> None:
+    # a failing test run through the test_omi hook: the last stderr line names test_x and its line
+    tests = Path(__file__).parent
+    with tempfile.TemporaryDirectory() as d:
+        script = Path(d) / "failing.py"
+        script.write_text(
+            f"import sys\n"
+            f"sys.path.insert(0, {str(tests)!r})\n"
+            f"import test_omi\n"
+            f"sys.excepthook = test_omi.report_failure\n"
+            f"def test_x():\n"
+            f"    assert False, 'boom'\n"
+            f"test_x()\n", encoding="utf-8")
+        done = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, encoding="utf-8")
+    assert done.returncode != 0
+    assert done.stderr.splitlines()[-1] == f"FAILED test_x {script}:6 AssertionError: boom", done.stderr
+
+
 def main():
     test_block_list_scope_and_bom_writers()
     test_parse_block_list_and_bom()
@@ -522,6 +540,7 @@ def main():
     test_step_records_behind()
     test_cli_correctness()
     test_cli_characterization()
+    test_failure_report()
 
 
 if __name__ == "__main__":

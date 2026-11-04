@@ -1,5 +1,7 @@
 """Runs every area test file in one process: python tests/test_omi.py"""
 import json
+import sys
+import traceback
 from pathlib import Path
 
 import helpers  # noqa: F401
@@ -23,6 +25,14 @@ import test_board_web
 from omi.project import tasks
 from omi.setup import upgrade
 import omi.common.core
+
+
+def report_failure(exc_type, exc, tb):
+    """Print the traceback, then one `FAILED <test> <file>:<line> <exception>` line naming the innermost test_* frame."""
+    sys.__excepthook__(exc_type, exc, tb)
+    frames = [(f.f_code.co_name, f.f_code.co_filename, n) for f, n in traceback.walk_tb(tb)] or [("?", "?", 0)]
+    name, filename, lineno = next((f for f in reversed(frames) if f[0].startswith("test_")), frames[-1])  # else the innermost frame
+    print(f"FAILED {name} {filename}:{lineno} {exc_type.__name__}: {exc}".replace("\n", " "), file=sys.stderr, flush=True)
 
 
 def test_release_0_5_0():
@@ -64,6 +74,7 @@ def test_phase():
 
 
 if __name__ == "__main__":
+    sys.excepthook = report_failure
     test_phase()
     test_release_0_5_0()
     test_upgrade.main()
