@@ -566,7 +566,16 @@ def test_po_decisions_use_pick_list() -> None:
         assert words in line, words
 
 
+def test_scope_questions_not_sent_to_po() -> None:
+    task = (omi.common.core.TEMPLATE / "dot-claude" / "skills" / "omi-task" / "SKILL.md").read_text(encoding="utf-8")
+    change = (omi.common.core.TEMPLATE / "dot-omi" / "skills" / "workflow" / "omi-skill-change-request" / "SKILL.md").read_text(encoding="utf-8")
+    needs_scope = next(x for x in task.splitlines() if x.lstrip().startswith("- `NEEDS SCOPE`"))
+    assert "Otherwise ask the PO" not in needs_scope
+    assert "Only the PO widens scope" not in change
+
+
 def main():
+    test_scope_questions_not_sent_to_po()
     test_po_decisions_use_pick_list()
     test_ui_mockup_contract()
     test_ui_mockup_review_contract()
