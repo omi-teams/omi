@@ -31,7 +31,7 @@ Serves the Coordinator step in `omi-task` step 5 when the engineer returns `NEED
 1. Stop the engineer; do not let it continue on assumptions. Keep the work done so far.
 2. Write the impact in at most 5 lines: criteria that change, files or scope added, tasks that depend on it, extra cost.
 3. Pick one option: (a) widen this task, (b) new follow-up task and keep this one as is, (c) drop the change. Recommend one.
-4. Choose the option yourself: widening scope or editing approved criteria is the Coordinator's call (`omi-agent-architect` for design). Ask the PO, with those options recommended first, only when the change adds operating cost.
+4. Choose the option yourself: changing the scope or the approved criteria is the Coordinator's call (`omi-agent-architect` for design). Ask the PO, with those options recommended first, only when the change adds operating cost.
 5. On the answer: append to `.omi/decisions.md` `- <date> | <decision> | <why> | <TASK-ID>`; edit the task file (scope, criteria, Checkpoint) and commit it on `development`.
 6. Rerun `omi run` or create the new task through `omi-skill-task-brief`.
 
