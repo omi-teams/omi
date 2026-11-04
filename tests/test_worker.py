@@ -1023,9 +1023,24 @@ def test_full_report_keeps_earlier_block():
     assert omi.worker.tools.full_report("codex", "", final) == final
 
 
+def test_claude_report_skips_subagent_messages():
+    block = "VERDICT: FAIL\n- a.py:1 bug -> fix\nROOT: new"
+    final = "VERDICT: PASS. Review finished."
+    for parent in ({}, {"parent_tool_use_id": None}):
+        out = "\n".join(json.dumps(e) for e in (
+            {"type": "assistant", "parent_tool_use_id": "tool-agent-1",
+             "message": {"content": [{"type": "text", "text": block}]}},
+            {"type": "assistant", **parent,
+             "message": {"content": [{"type": "text", "text": final}]}},
+            {"type": "result", "result": final, "usage": {}}))
+        assert omi.worker.tools.assistant_texts("claude", out) == [final]
+        assert omi.worker.tools.full_report("claude", out, final) == final
+
+
 def main():
     test_verdict_of_forms()
     test_full_report_keeps_earlier_block()
+    test_claude_report_skips_subagent_messages()
     test_pr_comment()
     test_worker_cache_tmpfs_and_full_volumes()
     test_download_cache_gitignore()
