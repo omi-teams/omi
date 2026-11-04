@@ -400,7 +400,7 @@
     ".omi/agents/omi-agent-security-reviewer.md": "86efb3f4010da9f1c62a352ec468600d7c035735840bafe61983faed5795d4ca",
     ".omi/config.json": "a4f83434046b8d29cfe076a3a8d5dcabf2d1e72edfac51699dffbb877290b51b",
     ".omi/decisions.md": "ebcde066e22de9b7f5c1ff3d551d5849334fd09fe97954f14b43067428702aef",
-    ".omi/hooks/post-run.sh": "6b1817168310687170ec8c015f729abfe6827f973b96f7d3e5a7ee4f6e207bca",
+    ".omi/hooks/post-run.sh": "9c617b2c092769ef17dc77706bc957e076c28486a54f008a22123403b71cc330",
     ".omi/plans/PLAN-000.md": "64c6734027ba0a1ee88ac3677900eb5568444f08b1350597740504e06b37b66d",
     ".omi/references/nextjs-app-router.md": "e85dabf905f175aed8c652e76885f49b1f1f0575f4f892f424ab6bb932431f23",
     ".omi/references/patterns/adapter.md": "78c8267a13a93efbfd159790f7b5645ca4b95cef0e51ab0f43ccf64aa251431d",

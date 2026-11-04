@@ -271,6 +271,18 @@ def test_hooks():
             (w / "tests" / "test_x.py").write_text("")
             r = subprocess.run([sh, str(omi.common.core.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh")], cwd=w, capture_output=True, text=True, env=env)
             assert "no tests found" not in r.stdout and "pytest not in the worker image" in r.stdout, r
+            # structure check: GIT_DIR comes from OMI_GIT_DIR for the omi command only, not for the project tests
+            fake = Path(d) / "fake"
+            (fake / "state" / ".omi").mkdir(parents=True)
+            (fake / "state" / ".omi" / "structure.md").write_text("", encoding="utf-8")
+            (fake / "omi").mkdir()
+            (fake / "omi" / "__main__.py").write_text("import os,sys;print('omi', os.environ.get('GIT_DIR'), os.environ.get('GIT_WORK_TREE'), sys.argv[1:])\n", encoding="utf-8")
+            (fake / "state" / ".omi" / "config.json").write_text('{"test": "echo test GIT_DIR=${GIT_DIR:-unset}"}', encoding="utf-8")
+            base = {k: v for k, v in os.environ.items() if k not in ("OMI_PROJECT_STATE", "OMI_GIT_DIR")}
+            for extra, want in (({}, "omi None None"), ({"OMI_GIT_DIR": "/gitdir/worktrees/T"}, f"omi /gitdir/worktrees/T {fake}")):
+                env = {**base, "PYTHONPATH": str(fake), "OMI_PROJECT_STATE": str(fake / "state"), **extra}
+                r = subprocess.run([sh, str(omi.common.core.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh")], cwd=fake, capture_output=True, text=True, env=env)
+                assert want in r.stdout and "test GIT_DIR=unset" in r.stdout, r
     text = (omi.common.core.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh").read_text()
     assert all(w in text for w in ("pytest", "go test", "npm test"))
     for f in (omi.common.core.TEMPLATE / "AGENTS.md",
