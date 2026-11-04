@@ -21,6 +21,7 @@ import test_install
 import test_board
 import test_board_server
 import test_board_web
+import test_structure
 
 from omi.project import tasks
 from omi.setup import upgrade
@@ -93,4 +94,5 @@ if __name__ == "__main__":
     test_board.main()
     test_board_server.main()
     test_board_web.main()
+    test_structure.main()
     print("ok")
