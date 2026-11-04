@@ -777,10 +777,10 @@ def test_alerts() -> None:
         assert {a["id"] for a in data._alerts(details, 3)} == {"TASK-002", "TASK-003", "TASK-006"}
         stale = data._alerts(details, 2)
         assert [a["kind"] for a in stale if a["id"] == "TASK-001"] == ["stale"] and "ngưỡng: 2 ngày" in stale[0]["reason"]
-    kinds = {a["id"]: a["kind"] for a in data._alerts(details, 3)}
-    assert kinds["TASK-002"] == "review_fail" and kinds["TASK-003"] == "behind" and kinds["TASK-006"] == "blocked_dep"
-    assert next(a for a in data._alerts(details, 3) if a["id"] == "TASK-002")["chip"] == "Review FAIL ×2"
-    assert data._alerts([task("TASK-010", steps="")], 3) == []
+        kinds = {a["id"]: a["kind"] for a in data._alerts(details, 3)}
+        assert kinds["TASK-002"] == "review_fail" and kinds["TASK-003"] == "behind" and kinds["TASK-006"] == "blocked_dep"
+        assert next(a for a in data._alerts(details, 3) if a["id"] == "TASK-002")["chip"] == "Review FAIL ×2"
+        assert data._alerts([task("TASK-010", steps="")], 3) == []
 
 
 def test_alerts_config() -> None:
