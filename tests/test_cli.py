@@ -409,6 +409,8 @@ def test_improve_creation_and_workflows() -> None:
             assert front["id"] == tid and front["status"] == "planned" and front["workflow"] == workflow
             assert front["type"] == typ
             assert f"title: {summary}\n" in text
+            shape = {"bug": "Symptom: " + summary + "\nExpected: ", "security": "Impact: " + summary + "\nBoundary crossed: "}.get(kind, summary + "\n\nSource")
+            assert shape in text and "refs: []" in text
             assert "Source project: sample\nSource task: TASK-097\nSource agent: omi-agent-reviewer" in text
             assert omi.common.core.git(home, "show", "--pretty=format:", "--name-only", "HEAD") == f"projects/omi/.omi/tasks/{tid}.md"
             assert omi.common.core.git(home, "rev-parse", "HEAD") == omi.common.core.git(remote, "rev-parse", "main")

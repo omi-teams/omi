@@ -6,7 +6,7 @@ import re
 import sys
 from pathlib import Path
 
-from . import catalogs, workflows
+from . import catalogs, tree, workflows
 from ..common import core
 from ..state import resolve as state
 
@@ -115,67 +115,19 @@ def plan_status(stored: str, statuses: list[str]) -> str:
     return "done" if statuses and all(st == "done" for st in statuses) else stored
 
 
-TYPES = ("milestone", "epic", "fr", "nfr", "task", "bug", "security", "incident", "change", "spike", "chore")
-TYPE_WORKFLOWS = {"bug": "omi-flow-bugfix", "security": "omi-flow-feature-sensitive", "incident": "omi-flow-incident",
-                  "change": "omi-flow-change-request", "spike": "omi-flow-spike", "chore": "omi-flow-refactor"}  # type -> its workflow
-
-
-def children_map(found):
-    """{parent id: [child ids]} for the tasks whose `parent:` exists."""
-    kids = {}
-    for tid, m in found.items():
-        if m.get("parent") in found:
-            kids.setdefault(m["parent"], []).append(tid)
-    return kids
-
-
-def tree_errors(found):
-    """Messages naming each task with an unknown `type`, a missing `parent` or a parent cycle."""
-    out = []
-    for tid, m in found.items():
-        if (m.get("type") or "task") not in TYPES:
-            out.append(f"{tid}: unknown type `{m['type']}` (use {'|'.join(TYPES)})")
-        seen, cur = [tid], m.get("parent")
-        if cur and cur not in found:
-            out.append(f"{tid}: parent {cur} does not exist")
-        while cur in found:
-            if cur in seen:
-                out.append(f"{tid}: parent cycle {' -> '.join([*seen, cur])}")
-                break
-            seen.append(cur)
-            cur = found[cur].get("parent")
-    return out
-
-
-def derived_status(found):
-    """{id: status}: a task with children gets done/blocked/planned/in-progress from them (recursive), else its own."""
-    kids, memo = children_map(found), {}
-
-    def status(tid, seen=()):
-        ch = [c for c in kids.get(tid, []) if c not in seen and c != tid]
-        if not ch:
-            return found[tid].get("status", "planned")
-        if tid not in memo:
-            sts = [status(c, (*seen, tid)) for c in ch]
-            memo[tid] = ("done" if all(x == "done" for x in sts) else "blocked" if "blocked" in sts
-                         else "planned" if all(x == "planned" for x in sts) else "in-progress")
-        return memo[tid]
-    return {tid: status(tid) for tid in found}
-
-
 def rolled_up(found):
     """Exit on an invalid hierarchy; else the tasks with the derived status in place of the stored one."""
-    errors = tree_errors(found)
+    errors = tree.tree_errors(found)
     if errors:
         sys.exit("invalid task hierarchy:\n" + "\n".join(errors))
-    return {tid: m | {"status": st} for (tid, m), st in zip(found.items(), derived_status(found).values())}
+    return {tid: m | {"status": st} for (tid, m), st in zip(found.items(), tree.derived_status(found).values())}
 
 
 def check_runnable(project, tid):
     """Exit when the task has children (it is only a rolled-up container) or the hierarchy is invalid."""
     found = rolled_up(tasks(project))
-    if tid in children_map(found):
-        sys.exit(f"{tid} has child tasks ({', '.join(children_map(found)[tid])}); run one of them. Nothing changed.")
+    if tid in tree.children_map(found):
+        sys.exit(f"{tid} has child tasks ({', '.join(tree.children_map(found)[tid])}); run one of them. Nothing changed.")
 
 
 def unticked(text):
@@ -261,14 +213,6 @@ def warn_sensitive(m):
     for seg in segs:
         if any(re.fullmatch(p, seg) for p in SENSITIVE_SCOPE):
             print(f"WARN: scope touches {seg} - consider omi-flow-feature-sensitive")
-
-
-def warn_type_workflow(m):
-    """Print a warning (never fail) when the task's type and workflow disagree (`omi-flow-feature-sensitive` may also carry a plain task)."""
-    typ, wid = m.get("type") or "task", m.get("workflow") or workflows.DEFAULT_WORKFLOW
-    owner = next((t for t, w in TYPE_WORKFLOWS.items() if w == wid), None)
-    if typ in TYPE_WORKFLOWS and TYPE_WORKFLOWS[typ] != wid or owner and owner != typ and wid != "omi-flow-feature-sensitive":
-        print(f"WARN: type `{typ}` does not match workflow {wid}" + (f" (type `{owner}` expected)" if owner else f" (use {TYPE_WORKFLOWS[typ]})"))
 
 
 def commit_task_file(root, task, msg):
@@ -390,7 +334,7 @@ def step(root, tid, action, why=None, now=None, to=None, po=None):
         if new["role"] != workflows.COORDINATOR:
             catalogs.get_role(root, m.get("role") or "omi-agent-engineer")  # unknown task role fails too
         catalogs.check_skills(root, workflows.step_skill_ids(root, new, m))
-        warn_type_workflow(m)
+        tree.warn_type_workflow(m)
         if cur == "plan":
             warn_sensitive(m)
         text = add_step_log(set_front(text, "step", new["id"]), f"- {new['id']} started {stamp}")

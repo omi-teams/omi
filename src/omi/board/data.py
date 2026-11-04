@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ..common import core
-from ..project import tasks, workflows
+from ..project import tasks, tree, workflows
 from . import source, timeline
 
 
@@ -259,7 +259,7 @@ def _build_project(snap: source.Snapshot, name: str) -> dict:
     root = snap.root(_name(name, project_name=True))
     details = [_detail(snap, root, f.stem, snap.read(f)) for f in snap.files(root / ".omi" / "tasks", "*.md") if f.name != "_template.md" and _name(f.stem)]
     found = {t["id"]: t["frontmatter"] for t in details}
-    kids, derived = tasks.children_map(found), tasks.derived_status(found)
+    kids, derived = tree.children_map(found), tree.derived_status(found)
     for t in details:
         t |= {"children": kids.get(t["id"], []), "status": derived[t["id"]]}
     kanban = {status: [] for status in STATUSES}

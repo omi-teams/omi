@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ..board import server
 from ..setup import attach, install, upgrade
-from ..project import catalogs, github, improve, scope, tasks, workflows
+from ..project import catalogs, github, improve, scope, tasks, tree, workflows
 from ..common import core
 from ..worker import creds, docker, hooks, run
 from ..state import resolve as state, sync as state_sync
@@ -82,7 +82,7 @@ def status(cwd="."):
     if missing_test:
         print('no `test` command in .omi/config.json; set one, e.g. "test": "python3 -m pytest -q"')
     ts = tasks.rolled_up(tasks.tasks(project))
-    kids = tasks.children_map(ts)
+    kids = tree.children_map(ts)
     finished = []
     for pid, m in catalogs.load_plans(root, strict=False).items():
         members = [t for t in ts.values() if t.get("plan") == pid]

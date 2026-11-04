@@ -383,15 +383,11 @@
     "docker/proxy.py": "0ba39b820fc01693be64aa4b00b516902842f0c0f82fda2a4b21237684b828ec"
   },
   "0.5.0": {
-    "AGENTS.md": "85aca9f38f301b33fdaaf9ba698b61771e39202616f20d0bcbb5af365e5619f2",
-    "docker/Dockerfile": "f40f8bb7d09dcf5a096a693aba060b6c789fe8299783712a011ca5254cd17546",
-    "docker/prove.sh": "511315ec4046be60bed75c1149c10093a90078d350c538ef5fdda0715d008d22",
-    "docker/proxy.py": "0ba39b820fc01693be64aa4b00b516902842f0c0f82fda2a4b21237684b828ec",
     ".claude/settings.json": "bb82110c2fdb62932040ad7c42387123cc6f947578492571ab37e2947ec8fb7f",
-    ".claude/skills/omi-idea/SKILL.md": "04713479983aeb18bf49052409dc391fc9292cad5604e4511dcea3cac7367228",
+    ".claude/skills/omi-idea/SKILL.md": "0b74db56ae913a8e2643ffe85826db811f82e49aea1fe753d99a064c262b243b",
     ".claude/skills/omi-release/SKILL.md": "0031e8637f6cb93806949282f51bd7b9b76fd476044734dae211f44be2ea774b",
     ".claude/skills/omi-status/SKILL.md": "b1d3296f2c5fcc7154799aa90210cca477995bb7e0dd4019863f7bdbfebd2a05",
-    ".claude/skills/omi-task/SKILL.md": "fc63de3755ac4cf4002c1e98bd6c712967e32df1f83cb7fd8686e43c0c248709",
+    ".claude/skills/omi-task/SKILL.md": "4b9b268d01a36085ca39a5e031cdbb242b1db2c720504cca1d9c6218c45debb7",
     ".claude/skills/omi-upgrade/SKILL.md": "fbffef4f583854fe732648dd9dafbd34d7287245e5fe6f01f7831490aad34820",
     ".omi/agents/omi-agent-architect.md": "3e09f68012e35c9c8b662a5ac5ea4743aad715b2d3bac16d920506025195d2bf",
     ".omi/agents/omi-agent-designer-ui.md": "f101bc09a2fc6e2603767085daef7b06340d72c04b2312bd1a7437dad5939ea8",
@@ -431,9 +427,10 @@
     ".omi/skills/ui/omi-skill-ui-direction/references/style-presets.md": "752f6ed91012bbf4ec828a783283f985cb691f81fa5b49ed3188f5a536fd726c",
     ".omi/skills/workflow/omi-skill-brainstorm-ac/SKILL.md": "3fb80aba08f045b74a3bc5881d988da4100e78a74697006b74c68d09b263963e",
     ".omi/skills/workflow/omi-skill-change-request/SKILL.md": "56cc094661a706e2ecfd42a491f9758349cf6365bd151972fb0611d7d812af7f",
+    ".omi/skills/workflow/omi-skill-issue-types/SKILL.md": "95b419bbfa3deee7d734fef402049568bc5fd532e034b331ebeb578d631c3557",
     ".omi/skills/workflow/omi-skill-lean-implementation/SKILL.md": "3ada375d368c605fce0d3d4a0313c2e28d8deb65517e9196820d9a23060cd3cc",
-    ".omi/skills/workflow/omi-skill-task-brief/SKILL.md": "50f5d0fb0a820c16c91539e83377a63814b78bf291d2a3d43865ad78b861cfb1",
-    ".omi/tasks/_template.md": "74f6be835519fbcf3b70f673f4e0e7d93914291039fdf543380c241280c6a418",
+    ".omi/skills/workflow/omi-skill-task-brief/SKILL.md": "dd5a186faf6f759e31c00877c4db31f0555a0ea2750075453a0844ac1b888446",
+    ".omi/tasks/_template.md": "bb4dace5a4acb20259d6b34f56a0698c01f34388bb0f44856b83a389f39892c9",
     ".omi/workflows/omi-flow-bugfix.md": "3fe584e30bea7515d496542970eceea2785ab631172b6b09043a5912ebc9128c",
     ".omi/workflows/omi-flow-change-request.md": "96ddf6b47746030e0f337147f3dcfe3fd5eba26e8ef8c9f37f4e8cf463256ff0",
     ".omi/workflows/omi-flow-docs-only.md": "0d8b0d742c2d4b9bd32c3dd91bebc89f935a2bb2d8745abda98c73bb0f02731f",
@@ -444,6 +441,10 @@
     ".omi/workflows/omi-flow-promote.md": "8696154f7614a46f67f99ec9fbc727310ecf967325f94667e98de0419f1a9e22",
     ".omi/workflows/omi-flow-refactor.md": "e18642b5707e119d597eba275fc41e7e63cdb36b4322fcd1b28eda1c88a497b8",
     ".omi/workflows/omi-flow-release.md": "bd75e993b2e7807cda9b34b26df0419b1322e59c0f4d23bce77839f3f8d81cd9",
-    ".omi/workflows/omi-flow-spike.md": "38e43d2a9f1508ddfc89e2bbce349443675c97a8f3d8185b7f25165cc3c900e3"
+    ".omi/workflows/omi-flow-spike.md": "38e43d2a9f1508ddfc89e2bbce349443675c97a8f3d8185b7f25165cc3c900e3",
+    "AGENTS.md": "fb43b9442e0547075618b24ef70222cf84adf952e920abfc7be2c7afd5583700",
+    "docker/Dockerfile": "f40f8bb7d09dcf5a096a693aba060b6c789fe8299783712a011ca5254cd17546",
+    "docker/prove.sh": "511315ec4046be60bed75c1149c10093a90078d350c538ef5fdda0715d008d22",
+    "docker/proxy.py": "0ba39b820fc01693be64aa4b00b516902842f0c0f82fda2a4b21237684b828ec"
   }
 }

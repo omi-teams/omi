@@ -2,8 +2,8 @@
 id: TASK-NNN
 title: Short imperative title
 status: planned
-type:  # optional: milestone|epic|fr|nfr|task|bug|security|incident|change|spike|chore (default task)
-parent:  # optional task id; a task with children gets its status from them (done/blocked/planned/in-progress), is never run or suggested next
+type:  # optional: milestone|epic|fr|nfr|task|bug|security|incident|change|spike|chore (default task); see omi-skill-issue-types
+parent:  # optional task id; allowed parent: milestone none; epic milestone; fr|nfr epic|milestone; incident milestone|epic; change fr|nfr|epic|milestone; task milestone|epic|fr|nfr|change; spike milestone|epic|fr|nfr; chore milestone|epic|incident; bug fr|nfr|incident; security fr|nfr|incident. No task has a leaf as parent; a task with children gets its status from them (done/blocked/planned/in-progress), is never run or suggested next
 depends:
 plan:  # Coordinator-owned optional id from .omi/plans/CATALOG.md
 scope: src/feature/**, tests/test_feature.py  # edit only on development; .git* paths need an exact scope entry (no globs), e.g. .github/workflows/ci.yml

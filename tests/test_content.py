@@ -522,6 +522,22 @@ def test_final_po_gate_requires_completed_criteria() -> None:
             assert task.read_text(encoding="utf-8") == text
 
 
+def test_issue_types_skill() -> None:
+    with tempfile.TemporaryDirectory() as d, contextlib.redirect_stdout(io.StringIO()):
+        root = Path(d).resolve()
+        omi.setup.upgrade.init(root)
+        omi.project.catalogs.check_all_skills(root)
+        omi.project.catalogs.skills_catalog(root)
+        assert "- omi-skill-issue-types (workflow): " in (root / ".omi/skills/CATALOG.md").read_text(encoding="utf-8")
+        text = (root / ".omi/skills/workflow/omi-skill-issue-types/SKILL.md").read_text(encoding="utf-8")
+        for typ in omi.project.tree.TYPES:
+            assert f"| {typ} |" in text or f"| {typ}, " in text or f", {typ} |" in text, typ
+        for needle in ("| type | log it when |", "| type | parent may be |", "omi improve", "Symptom", "Boundary crossed", "Time-box"):
+            assert needle in text, needle
+        for rel in (".claude/skills/omi-idea/SKILL.md", ".claude/skills/omi-task/SKILL.md", ".omi/skills/workflow/omi-skill-task-brief/SKILL.md", "AGENTS.md"):
+            assert "omi-skill-issue-types" in (root / rel).read_text(encoding="utf-8"), rel
+
+
 def test_ui_mockup_generated_catalogs() -> None:
     with tempfile.TemporaryDirectory() as d, contextlib.redirect_stdout(io.StringIO()):
         root = Path(d).resolve()
@@ -556,6 +572,7 @@ def main():
     test_ui_mockup_review_contract()
     test_qa_host_criteria_do_not_fail()
     test_ui_mockup_workflow()
+    test_issue_types_skill()
     test_ui_mockup_generated_catalogs()
     test_final_po_gate_requires_completed_criteria()
     test_skills()
