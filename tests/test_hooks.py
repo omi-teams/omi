@@ -146,7 +146,8 @@ def test_hooks():
             assert calls.index((argv, kw)) < calls.index(agents()[0]) and kw["input"] == b"echo hi\n"
             assert argv[argv.index("--network") + 1] == "none" and "--rm" in argv and f"{wt}:/work:ro" in argv
             assert "-w" in argv and argv[argv.index("-w") + 1] == "/work" and "omi-worker=1" in argv
-            assert [a for i, a in enumerate(argv) if argv[i - 1] == "-e"] == ["HOME=/home/node", *omi.worker.docker.CACHE_ENV]  # no token name
+            assert [a for i, a in enumerate(argv) if argv[i - 1] == "-e"] == ["PYTHONPATH=/opt/omi", "HOME=/home/node", *omi.worker.docker.CACHE_ENV]  # no token name
+            assert f"{Path(omi.__file__).parent}:/opt/omi/omi:ro" in argv
             assert omi.worker.creds.TOKEN_ENV not in kw["env"] and "tok" not in " ".join(argv)
             assert "hook pre-run passed" in task.read_text()
             # failing pre-run: agent never started, output in Reports

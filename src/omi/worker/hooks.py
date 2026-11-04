@@ -14,6 +14,7 @@ from ..project import tasks
 
 
 HOOK_EVENTS = ("pre-run", "post-run", "pre-merge")
+OMI_MOUNT = "/opt/omi"  # host dir holding the stdlib-only omi package, mounted ro so hooks can run `python3 -m omi`
 HOOK_RUNNERS = {".sh": ["sh", "-s"], ".py": ["python3", "-"]}
 
 
@@ -32,8 +33,8 @@ def run_hook(wt, main, event, tid, image):
     env.pop(creds.TOKEN_ENV, None)
     name = docker.container_name(docker.repo_label(main), f"hook-{event}", tid)
     argv = docker.worker_argv(wt, image, HOOK_RUNNERS[script.suffix], name, docker.repo_key(main), docker.worker_labels(f"hook-{event}", tid, None, None),
-                       ro=True, env_names=("OMI_PROJECT_STATE=/state",) if project.detached else (), offline=True,
-                       mounts=[f"{project.state}:/state"] if project.detached else (),
+                       ro=True, env_names=(f"PYTHONPATH={OMI_MOUNT}", *(("OMI_PROJECT_STATE=/state",) if project.detached else ())), offline=True,
+                       mounts=[f"{Path(__file__).parents[1]}:{OMI_MOUNT}/omi", *([f"{project.state}:/state"] if project.detached else [])],
                        **docker.worker_sizes(main))
     cfg = Path(main) / ".omi" / "config.json"
     limit = (json.loads(cfg.read_text(encoding="utf-8")) if cfg.exists() else {}).get("hook_timeout", 600)
