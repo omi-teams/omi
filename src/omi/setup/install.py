@@ -10,6 +10,7 @@ from pathlib import Path
 
 from ..common import core
 from ..state import resolve as state
+from . import upgrade
 
 
 def _hook(command: str = "session-start") -> dict:
@@ -241,15 +242,22 @@ def install_user(remove: bool = False) -> None:
             and (hook not in hooks.get("SessionStart", []) or guard_hook not in hooks.get("PreToolUse", []))):
         record["backup_created"] = True
     # Read all originals before writing anything, including on an upgrade.
+    released = upgrade.released_shas()
+    pending = {}
     for rel, data in payloads.items():
         path = home / rel
         item = record["skills"].get(rel)
-        if (item and path.exists() and path.read_bytes() != data
-                and hashlib.sha256(path.read_bytes()).hexdigest() != item["sha256"]):
-            raise state.StateError(f"modified installed skill: {path}; preserve or remove it before reinstalling")
+        if item and path.exists() and path.read_bytes() != data:
+            disk = path.read_bytes()
+            if (hashlib.sha256(disk).hexdigest() != item["sha256"]
+                    and upgrade.norm_sha(disk) not in released.get(Path(rel).as_posix(), ())):
+                raise state.StateError(f"modified installed skill: {path}; preserve or remove it before reinstalling")
         if not item:
-            record["skills"][rel] = {"before": base64.b64encode(path.read_bytes()).decode("ascii") if path.exists() else None}
-        record["skills"][rel]["sha256"] = hashlib.sha256(data).hexdigest()
+            # A new entry names the template it is about to write; an unwritten file is simply absent.
+            record["skills"][rel] = {"before": base64.b64encode(path.read_bytes()).decode("ascii") if path.exists() else None,
+                                     "sha256": hashlib.sha256(data).hexdigest()}
+        elif item["sha256"] != hashlib.sha256(data).hexdigest():
+            pending[rel] = hashlib.sha256(data).hexdigest()  # Recorded only once the file is written.
     for path in [settings, agents, manifest, *(home / rel for rel in payloads)]:
         for parent in path.parents:
             if parent == home:
@@ -261,6 +269,9 @@ def install_user(remove: bool = False) -> None:
     _json(manifest, record)  # Persist undo data before the first integration write.
     for rel, data in payloads.items():
         _write(home / rel, data)
+        if rel in pending:  # The record always names what omi last wrote, even if a later write fails.
+            record["skills"][rel]["sha256"] = pending.pop(rel)
+            _json(manifest, record)
     updated = {**config, "hooks": {**hooks, "SessionStart": [*hooks.get("SessionStart", [])],
                                  "PreToolUse": [*hooks.get("PreToolUse", [])]}}
     if hook not in updated["hooks"]["SessionStart"]:
