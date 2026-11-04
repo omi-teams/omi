@@ -36,6 +36,13 @@ def test_version_stamp_package_hook():
     importlib.metadata.version = missing
     try:
         assert omi.common.core.version() == want  # source checkout: pyproject.toml
+        real_file = omi.common.core.__file__
+        with tempfile.TemporaryDirectory() as d:
+            omi.common.core.__file__ = str(Path(d) / "a" / "b" / "omi" / "core.py")  # no pyproject, no metadata
+            try:
+                assert omi.common.core.version() == "unknown"
+            finally:
+                omi.common.core.__file__ = real_file
         buf = io.StringIO()
         buf.reconfigure = lambda **kw: None
         with contextlib.redirect_stdout(buf):

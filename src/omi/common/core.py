@@ -65,7 +65,10 @@ def version():
         proj = tomllib.loads(pp.read_text(encoding="utf-8")).get("project", {})
         if proj.get("name") == "omi-squad":
             return proj["version"]
-    return importlib.metadata.version("omi-squad")
+    try:
+        return importlib.metadata.version("omi-squad")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"  # read-only package mount in a hook container: no pyproject, no dist metadata
 
 
 def semver(v):
