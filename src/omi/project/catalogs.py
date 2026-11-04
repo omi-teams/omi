@@ -247,7 +247,8 @@ def check_task_plan(root, m):
 def load_references(root):
     """Reference files and validation errors, keyed by file name."""
     found = {}
-    for f in sorted((Path(root) / ".omi" / "references").glob("*.md")):
+    base = Path(root) / ".omi" / "references"
+    for f in sorted([*base.glob("*.md"), *base.glob("patterns/*.md")]):
         if f.name == "CATALOG.md":
             continue
         m = core.meta(f)

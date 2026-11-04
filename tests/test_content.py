@@ -223,6 +223,26 @@ def test_plans():
             omi.common.core.main_checkout = real
 
 
+def test_post_run_structure_check():
+    hook = omi.setup.upgrade.template_map()[".omi/hooks/post-run.sh"]
+    with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as b:
+        root, bin_ = Path(d).resolve(), Path(b)
+        (bin_ / "omi").mkdir()
+        (bin_ / "omi" / "__init__.py").write_text("", encoding="utf-8")
+        (bin_ / "omi" / "__main__.py").write_text(
+            "import os, sys\nopen(os.environ['CALLS'], 'a').write(' '.join(sys.argv[1:]) + '\\n')\nsys.exit(int(os.environ['RC']))\n", encoding="utf-8")
+        env = dict(os.environ, OMI_PROJECT_STATE=str(root), PYTHONPATH=str(bin_), CALLS=str(root / "calls"), RC="0")
+        run = lambda: subprocess.run(["sh", str(hook)], cwd=root, env=env, capture_output=True, text=True)
+        assert run().returncode == 0 and not (root / "calls").exists()  # no map: no check
+        (root / ".omi").mkdir()
+        (root / ".omi" / "structure.md").write_text("---\nid: structure\n---\n", encoding="utf-8")
+        assert run().returncode == 0
+        assert (root / "calls").read_text().strip() == "structure check --changed"
+        env["RC"] = "1"
+        r = run()
+        assert r.returncode == 1 and "structure check failed" in r.stdout
+
+
 def test_references():
     with tempfile.TemporaryDirectory() as d:
         root = Path(d).resolve()
@@ -231,6 +251,14 @@ def test_references():
         for rid in ("postgres-conventions", "nextjs-app-router"):
             assert (refs / f"{rid}.md").is_file()
             assert f"- {rid}:" in (refs / "CATALOG.md").read_text()
+        pat = refs / "patterns"
+        pat.mkdir()
+        (pat / "adapter.md").write_text("---\nid: adapter\nsummary: Adapter pattern\n---\nbody", encoding="utf-8")
+        omi.project.catalogs.references_catalog(root)
+        assert "- adapter: Adapter pattern" in (refs / "CATALOG.md").read_text()
+        (pat / "adapter.md").unlink()
+        pat.rmdir()
+        omi.project.catalogs.references_catalog(root)
         assert omi.project.catalogs.task_references(root, {}) == []
         assert omi.project.catalogs.reference_prompt(root, []) == ""
         assert omi.project.catalogs.task_references(root, {"refs": "[postgres-conventions, nextjs-app-router]"}) == [
@@ -587,6 +615,7 @@ def main():
     test_skills()
     test_rules()
     test_references()
+    test_post_run_structure_check()
     test_plans()
     test_skills_check()
 
