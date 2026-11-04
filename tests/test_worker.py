@@ -283,6 +283,53 @@ def test_worker():
                 os.environ[omi.worker.creds.TOKEN_ENV] = tok
 
 
+def test_run_role_plan_violation_alone_exits_3():
+    real = subprocess.run, shutil.which, omi.common.core.main_checkout, omi.common.core.WINDOWS, os.environ.get(omi.worker.creds.TOKEN_ENV), omi.project.scope.plan_violations
+
+    class R:
+        def __init__(s, out="", rc=0, err=""): s.stdout, s.returncode, s.stderr = out, rc, err
+
+    def run(cmd, **kw):
+        if "--git-common-dir" in cmd:
+            return R(str(Path(cmd[2]) / "shared.git"))
+        if "--show-toplevel" in cmd:
+            return R(str(cmd[2]))
+        if "remote" in cmd:
+            return R(rc=1)
+        if "show" in cmd:
+            return R("---\nscope: src/**\n---\n")
+        if "status" in cmd:
+            return R(" M src/a.py\0")  # scope clean: only src/a.py changed, inside the task scope
+        return R()
+
+    with tempfile.TemporaryDirectory() as d:
+        wt = Path(d).resolve()
+        (wt / ".git").write_text("gitdir: /x")
+        task = wt / ".omi" / "tasks" / "TASK-001.md"
+        task.parent.mkdir(parents=True)
+        task.write_text("---\nid: TASK-001\nscope: src/**\nrole: omi-agent-engineer\n---\n## Checkpoint\nDone:\n\n## Usage\n", encoding="utf-8")
+        subprocess.run, shutil.which = run, lambda _: "docker"
+        omi.common.core.main_checkout, omi.common.core.WINDOWS = (lambda _: wt), False
+        omi.project.scope.plan_violations = lambda w, tid: ["OUT OF PLAN: src/a.py"]
+        os.environ[omi.worker.creds.TOKEN_ENV] = "tok"
+        out = io.StringIO()
+        sys.stdout, saved = out, sys.stdout
+        try:
+            assert omi.project.scope.out_of_scope(wt, "TASK-001") == []
+            try:
+                rc = omi.worker.run.run_role("omi-agent-engineer", wt, task, effort="low")
+            except SystemExit as e:
+                rc = str(e)
+            assert rc == 3, rc
+            assert "OUT OF PLAN: src/a.py" in out.getvalue() and "OUT OF SCOPE" not in out.getvalue(), out.getvalue()
+        finally:
+            sys.stdout = saved
+            subprocess.run, shutil.which, omi.common.core.main_checkout, omi.common.core.WINDOWS, tok, omi.project.scope.plan_violations = real
+            os.environ.pop(omi.worker.creds.TOKEN_ENV, None)
+            if tok is not None:
+                os.environ[omi.worker.creds.TOKEN_ENV] = tok
+
+
 def test_session_role_record():
     sess = omi.worker.session
     engineer, designer = "omi-agent-engineer", "omi-agent-designer-ui"
@@ -1086,6 +1133,7 @@ def main():
     test_download_cache_shared_exclude()
     test_file_plan_refusal()
     test_worker()
+    test_run_role_plan_violation_alone_exits_3()
     test_session_role_record()
     test_session_resume()
     test_container_names()
