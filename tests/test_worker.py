@@ -528,6 +528,18 @@ def test_session_resume():
             assert len(usage) >= 8, usage  # the retries are recorded like any run
             (hooks / "post-run.sh").unlink()
             state["hook"] = []
+            # a resumed fix round points at the task's skills again; a fresh run gets them in the full prompt only once
+            skill = wt / ".omi" / "skills" / "g" / "omi-skill-x"
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text("---\nid: omi-skill-x\n---\nbody\n", encoding="utf-8")
+            (skill.parent.parent / "CATALOG.md").write_text("- omi-skill-x g\n", encoding="utf-8")
+            plain = task.read_text(encoding="utf-8")
+            task.write_text(sess.with_session(plain.replace("scope:", "skills: [omi-skill-x]\nscope:", 1), "claude", "S2"), encoding="utf-8")
+            go()
+            prompt = calls[0][calls[0].index("-p") + 1]
+            assert "--resume" in calls[0] and "/work/.omi/skills/g/omi-skill-x/SKILL.md" in prompt and "Re-read" in prompt, prompt
+            task.write_text(plain, encoding="utf-8")
+            shutil.rmtree(wt / ".omi" / "skills")
             # scan rc 0 (token), 2 (unreadable entry) and 125 (docker error) drop the volume and the Session line; 1 keeps both
             for rc, why in ((0, "token found in transcript"), (2, "cannot scan the session volume"), (125, "cannot scan the session volume")):
                 task.write_text(sess.with_session(task.read_text(encoding="utf-8"), "claude", "S2"), encoding="utf-8")

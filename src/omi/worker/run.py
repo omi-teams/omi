@@ -291,6 +291,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         env[env_name] = value
         mdl, eff = models[t], efforts[t]
         cmd = (tools.engineer_cmd if t == "claude" else tools.codex_cmd)(text, task_rel, mdl, eff, prompt_skills + note, resume, hook_tail)
+        if resume and declared:  # the resume prompt is short: point again at the step's skills so reading them is counted
+            cmd[2 if t == "claude" else -1] += catalogs.skill_prompt(catalog, declared) + "\nRe-read them now, they are not in your context after a resume."
         if not read:  # the CLI's transcripts go to the per-task cache so a fix round can resume them
             cmd = session.wrap(t, cmd)
         chatgpt = env_name == creds.CODEX_AUTH_ENV
