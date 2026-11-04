@@ -808,7 +808,7 @@ def test_auto_accept():
             assert "Auto accept: review PASS\n- accept done" in task.read_text(encoding="utf-8")
         for wid in ("omi-flow-feature", "omi-flow-feature-ui", "omi-flow-bugfix", "omi-flow-refactor"):
             assert omi.project.workflows.get_workflow(root, wid)[-1]["gate"] == "auto", wid
-        assert omi.project.workflows.get_workflow(root, "omi-flow-feature-sensitive")[-1]["gate"] == "po"
+        assert omi.project.workflows.get_workflow(root, "omi-flow-feature-sensitive")[-1]["gate"] == "auto"
 
 
 def test_review_prompts_and_host_test_docs():
