@@ -193,6 +193,11 @@ def parse_step_settings(value: str, step_ids: list[str] | None = None) -> dict[s
     return settings
 
 
+def report_note(task: Path, role: str, tool: str, report: str) -> None:
+    """Append an agent report to ## Reports in full: the next step reads it from there."""
+    tasks.append_note(task, "Reports", f"{datetime.datetime.now():%Y-%m-%d %H:%M} {role} ({tool}):\n" + "\n".join("> " + l for l in report.splitlines()))
+
+
 def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=False):
     wt = Path(wt).resolve()
     main = core.main_checkout(wt)
@@ -415,7 +420,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         if rc:  # not a usage limit (handled above): show why the CLI failed
             report += "".join(f"\nERROR: {' '.join(t.split())}" for t in tools.error_texts(tool, r.stdout) if t.strip()) + f"\nexit code {rc}"
             print(report.partition(result or "(no report)")[2].strip())
-        tasks.append_note(task, "Reports", f"{datetime.datetime.now():%Y-%m-%d %H:%M} {role} ({tool}):\n" + "\n".join("> " + l for l in tasks.clip_report(report)))
+        report_note(task, role, tool, report)
         verdict = (tools.verdict_of(result) or "n/a") if read else (m.group(1) if (m := re.match(r"\W*(DONE|BLOCKED|NEEDS SCOPE)\b", report)) else f"exit {rc}")
         pr.post_report(wt, task.stem, cur["id"] if cur else "-", role, tool, models[tool], efforts[tool], verdict, report)
         for sid in ids:
