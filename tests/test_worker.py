@@ -625,6 +625,16 @@ def test_clip_report():
     assert sum(map(len, out)) < 2200 and out[1] == "line 0"
 
 
+def test_report_note_keeps_full_report():
+    with tempfile.TemporaryDirectory() as d:
+        task = Path(d) / "TASK-001.md"
+        task.write_text("---\nid: TASK-001\n---\n## Reports\n")
+        lines = ["DONE"] + ["line %d" % i for i in range(1000)]
+        omi.worker.run.report_note(task, "omi-agent-engineer", "claude", "\n".join(lines))
+        text = task.read_text()
+        assert "[... truncated ...]" not in text and all("> " + l in text.splitlines() for l in lines)
+
+
 def test_container_names():
     import datetime
     t = datetime.datetime(2026, 1, 1, 14, 32, 5)
@@ -1051,6 +1061,7 @@ def main():
     test_session_resume()
     test_container_names()
     test_clip_report()
+    test_report_note_keeps_full_report()
     test_network_allowlist()
     test_prove_exit_and_hosts()
     test_clean_and_old_images()
