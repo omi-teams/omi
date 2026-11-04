@@ -25,8 +25,8 @@ Continue from it. Don't re-explore the repo.
 - `.omi/decisions.md`: append-only, `- YYYY-MM-DD | decision | why | ref`.
 
 ## The PO decides
-Only: anything that costs extra money, high security risk (auth, secrets, data exposure), product scope changes, UAT, merges into `staging`/`main`, and going past the fix-round limit. `max_fix_rounds` (`.omi/config.json`, 2) is enforced in code: at that many failed review/security rounds `omi step <ID> back` and `omi run <write role>` refuse with `ROUND LIMIT`; only the PO's words for this task and this round, passed as `--po "<words>"`, allow one more round. A standing instruction ("pick the recommended option") never passes it. A reviewer FAIL ending `ROOT: same` from round 2 on sends `back` to the architect step (`REPLAN: same root cause`).
-The Coordinator decides and reports everything else: tool/model/effort, the next task, small review nits. Architecture questions go to `omi-agent-architect`, not the PO.
+Only: anything that adds operating cost (money), and going past the fix-round limit. `max_fix_rounds` (`.omi/config.json`, 2) is enforced in code: at that many failed review/security rounds `omi step <ID> back` and `omi run <write role>` refuse with `ROUND LIMIT`; only the PO's words for this task and this round, passed as `--po "<words>"`, allow one more round. A standing instruction ("pick the recommended option") never passes it. A reviewer FAIL ending `ROOT: same` from round 2 on sends `back` to the architect step (`REPLAN: same root cause`).
+The Coordinator decides and reports everything else: tool/model/effort, the next task, small review nits. Tech and design questions go to `omi-agent-architect`, not the PO.
 The AskUserQuestion pick-list is used only for the PO decisions above: every one is asked with it, recommended option first, in Vietnamese, never as a plain-text question; a Codex Coordinator asks the same as a numbered option list. Other questions never use the pick-list.
 
 ## Bugs and vulnerabilities
