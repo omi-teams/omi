@@ -304,7 +304,8 @@ def test_cli_characterization():
         assert cli(root, "parallel", "TASK-003", "TASK-002") == (0, "parallel ok: TASK-003 TASK-002\n", "")
         assert cli(root, "skills", "check", str(Path(".omi") / "tasks" / "TASK-001.md")) == (0, "skills ok\n", "")
         steps = (
-            (["next"], 0, "TASK-001: step plan (coordinator, gate none): input PO idea; output task file with scope and acceptance criteria; "
+            (["next"], 0, "WARN: skills empty - consider omi-skill-lean-implementation, omi-skill-verify-evidence from skills/CATALOG.md\n"
+                          "TASK-001: step plan (coordinator, gate none): input PO idea; output task file with scope and acceptance criteria; "
                           "stop when task file complete and PO picked it\n"),
             (["next"], 1, "TASK-001: step plan is not done; run `omi step TASK-001 done` or `skip --why`. Nothing changed.\n"),
             (["done"], 0, "TASK-001: step plan done\n"),

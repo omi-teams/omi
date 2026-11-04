@@ -519,6 +519,29 @@ def test_round_limit_and_replan():
         assert "ROUND LIMIT" in (omi.common.core.TEMPLATE / rel).read_text(encoding="utf-8") and "REPLAN: same root cause" in (omi.common.core.TEMPLATE / rel).read_text(encoding="utf-8")
 
 
+def test_warn_skills_empty():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / ".omi" / "skills").mkdir(parents=True)
+        (root / ".omi" / "skills" / "CATALOG.md").write_text(
+            "- omi-skill-debug-root-cause (quality): Use when a test fails.\n- omi-skill-verify-evidence (quality): Use before DONE.\n",
+            encoding="utf-8")
+
+        def warn(m):
+            out, saved = io.StringIO(), sys.stdout
+            sys.stdout = out
+            try:
+                omi.project.catalogs.warn_skills_empty(root, m)
+            finally:
+                sys.stdout = saved
+            return out.getvalue()
+
+        assert warn({"type": "bug", "skills": "[]"}) == \
+            "WARN: skills empty - consider omi-skill-debug-root-cause, omi-skill-verify-evidence from skills/CATALOG.md\n"
+        assert warn({"type": "task"}).startswith("WARN: skills empty - consider omi-skill-verify-evidence")
+        assert warn({"type": "bug", "skills": "[omi-skill-verify-evidence]"}) == ""
+
+
 def test_task_skill_step_commands():
     template = omi.common.core.TEMPLATE / "dot-claude/skills/omi-task/SKILL.md"
     text = template.read_text(encoding="utf-8")
