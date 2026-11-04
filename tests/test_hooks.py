@@ -251,7 +251,8 @@ def test_hooks():
     with tempfile.TemporaryDirectory() as d:
         sh = shutil.which("sh")
         if sh:
-            r = subprocess.run([sh, str(omi.common.core.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh")], cwd=d, capture_output=True, text=True)
+            r = subprocess.run([sh, str(omi.common.core.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh")], cwd=d, capture_output=True, text=True,
+                               env={k: v for k, v in os.environ.items() if k not in ("OMI_PROJECT_STATE", "OMI_GIT_DIR")})  # a hook runs this suite with both set
             assert r.returncode == 0 and "no tests found" in r.stdout, r
             # tests exist but the runner is missing: exit 1 naming the tool (empty PATH; the script uses only sh builtins)
             bindir = Path(d) / "bin"

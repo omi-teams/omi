@@ -54,13 +54,13 @@ jobs:
           repository: omi-teams/omi-state
           ssh-key: ${{ secrets.OMI_STATE_READ_KEY }}
           path: omi-state-map  # checkout cannot write outside the workspace; git ls-files ignores it
-          sparse-checkout: projects/omi/.omi
+          sparse-checkout: projects/omi
           persist-credentials: false
 
       - name: Structure check
         if: steps.state.outcome == 'success'
         env:
-          OMI_PROJECT_STATE: ${{ github.workspace }}/omi-state-map/projects/omi
+          OMI_STATE: ${{ github.workspace }}/omi-state-map
           EVENT: ${{ github.event_name }}
         run: |
           if [ "$EVENT" = pull_request ]; then python -m omi structure check --changed; else python -m omi structure check; fi
