@@ -116,6 +116,34 @@ def test_download_cache_scope():
         subprocess.run, omi.project.scope.task_scope = real
 
 
+def test_file_plan_refusal():
+    real = subprocess.run
+    plan = "---\nscope: src/**, tests/**\n---\n## File plan\n- edit src/a.py (shared)\n- create src/new/b.py (shared)\n\n## Steps\n"
+    mp = "---\nid: structure\n---\n- src/a.py, src/new/** | shared | code | imports: -\n- tests/** | test | tests | imports: -\n"
+    shown = {"development:.omi/tasks/TASK-9.md": plan, "development:.omi/structure.md": mp}
+    status = " M src/a.py\0?? src/new/b.py\0?? src/c.py\0?? tests/t.py\0 M .omi/tasks/TASK-9.md\0"
+    def run(argv, **kw):
+        if "rev-parse" in argv or "remote" in argv:
+            return subprocess.CompletedProcess(argv, 1, "")
+        if "show" in argv:
+            out = shown.get(argv[-1])
+            return subprocess.CompletedProcess(argv, 0 if out is not None else 1, out or "")
+        return subprocess.CompletedProcess(argv, 0, status)
+    subprocess.run = run
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            wt = Path(d)
+            (wt / ".omi" / "tasks").mkdir(parents=True)  # agent-writable copies must be ignored
+            (wt / ".omi" / "tasks" / "TASK-9.md").write_text(plan + "- edit src/c.py (shared)\n- edit tests/t.py (test)\n", encoding="utf-8")
+            (wt / ".omi" / "structure.md").write_text("---\nid: structure\n---\n- ** | shared | all | imports: -\n", encoding="utf-8")
+            assert omi.project.scope.plan_violations(wt, "TASK-9") == [
+                "OUT OF PLAN: src/c.py", "UNMAPPED: src/c.py", "OUT OF PLAN: tests/t.py"]
+            shown["development:.omi/tasks/TASK-9.md"] = "---\nscope: src/**\n---\n"  # no file plan: scope-only
+            assert omi.project.scope.plan_violations(wt, "TASK-9") == []
+    finally:
+        subprocess.run = real
+
+
 def test_worker():
     real = subprocess.run, shutil.which, omi.common.core.main_checkout, omi.common.core.WINDOWS, os.environ.get(omi.worker.creds.TOKEN_ENV)
     calls = []
@@ -1056,6 +1084,7 @@ def main():
     test_download_cache_gitignore()
     test_download_cache_scope()
     test_download_cache_shared_exclude()
+    test_file_plan_refusal()
     test_worker()
     test_session_role_record()
     test_session_resume()

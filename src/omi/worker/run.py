@@ -452,7 +452,10 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         print(f"OUT OF SCOPE: {p}")
     if scope.git_hint(bad):
         print(scope.git_hint(bad))
-    return rc or (3 if bad else 0) or (6 if hook_failed else 0)
+    plan_bad = scope.plan_violations(wt, task.stem)
+    for line in plan_bad:
+        print(line)
+    return rc or (3 if bad or plan_bad else 0) or (6 if hook_failed else 0)
 
 
 def worker(wt, task_file=None, model=None, effort=None, prove=False):

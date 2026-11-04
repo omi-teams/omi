@@ -5,10 +5,12 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
 
 from ..common import core
+from . import structure
 from ..state import resolve as state
 
 
@@ -103,10 +105,8 @@ def _guard(stdin=None):
     return 2
 
 
-def out_of_scope(wt, tid, committed=False):
-    """Changed paths in wt that the authoritative task scope does not allow; committed: also the branch's commits."""
-    project = state.resolve(wt)
-    globs = task_scope(wt, tid)
+def changed_paths(wt, committed=False):
+    """Changed paths in wt (and untracked ones); committed: also the branch's commits."""
     r = subprocess.run(["git", "-C", str(wt), "status", "--porcelain", "-z", "-uall", "--no-renames"],
                        capture_output=True, encoding="utf-8", errors="replace")
     entries = [e for e in r.stdout.split("\0") if e]
@@ -116,6 +116,14 @@ def out_of_scope(wt, tid, committed=False):
         d = subprocess.run(["git", "-C", str(wt), "diff", "--name-only", "-z", "--no-renames", "development...HEAD"],
                            capture_output=True, encoding="utf-8", errors="replace")
         paths += [p for p in d.stdout.split("\0") if p and p not in paths]
+    return paths, untracked
+
+
+def out_of_scope(wt, tid, committed=False):
+    """Changed paths in wt that the authoritative task scope does not allow; committed: also the branch's commits."""
+    project = state.resolve(wt)
+    globs = task_scope(wt, tid)
+    paths, untracked = changed_paths(wt, committed)
     def bad(p):
         if not project.detached and p == f".omi/tasks/{tid}.md":
             return False
@@ -127,3 +135,41 @@ def out_of_scope(wt, tid, committed=False):
             return False
         return not any(PurePosixPath(p).full_match(g) for g in globs)
     return [p for p in paths if bad(p)]
+
+
+def file_plan(text):
+    """Paths of the `- edit|create <path> (<layer>)` lines under `## File plan`; None when the task has no such section."""
+    m = re.search(r"^## File plan[ \t]*\n(.*?)(?=^## |\Z)", text, re.M | re.S)
+    if not m:
+        return None
+    return {x.group(1) for x in re.finditer(r"^\s*- (?:edit|create) (\S+)(?: \(.*\))?\s*$", m.group(1), re.M)}
+
+
+def plan_violations(wt, tid):
+    """`OUT OF PLAN:` / `UNMAPPED:` lines for changed files; plan and map come from state/development, never the worktree."""
+    project = state.resolve(wt)
+    plan = file_plan(state.task_text(project, wt, tid) or "")
+    if plan is None:
+        return []
+    with tempfile.TemporaryDirectory() as tmp:
+        if project.detached:
+            text = core.read_task(project.state / structure.MAP) if (project.state / structure.MAP).exists() else None
+        else:
+            text = core.git(wt, "show", f"development:{structure.MAP}")
+        try:
+            if text is None:
+                raise structure.StructureError(f"{structure.MAP}: not found on development/state")
+            (Path(tmp) / ".omi").mkdir()
+            (Path(tmp) / structure.MAP).write_text(text, encoding="utf-8", newline="\n")
+            rules = structure.load(tmp)
+        except structure.StructureError as exc:
+            return [f"UNMAPPED: {exc}"]
+    out = []
+    for p in changed_paths(wt)[0]:
+        if p == f".omi/tasks/{tid}.md" or p.startswith(".omi-cache/"):
+            continue
+        if p not in plan:
+            out.append(f"OUT OF PLAN: {p}")
+        if not structure.match(rules, p):
+            out.append(f"UNMAPPED: {p}")
+    return out
