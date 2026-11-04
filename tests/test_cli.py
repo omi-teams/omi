@@ -411,6 +411,9 @@ def test_improve_creation_and_workflows() -> None:
             assert f"title: {summary}\n" in text
             shape = {"bug": "Symptom: " + summary + "\nExpected: ", "security": "Impact: " + summary + "\nBoundary crossed: "}.get(kind, summary + "\n\nSource")
             assert shape in text and "refs: []" in text
+            if kind == "security":
+                assert "Boundary crossed: to be filled by the engineer\nHow verified: to be filled by the engineer\nEvidence: reported by omi-agent-reviewer while working on TASK-097 (secrets redacted)\n" in text
+                assert "not yet stated" not in text
             assert "Source project: sample\nSource task: TASK-097\nSource agent: omi-agent-reviewer" in text
             assert omi.common.core.git(home, "show", "--pretty=format:", "--name-only", "HEAD") == f"projects/omi/.omi/tasks/{tid}.md"
             assert omi.common.core.git(home, "rev-parse", "HEAD") == omi.common.core.git(remote, "rev-parse", "main")
