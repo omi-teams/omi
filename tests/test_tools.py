@@ -493,10 +493,12 @@ def test_task_start_proposal():
 def test_po_decides_short_list():
     text = (omi.common.core.TEMPLATE / "AGENTS.md").read_text(encoding="utf-8")
     po = text.split("## The PO decides\n", 1)[1].split("\n## ", 1)[0]
-    for phrase in ("extra money", "high security risk", "product scope changes", "UAT", "`staging`/`main`",
-                   "fix-round limit", "tool/model/effort", "the next task", "small review nits",
+    for phrase in ("operating cost", "fix-round limit", "tool/model/effort", "the next task", "small review nits",
                    "`omi-agent-architect`", "only for the PO decisions above"):
         assert phrase in po, phrase
+    only = next(x for x in po.splitlines() if x.startswith("Only:")).split(". ")[0]
+    for removed in ("high security risk", "product scope changes", "UAT", "staging", "main"):
+        assert removed not in only, removed
     skill = (omi.common.core.TEMPLATE / "dot-claude/skills/omi-task/SKILL.md").read_text(encoding="utf-8")
     step8 = skill.split("\n8. ", 1)[1].split("\n## ", 1)[0]
     assert "continue with the next planned task" in step8 and "`QUOTA:`" in step8 and "no planned task" in step8

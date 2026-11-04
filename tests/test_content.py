@@ -566,21 +566,8 @@ def test_po_decisions_use_pick_list() -> None:
         assert words in line, words
 
 
-def test_po_decides_is_cost_and_round_limit_only() -> None:
-    lines = (omi.common.core.TEMPLATE / "AGENTS.md").read_text(encoding="utf-8").splitlines()
-    start = lines.index("## The PO decides")
-    end = next(i for i in range(start + 1, len(lines)) if lines[i].startswith("## "))
-    section = "\n".join(lines[start:end])
-    only = next(x for x in lines[start:end] if x.startswith("Only:")).split(". ")[0]
-    assert "operating cost" in only and "fix-round limit" in only, only
-    for word in ("UAT", "staging", "security", "scope"):
-        assert word not in only, word
-    assert "omi-agent-architect" in section
-
-
 def main():
     test_po_decisions_use_pick_list()
-    test_po_decides_is_cost_and_round_limit_only()
     test_ui_mockup_contract()
     test_ui_mockup_review_contract()
     test_qa_host_criteria_do_not_fail()
