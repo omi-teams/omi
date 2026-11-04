@@ -12,6 +12,8 @@ from ..state import resolve as state, sync as state_sync
 
 WORKFLOWS = {"bug": "omi-flow-bugfix", "security": "omi-flow-feature-sensitive", "idea": "omi-flow-feature"}
 TYPES = {"bug": "bug", "security": "security", "idea": "task"}
+SHAPES = {"bug": "Symptom: {s}\nExpected: the behaviour the spec or accepted criteria of the source task state\nEvidence: reported by {a} while working on {t}\n",
+          "security": "Impact: {s}\nBoundary crossed: not yet stated; the engineer names it\nEvidence: reported by {a} while working on {t} (secrets redacted)\n"}  # body shapes of omi-skill-issue-types
 
 
 def omi_project() -> state.Project | None:
@@ -50,7 +52,8 @@ def improve(args: list[str], cwd: str | Path = ".") -> None:
     summary = opts.text.strip()
     if any(not value.strip() or len(value.splitlines()) != 1 for value in (summary, source, tid, agent)):
         raise state.StateError("improvement text and source context must be nonempty single lines")
-    goal = f"{summary}\n\nSource project: {source}\nSource task: {tid}\nSource agent: {agent}\n"
+    shape = SHAPES.get(opts.kind, "{s}\n").format(s=summary, a=agent, t=tid)
+    goal = f"{shape}\nSource project: {source}\nSource task: {tid}\nSource agent: {agent}\n"
     project = omi_project()
     if project is None:
         body = f"## Goal\n{goal}\nKind: {opts.kind}\n"

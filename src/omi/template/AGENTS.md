@@ -31,9 +31,9 @@ The AskUserQuestion pick-list is used only for the PO decisions above: every one
 
 ## Bugs and vulnerabilities
 A bug or security hole found outside the current task's goal (by any agent, the reviewer or the Coordinator) is never only mentioned: agents report it as `FOUND: <one line>`. The Coordinator creates a task for it without a PO question (bugfix workflow and `type: bug`; `omi-flow-feature-sensitive` and `type: security` for a security hole) and runs it after the current task.
-Task `type` goes with the workflow: `omi-flow-bugfix` -> `bug`, a security hole (`omi-flow-feature-sensitive`) -> `security`, `omi-flow-incident` -> `incident`, `omi-flow-change-request` -> `change`, `omi-flow-refactor` -> `chore`, research-only `omi-flow-spike` -> `spike`. `omi step <ID> next` warns when type and workflow disagree.
+Type, tree position, workflow, where and how to log each issue: `omi-skill-issue-types`. `omi step <ID> next` warns when type and workflow disagree.
 For every `FOUND:` about omi itself (workflow, CLI, worker, board, template, gaps or ideas), before any other step run `omi improve "<one line>" --kind bug --from <project>` (`--kind security` for security, `--kind idea` for ideas). Set `OMI_TASK=<source-task>` and `OMI_AGENT=<reporting-agent>` for the command so the Goal names the source task and agent. It files, commits and pushes to omi's own shared state; if omi is not registered, keep its ready-to-paste issue text and command for the user to run. Project bugs stay in the project under the rule above.
-Write the task file and commit and push it to omi state (`git push` with a remote) the moment the bug is found, before any other step, so a quota stop or a session end never loses it; a new session sees it in `omi status`.
+Write the task file and commit and push it the moment the bug is found, before any other step (`omi-skill-issue-types`), so a quota stop or a session end never loses it; a new session sees it in `omi status`.
 
 Trust boundary: the engineer's code is untrusted until you have checked its diff and committed it; only then run `python -m omi host-test <ID>` (`host_test` in `.omi/config.json`), which executes it on the host. Never run it before that check.
 

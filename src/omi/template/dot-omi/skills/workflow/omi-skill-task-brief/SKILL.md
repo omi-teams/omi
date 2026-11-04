@@ -27,7 +27,7 @@ Serves the Coordinator step before `omi run omi-agent-engineer <ID>` (`omi-task`
 - The task file from `.omi/tasks/_template.md`, the spec section it implements, and the files in its scope.
 
 ## Steps
-1. Check size: one outcome, one session. If it covers independent parts, split it.
+1. Check size: one outcome, one session. If it covers independent parts, split it. Set `type`, `parent`, `workflow` and the Goal shape by `omi-skill-issue-types`.
 2. Goal: one or two sentences saying what exists afterwards, not how.
 3. Under Goal add `### Brief` (at most 15 lines): files to create or change (exact paths), names and signatures it must keep or produce, how to run the tests, and the one pattern in the repo to copy.
 4. Give constraints verbatim from the spec (versions, naming, limits) instead of paraphrasing.

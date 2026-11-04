@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 from helpers import omi, git
-from omi.project import tasks
+from omi.project import tasks, tree
 
 
 def test_plan_status():
@@ -22,16 +22,16 @@ def test_plan_status():
 
 def test_hierarchy():
     t = lambda status="planned", **kw: {"status": status, **kw}
-    assert tasks.tree_errors({"A": {}, "B": t(type="", parent="A")}) == [] and tasks.derived_status({"A": {}}) == {"A": "planned"}
-    assert tasks.tree_errors({"A": t(type="story")}) == ["A: unknown type `story` (use milestone|epic|fr|nfr|task|bug|security|incident|change|spike|chore)"]
-    assert tasks.tree_errors({"A": t(parent="Z")}) == ["A: parent Z does not exist"]
-    cyc = tasks.tree_errors({"A": t(parent="B"), "B": t(parent="A"), "C": t(parent="C")})
+    assert tree.tree_errors({"A": t(type="epic"), "B": t(type="", parent="A")}) == [] and tree.derived_status({"A": {}}) == {"A": "planned"}
+    assert tree.tree_errors({"A": t(type="story")}) == ["A: unknown type `story` (use milestone|epic|fr|nfr|task|bug|security|incident|change|spike|chore)"]
+    assert tree.tree_errors({"A": t(parent="Z")}) == ["A: parent Z does not exist"]
+    cyc = tree.tree_errors({"A": t(parent="B"), "B": t(parent="A"), "C": t(parent="C")})
     assert "A: parent cycle A -> B -> A" in cyc and "C: parent cycle C -> C" in cyc
-    ds = lambda *sts: tasks.derived_status({"P": t("done"), **{f"C{i}": t(s, parent="P") for i, s in enumerate(sts)}})["P"]
+    ds = lambda *sts: tree.derived_status({"P": t("done"), **{f"C{i}": t(s, parent="P") for i, s in enumerate(sts)}})["P"]
     assert (ds("done", "done"), ds("done", "blocked", "planned"), ds("planned", "planned"),
             ds("done", "planned"), ds("in-progress", "planned"), ds("review")) == ("done", "blocked", "planned", "in-progress", "in-progress", "in-progress")
     deep = {"M": t("done"), "E": t("done", parent="M"), "T1": t("done", parent="E"), "T2": t("blocked", parent="E")}
-    assert tasks.derived_status(deep) == {"M": "blocked", "E": "blocked", "T1": "done", "T2": "blocked"}
+    assert tree.derived_status(deep) == {"M": "blocked", "E": "blocked", "T1": "done", "T2": "blocked"}
     with patch.object(sys, "stderr", io.StringIO()):
         try:
             tasks.rolled_up({"A": t(parent="Z")})
@@ -206,13 +206,37 @@ def test_task_flow_commit_scope_sync_warn():
                 sys.stdout = saved
 
 
+def test_tree_logic_lives_in_tree_module():
+    for name in ("TYPES", "TYPE_WORKFLOWS", "children_map", "tree_errors", "derived_status", "warn_type_workflow"):
+        assert hasattr(tree, name) and not hasattr(tasks, name), name
+    assert len(Path(tasks.__file__).read_text(encoding="utf-8").splitlines()) <= 610
+
+
+def test_tree_table():
+    t = lambda typ, **kw: {"status": "planned", "type": typ, **kw}
+    allowed = {"milestone": [], "epic": ["milestone"], "fr": ["epic", "milestone"], "nfr": ["epic", "milestone"],
+               "incident": ["milestone", "epic"], "change": ["fr", "nfr", "epic", "milestone"],
+               "task": ["milestone", "epic", "fr", "nfr", "change"], "bug": ["fr", "nfr", "incident"], "security": ["incident"],
+               "spike": ["milestone", "epic", "fr", "nfr"], "chore": ["milestone", "epic", "incident"]}
+    for typ, parents in allowed.items():
+        assert tree.tree_errors({"A": t(typ)}) == [], typ  # every type may be a root
+        for ptyp in tree.TYPES:
+            errs = tree.tree_errors({"P": t(ptyp), "A": t(typ, parent="P")})
+            assert (errs == []) == (ptyp in parents), (typ, ptyp, errs)
+    leaf = tree.tree_errors({"P": t("task"), "A": t("bug", parent="P")})
+    assert leaf == ["A: parent P is a leaf type `task` and cannot have children"]
+    assert tree.tree_errors({"P": t("fr"), "A": t("milestone", parent="P")}) == ["A: `milestone` cannot be under P (`fr`); `milestone` has no parent"]
+    assert tree.tree_errors({"P": t("task"), "A": t("security", parent="P")}) and tree.tree_errors({"P": t("epic"), "A": t("bug", parent="P")})
+    assert tasks.rolled_up({"A": t("epic"), "B": t("task", parent="A")})["A"]["status"] == "planned"
+
+
 def test_type_validation_and_workflow_warning():
     t = lambda **k: {"status": "planned", **k}
     for typ in ("bug", "security", "incident", "change", "spike", "chore"):
-        assert omi.project.tasks.tree_errors({"A": t(type=typ)}) == []
+        assert omi.project.tree.tree_errors({"A": t(type=typ)}) == []
     def warned(m):
         with patch("sys.stdout", io.StringIO()) as out:
-            omi.project.tasks.warn_type_workflow(m)
+            omi.project.tree.warn_type_workflow(m)
         return out.getvalue()
     assert "type `task` does not match workflow omi-flow-incident" in warned({"type": "task", "workflow": "omi-flow-incident"})
     assert "omi-flow-bugfix" in warned({"type": "bug", "workflow": "omi-flow-feature"})
@@ -887,6 +911,8 @@ def test_host_test():
 
 def main():
     test_hierarchy()
+    test_tree_table()
+    test_tree_logic_lives_in_tree_module()
     test_hierarchy_status_and_run()
     test_plan_status()
     test_step_approve_reopen()
