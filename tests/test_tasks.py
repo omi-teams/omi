@@ -909,7 +909,35 @@ def test_host_test():
             raise AssertionError("host-test FAIL must count toward max_fix_rounds")
 
 
+def test_pattern_line_shape():
+    ok = "Pattern: Strategy - two pricing rules vary at runtime - an if/else cannot add a third without edits"
+    for bad in ("Pattern: Strategy", "Pattern: Strategy - force", "Pattern: Strategy -  - why", "Pattern:  - force - why"):
+        assert omi.project.structure.bad_pattern_lines(bad) == [bad], bad
+    assert omi.project.structure.bad_pattern_lines(ok + "\nPattern: A - b - c - d") == []
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        with patch("sys.stdout", io.StringIO()):
+            omi.setup.upgrade.init(root)
+        task = root / ".omi" / "tasks" / "TASK-111.md"
+        with patch("omi.project.tasks.commit_task_file"), patch("omi.common.core.task_worktrees", return_value={}), \
+                patch("sys.stdout", io.StringIO()):
+            def done(line):
+                task.write_text("---\nid: TASK-111\nworkflow: omi-flow-feature\nstatus: in-progress\nstep: build\n---\n"
+                                f"## Design\n{line}\n\n## Steps\n- plan done 2026-10-31 10:00\n- build started 2026-10-31 10:01\n", encoding="utf-8")
+                return omi.project.tasks.step(root, "TASK-111", "done")
+
+            try:
+                done("Pattern: Strategy - only a name")
+            except SystemExit as exc:
+                assert "malformed `Pattern: Strategy - only a name`" in str(exc) and "Nothing changed" in str(exc), str(exc)
+                assert "build done" not in task.read_text(encoding="utf-8")
+            else:
+                raise AssertionError("malformed Pattern line accepted")
+            assert done(ok) == 0 and "build done" in task.read_text(encoding="utf-8")
+
+
 def main():
+    test_pattern_line_shape()
     test_hierarchy()
     test_tree_table()
     test_tree_logic_lives_in_tree_module()

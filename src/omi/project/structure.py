@@ -340,3 +340,15 @@ def check(code, state=None, changed=False, baseline=False) -> int:
     for line in found:
         print(": ".join(line))
     return 1 if found else 0
+
+
+def bad_pattern_lines(text):
+    """`Pattern:` lines not shaped `Pattern: <name> - <force> - <why simpler is not enough>` (three non-empty parts)."""
+    return [x for x in re.findall(r"^Pattern:.*$", text, re.M)
+            if len(parts := x[len("Pattern:"):].split(" - ", 2)) < 3 or not all(p.strip() for p in parts)]
+
+
+def pattern_error(text):
+    """Message for the first malformed `Pattern:` line, or None."""
+    bad = bad_pattern_lines(text)
+    return bad and f"malformed `{bad[0]}`; write `Pattern: <name> - <force> - <why simpler is not enough>` with all three parts non-empty."
