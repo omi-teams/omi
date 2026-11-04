@@ -14,8 +14,15 @@ jobs:
     runs-on: ubuntu-latest
     env:
       OMI_BROWSER_REQUIRED: "1"
+      HAS_STATE_KEY: ${{ secrets.OMI_STATE_READ_KEY != '' }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Fetch development for the structure check
+        if: github.ref_name != 'development' && github.base_ref != 'development'
+        run: git fetch origin development:development
 
       - uses: actions/setup-python@v6
         with:
@@ -37,6 +44,30 @@ jobs:
         env:
           OMI_BOARD_SCREENS: ${{ runner.temp }}/board-screens
         run: python tests/test_omi.py
+
+      # The structure map lives in omi-state (detached project); fork PRs get no secret, so they skip it.
+      - name: Check out omi-state map
+        id: state
+        if: env.HAS_STATE_KEY == 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: omi-teams/omi-state
+          ssh-key: ${{ secrets.OMI_STATE_READ_KEY }}
+          path: omi-state-map  # checkout cannot write outside the workspace; git ls-files ignores it
+          sparse-checkout: projects/omi/.omi
+          persist-credentials: false
+
+      - name: Structure check
+        if: steps.state.outcome == 'success'
+        env:
+          OMI_PROJECT_STATE: ${{ github.workspace }}/omi-state-map/projects/omi
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then python -m omi structure check --changed; else python -m omi structure check; fi
+
+      - name: Structure check skipped
+        if: steps.state.outcome != 'success'
+        run: echo "::notice::OMI_STATE_READ_KEY unavailable (fork PR); structure check skipped"
 
       - name: Upload board screenshots
         if: always()
