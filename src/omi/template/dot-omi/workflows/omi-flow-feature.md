@@ -9,7 +9,7 @@ steps:
 ---
 # Feature
 
-**When to use:** the default for one product change with clear acceptance criteria. It is the lightest build path; docs-only edits follow the reviewer skip rule.
+**When to use:** the default for one product change with clear acceptance criteria. It is the lightest build path; docs-only edits use `omi-flow-docs-only`.
 **Use instead:** `omi-flow-feature-ui` when screens change (needs a design spec and a browser check); `omi-flow-feature-sensitive` when the change touches auth, secrets, permissions, data/migrations, CI or the agent harness.
 
 ## Models
