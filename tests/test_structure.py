@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -268,7 +269,7 @@ def test_init_and_non_ascii():
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
         sh = lambda *a: subprocess.run(["git", "-c", "user.email=a@b", "-c", "user.name=t", *a], cwd=root, check=True, capture_output=True)
-        files = ["src/app.py", "tests/t.py", "docs/a.md", "README.md", "pyproject.toml", "Makefile", "db/m.sql", "tên/é.py", "a,b|c.py"]
+        files = ["src/app.py", "tests/t.py", "docs/a.md", "README.md", "pyproject.toml", "Makefile", "db/m.sql", "tên/é.py", "a,b.py"] + (["c|d.py"] if os.name != "nt" else [])  # | cannot be in a Windows file name
         for f in files:
             (root / f).parent.mkdir(parents=True, exist_ok=True)
             (root / f).write_text("", encoding="utf-8")
