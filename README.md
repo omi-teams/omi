@@ -53,6 +53,10 @@ Dữ liệu đọc lại từ file state ở mỗi request, nên sửa file khô
 Mọi nội dung hiển thị bằng `textContent`, đường dẫn thoát thư mục trả 404, CSP `default-src 'self'`.
 `OMI_STATE=<thư mục>` chọn state khác. Kết quả pilot và gap: [docs/pilot-board.md](docs/pilot-board.md).
 
+## Cấu trúc code (`omi structure`)
+
+`.omi/structure.md` ghi lớp, module và trách nhiệm của từng nhóm file; `omi structure init | check [--changed|--baseline]` đề xuất bản đồ và kiểm import theo hướng phụ thuộc. Cách viết bản đồ, baseline và file plan trong task: [docs/guides/structure.md](docs/guides/structure.md).
+
 ## Lấy và lưu key
 
 - **Claude (mặc định theo đăng nhập Claude Code):** agent dùng tài khoản của phiên Claude Code hiện tại. Thứ tự: biến môi trường `CLAUDE_CODE_OAUTH_TOKEN` (ghi đè rõ ràng), rồi đăng nhập phiên (`accessToken` trong `~/.claude/.credentials.json` hoặc `$CLAUDE_CONFIG_DIR/.credentials.json`, đọc lúc chạy, không lưu, không ghi log; refresh token không rời máy host), rồi token đã lưu. Token phiên hết hạn thì mở Claude Code một lần để làm mới; `omi run` in `claude auth: env|session|stored`.
