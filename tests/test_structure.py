@@ -192,9 +192,39 @@ def test_check_command():
         assert "app/shared/k.py: direction" not in out and ".omi/structure.md: tool: " in out
 
 
+def test_tool_command():
+    tool = lambda cmd: HEAD + f"- pyproject.toml | config | tool: {cmd} | imports: -\n"
+    assert "line 6: bad tool command (empty command)" in err(tool(""))
+    assert "line 6: bad tool command (No closing quotation)" in err(tool('python3 -c "x'))
+    assert structure.tool_argv(r"C:\Tools\dep.exe --x", posix=False) == [r"C:\Tools\dep.exe", "--x"]
+    assert structure.tool_argv(r'"C:\Program Files\dep.exe" check', posix=False) == [r"C:\Program Files\dep.exe", "check"]
+    assert structure.tool_argv("a 'b c'", posix=True) == ["a", "b c"]
+    assert load(tool("deptool check"))[0]["tool"] == ["deptool", "check"]
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / ".omi").mkdir()
+        (root / "pyproject.toml").write_text("", encoding="utf-8")
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+
+        def run(cmd):
+            (root / ".omi/structure.md").write_text(tool(cmd) + "- .omi/** | config | cfg | imports: -\n", encoding="utf-8")
+            out = StringIO()
+            with redirect_stdout(out):
+                return structure.check(root), out.getvalue()
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        assert run(f'"{sys.executable}" -c pass') == (0, "")  # a tool exiting 0 is clean
+        try:
+            run("omi-no-such-tool-xyz")
+            raise AssertionError("no error")
+        except structure.StructureError as exc:
+            assert "line 6: cannot run 'omi-no-such-tool-xyz'" in str(exc)
+
+
 def main():
     test_load_and_errors()
     test_match()
     test_import_regexes()
     test_unmapped_sql_and_unresolved()
     test_check_command()
+    test_tool_command()

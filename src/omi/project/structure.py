@@ -1,6 +1,7 @@
 """Structure map: parse .omi/structure.md and match file paths to layer, module and responsibility."""
 
 import bisect
+import os
 import posixpath
 import re
 import shlex
@@ -38,6 +39,15 @@ def _glob(pattern):
     return re.compile("".join(out))
 
 
+def tool_argv(cmd, posix=None) -> list[str]:
+    """Argument list of a `tool:` command; Windows keeps backslashes (posix=False) and drops the quotes."""
+    posix = os.name != "nt" if posix is None else posix
+    argv = [a[1:-1] if not posix and len(a) > 1 and a[0] == a[-1] and a[0] in "\"'" else a for a in shlex.split(cmd, posix=posix)]
+    if not argv:
+        raise ValueError("empty command")
+    return argv
+
+
 def _rule(line, no, errors):
     parts = [p.strip() for p in line[2:].split("|")] if line.startswith("- ") else []
     if len(parts) != 4 or not core.split(parts[0]) or not all(parts[:3]) or not parts[3].startswith("imports:"):
@@ -55,7 +65,14 @@ def _rule(line, no, errors):
     if bad:
         errors.append(f"line {no}: unknown layer '{bad[0]}' in imports")
         return None
-    return {"globs": core.split(globs), "layer": layer, "responsibility": resp, "imports": allowed,
+    tool = None
+    if layer == "config" and resp.startswith("tool:"):
+        try:
+            tool = tool_argv(resp.removeprefix("tool:"))
+        except ValueError as exc:
+            errors.append(f"line {no}: bad tool command ({exc})")
+            return None
+    return {"globs": core.split(globs), "tool": tool, "layer": layer, "responsibility": resp, "imports": allowed,
             "line": no, "_re": [_glob(g) for g in core.split(globs)]}
 
 
@@ -199,7 +216,7 @@ def _found(files, ext, mode, spec, path, roots):
 def scan(rules, root, paths) -> list[tuple[str, str, str]]:
     """(path, rule, import) violations for the repo-relative paths: unmapped, direction, cross-module."""
     files, roots, found = _Files(paths), _roots(rules), []
-    tool = any(r["layer"] == "config" and r["responsibility"].startswith("tool:") for r in rules)
+    tool = any(r["tool"] for r in rules)
     for path in paths:
         src, module = _hit(rules, path)
         if src is None:
@@ -236,10 +253,10 @@ def check(code, state=None) -> int:
     paths = [p for p in listed.splitlines() if (code / p).is_file()]
     found = scan(rules, code, paths)
     for rule in rules:
-        if rule["layer"] == "config" and rule["responsibility"].startswith("tool:"):
+        if rule["tool"]:
             cmd = rule["responsibility"].removeprefix("tool:").strip()
             try:
-                r = subprocess.run(shlex.split(cmd), cwd=code, capture_output=True, encoding="utf-8", errors="replace")
+                r = subprocess.run(rule["tool"], cwd=code, capture_output=True, encoding="utf-8", errors="replace")
             except OSError as exc:
                 raise StructureError(f"{MAP} line {rule['line']}: cannot run '{cmd}' ({exc.strerror or exc})") from exc
             if r.returncode:
