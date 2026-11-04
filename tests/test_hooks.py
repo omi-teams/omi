@@ -276,6 +276,7 @@ def test_hooks():
             (fake / "state" / ".omi").mkdir(parents=True)
             (fake / "state" / ".omi" / "structure.md").write_text("", encoding="utf-8")
             (fake / "omi").mkdir()
+            (fake / "omi" / "__init__.py").write_text("", encoding="utf-8")  # a regular package, so it wins over an installed omi
             (fake / "omi" / "__main__.py").write_text("import os,sys;print('omi', os.environ.get('GIT_DIR'), os.environ.get('GIT_WORK_TREE'), sys.argv[1:])\n", encoding="utf-8")
             (fake / "state" / ".omi" / "config.json").write_text('{"test": "echo test GIT_DIR=${GIT_DIR:-unset}"}', encoding="utf-8")
             base = {k: v for k, v in os.environ.items() if k not in ("OMI_PROJECT_STATE", "OMI_GIT_DIR")}
