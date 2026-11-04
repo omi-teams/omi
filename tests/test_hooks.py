@@ -281,7 +281,7 @@ def test_hooks():
             (fake / "state" / ".omi" / "config.json").write_text('{"test": "echo test GIT_DIR=${GIT_DIR:-unset}"}', encoding="utf-8")
             base = {k: v for k, v in os.environ.items() if k not in ("OMI_PROJECT_STATE", "OMI_GIT_DIR")}
             for extra, want in (({}, "omi None None"), ({"OMI_GIT_DIR": "/gitdir/worktrees/T"}, f"omi /gitdir/worktrees/T {fake}")):
-                env = {**base, "PYTHONPATH": str(fake), "OMI_PROJECT_STATE": str(fake / "state"), **extra}
+                env = {**base, "PYTHONPATH": str(fake), "MSYS2_ENV_CONV_EXCL": "*", "OMI_PROJECT_STATE": str(fake / "state"), **extra}
                 r = subprocess.run([sh, str(omi.common.core.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh")], cwd=fake, capture_output=True, text=True, env=env)
                 assert want in r.stdout and "test GIT_DIR=unset" in r.stdout, r
     text = (omi.common.core.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh").read_text()
