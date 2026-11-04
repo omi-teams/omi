@@ -244,7 +244,7 @@ def verdict_of(report):
 
 
 def assistant_texts(tool, out):
-    """Text of each assistant message in the CLI's event stream, in order (claude `assistant` text blocks, codex `agent_message` items)."""
+    """Text of each main-agent message in the CLI's event stream, in order (claude `assistant` text blocks without `parent_tool_use_id`, codex `agent_message` items)."""
     texts = []
     for line in (out or "").splitlines():
         try:
@@ -252,6 +252,8 @@ def assistant_texts(tool, out):
         except ValueError:
             continue
         if not isinstance(e, dict):
+            continue
+        if tool == "claude" and e.get("parent_tool_use_id"):
             continue
         if tool == "claude" and e.get("type") == "assistant" and isinstance(e.get("message"), dict):
             texts += [c["text"] for c in e["message"].get("content") or [] if isinstance(c, dict) and c.get("type") == "text"]
