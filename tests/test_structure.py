@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 import tempfile
@@ -192,9 +193,51 @@ def test_check_command():
         assert "app/shared/k.py: direction" not in out and ".omi/structure.md: tool: " in out
 
 
+def test_baseline_and_changed():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        sh = lambda *a: subprocess.run(["git", "-c", "user.email=a@b", "-c", "user.name=t", *a], cwd=root, check=True, capture_output=True)
+        (root / ".omi").mkdir()
+        (root / ".omi/structure.md").write_text(MAP.format(**LOWER) + "- .omi/** | config | cfg | imports: -\n", encoding="utf-8")
+        (root / "app/shared").mkdir(parents=True)
+        (root / "app/shared/k.py").write_text("import os\n", encoding="utf-8")
+        sh("init", "-q", "-b", "development")
+        sh("add", "-A")
+        sh("commit", "-qm", "base")
+        sh("checkout", "-qb", "work")
+        (root / "stray.py").write_text("", encoding="utf-8")
+        sh("add", "-A")
+
+        def run(**kw):
+            out = StringIO()
+            with redirect_stdout(out):
+                return structure.check(root, **kw), out.getvalue()
+        assert run() == (1, "stray.py: unmapped: -\n")
+        assert run(baseline=True)[0] == 0
+        assert json.loads((root / ".omi/structure-baseline.json").read_text(encoding="utf-8")) == ["stray.py|unmapped|-"]
+        sh("add", "-A")
+        sh("commit", "-qm", "work")
+        assert run() == (0, "")  # baselined violation passes
+        (root / "other.py").write_text("", encoding="utf-8")
+        sh("add", "-A")
+        assert run() == (1, "other.py: unmapped: -\n")  # a new one fails
+        assert run(changed=True) == (1, "stray.py: unmapped: -\n")  # baseline does not apply to the diff
+        (root / "stray.py").unlink()
+        (root / "other.py").unlink()
+        sh("add", "-A")
+        code, out = run()
+        assert code == 0 and "remove from .omi/structure-baseline.json: stray.py|unmapped|-" in out
+
+
 def test_tool_command():
     tool = lambda cmd: HEAD + f"- pyproject.toml | config | tool: {cmd} | imports: -\n"
     assert "line 6: bad tool command (empty command)" in err(tool(""))
+    assert "line 6: bad tool command (empty command)" in err(tool('""'))
+    try:
+        structure.tool_argv('"" \'\'', posix=False)
+        raise AssertionError("no error")
+    except ValueError as exc:
+        assert str(exc) == "empty command"
     assert "line 6: bad tool command (No closing quotation)" in err(tool('python3 -c "x'))
     assert structure.tool_argv(r"C:\Tools\dep.exe --x", posix=False) == [r"C:\Tools\dep.exe", "--x"]
     assert structure.tool_argv(r'"C:\Program Files\dep.exe" check', posix=False) == [r"C:\Program Files\dep.exe", "check"]
@@ -227,4 +270,5 @@ def main():
     test_import_regexes()
     test_unmapped_sql_and_unresolved()
     test_check_command()
+    test_baseline_and_changed()
     test_tool_command()

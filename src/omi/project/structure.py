@@ -1,6 +1,7 @@
 """Structure map: parse .omi/structure.md and match file paths to layer, module and responsibility."""
 
 import bisect
+import json
 import os
 import posixpath
 import re
@@ -12,6 +13,7 @@ from ..common import core
 
 LAYERS = ("domain", "application", "adapter-in", "adapter-out", "platform", "shared", "data", "docs", "test", "config")
 MAP = ".omi/structure.md"
+BASELINE = ".omi/structure-baseline.json"
 
 
 class StructureError(ValueError):
@@ -43,7 +45,7 @@ def tool_argv(cmd, posix=None) -> list[str]:
     """Argument list of a `tool:` command; Windows keeps backslashes (posix=False) and drops the quotes."""
     posix = os.name != "nt" if posix is None else posix
     argv = [a[1:-1] if not posix and len(a) > 1 and a[0] == a[-1] and a[0] in "\"'" else a for a in shlex.split(cmd, posix=posix)]
-    if not argv:
+    if not any(argv):
         raise ValueError("empty command")
     return argv
 
@@ -243,10 +245,23 @@ def scan(rules, root, paths) -> list[tuple[str, str, str]]:
     return list(dict.fromkeys(found))
 
 
-def check(code, state=None) -> int:
-    """Print `<path>: <rule>: <import>` per violation of the map over git-tracked files; 0 when clean, else 1."""
+def _baseline(root) -> set[str]:
+    try:
+        return set(json.loads((Path(root) / BASELINE).read_text(encoding="utf-8")))
+    except FileNotFoundError:
+        return set()
+    except (OSError, ValueError) as exc:
+        raise StructureError(f"{BASELINE}: cannot read ({exc})") from exc
+
+
+def check(code, state=None, changed=False, baseline=False) -> int:
+    """Print `<path>: <rule>: <import>` per violation of the map over git-tracked files; 0 when clean, else 1.
+
+    baseline writes the current violations to BASELINE and returns 0; otherwise baselined ones are skipped and
+    entries that no longer occur are reported. changed keeps only files in the diff against development, baseline ignored."""
     code = Path(code)
-    rules = load(state or code)
+    home = Path(state or code)
+    rules = load(home)
     listed = core.git(code, "ls-files")
     if listed is None:
         raise StructureError(f"{code}: not a git repository")
@@ -262,6 +277,22 @@ def check(code, state=None) -> int:
             if r.returncode:
                 print((r.stdout + r.stderr).rstrip())
                 found.append((MAP, "tool", cmd))
+    keys = {"|".join(v): v for v in found}
+    if baseline:
+        core.write_text(home / BASELINE, json.dumps(sorted(keys), indent=2) + "\n")
+        print(f"{BASELINE}: {len(keys)} violation(s) recorded")
+        return 0
+    if changed:
+        diff = core.git(code, "diff", "--name-only", "development...HEAD")
+        if diff is None:
+            raise StructureError(f"{code}: cannot diff against development")
+        files = set(diff.splitlines())
+        found = [v for v in found if v[0] in files]
+    else:
+        known = _baseline(home)
+        for key in sorted(known - keys.keys()):
+            print(f"fixed, remove from {BASELINE}: {key}")
+        found = [v for v in found if "|".join(v) not in known]
     for line in found:
         print(": ".join(line))
     return 1 if found else 0

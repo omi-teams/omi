@@ -31,7 +31,7 @@ USAGE = """usage: omi <command>
   skills [check <task-file>]   write .omi/skills/CATALOG.md; or check a task's skills against the budget
   skills --check   validate every skill against the contract (parts, size, source, no widened permissions)
   token set [--tool claude|codex]   store the `claude setup-token` value (or the OpenAI API key) in Windows Credential Manager
-  structure check   report files the .omi/structure.md map does not cover and imports against its layer or module rules; exit 1 on any
+  structure check [--changed|--baseline]   report files the .omi/structure.md map does not cover and imports against its layer or module rules; exit 1 on any not in .omi/structure-baseline.json (--baseline records them; --changed checks only files changed vs development, ignoring the baseline)
   plans        validate .omi/plans and write .omi/plans/CATALOG.md
   references   validate .omi/references and write .omi/references/CATALOG.md (task refs load as paths)
   rules        validate .omi/rules and write .omi/rules/CATALOG.md (rules auto-load by task scope)
@@ -260,10 +260,10 @@ def dispatch(argv: list[str] | None = None) -> None:
         catalogs.agents_catalog(root)
     elif cmd == "workflows":
         workflows.check_all_workflows(root) if rest[:1] == ["--check"] else workflows.workflows_catalog(root)
-    elif cmd == "structure" and rest == ["check"]:
+    elif cmd == "structure" and rest[:1] == ["check"] and set(rest[1:]) <= {"--changed", "--baseline"} and not {"--changed", "--baseline"} <= set(rest):
         project = state.resolve()
         try:
-            sys.exit(structure.check(project.code, project.state))
+            sys.exit(structure.check(project.code, project.state, "--changed" in rest, "--baseline" in rest))
         except structure.StructureError as exc:
             sys.exit(f"OMI: {exc}")
     elif cmd == "step" and len(rest) >= 2:
