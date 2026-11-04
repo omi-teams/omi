@@ -264,6 +264,44 @@ def test_tool_command():
             assert "line 6: cannot run 'omi-no-such-tool-xyz'" in str(exc)
 
 
+def test_init_and_non_ascii():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        sh = lambda *a: subprocess.run(["git", "-c", "user.email=a@b", "-c", "user.name=t", *a], cwd=root, check=True, capture_output=True)
+        files = ["src/app.py", "tests/t.py", "docs/a.md", "README.md", "pyproject.toml", "Makefile", "db/m.sql", "tên/é.py", "a,b|c.py"]
+        for f in files:
+            (root / f).parent.mkdir(parents=True, exist_ok=True)
+            (root / f).write_text("", encoding="utf-8")
+        sh("init", "-q", "-b", "development")
+        sh("add", "-A")
+        out = StringIO()
+        with redirect_stdout(out):
+            assert structure.init(root) == 0
+        text = out.getvalue()
+        assert "- src/** | platform | TODO" in text and "- tests/** | test |" in text and "- README.md | docs |" in text
+        (root / ".omi").mkdir()
+        (root / ".omi/structure.md").write_text(text, encoding="utf-8")
+        rules = structure.load(root)
+        for f in files:
+            assert structure.match(rules, f), f
+        assert structure.check(root) == 0
+        # an existing map is refused and left untouched
+        try:
+            structure.init(root)
+            raise AssertionError("no error")
+        except structure.StructureError as exc:
+            assert "already exists" in str(exc)
+        assert (root / ".omi/structure.md").read_text(encoding="utf-8") == text
+        # --changed lists a non-ASCII path verbatim, so it matches the tracked name
+        sh("add", "-A")
+        sh("commit", "-qm", "base")
+        sh("checkout", "-qb", "work")
+        (root / "tên/ü.py").write_text("", encoding="utf-8")
+        sh("add", "-A")
+        sh("commit", "-qm", "w")
+        assert structure._paths(root, "diff", "--name-only", "development...HEAD") == ["tên/ü.py"]
+
+
 def main():
     test_load_and_errors()
     test_match()
@@ -272,3 +310,4 @@ def main():
     test_check_command()
     test_baseline_and_changed()
     test_tool_command()
+    test_init_and_non_ascii()

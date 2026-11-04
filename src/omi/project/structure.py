@@ -254,6 +254,50 @@ def _baseline(root) -> set[str]:
         raise StructureError(f"{BASELINE}: cannot read ({exc})") from exc
 
 
+def _paths(code, *args) -> list[str] | None:
+    """Paths printed by a git command run with -z (verbatim, so non-ASCII names match); None when git fails."""
+    out = core.git(code, *args, "-z")
+    return None if out is None else [p for p in out.split("\0") if p]
+
+
+# top-level folder name -> (layer, responsibility); anything else is proposed as a TODO
+_KNOWN = {**dict.fromkeys(("test", "tests", "spec", "__tests__"), ("test", "tests")),
+          **dict.fromkeys(("docs", "doc"), ("docs", "documentation")),
+          **dict.fromkeys(("database", "db", "migrations", "seeds"), ("data", "migrations, seeds, schema")),
+          **dict.fromkeys((".github", ".omi", ".vscode", ".husky"), ("config", "tooling and CI config"))}
+_TODO = ("platform", "TODO: assign a layer and responsibility")
+_ALL = "domain, application, adapter-in, adapter-out, platform, shared"
+_IMPORTS = {"test": _ALL, "platform": _ALL + ", platform"}  # other layers import nothing outside themselves: "-"
+
+
+def init(code, state=None) -> int:
+    """Print a proposed map from the git-tracked tree (known folders to layers, the rest TODO); never overwrite one."""
+    code = Path(code)
+    home = Path(state or code)
+    if (home / MAP).exists():
+        raise StructureError(f"{MAP} already exists; nothing changed")
+    listed = _paths(code, "ls-files")
+    if listed is None:
+        raise StructureError(f"{code}: not a git repository")
+    groups = {}  # glob -> (layer, responsibility)
+    for path in listed:
+        top, _, rest = path.partition("/")
+        name = re.sub(r"[,|*?\n]", "?", top)  # a glob must not hold the map's separators
+        if rest:
+            groups.setdefault(f"{name}/**", _KNOWN.get(top, _TODO))
+        elif top.lower().endswith(".md") or top.upper().startswith("LICENSE"):
+            groups.setdefault(name, ("docs", "documentation"))
+        elif top.startswith(".") or posixpath.splitext(top)[1] in (".toml", ".json", ".yml", ".yaml", ".cfg", ".ini", ".lock", ".txt"):
+            groups.setdefault(name, ("config", "tooling and CI config"))
+        else:
+            groups.setdefault(name, _TODO)
+    lines = ["---", "id: structure", "summary: proposed map, review before use", "---", "# Structure map", ""]
+    for glob, (layer, resp) in sorted(groups.items()):
+        lines.append(f"- {glob} | {layer} | {resp} | imports: {_IMPORTS.get(layer, '-')}")
+    print("\n".join(lines))
+    return 0
+
+
 def check(code, state=None, changed=False, baseline=False) -> int:
     """Print `<path>: <rule>: <import>` per violation of the map over git-tracked files; 0 when clean, else 1.
 
@@ -262,10 +306,10 @@ def check(code, state=None, changed=False, baseline=False) -> int:
     code = Path(code)
     home = Path(state or code)
     rules = load(home)
-    listed = core.git(code, "ls-files")
+    listed = _paths(code, "ls-files")
     if listed is None:
         raise StructureError(f"{code}: not a git repository")
-    paths = [p for p in listed.splitlines() if (code / p).is_file()]
+    paths = [p for p in listed if (code / p).is_file()]
     found = scan(rules, code, paths)
     for rule in rules:
         if rule["tool"]:
@@ -283,10 +327,10 @@ def check(code, state=None, changed=False, baseline=False) -> int:
         print(f"{BASELINE}: {len(keys)} violation(s) recorded")
         return 0
     if changed:
-        diff = core.git(code, "diff", "--name-only", "development...HEAD")
+        diff = _paths(code, "diff", "--name-only", "development...HEAD")
         if diff is None:
             raise StructureError(f"{code}: cannot diff against development")
-        files = set(diff.splitlines())
+        files = set(diff)
         found = [v for v in found if v[0] in files]
     else:
         known = _baseline(home)
