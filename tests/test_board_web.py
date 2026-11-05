@@ -944,6 +944,72 @@ catch(e) {
       await route.fulfill({body:fs.readFileSync(path.join(process.argv[1],name)),contentType:types[path.extname(name)],
         headers:{'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'"}});
     });
+    // TASK-191: sidebar links, native keyboard toggle, storage and mobile overlay.
+    for(const width of [1280,375,320]) {
+      await page.setViewportSize({width,height:900});
+      await page.goto('http://omi.test/#/p/omi');
+      await page.evaluate(()=>localStorage.removeItem('omi-board-sidebar'));
+      await page.reload();
+      await page.locator('#status').filter({hasText:'Cập nhật lần cuối'}).waitFor();
+      const toggle=page.locator('#sidebar-toggle'), sidebar=page.locator('#board-sidebar');
+      assert.equal(await toggle.getAttribute('aria-controls'),'board-sidebar');
+      assert.equal(await toggle.getAttribute('aria-expanded'),String(width>=768));
+      assert.equal(await sidebar.isVisible(),width>=768);
+      if(width<768) { await toggle.focus();await page.keyboard.press('Space'); }
+      assert.equal(await sidebar.locator('a').count(),7);
+      assert.deepEqual(await sidebar.locator('a').allTextContents(),
+        ['Tổng quan dự án','Cây công việc','Kanban','Hộp thư PO','Chi phí','Đồ thị phụ thuộc','Thông báo']);
+      if(width<768) {
+        const source=await page.locator('#source').boundingBox(), stamp=await page.locator('#status').boundingBox();
+        assert(stamp.y+stamp.height<=source.y,'phone timestamp and source must occupy separate rows');
+        assert(await page.locator('#sidebar-backdrop').isVisible());
+        assert(await page.locator('main').evaluate(n=>n.inert));
+        await toggle.focus();await page.keyboard.press('Shift+Tab');
+        assert(await sidebar.locator('a').last().evaluate(n=>n===document.activeElement));
+        await page.keyboard.press('Tab');assert(await toggle.evaluate(n=>n===document.activeElement));
+      }
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`sidebar overflow ${width}`);
+      await page.evaluate(axeSource);await audit(`sidebar open ${width} light`);
+      await page.emulateMedia({colorScheme:'dark'});await audit(`sidebar open ${width} dark`);
+      await page.emulateMedia({colorScheme:'light'});
+      if(screens && width!==320) await page.screenshot({path:path.join(screens,`sidebar-${width}.png`)});
+      for(const [label,target] of [['Cây công việc','board-tree'],['Kanban','board-kanban'],['Thông báo','notification-settings']]) {
+        if(!(await sidebar.isVisible())) await toggle.click();
+        await sidebar.getByRole('link',{name:label,exact:true}).click();
+        await page.waitForFunction(id=>document.activeElement.id===id,target);
+        assert(await page.locator('#'+target).isVisible());
+        if(width<768) {
+          assert.equal(await sidebar.isVisible(),false);
+          assert.equal(await page.locator('main').evaluate(n=>n.inert),false);
+        }
+      }
+      if(!(await sidebar.isVisible())) await toggle.click();
+      for(const [label,selector] of [['Chi phí','.cost-stats'],['Đồ thị phụ thuộc','.g-summary'],['Hộp thư PO','.inbox-items'],['Tổng quan dự án','#board-tree']]) {
+        if(!(await sidebar.isVisible())) await toggle.click();
+        await sidebar.getByRole('link',{name:label,exact:true}).click();await page.locator(selector).waitFor();
+      }
+      if(!(await sidebar.isVisible())) await toggle.click();
+      await page.keyboard.press('Escape');
+      assert.equal(await toggle.getAttribute('aria-expanded'),'false');
+      assert(await toggle.evaluate(n=>n===document.activeElement));
+      assert.equal(await page.evaluate(()=>localStorage.getItem('omi-board-sidebar')),'closed');
+      await page.reload();assert.equal(await sidebar.isVisible(),false);
+      await toggle.focus();await page.keyboard.press('Enter');
+      assert.equal(await page.evaluate(()=>localStorage.getItem('omi-board-sidebar')),'open');
+      await page.reload();assert.equal(await sidebar.isVisible(),width>=768);
+    }
+    await page.addInitScript(()=>{
+      if(!location.search.includes('sidebar-storage=blocked')) return;
+      for(const method of ['getItem','setItem']) Object.defineProperty(Storage.prototype,method,{value:()=>{throw Error('storage disabled');}});
+    });
+    await page.setViewportSize({width:1280,height:900});
+    await page.goto('http://omi.test/?sidebar-storage=blocked#/p/omi?section=kanban');
+    await page.waitForFunction(()=>document.activeElement.id==='board-kanban');
+    await page.locator('#sidebar-toggle').click();await page.locator('#sidebar-toggle').click();
+    assert.equal(await page.locator('#sidebar-toggle').getAttribute('aria-expanded'),'true');
+    await page.goto('http://omi.test/#/');
+    await page.evaluate(()=>localStorage.removeItem('omi-board-sidebar'));
+    console.log('ok: sidebar links, keyboard, persistence, disabled storage, mobile overlay and 320px overflow');
     // Exercise every main route, including short fixtures that need extra content
     // to make document scrolling possible at both viewport sizes.
     const headerFailures=[];

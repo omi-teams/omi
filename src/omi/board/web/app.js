@@ -19,7 +19,7 @@ async function route(button = null) {
   const hash = location.hash === "#main" ? current || "#/" : location.hash || "#/";
   const routePath = hash.split("?")[0];
   if (!button && loadedDashboard && routePath === projectHref(loadedDashboard.name) && current.split("?")[0] === routePath && hash !== current) {
-    current = hash; updateFilters(); return;
+    current = hash; updateFilters(); updateSidebar(); focusBoardSection(); return;
   }
   const previous = current;
   const changed = hash !== current;
@@ -43,7 +43,8 @@ async function route(button = null) {
     const id = m?.[2] ? decodeURIComponent(m[2]) : null;
     const costs = !!m?.[3];
     const graph = !!m?.[4];
-    const isInbox = hash === "#/inbox";
+    const isInbox = routePath === "#/inbox";
+    updateSidebar(name);
     if (changed) {
       filterUI = null;
       view.replaceChildren(heading(isInbox ? "Hộp thư PO" : costs ? "Chi phí và quota" : graph ? "Đồ thị phụ thuộc" : id || name || "Dự án"),
@@ -64,6 +65,7 @@ async function route(button = null) {
       boardText = await response.text(); board = JSON.parse(boardText);
       if (ticket !== request) return;
     }
+    updateSidebar(name || board.projects?.[0]?.name);
     const items = board.inbox || [];
     let contentKey = JSON.stringify([text, boardText]);
     // The detail endpoint carries the task's own workflow; the project view
@@ -97,7 +99,7 @@ async function route(button = null) {
     catch (e) { filterUI = previousUI; throw e; }
     loadedDashboard = name && !costs && !graph && !id ? {name, data} : null;
     if (loadedDashboard) {
-      const canonical = projectHref(name) + filterQuery(filterUI.state);
+      const canonical = boardSectionHref(projectHref(name) + filterQuery(filterUI.state));
       if (viewHash() !== canonical) { window.history.replaceState(null, "", canonical); current = canonical; }
     }
     const scrolled = window.scrollY;
@@ -130,7 +132,7 @@ async function route(button = null) {
     seen = contentKey;
     revision = board.source.sha;
     updated(data.source);
-    if (changed) document.getElementById("title").focus();
+    if (changed) { document.getElementById("title").focus(); focusBoardSection(); }
   } catch (e) {
     if (ticket !== request) return;
     if (seen === null && !filterUI) view.replaceChildren(document.getElementById("title"));
@@ -195,5 +197,82 @@ document.addEventListener("keydown", event => {
     event.preventDefault(); search.focus();
   }
 });
+let sidebarProject = null;
+initSidebar();
 schedule();
 route(refresh);
+
+function selectedBoardSection() {
+  const match = viewHash().match(/[?&]section=(tree|kanban|notifications)(?:&|$)/);
+  return match ? match[1] : "";
+}
+function boardSectionHref(href) {
+  const section = selectedBoardSection();
+  return section ? href + (href.includes("?") ? "&" : "?") + "section=" + section : href;
+}
+function focusBoardSection() {
+  const section = selectedBoardSection();
+  const target = document.getElementById(section === "notifications" ? "notification-settings" : "board-" + section);
+  if (section && target) {
+    target.setAttribute("tabindex", "-1"); target.focus(); target.scrollIntoView({block: "start"});
+  }
+}
+function updateSidebar(name) {
+  const list = document.getElementById("sidebar-links");
+  if (!list) return;
+  if (name) sidebarProject = name;
+  const key = JSON.stringify([sidebarProject, viewHash()]);
+  if (list.getAttribute("data-view") === key) return;
+  list.setAttribute("data-view", key);
+  const project = sidebarProject ? projectHref(sidebarProject) : "#/";
+  const items = [["Tổng quan dự án", project],
+    ...(sidebarProject ? [["Cây công việc", project + "?section=tree"], ["Kanban", project + "?section=kanban"]] : []),
+    ["Hộp thư PO", "#/inbox"],
+    ...(sidebarProject ? [["Chi phí", project + "/cost"], ["Đồ thị phụ thuộc", project + "/graph"]] : []),
+    ["Thông báo", "#/inbox?section=notifications"]];
+  list.replaceChildren(...items.map(([label, href]) => el("li", null, {}, [
+    el("a", label, {href, ...(viewHash() === href ? {"aria-current": "page"} : {})})])));
+}
+function initSidebar() {
+  const toggle = document.getElementById("sidebar-toggle");
+  if (!toggle) return;
+  const sidebar = document.getElementById("board-sidebar");
+  const backdrop = document.getElementById("sidebar-backdrop");
+  const main = document.getElementById("main");
+  const phone = window.matchMedia("(max-width: 767px)");
+  let preferred = null;
+  try { preferred = window.localStorage.getItem("omi-board-sidebar"); } catch (_) { /* Storage may be disabled. */ }
+  function setOpen(open, remember = false) {
+    if (!open && sidebar.contains(document.activeElement)) toggle.focus();
+    sidebar.hidden = !open;
+    toggle.setAttribute("aria-expanded", String(open));
+    document.body.classList.toggle("sidebar-open", open);
+    backdrop.hidden = !(open && phone.matches);
+    main.inert = open && phone.matches;
+    if (remember) {
+      preferred = open ? "open" : "closed";
+      try { window.localStorage.setItem("omi-board-sidebar", preferred); } catch (_) { /* Keep this tab usable. */ }
+    }
+  }
+  toggle.addEventListener("click", () => setOpen(sidebar.hidden, true));
+  backdrop.addEventListener("click", () => setOpen(false, true));
+  sidebar.addEventListener("click", event => {
+    if (!event.target.closest("a")) return;
+    if (phone.matches) setOpen(false);
+    // Clicking the current section should still move focus to its content.
+    if (event.target.closest("a").getAttribute("href") === viewHash()) focusBoardSection();
+  });
+  document.addEventListener("keydown", event => {
+    if (sidebar.hidden) return;
+    if (event.key === "Escape") { event.preventDefault(); setOpen(false, true); toggle.focus(); }
+    if (event.key === "Tab" && phone.matches) {
+      const controls = [toggle, ...sidebar.querySelectorAll("a")];
+      const index = controls.indexOf(document.activeElement);
+      event.preventDefault(); controls[(index + (event.shiftKey ? -1 : 1) + controls.length) % controls.length].focus();
+    }
+  });
+  phone.addEventListener("change", () => setOpen(!phone.matches && preferred !== "closed"));
+  // Phones always start collapsed; the stored choice controls desktop reloads.
+  setOpen(!phone.matches && preferred !== "closed");
+  updateSidebar();
+}

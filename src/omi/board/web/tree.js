@@ -116,7 +116,7 @@ function updateFilters(fromControl = false, typing = false) {
   filterUI.state = state;
   filterUI.feedback.textContent = "";
   filterUI.fallback.replaceChildren();
-  const canonical = projectHref(name) + filterQuery(state);
+  const canonical = boardSectionHref(projectHref(name) + filterQuery(state));
   if (viewHash() !== canonical) { window.history.replaceState(null, "", canonical); current = canonical; }
   for (const key of FILTER_KEYS) {
     // Leave the exact text and caret alone during input; matching trims it.
@@ -243,8 +243,10 @@ function taskResults(name, tasks, state) {
     return [box("no-results", [el("h2", "Không tìm thấy công việc phù hợp."),
       el("p", "Thử từ khóa khác hoặc đặt lại bộ lọc."), reset])];
   }
-  return [section("Cây công việc", [el("p", "Trạng thái cha tổng hợp từ con trực tiếp; mở một hàng để xem cấp dưới.", {class: "muted small"}),
+  const sections = [section("Cây công việc", [el("p", "Trạng thái cha tổng hợp từ con trực tiếp; mở một hàng để xem cấp dưới.", {class: "muted small"}),
     disclosure("tree-block", el("summary", "Thu gọn / mở cây công việc"),
       [taskTree(name, tasks.filter(t => visible.has(t.id)), activeFilters(state) ? matches : null)], true, "tree-block")]),
     section("Kanban", [el("p", "Chỉ task lá · thứ tự pha cố định · cột trống thu gọn", {class: "muted small"}), board])];
+  sections.forEach((node, i) => { node.setAttribute("id", i ? "board-kanban" : "board-tree"); node.setAttribute("tabindex", "-1"); });
+  return sections;
 }
