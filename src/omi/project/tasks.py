@@ -489,10 +489,16 @@ def clip_report(text, limit=2000):
     return head + mid + ["[... truncated ...]"] + tail
 
 
+def clean_text(text):
+    """Drop C0 control characters and DEL except tab and newline, so task files and PR comments stay text."""
+    return re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", text)
+
+
 def append_note(task, heading, line):
     """Append text to the task file's `## <heading>` section (created before `## Usage`, else at the end)."""
     if not task.exists():
         return
+    line = clean_text(line)
     text, h = core.read_task(task), f"\n## {heading}"
     if h in text:
         head, _, rest = text.partition(h)

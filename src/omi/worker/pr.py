@@ -5,6 +5,7 @@ import shutil
 import subprocess
 
 from ..common import core
+from ..project import tasks
 
 
 def header(step, agent, verdict, when=None):
@@ -25,7 +26,7 @@ def post(wt, tid, text):
     try:
         if run("view", f"task/{tid}", "--json", "state", "-q", ".state").stdout.strip() != "OPEN":
             return False
-        r = run("comment", f"task/{tid}", "--body-file", "-", input=text)
+        r = run("comment", f"task/{tid}", "--body-file", "-", input=tasks.clean_text(text))
     except OSError as e:
         print(f"WARNING: could not post the step result to the PR: {e}")
         return False
