@@ -440,17 +440,36 @@ def test_ui_mockup_contract() -> None:
     assert designer["access"] == "write"
     text = designer["_text"]
     for requirement in (
-        'add the acceptance criterion "pages match the PO-approved mockup in `.omi/tasks/<ID>-mockup/`"',
+        'add the acceptance criterion "pages match the mockup with designer/UI review PASS in `.omi/tasks/<ID>-mockup/`"',
         "plain self-contained `.html`", "one per screen plus a phone-width mockup",
         "Use only what the target stack allows", "no CDN or web fonts unless the task explicitly allows them",
         "no account, network or external tool", "repo files are the only source of truth",
         "no Figma or hosted canvas", "Never edit app code", "In REVIEW mode, never edit files",
-        "PO approval before build", "fresh PO approval",
+        "designer/UI review before build", "Do not review your own design",
+        "Record designer/UI review PASS under `## Steps`", "fresh designer/UI review",
     ):
         assert requirement in text, requirement
     workflow = (template / "workflows" / "omi-flow-feature-ui.md").read_text(encoding="utf-8")
-    assert 'adds the acceptance criterion "pages match the approved mockup' in workflow
+    assert 'adds the acceptance criterion "pages match the mockup with designer/UI review PASS' in workflow
     assert "`approve-mockup` has no gate: the Coordinator proceeds after the designer/UI review PASS" in workflow
+
+
+def test_ui_mockup_requires_designer_review() -> None:
+    template = omi.common.core.TEMPLATE / "dot-omi"
+    paths = [template / "workflows" / "omi-flow-feature-ui.md"] + [
+        template / "agents" / f"omi-agent-{role}.md"
+        for role in ("designer-ui", "reviewer", "qa-tester")]
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        assert "PO-approved" not in text, path
+        assert "PO approval before build" not in text, path
+        assert "fresh PO approval" not in text, path
+        assert "mockups for PO approval" not in text, path
+        assert "designer/UI review PASS" in text, path
+    workflow, _, reviewer, qa = [path.read_text(encoding="utf-8") for path in paths]
+    for text in (workflow, reviewer):
+        assert "missing mockup or missing designer/UI review PASS" in text
+    assert "Missing mockups, designer/UI review PASS or comparison screenshots cannot receive PASS" in qa
 
 
 def test_ui_mockup_review_contract() -> None:
@@ -458,8 +477,8 @@ def test_ui_mockup_review_contract() -> None:
     for role in ("reviewer", "qa-tester"):
         agent = omi.common.core.meta(agents / f"omi-agent-{role}.md")
         assert agent["access"] == "read"
-        for requirement in ("PO-approved repo HTML in `.omi/tasks/<ID>-mockup/`",
-                            "approval", "## Steps"):
+        for requirement in ("repo HTML with designer/UI review PASS in `.omi/tasks/<ID>-mockup/`",
+                            "designer/UI review PASS recorded under `## Steps`"):
             assert requirement in agent["_text"], (role, requirement)
     assert "FAIL on clear mismatches in layout, components or colours" in omi.common.core.meta(
         agents / "omi-agent-qa-tester.md")["_text"]
@@ -516,13 +535,13 @@ def test_ui_mockup_workflow() -> None:
         assert omi.common.core.meta(task)["step"] == "approve-mockup"
         # Implementation criteria must remain open when the mockups pass review.
         task.write_text(task.read_text(encoding="utf-8").replace(
-            "## Steps", "## Acceptance criteria\n- [ ] pages match the PO-approved mockup in `.omi/tasks/TASK-122-mockup/`\n\n## Steps"),
+            "## Steps", "## Acceptance criteria\n- [ ] pages match the mockup with designer/UI review PASS in `.omi/tasks/TASK-122-mockup/`\n\n## Steps"),
             encoding="utf-8")
         step("done")
         step("next")
         assert omi.common.core.meta(task)["step"] == "build"
         assert omi.project.tasks.unticked(task.read_text(encoding="utf-8")) == [
-            "- [ ] pages match the PO-approved mockup in `.omi/tasks/TASK-122-mockup/`"]
+            "- [ ] pages match the mockup with designer/UI review PASS in `.omi/tasks/TASK-122-mockup/`"]
 
 
 def test_only_merge_workflows_have_po_gate() -> None:
@@ -568,7 +587,7 @@ def test_ui_mockup_generated_catalogs() -> None:
         workflows = (root / ".omi" / "workflows" / "CATALOG.md").read_text(encoding="utf-8")
         assert "omi-agent-designer-ui (write, sonnet/medium): Creates a UI/UX spec and static HTML mockups" in agents
         assert "[plan > design > approve-mockup > build > review > qa > accept]" in workflows
-        assert "approved static HTML mockups first" in workflows
+        assert "static HTML mockups with designer/UI review PASS first" in workflows
         manifest = omi.setup.upgrade.read_manifest(root)
         for relative in (".omi/workflows/omi-flow-feature-ui.md", ".omi/agents/omi-agent-designer-ui.md",
                          ".omi/agents/omi-agent-reviewer.md", ".omi/agents/omi-agent-qa-tester.md"):
@@ -626,6 +645,7 @@ def main():
     test_structure_rules_in_roles()
     test_po_decisions_use_pick_list()
     test_ui_mockup_contract()
+    test_ui_mockup_requires_designer_review()
     test_ui_mockup_review_contract()
     test_qa_host_criteria_do_not_fail()
     test_ui_mockup_workflow()
