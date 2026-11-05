@@ -934,6 +934,37 @@ catch(e) {
       await route.fulfill({body:fs.readFileSync(path.join(process.argv[1],name)),contentType:types[path.extname(name)],
         headers:{'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'"}});
     });
+    // Exercise every main route, including short fixtures that need extra content
+    // to make document scrolling possible at both viewport sizes.
+    const headerFailures=[];
+    const headerRoutes=[['projects','#/'],['dashboard','#/p/omi'],['task','#/p/omi/t/TASK-115'],
+      ['inbox','#/inbox'],['cost','#/p/omi/cost'],['graph','#/p/omi/graph']];
+    for(const width of [375,1280]) {
+      await page.setViewportSize({width,height:800});
+      for(const [name,hash] of headerRoutes) {
+        await page.goto(`http://omi.test/?header=${name}&width=${width}${hash}`);
+        await page.locator('#status').filter({hasText:'Cập nhật lần cuối'}).waitFor();
+        await page.evaluate(()=>{
+          const content=document.createElement('section');content.id='scroll-fixture';
+          for(let i=0;i<80;i++) {
+            const paragraph=document.createElement('p');paragraph.textContent=`Scroll regression row ${i}`;
+            content.append(paragraph);
+          }
+          document.getElementById('main').append(content);
+        });
+        for(const bottom of [false,true]) {
+          await page.evaluate(bottom=>window.scrollTo(0,bottom?document.documentElement.scrollHeight:300),bottom);
+          await page.waitForFunction(()=>window.scrollY>0);
+          const top=await page.locator('.top').evaluate(n=>n.getBoundingClientRect().top);
+          if(top!==0) headerFailures.push(`${name} ${width} ${bottom?'bottom':'middle'}: top=${top}`);
+          if(!bottom && screens) await page.screenshot({path:path.join(screens,`header-${name}-${width}.png`)});
+        }
+        await page.locator('#scroll-fixture').evaluate(n=>n.remove());
+        await page.evaluate(()=>window.scrollTo(0,0));
+      }
+    }
+    assert.deepEqual(headerFailures,[],'header must stay at top=0 while scrolling every main route');
+    console.log('ok: sticky header on projects/dashboard/task/inbox/cost/graph at 375/1280px, middle and bottom scroll');
     for(const width of [320,360,390,768,1280]) {
       await page.setViewportSize({width,height:900});
       for(const hash of ['#/','#/p/omi','#/p/omi/t/TASK-115']) {
@@ -951,7 +982,7 @@ catch(e) {
         const header=await page.locator('.top').boundingBox();
         assert.equal(await page.locator('#countdown, #auto, .switch').count(),0);
         assert(await page.getByRole('button',{name:'Làm mới',exact:true}).isVisible());
-        assert.equal(await page.locator('.top').evaluate(n=>getComputedStyle(n).position),'static');
+        assert.equal(await page.locator('.top').evaluate(n=>getComputedStyle(n).position),'sticky');
         // The timestamp wraps onto its own line on phones.
         if(width<768) assert(header.height<240,`compact phone header ${width} ${hash}: ${header.height}px`);
         if(hash==='#/p/omi') {

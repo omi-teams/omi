@@ -260,7 +260,6 @@ td.name,td.barc{white-space:normal}td.num,th.num{text-align:right}
 }
 
 /* TASK-127: approved inbox desktop rows and single-column phone layout. */
-.top{position:static}
 #inbox-link{display:inline-flex;align-items:center;gap:8px;min-height:44px}
 #inbox-count{border-radius:5px;padding:3px 8px;background:var(--po-bg);color:var(--po-fg);font-weight:600}
 .inbox-intro{max-width:65ch;margin:0}
