@@ -225,6 +225,10 @@ def test_plans():
 
 
 def test_post_run_structure_check():
+    sh = shutil.which("sh") or next((c for c in (r"C:\Program Files\Git\bin\sh.exe", r"C:\Program Files (x86)\Git\bin\sh.exe") if Path(c).is_file()), None)
+    if sh is None:
+        print("SKIP test_post_run_structure_check: no sh on PATH or in Git for Windows")
+        return
     hook = omi.setup.upgrade.template_map()[".omi/hooks/post-run.sh"]
     with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as b:
         root, bin_ = Path(d).resolve(), Path(b)
@@ -233,7 +237,7 @@ def test_post_run_structure_check():
         (bin_ / "omi" / "__main__.py").write_text(
             "import os, sys\nopen(os.environ['CALLS'], 'a').write(' '.join(sys.argv[1:]) + '\\n')\nsys.exit(int(os.environ['RC']))\n", encoding="utf-8")
         env = dict(os.environ, OMI_PROJECT_STATE=str(root), PYTHONPATH=str(bin_), CALLS=str(root / "calls"), RC="0")
-        run = lambda: subprocess.run(["sh", str(hook)], cwd=root, env=env, capture_output=True, text=True)
+        run = lambda: subprocess.run([sh, str(hook)], cwd=root, env=env, capture_output=True, text=True)
         assert run().returncode == 0 and not (root / "calls").exists()  # no map: no check
         (root / ".omi").mkdir()
         (root / ".omi" / "structure.md").write_text("---\nid: structure\n---\n", encoding="utf-8")
