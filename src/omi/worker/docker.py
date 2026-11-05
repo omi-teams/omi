@@ -38,7 +38,7 @@ def network_allow(root):
     return list(allow)
 
 
-CHATGPT_HOSTS = ["chatgpt.com"]  # codex with a ChatGPT login talks to this besides api.openai.com
+CHATGPT_HOSTS = ["chatgpt.com", "auth.openai.com"]  # codex with a ChatGPT login talks to this besides api.openai.com
 
 
 def allow_for(root, *tools, chatgpt=False):

@@ -317,8 +317,10 @@ def test_codex_chatgpt_login():
         # allowlist: chatgpt.com only in ChatGPT mode
         with tempfile.TemporaryDirectory() as d:
             assert "chatgpt.com" not in omi.worker.docker.allow_for(Path(d), "codex")
-            assert omi.worker.docker.allow_for(Path(d), "codex", chatgpt=True)[-2:] == ["api.openai.com", "chatgpt.com"]
+            assert omi.worker.docker.allow_for(Path(d), "codex", chatgpt=True)[-3:] == ["api.openai.com", "chatgpt.com", "auth.openai.com"]
             assert "chatgpt.com" not in omi.worker.docker.allow_for(Path(d), "claude", chatgpt=True)
+            assert "auth.openai.com" not in omi.worker.docker.allow_for(Path(d), "claude", chatgpt=True)
+            assert "auth.openai.com" not in omi.worker.docker.allow_for(Path(d), "codex")
     finally:
         omi.common.core.WINDOWS = real
         auth.unlink(missing_ok=True)
@@ -396,7 +398,7 @@ def test_codex_chatgpt_run():
             tmpfs = [argv[n + 1] for n, arg in enumerate(argv) if arg == "--tmpfs"]
             assert any(m.startswith("/home/node:rw,noexec,nosuid,") for m in tmpfs)
             assert "HOME=/home/node" in env_args and "--read-only" in argv
-            assert allowed == [[*omi.worker.docker.DEFAULT_ALLOW, "api.openai.com", "chatgpt.com"]]
+            assert allowed == [[*omi.worker.docker.DEFAULT_ALLOW, "api.openai.com", "chatgpt.com", "auth.openai.com"]]
             assert not any(secret in repr(calls) for secret in ("CLAUDE-SECRET", "REAL-REFRESH"))
             for path in wt.rglob("*"):
                 if path.is_file():
