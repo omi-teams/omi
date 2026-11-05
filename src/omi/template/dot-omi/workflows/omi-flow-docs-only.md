@@ -3,8 +3,8 @@ id: omi-flow-docs-only
 summary: Documentation-only change: docs-writer, reviewer, then automatic accept (CI still runs). Use only when every changed path is under docs/**, .omi/tasks/** or is .omi/decisions.md; any other path needs feature.
 steps:
 - id: plan | role: coordinator | skills: omi-skill-task-brief | input: PO request | output: task file whose scope lists only docs/**, .omi/tasks/** or .omi/decisions.md | gate: none | stop: task file complete and PO picked it
-- id: write | role: omi-agent-docs-writer | skills: | input: task file, worktree | output: docs diff inside scope, Checkpoint updated | gate: none | stop: every criterion met; no path outside the allowed list changed
-- id: review | role: omi-agent-reviewer | skills: | input: task file, diff | output: VERDICT PASS or FAIL | gate: review | stop: VERDICT PASS
+- id: write | role: omi-agent-docs-writer | skills: omi-skill-verify-evidence | input: task file, worktree | output: docs diff inside scope, Checkpoint updated | gate: none | stop: every criterion met; no path outside the allowed list changed
+- id: review | role: omi-agent-reviewer | skills: omi-skill-verify-evidence | input: task file, diff | output: VERDICT PASS or FAIL | gate: review | stop: VERDICT PASS
 - id: accept | role: coordinator | skills: | input: PASS verdict, diff summary, CI result | output: `Auto accept: review PASS` line in ## Steps | gate: auto | stop: every review-type step passed or an explicit PO approval line
 ---
 # Docs only

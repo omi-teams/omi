@@ -5,7 +5,7 @@ steps:
 - id: plan | role: coordinator | skills: omi-skill-task-brief | input: PO request | output: task file with the structural goal, a tight scope and the behaviour that must not change | gate: none | stop: task file complete and PO picked it
 - id: baseline | role: omi-agent-engineer | skills: omi-skill-lean-implementation | input: task file, worktree | output: test result before any change, missing characterization tests added, Checkpoint updated | gate: none | stop: tests green before the refactor; if red, stop and report
 - id: refactor | role: omi-agent-engineer | skills: omi-skill-lean-implementation | input: task file, green baseline | output: diff inside scope, tests green after, no test edited to pass | gate: none | stop: tests green and behaviour unchanged; scope not grown
-- id: review | role: omi-agent-reviewer | skills: omi-skill-simplify-review | input: task file, diff | output: VERDICT PASS or FAIL | gate: review | stop: VERDICT PASS
+- id: review | role: omi-agent-reviewer | skills: omi-skill-simplify-review, omi-skill-verify-evidence | input: task file, diff | output: VERDICT PASS or FAIL | gate: review | stop: VERDICT PASS
 - id: accept | role: coordinator | skills: | input: PASS verdict, diff summary | output: `Auto accept: review PASS` line in ## Steps | gate: auto | stop: every review-type step passed or an explicit PO approval line
 ---
 # Refactor

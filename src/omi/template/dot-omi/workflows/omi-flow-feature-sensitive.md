@@ -5,8 +5,8 @@ steps:
 - id: plan | role: coordinator | skills: omi-skill-task-brief | input: PO idea | output: task file with scope and acceptance criteria | gate: none | stop: task file complete and PO picked it
 - id: architect | role: omi-agent-architect | skills: | input: task file | output: options and one recommendation in the task file | gate: none | stop: recommendation recorded and trust boundaries named
 - id: build | role: omi-agent-engineer | skills: omi-skill-lean-implementation | input: task file with recommendation | output: diff, tests passing, Checkpoint updated | gate: none | stop: every criterion has a passing test
-- id: review | role: omi-agent-reviewer | skills: | input: task file, diff | output: VERDICT PASS or FAIL | gate: review | stop: VERDICT PASS
-- id: security | role: omi-agent-security-reviewer | skills: omi-skill-diff-security-review, omi-skill-ci-workflow-audit | input: task file, diff | output: findings with location and how verified, VERDICT | gate: review | stop: VERDICT PASS
+- id: review | role: omi-agent-reviewer | skills: omi-skill-verify-evidence, omi-skill-simplify-review | input: task file, diff | output: VERDICT PASS or FAIL | gate: review | stop: VERDICT PASS
+- id: security | role: omi-agent-security-reviewer | skills: omi-skill-diff-security-review, omi-skill-ci-workflow-audit, omi-skill-verify-evidence, omi-skill-simplify-review | input: task file, diff | output: findings with location and how verified, VERDICT | gate: review | stop: VERDICT PASS
 - id: accept | role: coordinator | skills: | input: both PASS verdicts | output: `Auto accept: review PASS` line in ## Steps | gate: auto | stop: every review-type step passed or an explicit PO approval line
 ---
 # Feature, sensitive

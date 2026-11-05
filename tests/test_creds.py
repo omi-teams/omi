@@ -483,6 +483,8 @@ def test_subprocess_text_encoding():
     with tempfile.TemporaryDirectory() as d:
         wt = Path(d).resolve()
         (wt / ".git").write_text("gitdir: /x")
+        shutil.copytree(omi.common.core.TEMPLATE / "dot-omi" / "skills", wt / ".omi" / "skills")
+        omi.project.catalogs.skills_catalog(wt)
         task = wt / ".omi" / "tasks" / "TASK-001.md"
         task.parent.mkdir(parents=True)
         task.write_text("---\nid: TASK-001\nscope: src/**\n---\n## Goal\n- [ ] x\n", encoding="utf-8")

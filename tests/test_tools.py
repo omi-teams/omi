@@ -35,6 +35,8 @@ def test_tool_choice_and_quota_switch():
         wt = Path(d).resolve()
         (wt / ".git").write_text("gitdir: /x")
         (wt / ".omi").mkdir()
+        shutil.copytree(omi.common.core.TEMPLATE / "dot-omi" / "skills", wt / ".omi" / "skills")
+        omi.project.catalogs.skills_catalog(wt)
         (wt / ".omi" / "config.json").write_text('{"codex_models": {"sonnet": "gpt-x"}}')
         task = wt / ".omi" / "tasks" / "TASK-001.md"
         task.parent.mkdir()

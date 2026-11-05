@@ -544,6 +544,44 @@ def test_ui_mockup_workflow() -> None:
             "- [ ] pages match the mockup with designer/UI review PASS in `.omi/tasks/TASK-122-mockup/`"]
 
 
+def test_review_steps_have_skills() -> None:
+    root = omi.common.core.TEMPLATE / "dot-omi" / "workflows"
+    for path in sorted(root.glob("omi-flow-*.md")):
+        steps = omi.project.workflows.workflow_steps(path.read_text(encoding="utf-8"))
+        for step in steps:
+            if step.get("gate") != "review":
+                continue
+            skills = omi.project.catalogs.task_skills(step)
+            label = f"{path.stem}:{step['id']}"
+            assert "omi-skill-verify-evidence" in skills, label
+            if path.stem != "omi-flow-docs-only":
+                assert "omi-skill-simplify-review" in skills, label
+
+
+def test_bugfix_steps_have_root_cause_skill() -> None:
+    path = omi.common.core.TEMPLATE / "dot-omi" / "workflows" / "omi-flow-bugfix.md"
+    steps = {step["id"]: step for step in omi.project.workflows.workflow_steps(path.read_text(encoding="utf-8"))}
+    for name in ("reproduce", "fix"):
+        assert "omi-skill-debug-root-cause" in omi.project.catalogs.task_skills(steps[name]), name
+
+
+def test_docs_writer_steps_have_skills() -> None:
+    root = omi.common.core.TEMPLATE / "dot-omi" / "workflows"
+    for path in sorted(root.glob("omi-flow-*.md")):
+        for step in omi.project.workflows.workflow_steps(path.read_text(encoding="utf-8")):
+            if step.get("role") == "omi-agent-docs-writer":
+                assert "omi-skill-verify-evidence" in omi.project.catalogs.task_skills(step), f"{path.stem}:{step['id']}"
+
+
+def test_review_and_docs_role_default_skills() -> None:
+    root = omi.common.core.TEMPLATE / "dot-omi" / "agents"
+    for name, expected in (
+        ("omi-agent-reviewer", ["omi-skill-verify-evidence", "omi-skill-simplify-review"]),
+        ("omi-agent-docs-writer", ["omi-skill-verify-evidence"]),
+    ):
+        assert omi.project.catalogs.task_skills(omi.common.core.meta(root / f"{name}.md")) == expected, name
+
+
 def test_only_merge_workflows_have_po_gate() -> None:
     root = omi.common.core.TEMPLATE / "dot-omi" / "workflows"
     with_po = {f.stem: [s["id"] for s in omi.project.workflows.workflow_steps(f.read_text(encoding="utf-8")) if s.get("gate") == "po"]
@@ -651,6 +689,10 @@ def main():
     test_ui_mockup_workflow()
     test_issue_types_skill()
     test_ui_mockup_generated_catalogs()
+    test_review_steps_have_skills()
+    test_bugfix_steps_have_root_cause_skill()
+    test_docs_writer_steps_have_skills()
+    test_review_and_docs_role_default_skills()
     test_only_merge_workflows_have_po_gate()
     test_every_auto_gate_follows_a_review_gate()
     test_skills()

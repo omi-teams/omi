@@ -420,6 +420,8 @@ def test_session_resume():
     with tempfile.TemporaryDirectory() as d:
         wt = Path(d).resolve()
         (wt / ".git").write_text("gitdir: /x")
+        shutil.copytree(omi.common.core.TEMPLATE / "dot-omi" / "skills", wt / ".omi" / "skills")
+        omi.project.catalogs.skills_catalog(wt)
         task = wt / ".omi" / "tasks" / "TASK-001.md"
         task.parent.mkdir(parents=True)
         task.write_text("---\nid: TASK-001\nscope: src/**\nrole: omi-agent-engineer\n---\n## Checkpoint\nDone:\n\n## Usage\n", encoding="utf-8")
