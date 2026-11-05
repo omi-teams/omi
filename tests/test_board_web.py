@@ -16,7 +16,12 @@ import helpers  # noqa: F401
 
 ROOT = Path(__file__).resolve().parent.parent
 WEB = ROOT / "src" / "omi" / "board" / "web"
-FILES = ("index.html", "app.css", "app.js", "favicon.svg")
+SCRIPTS = ("dom.js", "tree.js", "dashboard.js", "task.js", "inbox.js", "graph.js", "app.js")
+FILES = ("index.html", "app.css", *SCRIPTS, "favicon.svg")
+
+
+def app_js() -> str:
+    return "\n".join((WEB / name).read_text(encoding="utf-8") for name in SCRIPTS)
 AXE = ROOT / "tests" / "board_screens" / "vendor" / "axe-core-4.11.0"
 
 
@@ -61,10 +66,10 @@ def test_vendored_axe() -> None:
 
 
 def test_files_safe() -> None:
-    for name in FILES[:3]:
+    for name in ("index.html", "app.css", *SCRIPTS):
         text = (WEB / name).read_text(encoding="utf-8")
         assert not re.search(r"https?://|//cdn|@import|@font-face", text), name
-    js = (WEB / "app.js").read_text(encoding="utf-8")
+    js = app_js()
     assert not re.search(r"innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(", js)
     html = (WEB / "index.html").read_text(encoding="utf-8")
     assert 'lang="vi"' in html and 'name="viewport"' in html
@@ -105,10 +110,13 @@ def test_wheel_ships_web() -> None:
 
 
 def test_app_js_behaviors() -> None:
-    js = (WEB / "app.js").read_text(encoding="utf-8")
+    js = app_js()
     for needle in ("Thử lại", "Cập nhật lần cuối", "document.hidden", "pollVersion"):
         assert needle in js, needle
     html = (WEB / "index.html").read_text(encoding="utf-8")
+    assert re.findall(r'<script src="([^"]+)"', html) == list(SCRIPTS)
+    for name in SCRIPTS:
+        assert len((WEB / name).read_text(encoding="utf-8").splitlines()) < 600, name
     assert 'role="status"' in html and 'id="refresh"' in html and "Làm mới" in html
     for removed in ("auto-refresh", "countdown", "30000", "Làm mới sau"):
         assert removed not in js + html + (WEB / "app.css").read_text(encoding="utf-8"), removed
@@ -157,7 +165,7 @@ def test_semantic_palette_and_approved_mockups() -> None:
                       "milestone", "epic", "fr", "nfr", "task", "bug", "security", "incident", "change", "spike", "chore"):
             low, high = sorted(luminance(pairs[f"{token}-{suffix}"]) for suffix in ("fg", "bg"))
             assert (high + .05) / (low + .05) >= 4.5, token
-    js = (ROOT / "src/omi/board/web/app.js").read_text(encoding="utf-8")
+    js = app_js()
     for label in ("Bug", "Security", "Incident", "Change", "Spike", "Chore"):
         assert f'{label.lower()}: "{label}"' in js and f".chip.{label.lower()}{{" in css, label
     mockups = ROOT / ".omi/tasks/TASK-125-mockup"
@@ -177,7 +185,7 @@ def test_runtime() -> None:
     if not node:
         print("skip test_runtime: node missing (DOM behavior unverified)")
         return
-    run = run_node(node, RUNTIME_TEST, str(WEB / "app.js"))
+    run = run_node(node, RUNTIME_TEST, str(WEB), *SCRIPTS)
     assert run.returncode == 0, run.stdout + run.stderr
     print(run.stdout.strip())
 
@@ -305,6 +313,7 @@ RUNTIME_TEST = r"""
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const fs = require('node:fs');
+const path = require('node:path');
 class Element {
   constructor(tag) { this.tagName = tag; this.children = []; this.attrs = {}; this.listeners = {}; this.checked = true; this.text = ''; this.style = {}; }
   scrollIntoView() { this.scrolled = true; }
@@ -352,8 +361,7 @@ async function fetch(path,opts) {
 const context=vm.createContext({document,window,location,fetch,console,Date:Clock,AbortController,
   setTimeout:(f,ms)=>{const t={f,ms};timeouts.push(t);return t;},clearTimeout:t=>{timeouts=timeouts.filter(x=>x!==t);},
   setInterval:(f,ms)=>{interval=f;intervalMs=ms;return 1;},clearInterval:()=>{interval=null;}});
-const source=fs.readFileSync(process.argv[1],'utf8');
-vm.runInContext(source,context);
+for(const name of process.argv.slice(2)) vm.runInContext(fs.readFileSync(path.join(process.argv[1],name),'utf8'),context,{filename:name});
 const invoke=code=>vm.runInContext(code,context);
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 async function advance(polls) {
@@ -921,9 +929,9 @@ catch(e) {
         return route.fulfill({json:data});
       }
       const name=url.pathname==='/'?'index.html':url.pathname.slice(1);
-      const types={'index.html':'text/html','app.css':'text/css','app.js':'application/javascript','favicon.svg':'image/svg+xml'};
-      assert(types[name],name);
-      await route.fulfill({body:fs.readFileSync(path.join(process.argv[1],name)),contentType:types[name],
+      const types={'.html':'text/html','.css':'text/css','.js':'application/javascript','.svg':'image/svg+xml'};
+      assert(types[path.extname(name)],name);
+      await route.fulfill({body:fs.readFileSync(path.join(process.argv[1],name)),contentType:types[path.extname(name)],
         headers:{'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'"}});
     });
     for(const width of [320,360,390,768,1280]) {
