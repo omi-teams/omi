@@ -6,9 +6,11 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
-from helpers import omi, detached_cli, detached_project, git
+from helpers import omi, detached_cli, detached_project, git, state_remote
 
 
 def test_detached_resolution():
@@ -127,6 +129,128 @@ def test_detached_commit_twice_and_failure_message():
                 raise AssertionError("expected StateError")
             except omi.state.resolve.StateError as exc:
                 assert "OUT-TEXT" in str(exc) and "ERR-TEXT" in str(exc)
+
+
+def test_state_git_uses_c_locale():
+    """Keep rejection diagnostics English even when the caller uses another locale."""
+    inherited = {"LC_ALL": "fr_FR.UTF-8", "LANG": "fr_FR.UTF-8", "OMI_STATE_LOCALE_TEST": "preserved"}
+    result = subprocess.CompletedProcess([], 0, "", "")
+    with patch.dict(os.environ, inherited), patch("omi.state.sync.subprocess.run", return_value=result) as run:
+        assert omi.state.sync.git(Path("state"), "push") is result
+        child_env = run.call_args.kwargs["env"]
+        assert child_env == {**os.environ, "LC_ALL": "C"}
+        assert all(os.environ[key] == value for key, value in inherited.items())
+
+
+def test_state_push_remote_advanced():
+    """Preserve real rejection stderr and rebase a competing remote commit."""
+    with detached_project() as (code, project, wt, task):
+        home, remote, other = state_remote(project)
+        (other / "peer.txt").write_text("peer", encoding="utf-8")
+        git(other, "add", ".")
+        git(other, "commit", "-qm", "peer update")
+        git(other, "push", "-q")
+        task.write_text(task.read_text(encoding="utf-8") + "local update\n", encoding="utf-8")
+        found = omi.state.resolve.resolve(wt)
+        omi.state.sync.commit(found, [task.relative_to(home).as_posix()], "local update")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            assert omi.state.sync.push(found), output.getvalue()
+        assert "[rejected]" in output.getvalue(), output.getvalue()
+        assert "STATE NOT PUSHED" not in output.getvalue()
+        assert (home / "peer.txt").read_text(encoding="utf-8") == "peer"
+        assert omi.common.core.git(home, "rev-parse", "HEAD") == omi.common.core.git(remote, "rev-parse", "refs/heads/main")
+
+
+def test_state_push_transport_retry():
+    for mode in ("transient", "exception", "exhausted", "warning", "accepted"):
+        with detached_project() as (code, project, wt, task):
+            state_remote(project)
+            task.write_text(task.read_text(encoding="utf-8") + "transport update\n", encoding="utf-8")
+            found = omi.state.resolve.resolve(wt)
+            omi.state.sync.commit(found, [task.relative_to(project.parents[1]).as_posix()], "transport update")
+            real, calls = omi.state.sync.git, []
+            def transport(root, *args):
+                if args[0] in ("push", "pull"):
+                    calls.append(args[0])
+                if args[0] == "push":
+                    if mode == "exception" and len(calls) == 1:
+                        raise omi.state.resolve.StateError("transport timeout")
+                    if mode == "exhausted" or (mode == "transient" and len(calls) == 1):
+                        return subprocess.CompletedProcess(args, 1, "", "credential helper transport failure")
+                    if mode == "accepted" and len(calls) == 1:
+                        result = real(root, *args)
+                        assert result.returncode == 0
+                        return subprocess.CompletedProcess(args, 1, "", "transport acknowledgement lost")
+                    if mode == "warning":
+                        return subprocess.CompletedProcess(args, 0, "", "credential helper warning")
+                return real(root, *args)
+            output = io.StringIO()
+            with patch("omi.state.sync.git", transport), contextlib.redirect_stdout(output):
+                assert omi.state.sync.push(omi.state.resolve.resolve(wt)) == (mode != "exhausted")
+            assert "pull" not in calls
+            assert len(calls) == (1 if mode == "warning" else 3 if mode == "exhausted" else 2)
+            assert output.getvalue().count("STATE NOT PUSHED") == int(mode == "exhausted")
+            if mode != "warning":
+                error = ("transport timeout" if mode == "exception" else "transport acknowledgement lost"
+                         if mode == "accepted" else "credential helper transport failure")
+                assert error in output.getvalue()
+
+
+def test_state_commits_serialized():
+    """A second process waits for the first index writer, then commits its own path."""
+    with detached_project() as (code, project, wt, task):
+        home = project.parents[1]
+        git(home, "add", ".")
+        git(home, "commit", "-qm", "base")
+        first, second = home / "first.txt", home / "second.txt"
+        first.write_text("first", encoding="utf-8")
+        second.write_text("second", encoding="utf-8")
+        ready, release = home.parent / "ready", home.parent / "release"
+        script = """
+import sys, time
+from pathlib import Path
+from omi.state import sync, resolve
+root, project, ready, release = map(Path, sys.argv[1:])
+real = sync.git
+def paused(root, *args):
+    if args[0] == 'add':
+        ready.touch()
+        while not release.exists():
+            time.sleep(0.01)
+    return real(root, *args)
+sync.git = paused
+sync.commit(resolve.Project(project, root, True), ['first.txt'], 'first')
+"""
+        proc = subprocess.Popen([sys.executable, "-c", script, str(home), str(project), str(ready), str(release)],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8")
+        try:
+            deadline = time.monotonic() + 10
+            while not ready.exists() and proc.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert ready.exists(), "first writer did not start"
+            entered = []
+            real = omi.state.sync.git
+            def observe(root, *args):
+                if args[0] == "add":
+                    entered.append(True)
+                return real(root, *args)
+            with ThreadPoolExecutor() as pool, patch("omi.state.sync.git", observe):
+                future = pool.submit(omi.state.sync.commit, omi.state.resolve.resolve(wt), ["second.txt"], "second")
+                try:
+                    time.sleep(0.15)
+                    assert not entered, "second writer entered the index while first writer held the lock"
+                finally:
+                    release.touch()
+                future.result(timeout=10)
+            out, err = proc.communicate(timeout=10)
+            assert proc.returncode == 0, (out, err)
+            assert omi.common.core.git(home, "status", "--porcelain") == ""
+        finally:
+            release.touch()
+            if proc.poll() is None:
+                proc.kill()
+            proc.communicate()
 
 
 def test_detached_project_commands():
@@ -320,6 +444,10 @@ def test_user_session_start():
 
 
 def main():
+    test_state_git_uses_c_locale()
+    test_state_push_remote_advanced()
+    test_state_push_transport_retry()
+    test_state_commits_serialized()
     test_project_state_env()
     test_user_session_start()
     test_detached_resolution()
