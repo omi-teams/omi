@@ -595,12 +595,21 @@ Từ 2026-10-27 đến 2026-11-03
   assert.equal(find(elements.view,'col-done')[0].attrs.open,undefined);assert.equal(find(elements.view,'col-planned').length,0);
   assert(tree.textContent.includes('tổng hợp'));
   assert.deepEqual(all(tree).filter(n=>n.tagName==='progress').map(n=>n.attrs.value),['1','1']);
+  assert(find(tree,'children').every(n=>n.children.length>0),'no empty children box');
+  const context=find(tree,'done-parent')[0];
+  assert(context.textContent.includes('FR-001') && context.textContent.includes(parent.frontmatter.title));
+  assert.equal(context.attrs.href,'#/p/omi/t/FR-001');
   const leaf2={...leaf,id:'TASK-002',parent:'FR-002'};
   const parent2={...parent,id:'FR-002',children:['TASK-002']};
   const epic2={...epic,children:['FR-001','FR-002']};
   const two=invoke(`taskTree('omi',${JSON.stringify([epic2,parent,parent2,leaf,leaf2])})`);
   const groups=all(two).filter(n=>n.tagName==='details'&&n.children[0].textContent.endsWith('task đã xong'));
   assert.equal(groups.length,1);assert.equal(groups[0].children[0].textContent,'2 task đã xong');assert.equal(groups[0].attrs.open,undefined);
+  assert.equal(find(two,'children').length,1);
+  assert.deepEqual(find(two,'done-parent').map(n=>n.attrs.href),['#/p/omi/t/FR-001','#/p/omi/t/FR-002']);
+  const standalone=invoke(`taskTree('omi',${JSON.stringify([{...leaf,parent:null},{...leaf2,parent:'FR-MISSING'}])})`);
+  assert.equal(find(standalone,'done-parent').length,1);
+  assert.equal(find(standalone,'done-parent')[0].textContent,'Cha: FR-MISSING');
   const branch=all(tree).find(n=>n.tagName==='details');
   branch.open=false;branch.listeners.toggle();
   data={...data,decisions:[]};await invoke('route()');
@@ -904,6 +913,10 @@ catch(e) {
       partial:{...base,has_prices:true,totals:row({tokens:600,cost:null})}};
     let costMode='priced';
     let infoMode=false;
+    let doneTreeMode=false;
+    const doneLeaf={...detail,id:'TASK-DONE',parent:'FR-DONE',status:'done',frontmatter:{...frontmatter,title:'Completed child',status:'done'}};
+    const doneParent={...detail,id:'FR-DONE',type:'fr',status:'done',children:['TASK-DONE'],frontmatter:{...frontmatter,title:'Parent context <safe>',status:'done'}};
+    const doneTree={...dashboard,kanban:{done:[doneParent,doneLeaf]}};
     const fullInfo={...workflowDetail,frontmatter:{...frontmatter,id:'TASK-115',type:'task',parent:'FR-001',role:'engineer',tool:'codex',
       scope:'[src/omi/board/data.py, tests/test_board_web.py]',skills:'omi-skill-web-qa, omi-skill-lean-implementation',
       refs:'[guide, patterns/adapter]',files:'src/main.py, tests/test.py',source_project:'omi',behind:'0',step_settings:'build=codex/model/medium',pr:'42',pr_url:'https:'+'//example.org/pull/42',custom:'custom value'},
@@ -947,7 +960,7 @@ catch(e) {
         if(timelineMode==='loading'&&url.pathname.endsWith('/tasks/TASK-115')) await timelineHold;
         if(url.pathname==='/api/projects/omi/graph') return route.fulfill({json:graphFixture[graphMode]});
         if(url.pathname==='/api/projects/omi/cost') return route.fulfill({json:{...costFixture[costMode],source:remoteSource}});
-        const data=url.pathname.endsWith('/version')?{sha:remoteSource.sha}:url.pathname.endsWith('/tasks/TASK-115')?(infoMode?fullInfo:timelineMode&&timelineFixture[timelineMode]||workflowDetail):url.pathname==='/api/projects/omi'?(infoMode?infoProject:alertsOn?{...hierarchy,alerts:alertFixture.slice(0,alertsOn)}:hierarchy):{projects:[summary],source:remoteSource,inbox:inboxFixture};
+        const data=url.pathname.endsWith('/version')?{sha:remoteSource.sha}:url.pathname.endsWith('/tasks/TASK-115')?(infoMode?fullInfo:timelineMode&&timelineFixture[timelineMode]||workflowDetail):url.pathname==='/api/projects/omi'?(doneTreeMode?doneTree:infoMode?infoProject:alertsOn?{...hierarchy,alerts:alertFixture.slice(0,alertsOn)}:hierarchy):{projects:[summary],source:remoteSource,inbox:inboxFixture};
         return route.fulfill({json:data});
       }
       const name=url.pathname==='/'?'index.html':url.pathname.slice(1);
@@ -1088,6 +1101,29 @@ catch(e) {
     await page.goto('http://omi.test/#/');
     await page.evaluate(()=>localStorage.removeItem('omi-board-sidebar'));
     console.log('ok: sidebar links, keyboard, persistence, disabled storage, mobile overlay and 320px overflow');
+    doneTreeMode=true;
+    for(const width of [375,1280]) {
+      await page.setViewportSize({width,height:900});
+      await page.goto(`http://omi.test/?done-tree=${width}#/p/omi`);
+      await page.locator('.done-leaves').waitFor();
+      // Opening the all-done parent must not expose an empty bordered children box.
+      await page.locator('.tree details').first().locator(':scope > summary').click();
+      assert.equal(await page.locator('.tree .children:empty').count(),0);
+      const done=page.locator('.done-leaves');
+      await done.locator(':scope > summary').focus();await page.keyboard.press('Enter');
+      const context=done.locator('.done-parent');
+      assert.equal(await context.innerText(),'Cha: FR-DONE · Parent context <safe>');
+      assert.equal(await context.getAttribute('href'),'#/p/omi/t/FR-DONE');
+      assert.equal(await done.locator('img,script').count(),0);
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+      for(const scheme of ['light','dark']) {
+        await page.emulateMedia({colorScheme:scheme});
+        await page.evaluate(axeSource);await audit(`done tree ${width} ${scheme}`);
+        if(screens) await page.screenshot({path:path.join(screens,`done-tree-${width}-${scheme}.png`),fullPage:true});
+      }
+      await page.emulateMedia({colorScheme:'light'});
+    }
+    doneTreeMode=false;
     // Exercise every main route, including short fixtures that need extra content
     // to make document scrolling possible at both viewport sizes.
     const headerFailures=[];

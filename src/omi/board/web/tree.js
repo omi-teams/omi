@@ -26,12 +26,13 @@ function taskTree(name, items, matches = null) {
     const badges = [typeChip(t), el("span", t.id, {class: "mono"}), statusChip(t, !!t.children?.length),
       ...(matches && !matches.has(t.id) ? [el("span", "Ngữ cảnh; không khớp bộ lọc", {class: "context-label small muted"})] : [])];
     if (!kids.length) return box("leaf", [box("chips", badges), link(t.frontmatter.title || t.id, taskHref(name, t.id))]);
+    const visibleKids = kids.filter(k => !isDoneLeaf(k));
     const done = kids.filter(k => statusOf(k) === "done").length;
     const bar = progress(done, kids.length);
     bar.setAttribute("aria-label", `${t.id}: ${done}/${kids.length} con trực tiếp đã xong`);
     return disclosure(`tree:${t.id}`, el("summary", null, {}, [box("chips", badges), el("span", t.frontmatter.title || "—"),
       box("progress-row", [bar, el("span", `${done}/${kids.length}`, {class: "small"})])]),
-      [box("children", kids.filter(k => !isDoneLeaf(k)).map(k => node(k, path)))],
+      visibleKids.length ? [box("children", visibleKids.map(k => node(k, path)))] : [],
       !["done", "blocked"].includes(statusOf(t)), "", !!matches);
   }
   // Every done leaf joins one closed group after the tree; its state lives in `disclosures`.
@@ -40,7 +41,15 @@ function taskTree(name, items, matches = null) {
   const finished = items.filter(isDoneLeaf);
   const rows = roots.filter(t => !isDoneLeaf(t)).map(t => node(t));
   return box("tree", roots.length ? [...rows, ...(finished.length ? [disclosure("tree-done", el("summary", `${num(finished.length)} task đã xong`),
-    finished.map(k => node(k)), false, "done-leaves", !!matches)] : [])] : [empty("Chưa có task. Các task sẽ xuất hiện sau lần cập nhật dữ liệu kế tiếp.")]);
+    finished.map(k => {
+      const row = node(k);
+      if (k.parent) {
+        const parent = byId.get(k.parent);
+        row.append(link(`Cha: ${k.parent}${parent?.frontmatter.title ? " · " + parent.frontmatter.title : ""}`,
+          taskHref(name, k.parent), "done-parent small"));
+      }
+      return row;
+    }), false, "done-leaves", !!matches)] : [])] : [empty("Chưa có task. Các task sẽ xuất hiện sau lần cập nhật dữ liệu kế tiếp.")]);
 }
 function leafCounts(d) {
   const count = Object.fromEntries(Object.keys(STATUS).map(s => [s, 0]));

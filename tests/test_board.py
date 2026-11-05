@@ -898,6 +898,9 @@ custom: retain me
             return sorted(p for p in self.paths if p.parent == path and p.match(pattern))
     snap = Snapshot()
     detail = data._detail(snap, root, "TASK-001", content)
+    with patch("omi.board.data._criteria", wraps=data._criteria) as criteria:
+        data._detail(snap, root, "TASK-001", content)
+        criteria.assert_called_once_with(content, "Acceptance criteria")
     assert detail["frontmatter"]["custom"] == "retain me"
     assert detail["context"] == {"skills": {"role-skill": "role", "task-skill": "task", "step-skill": "step"},
                                  "rules": ["python"], "references": ["guide", "patterns/adapter"]}

@@ -126,8 +126,7 @@ def _detail(snap: source.Snapshot, root: Path, id: str, text: str) -> dict:
             "context": _context(snap, root, meta, definitions),
             "pr": {"number": meta.get("pr"), "url": meta.get("pr_url")},
             "goal": _section(text, "Goal"),
-            "criteria": [{"text": m[2], "checked": m[1].lower() == "x"}
-                         for m in re.finditer(r"^- \[([ xX])\] (.*)$", _section(text, "Acceptance criteria"), re.M)],
+            "criteria": _criteria(text, "Acceptance criteria"),
             "checkpoint": tasks.checkpoint(text), "steps": _section(text, "Steps"),
             "reports": _section(text, "Reports"), "usage": _usage(text),
             "runs": runs.parse_runs(_section(text, "Runs")),
