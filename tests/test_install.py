@@ -1,4 +1,5 @@
 import hashlib
+import os
 import io
 import json
 import contextlib
@@ -359,26 +360,6 @@ def test_install_user_accepts_template_equal_skill_and_status_warns():
         assert agents.read_text(encoding="utf-8") == "My rules\n"
 
 
-def main():
-    test_install_user_guard_fresh()
-    test_install_user_guard_existing_hooks()
-    test_install_user_guard_malformed_pretool()
-    test_install_user_recorded_interpreter()
-    test_install_user_legacy_manifest()
-    test_install_user_write_failure()
-    test_install_user_invalid_manifest_cli()
-    test_install_user()
-    test_install_user_removal_preserves_edits()
-    test_install_user_invalid_input()
-    test_install_user_existing_integration()
-    test_install_user_accepts_template_equal_skill_and_status_warns()
-
-
-if __name__ == "__main__":
-    main()
-
-
-
 def test_install_user_updates_released_template():
     with tempfile.TemporaryDirectory() as d, patch("pathlib.Path.home", return_value=Path(d)):
         home = Path(d)
@@ -439,3 +420,96 @@ def test_install_user_record_matches_files_after_failed_upgrade():
             with patch("omi.setup.install._skill_payloads", return_value=v2):
                 omi.setup.install.install_user()
             assert all((home / rel).read_bytes() == v2[rel] for rel in rels)
+
+
+def test_install_user_accepts_unreleased_task160_skill():
+    rel = ".claude/skills/omi-task/SKILL.md"
+    sha = "fc63de3755ac4cf4002c1e98bd6c712967e32df1f83cb7fd8686e43c0c248709"
+    assert sha in omi.setup.install.UNRELEASED_SKILL_SHAS[rel]
+    with tempfile.TemporaryDirectory() as d, patch("pathlib.Path.home", return_value=Path(d)):
+        home = Path(d)
+        old = b"stand-in for the TASK-160 bytes"  # The original bytes are not in this checkout.
+        with contextlib.redirect_stdout(io.StringIO()):
+            omi.setup.install.install_user()
+            current = (home / rel).read_bytes()
+            (home / rel).write_bytes(old)
+            record = json.loads((home / ".omi/install-user.json").read_text(encoding="utf-8"))
+            record["skills"][rel]["sha256"] = "0" * 64  # The drifted record of the report.
+            (home / ".omi/install-user.json").write_text(json.dumps(record), encoding="utf-8")
+            known = {rel: {omi.setup.upgrade.norm_sha(old)}}
+            with patch("omi.setup.install.UNRELEASED_SKILL_SHAS", known):
+                omi.setup.install.install_user()
+        assert (home / rel).read_bytes() == current
+
+
+def test_install_user_interrupted_skill_write_is_recoverable():
+    for window in ("before-replace", "before-manifest-update"):
+        with tempfile.TemporaryDirectory() as d, patch("pathlib.Path.home", return_value=Path(d)):
+            home = Path(d)
+            rels = list(omi.setup.install._skill_payloads())
+            v1 = {rel: b"v1 " + rel.encode() for rel in rels}
+            v2 = {rel: b"v2 " + rel.encode() for rel in rels}
+            with contextlib.redirect_stdout(io.StringIO()):
+                with patch("omi.setup.install._skill_payloads", return_value=v1):
+                    omi.setup.install.install_user()
+                manifest = home / ".omi/install-user.json"
+                first = home / rels[0]
+                replace, write = os.replace, omi.setup.install._write
+                seen = {"skill": False}
+
+                def failing_replace(src, dst):
+                    if Path(dst) == first:
+                        raise OSError("injected replace failure")
+                    replace(src, dst)
+
+                def failing_write(path, data):
+                    if seen["skill"] and path == manifest:
+                        raise OSError("injected manifest failure")
+                    write(path, data)
+                    seen["skill"] = seen["skill"] or path == first
+
+                patches = [patch("omi.setup.install._skill_payloads", return_value=v2)]
+                patches.append(patch("os.replace", side_effect=failing_replace) if window == "before-replace"
+                               else patch("omi.setup.install._write", side_effect=failing_write))
+                with patches[0], patches[1]:
+                    try:
+                        omi.setup.install.install_user()
+                    except OSError:
+                        pass
+                    else:
+                        raise AssertionError("failure was not injected")
+                assert not list(home.rglob("*.omi-tmp")), "temp file left behind"
+                assert (first.read_bytes() == v1[rels[0]]) == (window == "before-replace")
+                with patch("omi.setup.install._skill_payloads", return_value=v2):
+                    omi.setup.install.install_user()
+                assert all((home / rel).read_bytes() == v2[rel] for rel in rels)
+                record = json.loads(manifest.read_text(encoding="utf-8"))
+                assert all(item["sha256"] == hashlib.sha256(v2[rel]).hexdigest() and "pending" not in item
+                           for rel, item in record["skills"].items())
+
+
+def main():
+    test_install_user_guard_fresh()
+    test_install_user_guard_existing_hooks()
+    test_install_user_guard_malformed_pretool()
+    test_install_user_recorded_interpreter()
+    test_install_user_legacy_manifest()
+    test_install_user_write_failure()
+    test_install_user_invalid_manifest_cli()
+    test_install_user()
+    test_install_user_removal_preserves_edits()
+    test_install_user_invalid_input()
+    test_install_user_existing_integration()
+    test_install_user_accepts_template_equal_skill_and_status_warns()
+    test_install_user_updates_released_template()
+    test_install_user_accepts_unreleased_task160_skill()
+    test_install_user_record_matches_files_after_failed_upgrade()
+    test_install_user_interrupted_skill_write_is_recoverable()
+
+
+if __name__ == "__main__":
+    main()
+
+
+if __name__ == "__main__":
+    main()
