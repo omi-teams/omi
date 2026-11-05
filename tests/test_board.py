@@ -8,7 +8,7 @@ import time
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from unittest.mock import patch
 
 import helpers
@@ -893,7 +893,7 @@ custom: retain me
     class Snapshot:
         paths = {root / p for p in docs}
         def read(self, path):
-            return docs[str(path.relative_to(root))]
+            return docs[path.relative_to(root).as_posix()]
         def files(self, path, pattern):
             return sorted(p for p in self.paths if p.parent == path and p.match(pattern))
     snap = Snapshot()
@@ -911,6 +911,9 @@ custom: retain me
     plan = data._plans(snap, root, [detail])[0]
     assert plan["goal"] == "Plan goal"
     assert plan["criteria"] == [{"text": "shipped", "checked": True}, {"text": "pending", "checked": False}]
+    # Exercise Windows separators even when the host uses POSIX paths.
+    root = PureWindowsPath(root)
+    assert snap.read(root / ".omi/workflows/feature.md") == docs[".omi/workflows/feature.md"]
 
 
 def main():
