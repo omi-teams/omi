@@ -6,7 +6,7 @@ import re
 import sys
 from pathlib import Path
 
-from . import catalogs, structure, tree, workflows
+from . import catalogs, structure, tree, verdicts, workflows
 from ..common import core
 from ..state import resolve as state
 
@@ -25,14 +25,6 @@ def po_approved(text, sid):
     _, sep, rest = text.partition("\n## Steps\n")
     current = re.split(r"^- workflow (?:reopened|back to) .*", rest.split("\n## ", 1)[0], flags=re.M)[-1]
     return bool(sep) and re.search(rf"^(?:- )?PO approval {re.escape(sid)}: *\S", current, re.M) is not None
-
-
-def last_verdict(text, role):
-    """PASS or FAIL of the role's latest row in `## Usage`, else empty."""
-    rows = [[c.strip() for c in l.strip().strip("|").split("|")] for l in text.partition("\n## Usage")[2].split("\n## ", 1)[0].splitlines()
-            if l.startswith("|") and not l.startswith("|---") and not l.startswith("| role")]
-    last = [r[-1].split()[0] for r in rows if r[0] == role and r[-1][:4] in ("PASS", "FAIL")]
-    return last[-1] if last else ""
 
 
 REVIEW_ROLES = ("omi-agent-reviewer", "omi-agent-security-reviewer")
@@ -340,7 +332,8 @@ def step(root, tid, action, why=None, now=None, to=None, po=None):
             catalogs.warn_skills_empty(root, m)
         if cur == "plan":
             warn_sensitive(m)
-        text = add_step_log(set_front(text, "step", new["id"]), f"- {new['id']} started {stamp}")
+        mark = f" (verdicts: {len(verdicts.rows(text, new['role']))})" if new["gate"] == "review" else ""
+        text = add_step_log(set_front(text, "step", new["id"]), f"- {new['id']} started {stamp}{mark}")
         msg = (f"{tid}: step {new['id']} ({new['role']}, gate {new['gate']}): input {new['input']}; "
                f"output {new['output']}; stop when {new['stop']}")
     elif not cur:
@@ -376,7 +369,7 @@ def step(root, tid, action, why=None, now=None, to=None, po=None):
             sys.exit(f"{tid}: step {cur} is a po gate; tick the reviewed acceptance criteria first:\n"
                      + "\n".join(unticked(text)) + "\nNothing changed.")
         if steps[at]["gate"] == "review":
-            verdict = last_verdict(text, steps[at]["role"])
+            verdict = verdicts.last(text, steps[at]["role"], cur)
             if verdict != "PASS":
                 if not (po or "").strip():
                     sys.exit(f"{tid}: the last {steps[at]['role']} verdict is {verdict or 'missing'}; run `omi step {tid} back` "
@@ -385,7 +378,7 @@ def step(root, tid, action, why=None, now=None, to=None, po=None):
         if steps[at]["gate"] == "auto":
             gates = [s for s in steps[:at] if s["gate"] == "review"]
             if not po_approved(text, cur):  # an explicit PO approval line also passes
-                bad = next((g for g in gates if last_verdict(text, g["role"]) != "PASS"), None)
+                bad = next((g for g in gates if verdicts.last(text, g["role"]) != "PASS"), None)
                 if not gates or bad:
                     sys.exit(f"{tid}: step {cur} is an auto gate; it needs a {(bad or {'role': 'review'})['role']} verdict PASS. Nothing changed.")
                 text = add_step_log(text, "Auto accept: review PASS")

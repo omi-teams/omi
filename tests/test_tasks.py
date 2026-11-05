@@ -322,7 +322,10 @@ def test_step_approve_reopen():
                 else:
                     assert commits[-1] == (root, task, "chore(TASK-109): step build reopen")
                 refuses("reopen", "again", "running")
-                go("done"), go("next"), go("done"), go("next")
+                go("done"), go("next")
+                refuses("done", None, "verdict is missing")  # the PASS from before the reopen is stale
+                task.write_text(task.read_text(encoding="utf-8") + "| omi-agent-reviewer | PASS def5678 |\n", encoding="utf-8")
+                go("done"), go("next")
                 refuses("done", None, "po gate")
                 go("approve", "Approved after the CI fix"), go("done"), go("next")
                 assert omi.project.tasks.po_approved(task.read_text(encoding="utf-8"), "accept")
@@ -702,13 +705,24 @@ def test_workflows():
             task.write_text(task.read_text() + "\n## Usage\n| role | verdict |\n| omi-agent-reviewer | PASS abc1234 |\n")
             go("done")
             fails(lambda: go("back"), "already done")
+            # a PASS from an earlier round does not satisfy a restarted review (back)
+            task.write_text("---\nid: TASK-001\nworkflow: omi-flow-demo\nstep:\n---\n## Usage\n| role | verdict |\n| omi-agent-reviewer | PASS old |\n")
+            go("next"), go("done"), go("next"), go("done"), go("next")
+            assert front()["step"] == "review"
+            fails(lambda: go("done"), "verdict is missing")
+            task.write_text(task.read_text() + "| omi-agent-reviewer | PASS new |\n")
+            assert go("back") == 0 and front()["step"] == "build"  # a second review round starts after the PASS
+            go("done"), go("next")
+            fails(lambda: go("done"), "verdict is missing")
             # feature-sensitive: back from security skips the review step and lands on build
             sens = ("id: build | role: omi-agent-engineer | skills: | input: t | output: d | gate: none | stop: ok",
                     "id: review | role: omi-agent-reviewer | skills: | input: d | output: v | gate: review | stop: PASS",
                     "id: security | role: omi-agent-reviewer | skills: | input: d | output: v | gate: review | stop: PASS")
             flow("omi-flow-sens", *sens)
-            task.write_text("---\nid: TASK-001\nworkflow: omi-flow-sens\nstep:\n---\n## Usage\n| role | verdict |\n| omi-agent-reviewer | PASS abc1234 |\n")
-            go("next"), go("done"), go("next"), go("done"), go("next")
+            task.write_text("---\nid: TASK-001\nworkflow: omi-flow-sens\nstep:\n---\n## Usage\n| role | verdict |\n")
+            go("next"), go("done"), go("next")
+            omi.project.tasks.append_note(task, "Usage", "| omi-agent-reviewer | PASS abc1234 |")
+            go("done"), go("next")
             assert front()["step"] == "security" and go("back") == 0 and front()["step"] == "build"
             # task skills count for a write step only, never for a read-role step (security)
             tm = {"skills": "omi-skill-a, omi-skill-b"}
