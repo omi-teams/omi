@@ -50,6 +50,11 @@ def record_scope(task, now):
     tasks.append_note(task, "Checkpoint", "Run scope: " + ", ".join(now))
 
 
+def container_paths(text, detached):
+    """Prompt text with `/work/` catalog paths pointing at the read-only `/state` mount of a detached project."""
+    return text.replace("/work/", "/state/") if detached else text
+
+
 def skills_cell(ids, done):
     return f"{len(done)}/{len(ids)} {' '.join(done)}".strip() if ids else "-"
 
@@ -286,10 +291,10 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
     prompt_skills = catalogs.skill_prompt(catalog, declared) + catalogs.rule_prompt(catalog, rule_files) + catalogs.reference_prompt(catalog, ref_files)
     if project.detached:
         task_rel = "/state/" + task_rel
-        prompt_skills = prompt_skills.replace("/work/", "/state/")
+        prompt_skills = container_paths(prompt_skills, True)
         prompt_skills += ("\nDetached state: /state is read-only. Do not edit the task or catalogs. "
                           "Include checkpoint updates in your final report; the Coordinator records them.")
-    resume_skills = catalogs.skill_prompt(catalog, declared).replace("/work/", "/state/" if project.detached else "/work/")
+    resume_skills = container_paths(catalogs.skill_prompt(catalog, declared), project.detached)
     prompt_skills += "\nTests: " + test_prompt_line(wt, main)
     if problems:
         prompt_skills += "\nThe pre-review checks currently fail:\n" + "\n".join(problems)

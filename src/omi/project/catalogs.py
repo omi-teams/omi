@@ -149,7 +149,7 @@ def skill_prompt(root, files):
     if not files:
         return ""
     paths = "\n".join("/work/" + Path(f).relative_to(root).as_posix() for f in files)
-    return f"\nSkills (read only these, no other skill files):\n{paths}"
+    return f"\nSkills (read only these, no other skill files; open every one below before you start, your reads are counted):\n{paths}"
 
 
 RULE_LIMITS = {"tokens": 2000, "rule_tokens": 800}  # .omi/config.json "rule_limits" overrides (PO only)
