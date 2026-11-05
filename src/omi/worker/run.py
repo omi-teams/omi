@@ -18,7 +18,7 @@ import time
 import types
 from pathlib import Path
 
-from ..project import catalogs, scope, tasks, workflows
+from ..project import catalogs, runs, scope, tasks, workflows
 from ..common import core
 from . import creds, docker, hooks, pr, session, tools
 from ..state import resolve as state
@@ -243,7 +243,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
               f"if that step is finished run `omi step {task.stem} done` / `next` first")
     step_ids = catalogs.task_skills(cur) if cur and cur["role"] == role else []  # the current step's own skills
     own_ids = catalogs.task_skills(tm) if am["access"] == "write" else []  # task skills are for the implementer
-    ids = list(dict.fromkeys([*catalogs.task_skills(am), *own_ids, *step_ids]))
+    sources = runs.skill_sources(catalogs.task_skills(am), own_ids, step_ids)
+    ids = list(sources)
     declared = catalogs.check_skills(catalog, ids)  # role defaults count against the budget
     rule_files = catalogs.task_rules(catalog, scope.task_scope(wt, task.stem))
     ref_files = catalogs.task_references(catalog, tm)
@@ -361,6 +362,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             task.write_text(session.with_session(core.read_task(task), t, sid, role, seen), encoding="utf-8", newline="\n")
         tasks.record_usage(task, role, models[t] + (" (codex)" if t == "codex" else ""), efforts[t], nums,
                      time.monotonic() - t0, skills_cell(ids, done), verdict)
+        runs.record_run(task, role, t, models[t], efforts[t], cur["id"] if cur else None, sources, done,
+                        [Path(f).stem for f in rule_files], runs.ref_ids(catalog, ref_files))
         return r, result, done
 
     def stop_quota(why):

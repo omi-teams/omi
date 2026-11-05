@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ..common import core
-from ..project import tasks, tree, workflows
+from ..project import runs, tasks, tree, workflows
 from . import source, timeline
 
 
@@ -81,6 +81,7 @@ def _detail(snap: source.Snapshot, root: Path, id: str, text: str) -> dict:
                          for m in re.finditer(r"^- \[([ xX])\] (.*)$", _section(text, "Acceptance criteria"), re.M)],
             "checkpoint": tasks.checkpoint(text), "steps": _section(text, "Steps"),
             "reports": _section(text, "Reports"), "usage": _usage(text),
+            "runs": runs.parse_runs(_section(text, "Runs")),
             "timeline": timeline.build(_section(text, "Steps"), _section(text, "Reports"), _now()),
             "files": core.split(meta.get("files"))}
 
