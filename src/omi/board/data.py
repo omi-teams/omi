@@ -1,5 +1,6 @@
 """JSON-ready views of the fetched GitHub state snapshot."""
 
+from fnmatch import fnmatch
 import hashlib
 import json
 import re
@@ -8,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ..common import core
-from ..project import runs, tasks, tree, workflows
+from ..project import catalogs, runs, tasks, tree, workflows
 from . import source, timeline
 
 
@@ -65,6 +66,52 @@ def task(name: str, id: str) -> dict:
     return snap.response(_detail(snap, root, id, text))
 
 
+def _items(value: str | None) -> list[str]:
+    return core.split((value or "").strip().removeprefix("[").removesuffix("]"))
+
+
+def _criteria(text: str, heading: str) -> list[dict]:
+    return [{"text": m[2], "checked": m[1].lower() == "x"}
+            for m in re.finditer(r"^- \[([ xX])\] (.*)$", _section(text, heading), re.M)]
+
+
+def _context(snap: source.Snapshot, root: Path, meta: dict, definitions: list[dict]) -> dict:
+    scope = _items(meta.get("scope"))
+    scope += [str(p.relative_to(root)) for p in snap.paths if p.is_relative_to(root)
+              and any(fnmatch(str(p.relative_to(root)), g) for g in scope)]
+    rules = [p.stem for p in snap.files(root / ".omi/rules", "*.md") if p.name != "CATALOG.md"
+             and any(catalogs.rule_matches(g, scope) for g in _items(core.parse(snap.read(p)).get("applies")))]
+    role = root / ".omi/agents" / f"{meta.get('role') or 'omi-agent-engineer'}.md"
+    role_skills = _items(core.parse(snap.read(role)).get("skills")) if role in snap.paths else []
+    step = next((s for s in definitions if s["id"] == meta.get("step")), {})
+    return {"skills": runs.skill_sources(role_skills, _items(meta.get("skills")), _items(step.get("skills"))),
+            "rules": rules, "references": _items(meta.get("refs"))}
+
+
+def _catalogs(snap: source.Snapshot, root: Path, details: list[dict]) -> dict:
+    result = {k: [] for k in ("skills", "rules", "references", "patterns", "workflows")}
+    for kind in ("skills", "rules", "references", "workflows"):
+        path = root / ".omi" / kind / "CATALOG.md"
+        for line in (snap.read(path) if path in snap.paths else "").splitlines():
+            match = re.match(r"^- ([\w/-]+)(?=[: (])", line)
+            if not match:
+                continue
+            id = match[1]
+            group = "patterns" if id.startswith("patterns/") else kind
+            users = []
+            for t in details:
+                context = t["context"]
+                used = list(context["skills"]) if kind == "skills" else context.get(kind, [])
+                if kind == "workflows":
+                    used = [t["frontmatter"].get("workflow") or workflows.DEFAULT_WORKFLOW]
+                for run in t["runs"]:
+                    used = [*used, *([s["id"] for s in run["skills"]] if kind == "skills" else run.get(kind, []))]
+                if id in used:
+                    users.append(t["id"])
+            result[group].append({"id": id, "text": line[2:], "tasks": users})
+    return result
+
+
 def _detail(snap: source.Snapshot, root: Path, id: str, text: str) -> dict:
     meta = {k: v for k, v in core.parse(text).items() if k != "_text"}
     wid = _name(meta.get("workflow") or workflows.DEFAULT_WORKFLOW)
@@ -76,6 +123,8 @@ def _detail(snap: source.Snapshot, root: Path, id: str, text: str) -> dict:
             "phase": {"key": ph["key"], "label": ph["label"]}, "step_index": ph["step_index"],
             "step_count": ph["step_count"], "review_round": ph["review_round"],
             "current_step": meta.get("step") or None,
+            "context": _context(snap, root, meta, definitions),
+            "pr": {"number": meta.get("pr"), "url": meta.get("pr_url")},
             "goal": _section(text, "Goal"),
             "criteria": [{"text": m[2], "checked": m[1].lower() == "x"}
                          for m in re.finditer(r"^- \[([ xX])\] (.*)$", _section(text, "Acceptance criteria"), re.M)],
@@ -83,7 +132,7 @@ def _detail(snap: source.Snapshot, root: Path, id: str, text: str) -> dict:
             "reports": _section(text, "Reports"), "usage": _usage(text),
             "runs": runs.parse_runs(_section(text, "Runs")),
             "timeline": timeline.build(_section(text, "Steps"), _section(text, "Reports"), _now()),
-            "files": core.split(meta.get("files"))}
+            "files": _items(meta.get("files"))}
 
 
 def _inbox(t: dict) -> list[dict]:
@@ -152,12 +201,14 @@ def _plans(snap: source.Snapshot, root: Path, details: list[dict]) -> list[dict]
     for path in snap.files(root / ".omi" / "plans", "*.md"):
         if path.name == "CATALOG.md":
             continue
-        meta = core.parse(snap.read(path))
+        text = snap.read(path)
+        meta = core.parse(text)
         if meta.get("id") != path.stem or not meta.get("title") or meta.get("status") not in ("active", "done"):
             continue
         members = [t for t in details if t["frontmatter"].get("plan") == path.stem]
         result.append({k: v for k, v in meta.items() if k != "_text"} |
-                      {"id": path.stem, "status": tasks.plan_status(meta["status"], [t["frontmatter"].get("status") for t in members]), "done": sum(t["frontmatter"].get("status") == "done" for t in members), "total": len(members)})
+                      {"goal": _section(text, "Goal"), "criteria": _criteria(text, "Done criteria"),
+                       "id": path.stem, "status": tasks.plan_status(meta["status"], [t["frontmatter"].get("status") for t in members]), "done": sum(t["frontmatter"].get("status") == "done" for t in members), "total": len(members)})
     return result
 
 
@@ -282,6 +333,8 @@ def _build_project(snap: source.Snapshot, name: str) -> dict:
     waiting = _waiting(root, details)
     return {"name": name, "branch": "main",
             "plans": _plans(snap, root, details), "kanban": kanban,
+            "catalogs": _catalogs(snap, root, details),
+            "decisions_text": snap.read(decisions_path) if decisions_path in snap.paths else "",
             "task_counts": {status: len(items) for status, items in kanban.items()},
             "inbox": [item for t in details for item in _inbox(t)],
             "alerts": _alerts(details, _stale_days(snap, root)),

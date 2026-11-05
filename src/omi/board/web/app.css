@@ -412,3 +412,12 @@ summary.colh{justify-content:flex-start;min-height:44px}summary.colh>.muted{marg
  #board-sidebar{width:min(280px,calc(100vw - 32px))}
 }
 @media print{#sidebar-toggle,#board-sidebar,#sidebar-backdrop{display:none!important}.sidebar-open .wrap{margin-left:0}}
+
+.task-meta{grid-template-columns:minmax(0,1fr)}
+.task-meta dt{font-weight:600}.task-meta dd{margin-bottom:8px;min-width:0}
+.info-list{list-style:none;margin:0;padding:0;display:grid;gap:6px;min-width:0}
+.info-list li{min-width:0}.info-item{overflow-wrap:normal;word-break:normal;white-space:normal}
+.info-segment{white-space:nowrap}.info-list a{display:inline-block;min-height:24px}
+.run-record,.catalog-entry{border-top:1px solid var(--line);padding:14px 0;display:grid;gap:8px;min-width:0}
+.skill-missed{border-left:3px solid var(--blocked-fg);padding-left:10px;color:var(--blocked-fg);background:var(--blocked-bg)}
+.plan-detail{padding-bottom:12px}.plan-detail p{white-space:pre-wrap}

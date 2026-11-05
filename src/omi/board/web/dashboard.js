@@ -74,7 +74,7 @@ function dashboard(name, d) {
     section("Kế hoạch", [box("", d.plans.length ? d.plans.map(planRow) : [empty("Chưa có kế hoạch.")])], `${num(d.plans.length)} kế hoạch · ${num(d.plans.filter((p) => p.status === "active").length)} đang chạy`),
     ...filterWorkspace(name, tasks),
     box("grid2", [section("Hoạt động", [box("feed", activity.length ? activity : [empty("Chưa có hoạt động.")])]),
-      section("Quyết định", [box("feed", decisions.length ? decisions : [empty("Chưa có quyết định.")])])]),
+      section("Quyết định", d.decisions_text ? [pre(d.decisions_text)] : [box("feed", decisions.length ? decisions : [empty("Chưa có quyết định.")])])]),
     section("Sử dụng", [el("p", `${num(u.totals.runs)} lượt · ${num(u.totals.output)} output`, {class: "usage-summary muted small"}),
       table(["Model", "Lượt", "Input", "Output", "Cache"],
       [...Object.entries(u.models), ["Tổng", u.totals]].map(([m, r]) => [m, num(r.runs), num(r.input), num(r.output), num(r.cache)]),
@@ -138,4 +138,13 @@ function costPage(name, d) {
   return [box("stack", [link(`← Về dự án ${name}`, projectHref(name), "small"), el("p", `Dự án ${name} · chỉ đọc`, {class: "muted small"}), heading("Chi phí và quota")]), jump,
     box("stats cost-stats", stats.map(([n, l]) => box("stat", [el("div", n, {class: "n"}), el("div", l, {class: "l"})]))), ...note,
     ...panels];
+}
+
+function catalogPage(name, d) {
+  const labels = {skills: "Kỹ năng", rules: "Rules", references: "References", patterns: "Patterns", workflows: "Quy trình"};
+  const selected = new URLSearchParams(viewHash().split("?")[1] || "").get("item");
+  return [heading(`Catalog · ${name}`), ...Object.entries(labels).map(([kind, title]) => section(title,
+    (d.catalogs?.[kind] || []).length ? d.catalogs[kind].map(item => el("article", null, {class: "catalog-entry", ...(selected === item.id ? {"aria-label": "Mục đã chọn"} : {})}, [
+      el("h3", item.id), el("p", item.text), el("p", "Task sử dụng", {class: "small muted"}),
+      item.tasks.length ? itemList(name, "depends", item.tasks) : empty("Chưa có task sử dụng.")])) : [empty("Catalog trống.")]))];
 }

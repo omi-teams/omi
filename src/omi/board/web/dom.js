@@ -50,8 +50,10 @@ function progress(done, total) {
     "aria-label": `${done || 0}/${total || 0} mục đã xong`});
 }
 function planRow(p) {
-  return box(`plan ${p.status === "done" ? "completed" : ""}`, [el("span", p.id, {class: "mono strong"}), el("span", p.title || "—"),
+  const row = box(`plan ${p.status === "done" ? "completed" : ""}`, [el("span", p.id, {class: "mono strong"}), el("span", p.title || "—"),
     progress(p.done, p.total), el("span", `${p.done}/${p.total} mục`, {class: "r small"})]);
+  return box("plan-detail", [row, ...(p.goal ? [el("p", p.goal)] : []),
+    el("ul", null, {class: "info-list"}, (p.criteria || []).map(c => el("li", `${c.checked ? "✓ Xong" : "○ Chưa xong"}: ${c.text}`)))]);
 }
 function table(head, rows, caption) {
   return el("div", null, {class: "scroll", tabindex: "0", "aria-label": caption}, [
