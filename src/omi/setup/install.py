@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -10,6 +11,7 @@ from pathlib import Path
 
 from ..common import core
 from ..state import resolve as state
+from . import upgrade
 
 
 def _hook(command: str = "session-start") -> dict:
@@ -21,6 +23,10 @@ def _hook(command: str = "session-start") -> dict:
 HOOK = _hook()
 GUARD_MATCHER = "Edit|Write|MultiEdit|NotebookEdit"
 GUARD_HOOK = {"matcher": GUARD_MATCHER, **_hook("guard")}
+# Shipped before a tagged release recorded it in template_shas.json (norm_sha, by skill path).
+UNRELEASED_SKILL_SHAS = {
+    ".claude/skills/omi-task/SKILL.md": {"fc63de3755ac4cf4002c1e98bd6c712967e32df1f83cb7fd8686e43c0c248709"},  # TASK-160, 42afa0e
+}
 LEGACY_HOOK = {"hooks": [{"type": "command", "command": "python -m omi session-start"}]}
 START, END = "<!-- omi -->", "<!-- /omi -->"
 
@@ -79,8 +85,14 @@ def _object(path: Path) -> dict:
 
 
 def _write(path: Path, data: bytes) -> None:
+    """Replace the file whole or not at all, so an interrupted write never leaves a partial file."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(data)
+    temp = path.with_name(path.name + ".omi-tmp")
+    try:
+        temp.write_bytes(data)
+        os.replace(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
 
 
 def _json(path: Path, data: dict) -> None:
@@ -122,6 +134,10 @@ def _validate_manifest(record: dict, manifest: Path) -> None:
             if (not isinstance(digest, str) or len(digest) != 64
                     or any(c not in "0123456789abcdef" for c in digest)):
                 raise ValueError("invalid skill hash")
+            pending = item.get("pending", digest)
+            if (not isinstance(pending, str) or len(pending) != 64
+                    or any(c not in "0123456789abcdef" for c in pending)):
+                raise ValueError("invalid pending skill hash")
             before = item["before"]
             if before is not None:
                 if not isinstance(before, str):
@@ -183,7 +199,7 @@ def install_user(remove: bool = False) -> None:
             return
         for rel, item in record["skills"].items():
             path = home / rel
-            if path.exists() and hashlib.sha256(path.read_bytes()).hexdigest() == item["sha256"]:
+            if path.exists() and hashlib.sha256(path.read_bytes()).hexdigest() in (item["sha256"], item.get("pending")):
                 if item["before"] is None:
                     path.unlink()
                 else:
@@ -241,15 +257,27 @@ def install_user(remove: bool = False) -> None:
             and (hook not in hooks.get("SessionStart", []) or guard_hook not in hooks.get("PreToolUse", []))):
         record["backup_created"] = True
     # Read all originals before writing anything, including on an upgrade.
+    released = upgrade.released_shas()
+    pending = {}
     for rel, data in payloads.items():
         path = home / rel
         item = record["skills"].get(rel)
-        if (item and path.exists() and path.read_bytes() != data
-                and hashlib.sha256(path.read_bytes()).hexdigest() != item["sha256"]):
-            raise state.StateError(f"modified installed skill: {path}; preserve or remove it before reinstalling")
+        if item and path.exists() and path.read_bytes() != data:
+            disk = path.read_bytes()
+            owned = {item["sha256"], item.get("pending")}  # What omi wrote, or was writing when interrupted.
+            if (hashlib.sha256(disk).hexdigest() not in owned
+                    and upgrade.norm_sha(disk) not in released.get(Path(rel).as_posix(), ())
+                    and upgrade.norm_sha(disk) not in UNRELEASED_SKILL_SHAS.get(Path(rel).as_posix(), ())
+                    and (item["before"] is None or disk != base64.b64decode(item["before"]))):
+                raise state.StateError(f"modified installed skill: {path}; preserve or remove it before reinstalling")
         if not item:
-            record["skills"][rel] = {"before": base64.b64encode(path.read_bytes()).decode("ascii") if path.exists() else None}
-        record["skills"][rel]["sha256"] = hashlib.sha256(data).hexdigest()
+            # A new entry names the template it is about to write; an unwritten file is simply absent.
+            record["skills"][rel] = {"before": base64.b64encode(path.read_bytes()).decode("ascii") if path.exists() else None,
+                                     "sha256": hashlib.sha256(data).hexdigest()}
+        elif item["sha256"] != hashlib.sha256(data).hexdigest():
+            item["pending"] = pending[rel] = hashlib.sha256(data).hexdigest()  # Becomes the sha once written.
+        else:
+            item.pop("pending", None)
     for path in [settings, agents, manifest, *(home / rel for rel in payloads)]:
         for parent in path.parents:
             if parent == home:
@@ -261,6 +289,10 @@ def install_user(remove: bool = False) -> None:
     _json(manifest, record)  # Persist undo data before the first integration write.
     for rel, data in payloads.items():
         _write(home / rel, data)
+        if rel in pending:  # The record always names what omi last wrote, even if a later write fails.
+            record["skills"][rel]["sha256"] = pending.pop(rel)
+            record["skills"][rel].pop("pending", None)
+            _json(manifest, record)
     updated = {**config, "hooks": {**hooks, "SessionStart": [*hooks.get("SessionStart", [])],
                                  "PreToolUse": [*hooks.get("PreToolUse", [])]}}
     if hook not in updated["hooks"]["SessionStart"]:
