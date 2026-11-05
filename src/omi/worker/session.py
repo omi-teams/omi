@@ -9,7 +9,7 @@ from pathlib import Path
 
 # where each CLI keeps its transcripts under $HOME; only these directories reach the volume, never the auth files
 TRANSCRIPTS = {"claude": ".claude/projects", "codex": ".codex/sessions"}
-LINE = re.compile(r"^Session: (claude|codex) ([^\s]+)(?:[ \t]+([^\s]+))?[ \t]*$\n?", re.M)
+LINE = re.compile(r"^Session: (claude|codex) ([^\s]+)(?:[ \t]+([^\s]+))?(?:[ \t]+skills=([^\s]+))?[ \t]*$\n?", re.M)
 SID = re.compile(r"\w[\w-]*")  # no leading '-': the id goes into argv
 HELPER = ["--rm", "--network", "none", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--read-only"]
 SCAN_TIMEOUT = 300
@@ -84,9 +84,15 @@ def recorded(text: str, tool: str, role: str = "omi-agent-engineer") -> str | No
     return m[2] if m and m[1] == tool and (m[3] or "omi-agent-engineer") == role and SID.fullmatch(m[2]) else None
 
 
-def with_session(text: str, tool: str, sid: str, role: str = "omi-agent-engineer") -> str:
+def skills_recorded(text: str, tool: str, role: str = "omi-agent-engineer") -> list[str]:
+    """Ids of the skills this session already read (the `skills=` field of its `Session:` line)."""
+    m = LINE.search(text or "")
+    return m[4].split(",") if m and m[4] and recorded(text, tool, role) else []
+
+
+def with_session(text: str, tool: str, sid: str, role: str = "omi-agent-engineer", skills=()) -> str:
     """Task text with its `Session:` line replaced by this one (appended under `## Checkpoint`, else at the end)."""
-    text, line = LINE.sub("", text), f"Session: {tool} {sid} {role}"
+    text, line = LINE.sub("", text), f"Session: {tool} {sid} {role}" + (f" skills={','.join(skills)}" if skills else "")
     head, sep, rest = text.partition("\n## Checkpoint")
     if not sep:
         return f"{text.rstrip()}\n\n## Checkpoint\n{line}\n"
