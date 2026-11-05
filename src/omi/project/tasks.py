@@ -252,6 +252,7 @@ def step(root, tid, action, why=None, now=None, to=None, po=None):
     `approve` records PO words; `reopen` restarts the last write step of a completed workflow.
     Either `back` stops at the round limit unless `po` (the PO's words) allows one more round; from round 2 a review FAIL
     with `ROOT: same` sends plain `back` to the architect step instead (no architect step: `po` is required).
+    `done` with `po` explicitly overrides a review FAIL and records the PO words.
     Gate steps cannot be skipped; a `po` gate needs the PO approval line."""
     if not re.fullmatch(r"[A-Za-z0-9_-]+", tid):
         sys.exit(f"invalid task id `{tid}`: use letters, digits, `-` and `_`. Nothing changed.")
@@ -376,7 +377,10 @@ def step(root, tid, action, why=None, now=None, to=None, po=None):
                      + "\n".join(unticked(text)) + "\nNothing changed.")
         if steps[at]["gate"] == "review":
             if last_verdict(text, steps[at]["role"]) == "FAIL":
-                sys.exit(f"{tid}: the last {steps[at]['role']} verdict is FAIL; run `omi step {tid} back`. Nothing changed.")
+                if not (po or "").strip():
+                    sys.exit(f"{tid}: the last {steps[at]['role']} verdict is FAIL; run `omi step {tid} back` "
+                             "or `done --po <PO words>` for an explicit override. Nothing changed.")
+                text = add_step_log(text, f"PO review override {cur}: {' '.join(po.split())}")
         if steps[at]["gate"] == "auto":
             gates = [s for s in steps[:at] if s["gate"] == "review"]
             if not po_approved(text, cur):  # an explicit PO approval line also passes

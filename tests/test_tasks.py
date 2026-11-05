@@ -650,6 +650,19 @@ def test_workflows():
             go("done")
             go("next")
             fails(lambda: go("skip", "trust me"), "gate review", "cannot be skipped")
+            before_review = task.read_text(encoding="utf-8")
+            failed_review = before_review + ("\n## Usage\n| role | verdict |\n"
+                                              "| omi-agent-reviewer | FAIL abc1234 root:same |\n")
+            task.write_text(failed_review, encoding="utf-8")
+            fails(lambda: go("done"), "last omi-agent-reviewer verdict is FAIL")
+            fails(lambda: omi.project.tasks.step(root, "TASK-001", "done", po=" "), "verdict is FAIL")
+            assert task.read_text(encoding="utf-8") == failed_review
+            assert omi.project.tasks.step(root, "TASK-001", "done", po="Accept host evidence\nverified on host") == 0
+            overridden = task.read_text(encoding="utf-8")
+            assert "PO review override review: Accept host evidence verified on host" in overridden
+            assert omi.project.tasks.step_states(overridden)["review"] == "done"
+            assert "FAIL abc1234 root:same" in overridden  # preserve the review evidence
+            task.write_text(before_review, encoding="utf-8")
             go("done")
             go("next")
             assert front()["step"] == "accept"
