@@ -1092,6 +1092,7 @@ def main():
     test_workflows()
     test_roles()
     test_task_flow_commit_scope_sync_warn()
+    test_type_validation_and_workflow_warning()
 
 
 if __name__ == "__main__":
