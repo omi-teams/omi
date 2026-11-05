@@ -380,7 +380,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             verdict += " " + head
         if verdict.startswith("FAIL") and (rt := tasks.root_of(result)):
             verdict += f" root:{rt}"
-        if tools.quota_hit(t, r.stdout, r.returncode):
+        if tools.quota_hit(t, r.stdout, r.returncode, r.stderr):
             verdict = f"QUOTA->{'codex' if t == 'claude' else 'claude'}"
         if not read and not dropped and (sid := session.session_id(t, r.stdout)) and task.exists():
             task.write_text(session.with_session(core.read_task(task), t, sid, role, seen), encoding="utf-8", newline="\n")
@@ -421,10 +421,10 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             print(f"RESUME FAILED: session {sid} has no session volume; starting a fresh session")
             sid = None
         r, result, done = attempt(tool, secret, resume=sid)
-        if sid and r.returncode and result is None and not tools.quota_hit(tool, r.stdout, r.returncode):
+        if sid and r.returncode and result is None and not tools.quota_hit(tool, r.stdout, r.returncode, r.stderr):
             print(f"RESUME FAILED: session {sid} could not be resumed; starting a fresh session")
             r, result, done = attempt(tool, secret)
-        if tools.quota_hit(tool, r.stdout, r.returncode):
+        if tools.quota_hit(tool, r.stdout, r.returncode, r.stderr):
             other_secret, problem = (creds.claude_auth() if other == "claude" else creds.tool_secret(other)), None
             try:
                 efforts[other] = tools.resolve_effort(want, other)
@@ -447,7 +447,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
                                       f"\nNote: a previous run with {tool} stopped on its usage limit; "
                                       "a partial diff already exists in /work. Inspect it and continue, do not start over.")
             tool, secret = other, other_secret
-            if tools.quota_hit(other, r.stdout, r.returncode):
+            if tools.quota_hit(other, r.stdout, r.returncode, r.stderr):
                 return stop_quota("claude and codex both hit their usage limit")
         rc = r.returncode
         print(result if result is not None else (r.stdout or ""))
