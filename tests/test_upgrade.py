@@ -11,7 +11,7 @@ import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
-from helpers import omi
+from helpers import detached_cli, detached_project, omi, state_remote
 
 
 def test_version_stamp_package_hook():
@@ -228,6 +228,58 @@ def test_upgrade_stale_candidate():
         assert "replaced stale AGENTS.md.omi-new" in out.getvalue()
         assert candidate.read_bytes() == (omi.common.core.TEMPLATE / "AGENTS.md").read_bytes()
         assert dst.read_text(encoding="utf-8") == "local edits\n"
+
+
+def test_detached_upgrade_candidates_stay_local():
+    with detached_project() as (code, project, _, _):
+        # Existing detached projects do not yet ignore upgrade candidates.
+        ignore = project / ".gitignore"
+        ignore.write_text(ignore.read_text(encoding="utf-8").replace("*.omi-new\n", ""), encoding="utf-8")
+        home, remote, _ = state_remote(project)
+        rels = (".omi/agents/omi-agent-engineer.md", "docker/Dockerfile")
+        for rel in rels:
+            dst = project / rel
+            dst.write_text(dst.read_text(encoding="utf-8") + "\nlocal edits\n", encoding="utf-8")
+        for _ in range(2):
+            out = detached_cli(code, "upgrade", "--apply")
+            tracked = omi.common.core.git(home, "ls-tree", "-r", "--name-only", "HEAD")
+            assert not any(p.endswith(".omi-new") for p in tracked.splitlines()), tracked
+            assert omi.common.core.git(home, "rev-parse", "HEAD") == omi.common.core.git(remote, "rev-parse", "refs/heads/main")
+            for rel in rels:
+                candidate = project / (rel + ".omi-new")
+                assert candidate.read_bytes() == omi.setup.upgrade.template_map()[rel].read_bytes()
+                assert (project / rel).read_text(encoding="utf-8").endswith("\nlocal edits\n")
+                assert rel + ".omi-new" in out, out
+                assert omi.common.core.git(home, "check-ignore", candidate.as_posix())
+            assert "Coordinator" in out and "merge by hand" in out, out
+        assert (project / ".gitignore").read_text(encoding="utf-8").splitlines().count("*.omi-new") == 1
+        assert "upgrade state" in omi.common.core.git(home, "log", "-1", "--format=%s")
+
+
+def test_attached_upgrade_candidates_unchanged():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / "AGENTS.md").write_text("local edits\n", encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            assert omi.setup.upgrade.upgrade_cmd(["--apply"], root) == 0
+        assert (root / "AGENTS.md.omi-new").read_bytes() == (omi.common.core.TEMPLATE / "AGENTS.md").read_bytes()
+        assert "*.omi-new" not in (root / ".gitignore").read_text(encoding="utf-8")
+        assert "Coordinator" not in out.getvalue()
+
+
+def test_detached_upgrade_existing_candidate_stays_local():
+    with detached_project() as (code, project, _, _):
+        ignore = project / ".gitignore"
+        ignore.write_text(ignore.read_text(encoding="utf-8").replace("*.omi-new\n", ""), encoding="utf-8")
+        home, _, _ = state_remote(project)
+        dst = project / "docker/Dockerfile"
+        dst.write_text("local edits\n", encoding="utf-8")
+        candidate = dst.with_name(dst.name + ".omi-new")
+        candidate.write_text("previous candidate\n", encoding="utf-8")
+        out = detached_cli(code, "upgrade", "--apply")
+        assert candidate.read_bytes() == omi.setup.upgrade.template_map()["docker/Dockerfile"].read_bytes()
+        assert "docker/Dockerfile.omi-new" in out and "Coordinator" in out
+        assert ".omi-new" not in omi.common.core.git(home, "ls-tree", "-r", "--name-only", "HEAD")
 
 
 def test_upgrade_protected():
@@ -622,6 +674,9 @@ def main():
     test_upgrade()
     test_upgrade_non_object_config()
     test_upgrade_stale_candidate()
+    test_detached_upgrade_candidates_stay_local()
+    test_attached_upgrade_candidates_unchanged()
+    test_detached_upgrade_existing_candidate_stays_local()
     test_upgrade_protected()
     test_upgrade_symlink_files()
     test_upgrade_symlink_metadata()

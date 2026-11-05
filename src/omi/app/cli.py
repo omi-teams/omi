@@ -159,7 +159,8 @@ def main(argv: list[str] | None = None) -> None:
         finally:
             if before is not None:
                 after = state_sync.snapshot(project)
-                paths = sorted(p for p in before.keys() | after.keys() if before.get(p) != after.get(p))
+                paths = sorted(p for p in before.keys() | after.keys()
+                               if not p.endswith(".omi-new") and before.get(p) != after.get(p))
                 if paths:
                     state_sync.commit(project, paths, cmd + " state")
                     state_sync.push(project)
