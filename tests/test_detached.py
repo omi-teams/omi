@@ -78,6 +78,8 @@ def test_detached_commands_and_steps():
         for step in ("plan", "build", "review", "accept"):
             detached_cli(wt, "step", task.stem, "next")
             assert omi.common.core.meta(task)["step"] == step
+            if step == "review":
+                omi.project.tasks.append_note(task, "Usage", "| role | verdict |\n| omi-agent-reviewer | PASS abc1234 |")
             if step == "accept":
                 omi.project.tasks.append_note(task, "Steps", "PO approval accept: approved in test")
             detached_cli(code, "step", task.stem, "done")
