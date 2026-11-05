@@ -1,3 +1,4 @@
+import contextlib
 import io
 import re
 import shutil
@@ -9,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 from helpers import omi, assert_download_cache_env, git, real_egress
 
 
@@ -328,6 +330,68 @@ def test_run_role_plan_violation_alone_exits_3():
             os.environ.pop(omi.worker.creds.TOKEN_ENV, None)
             if tok is not None:
                 os.environ[omi.worker.creds.TOKEN_ENV] = tok
+
+
+def test_codex_capacity_fallback():
+    capacity = "ERROR: Selected model is at capacity"
+    ok = json.dumps({"type": "result", "result": "DONE claude", "usage": {}})
+    quota = json.dumps({"type": "result", "is_error": True, "result": "usage limit reached"})
+    with tempfile.TemporaryDirectory() as d:
+        wt = Path(d).resolve()
+        (wt / ".git").write_text("gitdir: /x", encoding="utf-8")
+        task = wt / ".omi" / "tasks" / "TASK-216.md"
+        task.parent.mkdir(parents=True)
+        (wt / ".omi" / "config.json").write_text('{"codex_models": {"sonnet": "gpt-x"}}', encoding="utf-8")
+        initial = "---\nid: TASK-216\nscope: src/**\n---\n## Checkpoint\nDone:\n"
+        calls, outputs = [], []
+        buf = io.StringIO()
+
+        def run(cmd, **kw):
+            if cmd[:2] == ["docker", "run"] and not any(x in cmd for x in ("chmod", "grep")):
+                calls.append(cmd)
+                return outputs.pop(0)
+            if "--git-common-dir" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, str(wt / "shared.git"), "")
+            if "--show-toplevel" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, str(wt), "")
+            if "show" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, "---\nscope: src/**\n---\n", "")
+            return subprocess.CompletedProcess(cmd, 1 if "grep" in cmd else 0, "", "")
+
+        def go(out, err="", rc=1, fallback=ok):
+            task.write_text(initial, encoding="utf-8")
+            calls.clear()
+            buf.seek(0)
+            buf.truncate(0)
+            outputs[:] = [subprocess.CompletedProcess([], rc, out, err),
+                          subprocess.CompletedProcess([], 1 if fallback == quota else 0, fallback, "")]
+            result = omi.worker.run.run_role("omi-agent-engineer", wt, task, tool="codex", effort="medium")
+            return result, task.read_text(encoding="utf-8")
+
+        with patch("subprocess.run", run), patch("shutil.which", return_value="docker"), \
+                patch("omi.common.core.main_checkout", return_value=wt), patch("omi.common.core.WINDOWS", False), \
+                patch("omi.worker.docker.ensure_image", return_value="img"), \
+                patch.dict(os.environ, {omi.worker.creds.TOKEN_ENV: "tok", omi.worker.creds.CODEX_ENV: "key"}), \
+                contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+            for out, err in ((capacity, ""), ("", capacity),
+                             (json.dumps({"type": "error", "message": capacity}), ""),
+                             (json.dumps({"type": "turn.failed", "error": {"message": capacity}}), "")):
+                rc, text = go(out, err)
+                assert rc == 0 and len(calls) == 2, (rc, len(calls), buf.getvalue())
+                assert "claude" in calls[1] and "partial diff" in " ".join(calls[1])
+                checkpoint = text.partition("## Checkpoint")[2].partition("\n## ")[0]
+                assert "QUOTA:" in checkpoint and "continued with claude" in checkpoint
+                assert "| QUOTA->claude |" in text and "| claude-sonnet-5-5 |" in text
+            rc, text = go(capacity, fallback=quota)
+            assert rc == 5 and len(calls) == 2 and "QUOTA: claude and codex" in buf.getvalue()
+            assert "QUOTA:" in text.partition("## Checkpoint")[2]
+            command_output = json.dumps({"type": "item.completed", "item": {
+                "type": "command_execution", "aggregated_output": capacity}})
+            for out, err, code in (("ERROR: model crashed", "", 1), ("", "ERROR: model crashed", 1),
+                                   (command_output, "", 1), (capacity, "", 0)):
+                rc, text = go(out, err, code)
+                assert rc == code and len(calls) == 1
+                assert "QUOTA:" not in text and "QUOTA->" not in text
 
 
 def test_session_role_record():
@@ -1242,6 +1306,7 @@ def test_claude_report_skips_subagent_messages():
 
 
 def main():
+    test_codex_capacity_fallback()
     test_verdict_of_forms()
     test_full_report_keeps_earlier_block()
     test_claude_report_skips_subagent_messages()

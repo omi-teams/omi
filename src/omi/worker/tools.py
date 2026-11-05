@@ -37,10 +37,10 @@ def resolve_effort(effort: str | None, tool: str) -> str:
     return effort
 
 
-# usage/quota stop messages of each CLI, matched only in its own final error events (not in tool output)
+# Usage/quota/capacity stops, matched only in CLI errors (not in tool output).
 QUOTA_PATTERNS = {
     "claude": r"usage limit reached|hit your (usage )?limit|\d+-hour limit reached|weekly limit reached|credit balance is too low",
-    "codex": r"hit your usage limit|usage_limit_reached|insufficient_quota|exceeded your current quota|quota exceeded",
+    "codex": r"hit your usage limit|usage_limit_reached|insufficient_quota|exceeded your current quota|quota exceeded|selected model is at capacity",
 }
 
 
@@ -62,8 +62,12 @@ def error_texts(tool, out):
     return texts
 
 
-def quota_hit(tool, out, rc):
-    return bool(rc) and any(re.search(QUOTA_PATTERNS[tool], t, re.I) for t in error_texts(tool, out))
+def quota_hit(tool: str, out: str, rc: int, err: str = "") -> bool:
+    texts = error_texts(tool, out)
+    if tool == "codex":
+        # Codex can emit this CLI error as plain text, including on stderr.
+        texts += re.findall(r"^ERROR: (Selected model is at capacity)\s*$", (out or "") + "\n" + err, re.I | re.M)
+    return bool(rc) and any(re.search(QUOTA_PATTERNS[tool], t, re.I) for t in texts)
 
 
 def resume_prompt(task_rel, hook_tail=None):
