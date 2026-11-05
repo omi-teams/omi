@@ -94,9 +94,43 @@ def test_lost_wrapper_and_exit_codes() -> None:
             assert "rc=LOST" in out and "DECIDE: LOST" in out, out
 
 
+def test_record_before_wrapper_starts() -> None:
+    with patch.dict(os.environ, SRC), tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        omi.setup.upgrade.init(root)
+        make_task(root, "TASK-001", "a/**")
+        helpers.git(root, "add", ".")
+        helpers.git(root, "commit", "-qm", "base")
+        project = state.resolve(root)
+        rundir = dispatch.runs_dir(root) / "TASK-001-omi-agent-engineer-20261105-100000"
+        rundir.mkdir(parents=True)
+        (rundir / "argv.json").write_text('{"tid": "TASK-001", "role": "omi-agent-engineer", "argv": []}', encoding="utf-8")
+        assert [(r["running"], r["rc"]) for r in dispatch.records(root)] == [(True, None)]
+        assert "running:" in watch(project) and "finished:" not in watch(project) and not (rundir / "run.lock").exists()
+        old = time.time() - 60
+        os.utime(rundir / "argv.json", (old, old))
+        assert "rc=LOST" in watch(project)
+
+
+def test_reviewer_next_action() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        omi.setup.upgrade.init(root)
+        project = state.resolve(root)
+        rec = {"tid": "TASK-001", "role": "omi-agent-reviewer", "rc": 0, "dir": root}
+        row = "| omi-agent-reviewer | m | high | 1 | 1 | 1 | 1s | - | FAIL |\n"
+        one, two = "\n## Usage\n| role | model |\n|---|---|\n" + row, "\n## Usage\n| role | model |\n|---|---|\n" + row * 2
+        assert dispatch.next_action(project, rec, "", "VERDICT: PASS") == dispatch.READ_PASS
+        assert dispatch.next_action(project, rec, one, "VERDICT: FAIL") == dispatch.READ_FAIL
+        assert "round limit" in dispatch.next_action(project, rec, two, "VERDICT: FAIL")
+        assert dispatch.next_action(project, rec, "", "no verdict").startswith("DECIDE")
+
+
 def main():
     test_two_runs_finish_together()
     test_lost_wrapper_and_exit_codes()
+    test_record_before_wrapper_starts()
+    test_reviewer_next_action()
 
 
 if __name__ == "__main__":

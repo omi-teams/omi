@@ -14,6 +14,7 @@ from ..project import catalogs, tasks
 from ..state import resolve as state
 from . import docker, tools
 
+START_GRACE = 10  # seconds launch() waits for the wrapper
 STAMP = "%Y%m%d-%H%M%S"
 # Until `omi advance` exists the Coordinator does the deterministic steps by hand; the text names them.
 WRITE_DONE = "NEXT: diff and scope check, commit with the report's Suggested commit, host-test, step done/next, start the reviewer"
@@ -29,7 +30,9 @@ def runs_dir(code: Path) -> Path:
 
 
 def alive(rundir: Path) -> bool:
-    """True while the wrapper holds run.lock; the OS releases it when the wrapper dies."""
+    """True while the wrapper holds run.lock (the OS releases it when the wrapper dies), or while a fresh record awaits its wrapper."""
+    if not (rundir / "started").exists():  # no lock file yet: probing would create it; wait as long as launch() does
+        return time.time() - (rundir / "argv.json").stat().st_mtime < START_GRACE
     try:
         with core.file_lock(rundir / "run.lock", 0):
             return False
