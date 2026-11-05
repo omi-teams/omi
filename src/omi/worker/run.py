@@ -345,9 +345,10 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         if read:
             result = tools.full_report(t, r.stdout, result)
         done = skills_read(catalog, ids, tools.opened_files(t, r.stdout))
+        seen = done  # every skill this session has read, for the Session line
         if resume and task.exists():  # skills the resumed session read earlier count too
-            before_read = session.skills_recorded(core.read_task(task), t, role)
-            done = [sid for sid in ids if sid in done or sid in before_read]
+            seen = list(dict.fromkeys([*session.skills_recorded(core.read_task(task), t, role), *done]))
+            done = [sid for sid in ids if sid in seen]
         verdict = (tools.verdict_of(result) or "n/a") if read else "-"
         head = core.git(wt, "rev-parse", "--short=7", "HEAD") if read and verdict != "n/a" else None
         if head:
@@ -357,7 +358,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         if tools.quota_hit(t, r.stdout, r.returncode):
             verdict = f"QUOTA->{'codex' if t == 'claude' else 'claude'}"
         if not read and not dropped and (sid := session.session_id(t, r.stdout)) and task.exists():
-            task.write_text(session.with_session(core.read_task(task), t, sid, role, done), encoding="utf-8", newline="\n")
+            task.write_text(session.with_session(core.read_task(task), t, sid, role, seen), encoding="utf-8", newline="\n")
         tasks.record_usage(task, role, models[t] + (" (codex)" if t == "codex" else ""), efforts[t], nums,
                      time.monotonic() - t0, skills_cell(ids, done), verdict)
         return r, result, done

@@ -532,7 +532,10 @@ def test_session_resume():
             skill = wt / ".omi" / "skills" / "g" / "omi-skill-x"
             skill.mkdir(parents=True)
             (skill / "SKILL.md").write_text("---\nid: omi-skill-x\n---\nbody\n", encoding="utf-8")
-            (skill.parent.parent / "CATALOG.md").write_text("- omi-skill-x g\n", encoding="utf-8")
+            other = skill.parent / "omi-skill-y"
+            other.mkdir()
+            (other / "SKILL.md").write_text("---\nid: omi-skill-y\n---\nbody\n", encoding="utf-8")
+            (skill.parent.parent / "CATALOG.md").write_text("- omi-skill-x g\n- omi-skill-y g\n", encoding="utf-8")
             plain = task.read_text(encoding="utf-8")
             with_skill = plain.replace("scope:", "skills: [omi-skill-x]\nscope:", 1)
             path = "/work/.omi/skills/g/omi-skill-x/SKILL.md"
@@ -550,6 +553,16 @@ def test_session_resume():
                 prompt = calls[0][calls[0].index("-p") + 1]
                 assert "--resume" in calls[0] and path in prompt and "Re-read" in prompt, prompt
                 assert last_cell() == "1/1 omi-skill-x" and "SKILL NOT READ" not in buf.getvalue() and "skills=omi-skill-x" in task.read_text(encoding="utf-8")
+                # X -> Y -> X in one session: the history is cumulative, X stays read
+                read_y = read_ev.replace("omi-skill-x", "omi-skill-y")
+                task.write_text(task.read_text(encoding="utf-8").replace("skills: [omi-skill-x]", "skills: [omi-skill-y]"), encoding="utf-8")
+                state["stdout"] = sid_ev("S3") + read_y + "\n"
+                go()
+                assert last_cell() == "1/1 omi-skill-y" and "skills=omi-skill-x,omi-skill-y" in task.read_text(encoding="utf-8")
+                task.write_text(task.read_text(encoding="utf-8").replace("skills: [omi-skill-y]", "skills: [omi-skill-x]"), encoding="utf-8")
+                state["stdout"] = sid_ev("S3")
+                go()
+                assert last_cell() == "1/1 omi-skill-x" and "skills=omi-skill-x,omi-skill-y" in task.read_text(encoding="utf-8")
                 # the post-run hook retry resumes with the skills too
                 (hooks / "post-run.sh").write_text("exit 1\n")
                 state["hook"] = [1, 0]
