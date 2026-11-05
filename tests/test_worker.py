@@ -352,6 +352,8 @@ def test_session_role_record():
 def test_record_runs():
     runs = omi.project.runs
     assert runs.skill_sources(["a", "b"], ["b", "c"], ["c", "d"]) == {"a": "role", "b": "role", "c": "task", "d": "step"}
+    refs = Path("/p/.omi/references")
+    assert runs.ref_ids("/p", [refs / "pg.md", refs / "patterns" / "adapter.md"]) == ["pg", "patterns/adapter"]
     with tempfile.TemporaryDirectory() as d:
         task = Path(d) / "TASK-001.md"
         task.write_text("---\nid: TASK-001\n---\n## Goal\nx\n\n## Usage\n| role |\n", encoding="utf-8")

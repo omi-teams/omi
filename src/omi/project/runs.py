@@ -1,5 +1,7 @@
 """Per-run record in the task file's `## Runs`: what each agent run was given and read."""
 
+from pathlib import Path
+
 from . import tasks
 
 SOURCES = ("role", "task", "step")
@@ -12,6 +14,12 @@ def skill_sources(role_ids, task_ids, step_ids):
         for sid in ids:
             found.setdefault(sid, source)
     return found
+
+
+def ref_ids(catalog, files):
+    """Catalog ids (`patterns/adapter`, `postgres-conventions`) of reference files under `.omi/references`."""
+    base = Path(catalog) / ".omi" / "references"
+    return [Path(f).relative_to(base).with_suffix("").as_posix() for f in files]
 
 
 def record_run(task, role, tool, model, effort, step, sources, read, rules, refs):

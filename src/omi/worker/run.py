@@ -363,7 +363,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         tasks.record_usage(task, role, models[t] + (" (codex)" if t == "codex" else ""), efforts[t], nums,
                      time.monotonic() - t0, skills_cell(ids, done), verdict)
         runs.record_run(task, role, t, models[t], efforts[t], cur["id"] if cur else None, sources, done,
-                        [Path(f).stem for f in rule_files], [Path(f).stem for f in ref_files])
+                        [Path(f).stem for f in rule_files], runs.ref_ids(catalog, ref_files))
         return r, result, done
 
     def stop_quota(why):
