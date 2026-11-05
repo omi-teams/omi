@@ -611,6 +611,17 @@ def test_review_and_docs_role_default_skills() -> None:
         assert omi.project.catalogs.task_skills(omi.common.core.meta(root / f"{name}.md")) == expected, name
 
 
+def test_release_verifies_before_pr() -> None:
+    root = omi.common.core.TEMPLATE / "dot-omi" / "workflows"
+    steps = omi.project.workflows.workflow_steps((root / "omi-flow-release.md").read_text(encoding="utf-8"))
+    ids = [s["id"] for s in steps]
+    assert ids.index("verify") < ids.index("pr")
+    verify = steps[ids.index("verify")]
+    assert verify["role"] == "coordinator" and verify["gate"] == "none"
+    assert omi.project.catalogs.task_skills(verify) == ["omi-skill-release-checklist", "omi-skill-verify-evidence"]
+    assert "origin/staging..origin/development" in verify["input"] and "unproven" in verify["stop"]
+
+
 def test_only_merge_workflows_have_po_gate() -> None:
     root = omi.common.core.TEMPLATE / "dot-omi" / "workflows"
     with_po = {f.stem: [s["id"] for s in omi.project.workflows.workflow_steps(f.read_text(encoding="utf-8")) if s.get("gate") == "po"]
@@ -724,6 +735,7 @@ def main():
     test_bugfix_steps_have_root_cause_skill()
     test_docs_writer_steps_have_skills()
     test_review_and_docs_role_default_skills()
+    test_release_verifies_before_pr()
     test_only_merge_workflows_have_po_gate()
     test_every_auto_gate_follows_a_review_gate()
     test_skills()
