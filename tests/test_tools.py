@@ -539,7 +539,7 @@ def test_reviewer_skill_reads_counted():
             (root / ".omi" / "skills" / "g" / sid).mkdir(parents=True)
             (root / ".omi" / "skills" / "g" / sid / "SKILL.md").write_text("x", encoding="utf-8")
         files = [root / ".omi" / "skills" / "g" / s / "SKILL.md" for s in ("omi-skill-a", "omi-skill-b")]
-        prompt = omi.project.catalogs.skill_prompt(root, files).replace("/work/", "/state/")
+        prompt = omi.worker.run.container_paths(omi.project.catalogs.skill_prompt(root, files), True)
         assert "open every one below before you start" in prompt and "/state/.omi/skills/g/omi-skill-a/SKILL.md" in prompt
         ids = ["omi-skill-a", "omi-skill-b"]
         read = {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Read", "input": {"file_path": "/state/.omi/skills/g/omi-skill-a/SKILL.md"}}]}}

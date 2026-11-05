@@ -372,6 +372,9 @@ def test_skills():
     prompt = omi.project.catalogs.skill_prompt(Path("/r"), [Path("/r/.omi/skills/g/a/SKILL.md")])
     assert "/work/.omi/skills/g/a/SKILL.md" in prompt and "CATALOG" not in prompt and omi.project.catalogs.skill_prompt(Path("/r"), []) == ""
     assert "Skills (read only" in omi.worker.tools.engineer_cmd("---\n---\nbody", "t.md", skills=prompt)[2]
+    for role in ("omi-agent-reviewer", "omi-agent-security-reviewer"):  # reviewer roles must tell the agent to open the listed skills
+        text = (omi.common.core.TEMPLATE / "dot-omi" / "agents" / f"{role}.md").read_text(encoding="utf-8")
+        assert "open every skill file the prompt lists, and only those" in text, role
 
 
 def test_skills_check():
