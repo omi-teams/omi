@@ -11,11 +11,6 @@ from pathlib import Path
 from ..common import core
 from . import resolve as state
 
-if os.name == "nt":
-    import msvcrt
-else:
-    import fcntl
-
 
 def git(root: Path, *args: str) -> subprocess.CompletedProcess:
     """Run state git with bounded network waits and useful errors."""
@@ -38,32 +33,11 @@ def _locked(root: Path) -> Iterator[None]:
     if result.returncode:
         raise state.StateError(result.stderr.strip())
     path = root / result.stdout.strip() / "omi-state.lock"
-    # OS locks release on process exit; keep the file so waiters share one inode.
-    with path.open("a+", encoding="utf-8", newline="\n") as handle:
-        if os.name == "nt" and path.stat().st_size == 0:
-            handle.write("\0")
-            handle.flush()
-        deadline = time.monotonic() + 30
-        while True:
-            try:
-                if os.name == "nt":
-                    handle.seek(0)
-                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-                else:
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except OSError as exc:
-                if time.monotonic() >= deadline:
-                    raise state.StateError(f"state repository busy: {exc}") from exc
-                time.sleep(0.05)
-        try:
+    try:
+        with core.file_lock(path, 30):
             yield
-        finally:
-            if os.name == "nt":
-                handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    except TimeoutError as exc:
+        raise state.StateError(f"state repository busy: {exc}") from exc
 
 
 def conflicts(root: Path) -> None:
