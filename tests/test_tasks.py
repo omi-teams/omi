@@ -361,6 +361,16 @@ def test_reopen_last_write_step():
             assert task.read_text(encoding="utf-8") == text
 
 
+def test_append_note_strips_control_bytes():
+    with tempfile.TemporaryDirectory() as d:
+        task = Path(d) / "TASK-1.md"
+        task.write_text("---\nid: TASK-1\n---\n## Reports\n", encoding="utf-8")
+        for heading in ("Reports", "Checkpoint"):
+            omi.project.tasks.append_note(task, heading, "a\x00b\x01c\x1bd\x7fe\r\tf\ng")
+        raw = task.read_bytes()
+        assert not re.search(rb"[\x00-\x08\x0b-\x1f\x7f]", raw) and b"abcde\tf\ng" in raw
+
+
 def test_note():
     for detached in (False, True):
         with tempfile.TemporaryDirectory() as d:
@@ -1007,6 +1017,7 @@ def main():
     test_step_back_to()
     test_round_limit_and_replan()
     test_note()
+    test_append_note_strips_control_bytes()
     test_host_test()
     test_review_prompts_and_host_test_docs()
     test_warn_skills_empty()
