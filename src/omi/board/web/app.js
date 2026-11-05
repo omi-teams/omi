@@ -38,17 +38,18 @@ async function route(button = null) {
   const abort = new AbortController();
   const limit = setTimeout(() => abort.abort(), 10000);
   try {
-    const m = routePath.match(/^#\/p\/([^/]+)(?:\/t\/([^/]+)|\/(cost)|\/(graph)(?:\/([^/]+))?)?$/);
+    const m = routePath.match(/^#\/p\/([^/]+)(?:\/t\/([^/]+)|\/(cost)|\/(catalog)|\/(graph)(?:\/([^/]+))?)?$/);
     const name = m ? decodeURIComponent(m[1]) : null;
     const id = m?.[2] ? decodeURIComponent(m[2]) : null;
     const costs = !!m?.[3];
-    const graph = !!m?.[4];
+    const catalog = !!m?.[4];
+    const graph = !!m?.[5];
     const isInbox = routePath === "#/inbox";
     updateSidebar(name);
     if (changed) {
       filterUI = null;
       view.replaceChildren(heading(isInbox ? "Hộp thư PO" : costs ? "Chi phí và quota" : graph ? "Đồ thị phụ thuộc" : id || name || "Dự án"),
-      ...(name && !id && !costs && !graph ? filterWorkspace(name, [], true) : id ? [timelineLoading()] : [el("div", null, {class: "skeleton", "aria-hidden": "true"}), el("p", "Đang tải…")]));
+      ...(name && !id && !costs && !catalog && !graph ? filterWorkspace(name, [], true) : id ? [timelineLoading()] : [el("div", null, {class: "skeleton", "aria-hidden": "true"}), el("p", "Đang tải…")]));
     }
     const path = name ? `/api/projects/${enc(name)}${id ? "/tasks/" + enc(id) : costs ? "/cost" : graph ? "/graph" : ""}` : "/api/projects";
     const response = await fetch(path, {cache: "no-store", signal: abort.signal});
@@ -78,6 +79,7 @@ async function route(button = null) {
       contentKey = JSON.stringify([text, boardText, projectText]);
       const item = Object.values(project.kanban).flat().find(t => t.id === id);
       if (item) Object.assign(data, {status: item.status, children: item.children, parent: item.parent, type: item.type});
+      if (project.pull_requests) data.pull_requests = project.pull_requests;
       if (ticket !== request) return;
     }
     if (!name && !isInbox) {
@@ -95,9 +97,9 @@ async function route(button = null) {
     // Render off the page, and only cache a response after its view succeeds.
     const previousUI = filterUI;
     let nodes;
-    try { nodes = isInbox ? inboxPage(items) : name ? costs ? costPage(name, data) : graph ? graphPage(name, data, graphScope(data, m[5] && decodeURIComponent(m[5]))) : id ? taskPage(name, id, data) : dashboard(name, data) : home(data.projects); }
+    try { nodes = isInbox ? inboxPage(items) : name ? catalog ? catalogPage(name, data) : costs ? costPage(name, data) : graph ? graphPage(name, data, graphScope(data, m[6] && decodeURIComponent(m[6]))) : id ? taskPage(name, id, data) : dashboard(name, data) : home(data.projects); }
     catch (e) { filterUI = previousUI; throw e; }
-    loadedDashboard = name && !costs && !graph && !id ? {name, data} : null;
+    loadedDashboard = name && !costs && !catalog && !graph && !id ? {name, data} : null;
     if (loadedDashboard) {
       const canonical = boardSectionHref(projectHref(name) + filterQuery(filterUI.state));
       if (viewHash() !== canonical) { window.history.replaceState(null, "", canonical); current = canonical; }
@@ -127,7 +129,7 @@ async function route(button = null) {
       focused.focus({preventScroll: true});
     }
     if (!changed) window.scrollTo(0, scrolled);
-    if (changed) setNav(isInbox ? [["Hộp thư PO"]] : name ? id || costs || graph ? [[name, id ? filteredProjectHref(name) : projectHref(name)], [id || (graph ? "Đồ thị phụ thuộc" : "Chi phí")]] : [[name]] : []);
+    if (changed) setNav(isInbox ? [["Hộp thư PO"]] : name ? id || costs || catalog || graph ? [[name, id ? filteredProjectHref(name) : projectHref(name)], [id || (catalog ? "Catalog" : graph ? "Đồ thị phụ thuộc" : "Chi phí")]] : [[name]] : []);
     acceptInbox(items);
     seen = contentKey;
     revision = board.source.sha;
@@ -228,7 +230,7 @@ function updateSidebar(name) {
   const items = [["Tổng quan dự án", project],
     ...(sidebarProject ? [["Cây công việc", project + "?section=tree"], ["Kanban", project + "?section=kanban"]] : []),
     ["Hộp thư PO", "#/inbox"],
-    ...(sidebarProject ? [["Chi phí", project + "/cost"], ["Đồ thị phụ thuộc", project + "/graph"]] : []),
+    ...(sidebarProject ? [["Catalog", project + "/catalog"], ["Chi phí", project + "/cost"], ["Đồ thị phụ thuộc", project + "/graph"]] : []),
     ["Thông báo", "#/inbox?section=notifications"]];
   list.replaceChildren(...items.map(([label, href]) => el("li", null, {}, [
     el("a", label, {href, ...(viewHash() === href ? {"aria-current": "page"} : {})})])));

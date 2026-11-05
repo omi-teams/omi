@@ -1,5 +1,5 @@
 "use strict";
-function workflow(d) {
+function workflow(d, name) {
   const f = d.frontmatter;
   const steps = d.workflow_steps || [];
   const currentStep = d.current_step || f.step;
@@ -11,7 +11,10 @@ function workflow(d) {
     const done = finished || (at >= 0 && i < at);
     return el("li", null, {class: done ? "complete" : current ? "current" : "", ...(current ? {"aria-current": "step"} : {})}, [
       el("span", done ? "✓" : String(i + 1), {class: `sn ${current ? "current" : done ? "done" : ""}`}),
-      box("stack", [el("strong", id), el("small", `${done ? "✓ Xong" : current ? "Hiện tại" : "Chưa bắt đầu"}${s.gate === "po" ? " · PO duyệt" : ""}`)]),
+      box("stack", [el("strong", id),
+        ...(s.role ? [el("small", `Vai trò: ${s.role}`)] : []),
+        ...(s.skills ? [itemList(name, "skills", s.skills)] : []),
+        ...(s.gate ? [el("small", `Cổng duyệt: ${s.gate}`)] : []), el("small", `${done ? "✓ Xong" : current ? "Hiện tại" : "Chưa bắt đầu"}${s.gate === "po" ? " · PO duyệt" : ""}`)]),
       ...(i < steps.length - 1 ? [el("span", "→", {class: "arrow", "aria-hidden": "true"})] : [])]);
   })) : empty("Chưa có định nghĩa quy trình.");
   return section(`${d.children?.length ? "Quy trình riêng" : "Quy trình"}${f.workflow ? " · " + f.workflow : ""}`,
@@ -86,23 +89,66 @@ function taskPage(name, id, d) {
     det.addEventListener("toggle", () => openReports[det.open ? "add" : "delete"](text));
     return det;
   });
-  const meta = el("dl");
-  const labels = {plan: "Kế hoạch", depends: "Phụ thuộc", role: "Role", tool: "Tool", model: "Model", effort: "Effort", scope: "Scope", skills: "Skills"};
-  for (const [k, label] of Object.entries(labels)) {
-    const dd = el("dd", null, {class: "mono"});
-    if (k === "depends" && f[k]) {
-      const ids = Array.isArray(f[k]) ? f[k] : String(f[k]).split(/[,\s]+/).filter(Boolean);
-      for (const dep of ids) dd.append(link(dep, taskHref(name, dep)), el("span", " "));
-    } else dd.textContent = Array.isArray(f[k]) ? f[k].join(", ") : String(f[k] || "—");
-    meta.append(el("dt", label), dd);
+  const meta = el("dl", null, {class: "task-meta"});
+  for (const [k, value] of Object.entries(f)) {
+    meta.append(el("dt", META_LABELS[k] || k), el("dd", null, {class: "mono", "data-key": k}, [itemList(name, k, value)]));
   }
   return [box("stack", [link(`← Về dự án ${name}`, filteredProjectHref(name), "small"), box("row", [
     box("chips", [el("span", id, {class: "mono muted"}), heading(f.title || id), typeChip(d), statusChip(d, !!d.children?.length)])])]),
-    workflow(d), box("layout", [box("main", [
+    workflow(d, name), box("layout", [box("main", [
       section("Mục tiêu", [el("p", d.goal || "—", {class: "goal"})]),
       section("Tiêu chí nghiệm thu", [criteria], `${d.criteria.filter((c) => c.checked).length}/${d.criteria.length} xong`),
-      section("Checkpoint", [pre(d.checkpoint)]), ...timeline.slice(0, 1), ...filesSection(d.files), ...timeline.slice(1),
+      ...contextSections(name, d), section("Checkpoint", [pre(d.checkpoint)]), ...timeline.slice(0, 1), ...filesSection(d.files), ...timeline.slice(1),
       section(`Báo cáo (${reports.length})`, reports.length ? reports : [empty("Chưa có báo cáo.")])]),
-    el("aside", null, {class: "side"}, [section("Thông tin", [meta]), section("Sử dụng", [taskUsage(d.usage)],
+    el("aside", null, {class: "side"}, [section("Thông tin", [meta, ...prLinks(d)]), section("Sử dụng", [taskUsage(d.usage)],
       `${num(d.usage.runs)} lượt · ${num(d.usage.review_rounds)} vòng review`)])])];
+}
+
+const META_LABELS = {id: "Mã", title: "Tiêu đề", status: "Trạng thái", type: "Loại", parent: "Cấp trên",
+  plan: "Kế hoạch", depends: "Phụ thuộc", workflow: "Quy trình", refs: "Tham chiếu", files: "Tệp",
+  role: "Vai trò", tool: "Công cụ", model: "Mô hình", effort: "Mức suy luận", scope: "Phạm vi", skills: "Kỹ năng",
+  step_settings: "Thiết lập từng bước", step: "Bước", behind: "Commit tụt hậu", source_project: "Dự án nguồn", pr: "Pull request", pr_url: "Liên kết PR"};
+const listItems = value => Array.isArray(value) ? value : String(value ?? "").trim().replace(/^\[|\]$/g, "").split(",").map(s => s.trim()).filter(Boolean);
+function breakable(text, node = el("span")) {
+  node.setAttribute("class", "info-item");
+  for (const part of String(text).split(/(?<=[/-])/)) node.append(el("span", part, {class: "info-segment"}), el("wbr"));
+  return node;
+}
+function itemList(name, key, value) {
+  const items = ["scope", "skills", "depends", "refs", "files", "rules", "references"].includes(key) ? listItems(value) : [String(value ?? "")];
+  return el("ul", null, {class: "info-list"}, (items.length ? items : ["—"]).map(item => {
+    let href;
+    if (["parent", "depends"].includes(key) && item !== "—") href = taskHref(name, item);
+    if (key === "plan") href = projectHref(name) + "?plan=" + enc(item);
+    if (["skills", "rules", "refs", "references", "workflow"].includes(key) && item !== "—") href = projectHref(name) + "/catalog?item=" + enc(item);
+    return el("li", null, {}, [breakable(item, href ? link(null, href) : el("span"))]);
+  }));
+}
+function contextSections(name, d) {
+  const c = d.context || {};
+  const summary = section("Ngữ cảnh task", [
+    el("h3", "Kỹ năng của task"), itemList(name, "skills", d.frontmatter.skills),
+    el("h3", "Kỹ năng được giao · nguồn"), ...Object.entries(c.skills || {}).map(([id, source]) => box("", [itemList(name, "skills", id), el("small", source)])),
+    el("h3", "Rules khớp phạm vi"), itemList(name, "rules", c.rules), el("h3", "References"), itemList(name, "refs", c.references)]);
+  const records = (d.runs || []).map((r, i) => {
+    const read = new Set(r.read);
+    const count = r.skills.filter(s => read.has(s.id)).length;
+    return el("article", null, {class: "run-record"}, [el("h3", `${i + 1}. ${r.role} · ${r.step} · ${r.tool} ${r.model} ${r.effort}`),
+      el("p", `Đã đọc ${count}/${r.skills.length} kỹ năng`),
+      el("ul", null, {class: "info-list"}, r.skills.map(s => el("li", null, {class: read.has(s.id) ? "" : "skill-missed"}, [
+        itemList(name, "skills", s.id), el("span", `Nguồn: ${s.source} · ${read.has(s.id) ? "Đã đọc" : "Bỏ qua"}`)]))),
+      el("h4", "Kỹ năng đã đọc"), itemList(name, "skills", r.read),
+      el("h4", "Rules trong prompt"), itemList(name, "rules", r.rules),
+      el("h4", "References trong prompt"), itemList(name, "refs", r.references)]);
+  });
+  return [summary, section("Agent / lần chạy", records.length ? records : [empty("Chưa có dữ liệu lần chạy.")])];
+}
+function prLinks(d) {
+  const pr = (d.pull_requests || []).find(p => (p.headRefName || p.branch) === `task/${d.id}`) || d.pr ||
+    {number: d.frontmatter.pr, url: d.frontmatter.pr_url};
+  if (!pr.number && !pr.url) return [];
+  let url;
+  try { const parsed = new URL(pr.url); if (["https:", "http:"].includes(parsed.protocol)) url = parsed.href; } catch (_) { /* A PR number alone remains visible. */ }
+  const text = `PR ${pr.number || pr.url}`;
+  return [url ? link(text, url) : el("p", text)];
 }

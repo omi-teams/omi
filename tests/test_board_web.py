@@ -903,6 +903,18 @@ catch(e) {
       tokens:{...base,has_prices:false,tasks:tasks.map(t=>({...t,cost:null})),totals:row({tokens:600,cost:null})},
       partial:{...base,has_prices:true,totals:row({tokens:600,cost:null})}};
     let costMode='priced';
+    let infoMode=false;
+    const fullInfo={...workflowDetail,frontmatter:{...frontmatter,id:'TASK-115',type:'task',parent:'FR-001',role:'engineer',tool:'codex',
+      scope:'[src/omi/board/data.py, tests/test_board_web.py]',skills:'omi-skill-web-qa, omi-skill-lean-implementation',
+      refs:'[guide, patterns/adapter]',files:'src/main.py, tests/test.py',source_project:'omi',behind:'0',step_settings:'build=codex/model/medium',pr:'42',pr_url:'https:'+'//example.org/pull/42',custom:'custom value'},
+      pr:{number:42,url:'https:'+'//example.org/pull/42'},
+      workflow_steps:[{id:'build',role:'engineer',skills:'omi-skill-web-qa',gate:'review'}],current_step:'build',
+      context:{skills:{'omi-skill-web-qa':'task'},rules:['python'],references:['guide','patterns/adapter']},
+      runs:[{role:'engineer',tool:'codex',model:'model',effort:'medium',step:'build',skills:[{id:'omi-skill-web-qa',source:'task'}],read:[],rules:['python'],references:['patterns/adapter']},
+        {role:'reviewer',tool:'codex',model:'model',effort:'high',step:'review',skills:[{id:'review-skill',source:'role'}],read:['review-skill'],rules:['python'],references:['guide']}]};
+    const infoProject={...hierarchy,pull_requests:[{headRefName:'task/TASK-115',number:42,url:'https:'+'//example.org/pull/42'}],decisions_text:'# Decisions\nA complete decision paragraph',
+      plans:[{...plan,goal:'Plan goal',criteria:[{text:'Shipped',checked:true},{text:'Pending',checked:false}]}],
+      catalogs:Object.fromEntries(['skills','rules','references','patterns'].map(kind=>[kind,[{id:kind==='patterns'?'patterns/adapter':kind,text:kind+' catalog description',tasks:['TASK-115']}]]))};
     let timelineMode=null,release=null,timelineHold=null;
     const timelineFixture={full:timelineDetail,'no-files':noFilesDetail,'no-steps':noStepsDetail,loading:timelineDetail};
     const gnode=(id,title,status,layer,o={})=>({id,title,status,layer,depends:[],blocks:[],waiting:[],blocked_by:[],critical:false,...o});
@@ -935,7 +947,7 @@ catch(e) {
         if(timelineMode==='loading'&&url.pathname.endsWith('/tasks/TASK-115')) await timelineHold;
         if(url.pathname==='/api/projects/omi/graph') return route.fulfill({json:graphFixture[graphMode]});
         if(url.pathname==='/api/projects/omi/cost') return route.fulfill({json:{...costFixture[costMode],source:remoteSource}});
-        const data=url.pathname.endsWith('/version')?{sha:remoteSource.sha}:url.pathname.endsWith('/tasks/TASK-115')?(timelineMode&&timelineFixture[timelineMode]||workflowDetail):url.pathname==='/api/projects/omi'?(alertsOn?{...hierarchy,alerts:alertFixture.slice(0,alertsOn)}:hierarchy):{projects:[summary],source:remoteSource,inbox:inboxFixture};
+        const data=url.pathname.endsWith('/version')?{sha:remoteSource.sha}:url.pathname.endsWith('/tasks/TASK-115')?(infoMode?fullInfo:timelineMode&&timelineFixture[timelineMode]||workflowDetail):url.pathname==='/api/projects/omi'?(infoMode?infoProject:alertsOn?{...hierarchy,alerts:alertFixture.slice(0,alertsOn)}:hierarchy):{projects:[summary],source:remoteSource,inbox:inboxFixture};
         return route.fulfill({json:data});
       }
       const name=url.pathname==='/'?'index.html':url.pathname.slice(1);
@@ -999,9 +1011,9 @@ catch(e) {
       assert.equal(await toggle.getAttribute('aria-expanded'),String(width>=768));
       assert.equal(await sidebar.isVisible(),width>=768);
       if(width<768) { await toggle.focus();await page.keyboard.press('Space'); }
-      assert.equal(await sidebar.locator('a').count(),7);
+      assert.equal(await sidebar.locator('a').count(),8);
       assert.deepEqual(await sidebar.locator('a').allTextContents(),
-        ['Tổng quan dự án','Cây công việc','Kanban','Hộp thư PO','Chi phí','Đồ thị phụ thuộc','Thông báo']);
+        ['Tổng quan dự án','Cây công việc','Kanban','Hộp thư PO','Catalog','Chi phí','Đồ thị phụ thuộc','Thông báo']);
       if(width<768) {
         const source=await page.locator('#source').boundingBox(), stamp=await page.locator('#status').boundingBox();
         assert(stamp.y+stamp.height<=source.y,'phone timestamp and source must occupy separate rows');
@@ -1453,6 +1465,44 @@ catch(e) {
         assert(fs.statSync(path.join(screens,`timeline-${mode}-${width}.png`)).size>0);
       for(const name of ['graph-375','graph-1280','graph-cycle-1280','graph-empty-1280','graph-empty-375'])
         assert(fs.statSync(path.join(screens,`${name}.png`)).size>0);
+    }
+    infoMode=true;
+    for(const width of [320,1280]) {
+      await page.setViewportSize({width,height:900});
+      await page.goto('http://omi.test/#/p/omi/t/TASK-115');await page.reload();
+      await page.locator('.task-meta').waitFor();
+      for(const [key,value] of Object.entries(fullInfo.frontmatter)) {
+        const field=page.locator(`.task-meta dd[data-key="${key}"]`);
+        await field.waitFor();
+        if(!['scope','skills','refs','files','depends'].includes(key)) assert((await field.textContent()).includes(value),key);
+      }
+      for(const key of ['scope','skills','refs','files','depends']) {
+        const field=page.locator(`.task-meta dd[data-key="${key}"]`);
+        assert(!(await field.textContent()).includes('['));
+        assert.equal(await field.locator(':scope > ul > li').count(),key==='depends'?1:2);
+      }
+      assert(await page.locator('.steps [aria-current="step"]').count());
+      assert((await page.locator('.steps').innerText()).includes('engineer'));
+      assert((await page.locator('.steps').innerText()).includes('review'));
+      assert.equal(await page.getByRole('link',{name:'PR 42',exact:true}).getAttribute('href'),fullInfo.pr.url);
+      assert.equal(await page.locator('.skill-missed').count(),1);
+      assert((await page.locator('.run-record').first().innerText()).includes('0/1'));
+      assert((await page.locator('.run-record').last().innerText()).includes('1/1'));
+      assert(await page.evaluate(()=>[...document.querySelectorAll('.info-segment')].every(n=>{
+        const r=document.createRange();r.selectNodeContents(n);
+        return r.getClientRects().length<=1 && n.getBoundingClientRect().right<=innerWidth;
+      })),`names wrap only at separators ${width}`);
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+      await page.evaluate(axeSource);await audit(`full information ${width}`);
+      if(screens) await page.screenshot({path:path.join(screens,`information-${width}.png`),fullPage:true});
+      await page.goto('http://omi.test/#/p/omi');await page.getByText('Plan goal',{exact:true}).waitFor();
+      await page.getByText('✓ Xong: Shipped',{exact:true}).waitFor();await page.getByText('○ Chưa xong: Pending',{exact:true}).waitFor();
+      assert((await page.locator('#view').innerText()).includes('A complete decision paragraph'));
+      await page.goto('http://omi.test/#/p/omi/catalog');await page.locator('.catalog-entry').first().waitFor();
+      assert.equal(await page.locator('.catalog-entry').count(),4);
+      assert.equal(await page.locator('.catalog-entry a').first().getAttribute('href'),'#/p/omi/t/TASK-115');
+      await page.evaluate(axeSource);await audit(`catalog ${width}`);
+      if(screens) await page.screenshot({path:path.join(screens,`catalog-${width}.png`),fullPage:true});
     }
     assert.deepEqual(errors,[]);
     console.log('ok: browser layouts at 320/360/390/768/1280px, inbox at 320/375/1280px and 200% zoom, phone summaries, overflow disclosure, dark mode, CSP, keyboard controls, axe (light/dark), print, GET-only requests, filters/history/sharing at 320/375/768/1000/1280px, dependency graph (SVG, list, cycle, empty) at 320/375/768/1280px');

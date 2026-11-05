@@ -8,7 +8,7 @@ import time
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from unittest.mock import patch
 
 import helpers
@@ -557,7 +557,7 @@ def test_task_runs() -> None:
             "- omi-agent-engineer | claude sonnet low | fix | skills: a@role c@step | read: a c | rules: python omi-modules | refs: r1\n"
             "- omi-agent-reviewer | claude opus high | review | skills: v@role | read: - | rules: - | refs: -\n"
             "- junk line\n")
-    snap = type("S", (), {"paths": set()})()
+    snap = type("S", (), {"paths": set(), "files": lambda self, path, pattern: []})()
     detail = lambda text: data._detail(snap, Path("p"), "TASK-001", text)
     got = detail(f"---\nid: TASK-001\n---\n## Goal\nx\n\n## Runs\n{runs}\n## Usage\n| role |\n")["runs"]
     assert [(r["role"], r["step"]) for r in got] == [("omi-agent-engineer", "build"), ("omi-agent-engineer", "fix"), ("omi-agent-reviewer", "review")]
@@ -772,7 +772,7 @@ def test_timeline() -> None:
 
 def test_task_detail_files() -> None:
     text = "---\nid: TASK-001\nfiles: src/a.py, tests/b.py\n---\n## Steps\n- build started 2026-11-02 16:00\n"
-    snap = type("S", (), {"paths": set()})()
+    snap = type("S", (), {"paths": set(), "files": lambda self, path, pattern: []})()
     detail = data._detail(snap, Path("p"), "TASK-001", text)
     assert detail["files"] == ["src/a.py", "tests/b.py"] and detail["timeline"]["rows"][0]["name"] == "build"
     assert data._detail(snap, Path("p"), "TASK-001", text.replace("files: src/a.py, tests/b.py\n", ""))["files"] == []
@@ -858,7 +858,66 @@ def test_graph_view() -> None:
         assert next(n for n in graph["nodes"] if n["id"] == "TASK-005")["waiting"] == ["TASK-003"]
 
 
+def test_full_information_snapshot():
+    # In-memory immutable snapshot: no local files or network can supply context.
+    root = Path("projects/sample")
+    docs = {
+        ".omi/rules/python.md": "---\nid: python\napplies: **/*.py\n---\n",
+        ".omi/agents/engineer.md": "---\nskills: [role-skill]\n---\n",
+        ".omi/workflows/feature.md": "---\nsteps:\n- id: build | role: engineer | skills: step-skill | gate: review\n---\n",
+        ".omi/skills/CATALOG.md": "- role-skill (ui): Role default\n- task-skill (ui): Task skill\n- step-skill (ui): Step skill\n",
+        ".omi/rules/CATALOG.md": "- python: Python (applies: **/*.py)\n",
+        ".omi/references/CATALOG.md": "- guide: Guide\n- patterns/adapter: Adapter\n",
+        ".omi/workflows/CATALOG.md": "- feature: Feature\n",
+        ".omi/plans/PLAN-001.md": "---\nid: PLAN-001\ntitle: Plan\nstatus: active\n---\n## Goal\nPlan goal\n## Done criteria\n- [x] shipped\n- [ ] pending\n",
+    }
+    content = """---
+id: TASK-001
+title: Information
+status: in-progress
+role: engineer
+step: build
+workflow: feature
+skills: [task-skill]
+refs: [guide, patterns/adapter]
+scope: [src/**]
+files: [src/main.py, tests/test.py]
+pr: 42
+pr_url: https://example.org/pull/42
+custom: retain me
+---
+## Runs
+- engineer | codex model medium | build | skills: role-skill@role task-skill@task step-skill@step | read: - | rules: python | refs: guide patterns/adapter
+"""
+    docs["src/main.py"] = "print('tracked')"
+    class Snapshot:
+        paths = {root / p for p in docs}
+        def read(self, path):
+            return docs[path.relative_to(root).as_posix()]
+        def files(self, path, pattern):
+            return sorted(p for p in self.paths if p.parent == path and p.match(pattern))
+    snap = Snapshot()
+    detail = data._detail(snap, root, "TASK-001", content)
+    assert detail["frontmatter"]["custom"] == "retain me"
+    assert detail["context"] == {"skills": {"role-skill": "role", "task-skill": "task", "step-skill": "step"},
+                                 "rules": ["python"], "references": ["guide", "patterns/adapter"]}
+    assert detail["files"] == ["src/main.py", "tests/test.py"]
+    assert detail["pr"] == {"number": "42", "url": "https://example.org/pull/42"}
+    assert detail["workflow_steps"] == [{"id": "build", "role": "engineer", "skills": "step-skill", "gate": "review"}]
+    assert detail["runs"][0]["read"] == [] and detail["runs"][0]["references"] == ["guide", "patterns/adapter"]
+    catalog = data._catalogs(snap, root, [detail])
+    for group in ("skills", "rules", "references", "patterns", "workflows"):
+        assert catalog[group] and all(item["tasks"] == ["TASK-001"] for item in catalog[group])
+    plan = data._plans(snap, root, [detail])[0]
+    assert plan["goal"] == "Plan goal"
+    assert plan["criteria"] == [{"text": "shipped", "checked": True}, {"text": "pending", "checked": False}]
+    # Exercise Windows separators even when the host uses POSIX paths.
+    root = PureWindowsPath(root)
+    assert snap.read(root / ".omi/workflows/feature.md") == docs[".omi/workflows/feature.md"]
+
+
 def main():
+    test_full_information_snapshot()
     test_inbox_detection()
     test_inbox_aggregation()
     test_views()
