@@ -397,7 +397,7 @@ def test_session_resume():
         if "--git-common-dir" in cmd:
             return R(str(Path(cmd[2]) / "shared.git"))
         if "show" in cmd:
-            return R("---\nscope: src/**\n---\n")
+            return R(f"---\nscope: {state.get('scope', 'src/**')}\n---\n")
         if "status" in cmd:
             return R(" M src/a.py\0")
         if cmd[:2] == ["docker", "volume"]:
@@ -621,6 +621,25 @@ def test_session_resume():
                 assert "--resume" in calls[0] and "/state/.omi/skills/g/omi-skill-x/SKILL.md" in prompt and "/work/.omi/skills" not in prompt, prompt
             finally:
                 state["stdout"] = saved_out
+            task.write_text(plain, encoding="utf-8")
+            # a scope widened since the session's last run is named in the resume prompt
+            saved_out = state["stdout"]
+            try:
+                state["stdout"] = sid_ev("S4")
+                go(fresh=True)
+                assert "Run scope: src/**" in task.read_text(encoding="utf-8")
+                go()
+                assert "SCOPE SYNCED" not in calls[0][calls[0].index("-p") + 1]  # unchanged scope: nothing to say
+                state["scope"] = "src/**, tests/test_worker.py"
+                go()
+                prompt = calls[0][calls[0].index("-p") + 1]
+                assert "--resume" in calls[0] and "SCOPE SYNCED" in prompt and "tests/test_worker.py" in prompt and "src/**" not in prompt, prompt
+                assert "Run scope: src/**, tests/test_worker.py" in task.read_text(encoding="utf-8")
+                go()
+                assert "SCOPE SYNCED" not in calls[0][calls[0].index("-p") + 1]  # said once
+            finally:
+                state["stdout"] = saved_out
+                state.pop("scope", None)
             task.write_text(plain, encoding="utf-8")
             shutil.rmtree(wt / ".omi" / "skills")
             # scan rc 0 (token), 2 (unreadable entry) and 125 (docker error) drop the volume and the Session line; 1 keeps both

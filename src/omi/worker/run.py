@@ -36,6 +36,20 @@ def skills_read(root, ids, opened):
     return done
 
 
+SCOPE_LINE = re.compile(r"^Run scope: (.*)$\n?", re.M)  # the task scope at the session's last run, under `## Checkpoint`
+
+
+def widened_scope(text, now):
+    """Scope entries in `now` that the session's previous run did not have; [] without a recorded previous scope."""
+    m = SCOPE_LINE.search(text or "")
+    return [g for g in now if g not in core.split(m[1])] if m else []
+
+
+def record_scope(task, now):
+    task.write_text(SCOPE_LINE.sub("", core.read_task(task)), encoding="utf-8", newline="\n")
+    tasks.append_note(task, "Checkpoint", "Run scope: " + ", ".join(now))
+
+
 def skills_cell(ids, done):
     return f"{len(done)}/{len(ids)} {' '.join(done)}".strip() if ids else "-"
 
@@ -236,6 +250,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
                      f"or use your ChatGPT login ({secret[2]}). Nothing changed.")
         sys.exit(f"no token: run `omi token set` (Windows), set {creds.TOKEN_ENV}, or log in to Claude Code on the host"
                  f"{f' ({secret[2]})' if secret[2] else ''}. Nothing changed.")
+    now_scope = scope.task_scope(wt, task.stem)
+    added = widened_scope(core.read_task(task) if task.exists() else "", now_scope)  # read before sync_scope rewrites the copy
     tasks.sync_scope(wt, task, task.stem)  # before `before`, so revert_front keeps the synced scope
     before = core.read_task(task) if task.exists() else ""
     if cur and cur["role"] != role:
@@ -295,6 +311,9 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         cmd = (tools.engineer_cmd if t == "claude" else tools.codex_cmd)(text, task_rel, mdl, eff, prompt_skills + note, resume, hook_tail)
         if resume and declared:  # the resume prompt is short: point again at the step's skills so reading them is counted
             cmd[2 if t == "claude" else -1] += resume_skills + "\nRe-read them now, they are not in your context after a resume."
+        if resume and added:  # the resumed session still remembers the old scope
+            cmd[2 if t == "claude" else -1] += ("\nSCOPE SYNCED: the task scope was widened since your last run; these paths are now in scope: "
+                                              + ", ".join(added) + ". Do not report NEEDS SCOPE for them.")
         if not read:  # the CLI's transcripts go to the per-task cache so a fix round can resume them
             cmd = session.wrap(t, cmd)
         chatgpt = env_name == creds.CODEX_AUTH_ENV
@@ -360,6 +379,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             verdict = f"QUOTA->{'codex' if t == 'claude' else 'claude'}"
         if not read and not dropped and (sid := session.session_id(t, r.stdout)) and task.exists():
             task.write_text(session.with_session(core.read_task(task), t, sid, role, seen), encoding="utf-8", newline="\n")
+            record_scope(task, now_scope)
         tasks.record_usage(task, role, models[t] + (" (codex)" if t == "codex" else ""), efforts[t], nums,
                      time.monotonic() - t0, skills_cell(ids, done), verdict)
         runs.record_run(task, role, t, models[t], efforts[t], cur["id"] if cur else None, sources, done,
