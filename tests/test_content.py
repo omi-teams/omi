@@ -515,6 +515,21 @@ def test_reviewers_accept_host_evidence() -> None:
         assert "HOST: <criterion> <evidence or required host check>" in text
 
 
+def test_reviewer_mockup_rule_depends_on_workflow() -> None:
+    root = omi.common.core.TEMPLATE / "dot-omi"
+    reviewer = (root / "agents" / "omi-agent-reviewer.md").read_text(encoding="utf-8")
+    rule = next(line for line in reviewer.splitlines() if line.startswith("4. "))
+    assert "Read the task's workflow" in rule
+    assert "Only when that workflow has a `design` or `approve-mockup` step" in rule
+    assert "(for example, `omi-flow-feature-ui`)" in rule
+    assert "For workflows without those steps (including `omi-flow-feature`), use browser tests and screenshots as UI evidence" in rule
+    assert "do not FAIL solely for a missing mockup or designer/UI review PASS" in rule
+    assert "4. For UI tasks, compare" not in reviewer
+    for name, has_design in (("omi-flow-feature-ui", True), ("omi-flow-feature", False)):
+        steps = omi.project.workflows.workflow_steps((root / "workflows" / f"{name}.md").read_text(encoding="utf-8"))
+        assert any(step["id"] in ("design", "approve-mockup") for step in steps) == has_design
+
+
 def test_reviewer_mockup_evidence_is_qa() -> None:
     root = omi.common.core.TEMPLATE / "dot-omi"
     reviewer = (root / "agents" / "omi-agent-reviewer.md").read_text(encoding="utf-8")
@@ -699,6 +714,7 @@ def main():
     test_ui_mockup_contract()
     test_ui_mockup_requires_designer_review()
     test_ui_mockup_review_contract()
+    test_reviewer_mockup_rule_depends_on_workflow()
     test_qa_host_criteria_do_not_fail()
     test_reviewers_accept_host_evidence()
     test_ui_mockup_workflow()
