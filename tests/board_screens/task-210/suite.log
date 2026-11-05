@@ -1,0 +1,1351 @@
+create AGENTS.md
+create docker/Dockerfile
+create docker/prove.sh
+create docker/proxy.py
+create .claude/settings.json
+create .claude/skills/omi-idea/SKILL.md
+create .claude/skills/omi-release/SKILL.md
+create .claude/skills/omi-status/SKILL.md
+create .claude/skills/omi-task/SKILL.md
+create .claude/skills/omi-upgrade/SKILL.md
+create .omi/agents/omi-agent-architect.md
+create .omi/agents/omi-agent-designer-ui.md
+create .omi/agents/omi-agent-devops.md
+create .omi/agents/omi-agent-docs-writer.md
+create .omi/agents/omi-agent-engineer.md
+create .omi/agents/omi-agent-qa-tester.md
+create .omi/agents/omi-agent-researcher.md
+create .omi/agents/omi-agent-reviewer.md
+create .omi/agents/omi-agent-security-reviewer.md
+create .omi/hooks/post-run.sh
+create .omi/plans/PLAN-000.md
+create .omi/references/nextjs-app-router.md
+create .omi/references/patterns/adapter.md
+create .omi/references/patterns/anti-patterns.md
+create .omi/references/patterns/cqrs.md
+create .omi/references/patterns/factory.md
+create .omi/references/patterns/repository.md
+create .omi/references/patterns/state.md
+create .omi/references/patterns/strategy.md
+create .omi/references/postgres-conventions.md
+create .omi/rules/docker.md
+create .omi/rules/go.md
+create .omi/rules/nextjs.md
+create .omi/rules/postgres.md
+create .omi/rules/python.md
+create .omi/skills/.gitkeep
+create .omi/skills/data/omi-skill-data-review/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+create .omi/skills/workflow/omi-skill-brainstorm-ac/SKILL.md
+create .omi/skills/workflow/omi-skill-change-request/SKILL.md
+create .omi/skills/workflow/omi-skill-issue-types/SKILL.md
+create .omi/skills/workflow/omi-skill-lean-implementation/SKILL.md
+create .omi/skills/workflow/omi-skill-task-brief/SKILL.md
+create .omi/structure.example.md
+create .omi/tasks/_template.md
+create .omi/workflows/omi-flow-bugfix.md
+create .omi/workflows/omi-flow-change-request.md
+create .omi/workflows/omi-flow-docs-only.md
+create .omi/workflows/omi-flow-feature-sensitive.md
+create .omi/workflows/omi-flow-feature-ui.md
+create .omi/workflows/omi-flow-feature.md
+create .omi/workflows/omi-flow-incident.md
+create .omi/workflows/omi-flow-promote.md
+create .omi/workflows/omi-flow-refactor.md
+create .omi/workflows/omi-flow-release.md
+create .omi/workflows/omi-flow-spike.md
+wrote /tmp/tmpit1qq95w/.omi/skills/CATALOG.md (19 skills)
+wrote /tmp/tmpit1qq95w/.omi/agents/CATALOG.md (9 roles)
+wrote /tmp/tmpit1qq95w/.omi/workflows/CATALOG.md (11 workflows)
+wrote /tmp/tmpit1qq95w/.omi/rules/CATALOG.md (5 rules)
+wrote /tmp/tmpit1qq95w/.omi/references/CATALOG.md (9 references)
+wrote /tmp/tmpit1qq95w/.omi/plans/CATALOG.md (1 plans)
+create .gitattributes (* text=auto eol=lf)
+update .gitignore (__pycache__/)
+update .gitignore (.omi-cache/)
+upgrade 0.5.0: 69 created, 0 updated, 0 kept (see *.omi-new)
+wrote /tmp/tmpit1qq95w/.omi/skills/CATALOG.md (19 skills)
+wrote /tmp/tmpit1qq95w/.omi/agents/CATALOG.md (9 roles)
+wrote /tmp/tmpit1qq95w/.omi/workflows/CATALOG.md (11 workflows)
+wrote /tmp/tmpit1qq95w/.omi/rules/CATALOG.md (5 rules)
+wrote /tmp/tmpit1qq95w/.omi/references/CATALOG.md (9 references)
+wrote /tmp/tmpit1qq95w/.omi/plans/CATALOG.md (1 plans)
+upgrade 0.5.0: 0 created, 0 updated, 0 kept (see *.omi-new)
+create AGENTS.md
+create docker/Dockerfile
+create docker/prove.sh
+create docker/proxy.py
+create .claude/settings.json
+create .claude/skills/omi-idea/SKILL.md
+create .claude/skills/omi-release/SKILL.md
+create .claude/skills/omi-status/SKILL.md
+create .claude/skills/omi-task/SKILL.md
+create .claude/skills/omi-upgrade/SKILL.md
+create .omi/agents/omi-agent-architect.md
+create .omi/agents/omi-agent-designer-ui.md
+create .omi/agents/omi-agent-devops.md
+create .omi/agents/omi-agent-docs-writer.md
+create .omi/agents/omi-agent-engineer.md
+create .omi/agents/omi-agent-qa-tester.md
+create .omi/agents/omi-agent-researcher.md
+create .omi/agents/omi-agent-reviewer.md
+create .omi/agents/omi-agent-security-reviewer.md
+create .omi/config.json
+create .omi/decisions.md
+create .omi/hooks/post-run.sh
+create .omi/plans/PLAN-000.md
+create .omi/references/nextjs-app-router.md
+create .omi/references/patterns/adapter.md
+create .omi/references/patterns/anti-patterns.md
+create .omi/references/patterns/cqrs.md
+create .omi/references/patterns/factory.md
+create .omi/references/patterns/repository.md
+create .omi/references/patterns/state.md
+create .omi/references/patterns/strategy.md
+create .omi/references/postgres-conventions.md
+create .omi/rules/docker.md
+create .omi/rules/go.md
+create .omi/rules/nextjs.md
+create .omi/rules/postgres.md
+create .omi/rules/python.md
+create .omi/skills/.gitkeep
+create .omi/skills/data/omi-skill-data-review/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+create .omi/skills/workflow/omi-skill-brainstorm-ac/SKILL.md
+create .omi/skills/workflow/omi-skill-change-request/SKILL.md
+create .omi/skills/workflow/omi-skill-issue-types/SKILL.md
+create .omi/skills/workflow/omi-skill-lean-implementation/SKILL.md
+create .omi/skills/workflow/omi-skill-task-brief/SKILL.md
+create .omi/structure.example.md
+create .omi/tasks/_template.md
+create .omi/workflows/omi-flow-bugfix.md
+create .omi/workflows/omi-flow-change-request.md
+create .omi/workflows/omi-flow-docs-only.md
+create .omi/workflows/omi-flow-feature-sensitive.md
+create .omi/workflows/omi-flow-feature-ui.md
+create .omi/workflows/omi-flow-feature.md
+create .omi/workflows/omi-flow-incident.md
+create .omi/workflows/omi-flow-promote.md
+create .omi/workflows/omi-flow-refactor.md
+create .omi/workflows/omi-flow-release.md
+create .omi/workflows/omi-flow-spike.md
+stamp  .omi/version (0.5.0)
+create .gitattributes (* text=auto eol=lf)
+update .gitignore (__pycache__/)
+update .gitignore (.omi-cache/)
+wrote /tmp/tmptbpkgk5k/.omi/skills/CATALOG.md (19 skills)
+wrote /tmp/tmptbpkgk5k/.omi/agents/CATALOG.md (9 roles)
+wrote /tmp/tmptbpkgk5k/.omi/workflows/CATALOG.md (11 workflows)
+wrote /tmp/tmptbpkgk5k/.omi/rules/CATALOG.md (5 rules)
+wrote /tmp/tmptbpkgk5k/.omi/references/CATALOG.md (9 references)
+wrote /tmp/tmptbpkgk5k/.omi/plans/CATALOG.md (1 plans)
+git init (branch main)
+tools: git ok, gh MISSING, docker MISSING, claude ok, codex ok
+next: open Claude Code or Codex here and type omi-idea
+skip   AGENTS.md (exists)
+skip   docker/Dockerfile (exists)
+skip   docker/prove.sh (exists)
+skip   docker/proxy.py (exists)
+skip   .claude/settings.json (exists)
+skip   .claude/skills/omi-idea/SKILL.md (exists)
+skip   .claude/skills/omi-release/SKILL.md (exists)
+skip   .claude/skills/omi-status/SKILL.md (exists)
+skip   .claude/skills/omi-task/SKILL.md (exists)
+skip   .claude/skills/omi-upgrade/SKILL.md (exists)
+skip   .omi/agents/omi-agent-architect.md (exists)
+skip   .omi/agents/omi-agent-designer-ui.md (exists)
+skip   .omi/agents/omi-agent-devops.md (exists)
+skip   .omi/agents/omi-agent-docs-writer.md (exists)
+skip   .omi/agents/omi-agent-engineer.md (exists)
+skip   .omi/agents/omi-agent-qa-tester.md (exists)
+skip   .omi/agents/omi-agent-researcher.md (exists)
+skip   .omi/agents/omi-agent-reviewer.md (exists)
+skip   .omi/agents/omi-agent-security-reviewer.md (exists)
+skip   .omi/config.json (exists)
+skip   .omi/decisions.md (exists)
+skip   .omi/hooks/post-run.sh (exists)
+skip   .omi/plans/PLAN-000.md (exists)
+skip   .omi/references/nextjs-app-router.md (exists)
+skip   .omi/references/patterns/adapter.md (exists)
+skip   .omi/references/patterns/anti-patterns.md (exists)
+skip   .omi/references/patterns/cqrs.md (exists)
+skip   .omi/references/patterns/factory.md (exists)
+skip   .omi/references/patterns/repository.md (exists)
+skip   .omi/references/patterns/state.md (exists)
+skip   .omi/references/patterns/strategy.md (exists)
+skip   .omi/references/postgres-conventions.md (exists)
+skip   .omi/rules/docker.md (exists)
+skip   .omi/rules/go.md (exists)
+skip   .omi/rules/nextjs.md (exists)
+skip   .omi/rules/postgres.md (exists)
+skip   .omi/rules/python.md (exists)
+skip   .omi/skills/.gitkeep (exists)
+skip   .omi/skills/data/omi-skill-data-review/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-incident/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md (exists)
+skip   .omi/skills/qa-web/omi-skill-web-qa/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-diff-security-review/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-simplify-review/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-verify-evidence/SKILL.md (exists)
+skip   .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md (exists)
+skip   .omi/skills/ui/omi-skill-ui-direction/SKILL.md (exists)
+skip   .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md (exists)
+skip   .omi/skills/workflow/omi-skill-brainstorm-ac/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-change-request/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-issue-types/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-lean-implementation/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-task-brief/SKILL.md (exists)
+skip   .omi/structure.example.md (exists)
+skip   .omi/tasks/_template.md (exists)
+skip   .omi/workflows/omi-flow-bugfix.md (exists)
+skip   .omi/workflows/omi-flow-change-request.md (exists)
+skip   .omi/workflows/omi-flow-docs-only.md (exists)
+skip   .omi/workflows/omi-flow-feature-sensitive.md (exists)
+skip   .omi/workflows/omi-flow-feature-ui.md (exists)
+skip   .omi/workflows/omi-flow-feature.md (exists)
+skip   .omi/workflows/omi-flow-incident.md (exists)
+skip   .omi/workflows/omi-flow-promote.md (exists)
+skip   .omi/workflows/omi-flow-refactor.md (exists)
+skip   .omi/workflows/omi-flow-release.md (exists)
+skip   .omi/workflows/omi-flow-spike.md (exists)
+stamp  .omi/version (0.5.0)
+wrote /tmp/tmptbpkgk5k/.omi/skills/CATALOG.md (19 skills)
+wrote /tmp/tmptbpkgk5k/.omi/agents/CATALOG.md (9 roles)
+wrote /tmp/tmptbpkgk5k/.omi/workflows/CATALOG.md (11 workflows)
+wrote /tmp/tmptbpkgk5k/.omi/rules/CATALOG.md (5 rules)
+wrote /tmp/tmptbpkgk5k/.omi/references/CATALOG.md (9 references)
+wrote /tmp/tmptbpkgk5k/.omi/plans/CATALOG.md (1 plans)
+tools: git ok, gh MISSING, docker MISSING, claude ok, codex ok
+next: open Claude Code or Codex here and type omi-idea
+wrote /tmp/tmptbpkgk5k/.omi/skills/CATALOG.md (19 skills)
+wrote /tmp/tmptbpkgk5k/.omi/agents/CATALOG.md (9 roles)
+wrote /tmp/tmptbpkgk5k/.omi/workflows/CATALOG.md (11 workflows)
+wrote /tmp/tmptbpkgk5k/.omi/rules/CATALOG.md (5 rules)
+wrote /tmp/tmptbpkgk5k/.omi/references/CATALOG.md (9 references)
+wrote /tmp/tmptbpkgk5k/.omi/plans/CATALOG.md (1 plans)
+upgrade 0.5.0: 0 created, 0 updated, 0 kept (see *.omi-new)
+create AGENTS.md
+create docker/Dockerfile
+create docker/prove.sh
+create docker/proxy.py
+create .claude/settings.json
+create .claude/skills/omi-idea/SKILL.md
+create .claude/skills/omi-release/SKILL.md
+create .claude/skills/omi-status/SKILL.md
+create .claude/skills/omi-task/SKILL.md
+create .claude/skills/omi-upgrade/SKILL.md
+create .omi/agents/omi-agent-architect.md
+create .omi/agents/omi-agent-designer-ui.md
+create .omi/agents/omi-agent-devops.md
+create .omi/agents/omi-agent-docs-writer.md
+create .omi/agents/omi-agent-engineer.md
+create .omi/agents/omi-agent-qa-tester.md
+create .omi/agents/omi-agent-researcher.md
+create .omi/agents/omi-agent-reviewer.md
+create .omi/agents/omi-agent-security-reviewer.md
+create .omi/config.json
+create .omi/decisions.md
+create .omi/hooks/post-run.sh
+create .omi/plans/PLAN-000.md
+create .omi/references/nextjs-app-router.md
+create .omi/references/patterns/adapter.md
+create .omi/references/patterns/anti-patterns.md
+create .omi/references/patterns/cqrs.md
+create .omi/references/patterns/factory.md
+create .omi/references/patterns/repository.md
+create .omi/references/patterns/state.md
+create .omi/references/patterns/strategy.md
+create .omi/references/postgres-conventions.md
+create .omi/rules/docker.md
+create .omi/rules/go.md
+create .omi/rules/nextjs.md
+create .omi/rules/postgres.md
+create .omi/rules/python.md
+create .omi/skills/.gitkeep
+create .omi/skills/data/omi-skill-data-review/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+create .omi/skills/workflow/omi-skill-brainstorm-ac/SKILL.md
+create .omi/skills/workflow/omi-skill-change-request/SKILL.md
+create .omi/skills/workflow/omi-skill-issue-types/SKILL.md
+create .omi/skills/workflow/omi-skill-lean-implementation/SKILL.md
+create .omi/skills/workflow/omi-skill-task-brief/SKILL.md
+create .omi/structure.example.md
+create .omi/tasks/_template.md
+create .omi/workflows/omi-flow-bugfix.md
+create .omi/workflows/omi-flow-change-request.md
+create .omi/workflows/omi-flow-docs-only.md
+create .omi/workflows/omi-flow-feature-sensitive.md
+create .omi/workflows/omi-flow-feature-ui.md
+create .omi/workflows/omi-flow-feature.md
+create .omi/workflows/omi-flow-incident.md
+create .omi/workflows/omi-flow-promote.md
+create .omi/workflows/omi-flow-refactor.md
+create .omi/workflows/omi-flow-release.md
+create .omi/workflows/omi-flow-spike.md
+stamp  .omi/version (0.5.0)
+create .gitattributes (* text=auto eol=lf)
+update .gitignore (__pycache__/)
+update .gitignore (.omi-cache/)
+wrote /tmp/tmp0g9hncro/.omi/skills/CATALOG.md (19 skills)
+wrote /tmp/tmp0g9hncro/.omi/agents/CATALOG.md (9 roles)
+wrote /tmp/tmp0g9hncro/.omi/workflows/CATALOG.md (11 workflows)
+wrote /tmp/tmp0g9hncro/.omi/rules/CATALOG.md (5 rules)
+wrote /tmp/tmp0g9hncro/.omi/references/CATALOG.md (9 references)
+wrote /tmp/tmp0g9hncro/.omi/plans/CATALOG.md (1 plans)
+git init (branch main)
+tools: git ok, gh MISSING, docker MISSING, claude ok, codex ok
+next: open Claude Code or Codex here and type omi-idea
+create AGENTS.md
+create docker/Dockerfile
+create docker/prove.sh
+create docker/proxy.py
+create .claude/settings.json
+create .claude/skills/omi-idea/SKILL.md
+create .claude/skills/omi-release/SKILL.md
+create .claude/skills/omi-status/SKILL.md
+create .claude/skills/omi-task/SKILL.md
+create .claude/skills/omi-upgrade/SKILL.md
+create .omi/agents/omi-agent-architect.md
+create .omi/agents/omi-agent-designer-ui.md
+create .omi/agents/omi-agent-devops.md
+create .omi/agents/omi-agent-docs-writer.md
+create .omi/agents/omi-agent-engineer.md
+create .omi/agents/omi-agent-qa-tester.md
+create .omi/agents/omi-agent-researcher.md
+create .omi/agents/omi-agent-reviewer.md
+create .omi/agents/omi-agent-security-reviewer.md
+create .omi/config.json
+create .omi/decisions.md
+create .omi/hooks/post-run.sh
+create .omi/plans/PLAN-000.md
+create .omi/references/nextjs-app-router.md
+create .omi/references/patterns/adapter.md
+create .omi/references/patterns/anti-patterns.md
+create .omi/references/patterns/cqrs.md
+create .omi/references/patterns/factory.md
+create .omi/references/patterns/repository.md
+create .omi/references/patterns/state.md
+create .omi/references/patterns/strategy.md
+create .omi/references/postgres-conventions.md
+create .omi/rules/docker.md
+create .omi/rules/go.md
+create .omi/rules/nextjs.md
+create .omi/rules/postgres.md
+create .omi/rules/python.md
+create .omi/skills/.gitkeep
+create .omi/skills/data/omi-skill-data-review/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+create .omi/skills/workflow/omi-skill-brainstorm-ac/SKILL.md
+create .omi/skills/workflow/omi-skill-change-request/SKILL.md
+create .omi/skills/workflow/omi-skill-issue-types/SKILL.md
+create .omi/skills/workflow/omi-skill-lean-implementation/SKILL.md
+create .omi/skills/workflow/omi-skill-task-brief/SKILL.md
+create .omi/structure.example.md
+create .omi/tasks/_template.md
+create .omi/workflows/omi-flow-bugfix.md
+create .omi/workflows/omi-flow-change-request.md
+create .omi/workflows/omi-flow-docs-only.md
+create .omi/workflows/omi-flow-feature-sensitive.md
+create .omi/workflows/omi-flow-feature-ui.md
+create .omi/workflows/omi-flow-feature.md
+create .omi/workflows/omi-flow-incident.md
+create .omi/workflows/omi-flow-promote.md
+create .omi/workflows/omi-flow-refactor.md
+create .omi/workflows/omi-flow-release.md
+create .omi/workflows/omi-flow-spike.md
+stamp  .omi/version (0.5.0)
+create .gitattributes (* text=auto eol=lf)
+update .gitignore (__pycache__/)
+update .gitignore (.omi-cache/)
+wrote /tmp/tmpl2cg1yj3/.omi/skills/CATALOG.md (19 skills)
+wrote /tmp/tmpl2cg1yj3/.omi/agents/CATALOG.md (9 roles)
+wrote /tmp/tmpl2cg1yj3/.omi/workflows/CATALOG.md (11 workflows)
+wrote /tmp/tmpl2cg1yj3/.omi/rules/CATALOG.md (5 rules)
+wrote /tmp/tmpl2cg1yj3/.omi/references/CATALOG.md (9 references)
+wrote /tmp/tmpl2cg1yj3/.omi/plans/CATALOG.md (1 plans)
+git init (branch main)
+tools: git ok, gh MISSING, docker MISSING, claude ok, codex ok
+next: open Claude Code or Codex here and type omi-idea
+skip   AGENTS.md (exists)
+skip   docker/Dockerfile (exists)
+skip   docker/prove.sh (exists)
+skip   docker/proxy.py (exists)
+skip   .claude/settings.json (exists)
+skip   .claude/skills/omi-idea/SKILL.md (exists)
+skip   .claude/skills/omi-release/SKILL.md (exists)
+skip   .claude/skills/omi-status/SKILL.md (exists)
+skip   .claude/skills/omi-task/SKILL.md (exists)
+skip   .claude/skills/omi-upgrade/SKILL.md (exists)
+skip   .omi/agents/omi-agent-architect.md (exists)
+skip   .omi/agents/omi-agent-designer-ui.md (exists)
+skip   .omi/agents/omi-agent-devops.md (exists)
+skip   .omi/agents/omi-agent-docs-writer.md (exists)
+skip   .omi/agents/omi-agent-engineer.md (exists)
+skip   .omi/agents/omi-agent-qa-tester.md (exists)
+skip   .omi/agents/omi-agent-researcher.md (exists)
+skip   .omi/agents/omi-agent-reviewer.md (exists)
+skip   .omi/agents/omi-agent-security-reviewer.md (exists)
+skip   .omi/config.json (exists)
+skip   .omi/decisions.md (exists)
+skip   .omi/hooks/post-run.sh (exists)
+skip   .omi/plans/PLAN-000.md (exists)
+skip   .omi/references/nextjs-app-router.md (exists)
+skip   .omi/references/patterns/adapter.md (exists)
+skip   .omi/references/patterns/anti-patterns.md (exists)
+skip   .omi/references/patterns/cqrs.md (exists)
+skip   .omi/references/patterns/factory.md (exists)
+skip   .omi/references/patterns/repository.md (exists)
+skip   .omi/references/patterns/state.md (exists)
+skip   .omi/references/patterns/strategy.md (exists)
+skip   .omi/references/postgres-conventions.md (exists)
+skip   .omi/rules/docker.md (exists)
+skip   .omi/rules/go.md (exists)
+skip   .omi/rules/nextjs.md (exists)
+skip   .omi/rules/postgres.md (exists)
+skip   .omi/rules/python.md (exists)
+skip   .omi/skills/.gitkeep (exists)
+skip   .omi/skills/data/omi-skill-data-review/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-incident/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md (exists)
+skip   .omi/skills/qa-web/omi-skill-web-qa/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-diff-security-review/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-simplify-review/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-verify-evidence/SKILL.md (exists)
+skip   .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md (exists)
+skip   .omi/skills/ui/omi-skill-ui-direction/SKILL.md (exists)
+skip   .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md (exists)
+skip   .omi/skills/workflow/omi-skill-brainstorm-ac/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-change-request/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-issue-types/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-lean-implementation/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-task-brief/SKILL.md (exists)
+skip   .omi/structure.example.md (exists)
+skip   .omi/tasks/_template.md (exists)
+skip   .omi/workflows/omi-flow-bugfix.md (exists)
+skip   .omi/workflows/omi-flow-change-request.md (exists)
+skip   .omi/workflows/omi-flow-docs-only.md (exists)
+skip   .omi/workflows/omi-flow-feature-sensitive.md (exists)
+skip   .omi/workflows/omi-flow-feature-ui.md (exists)
+skip   .omi/workflows/omi-flow-feature.md (exists)
+skip   .omi/workflows/omi-flow-incident.md (exists)
+skip   .omi/workflows/omi-flow-promote.md (exists)
+skip   .omi/workflows/omi-flow-refactor.md (exists)
+skip   .omi/workflows/omi-flow-release.md (exists)
+skip   .omi/workflows/omi-flow-spike.md (exists)
+stamp  .omi/version (0.5.0)
+wrote /tmp/tmpl2cg1yj3/.omi/skills/CATALOG.md (19 skills)
+wrote /tmp/tmpl2cg1yj3/.omi/agents/CATALOG.md (9 roles)
+wrote /tmp/tmpl2cg1yj3/.omi/workflows/CATALOG.md (11 workflows)
+wrote /tmp/tmpl2cg1yj3/.omi/rules/CATALOG.md (5 rules)
+wrote /tmp/tmpl2cg1yj3/.omi/references/CATALOG.md (9 references)
+wrote /tmp/tmpl2cg1yj3/.omi/plans/CATALOG.md (1 plans)
+tools: git ok, gh MISSING, docker MISSING, claude ok, codex ok
+next: open Claude Code or Codex here and type omi-idea
+template-shas 0.0.1: 71 files
+skip   AGENTS.md (exists)
+skip   docker/Dockerfile (exists)
+skip   docker/prove.sh (exists)
+skip   docker/proxy.py (exists)
+skip   .claude/settings.json (exists)
+skip   .claude/skills/omi-idea/SKILL.md (exists)
+skip   .claude/skills/omi-release/SKILL.md (exists)
+skip   .claude/skills/omi-status/SKILL.md (exists)
+skip   .claude/skills/omi-task/SKILL.md (exists)
+skip   .claude/skills/omi-upgrade/SKILL.md (exists)
+skip   .omi/agents/omi-agent-architect.md (exists)
+skip   .omi/agents/omi-agent-designer-ui.md (exists)
+skip   .omi/agents/omi-agent-devops.md (exists)
+skip   .omi/agents/omi-agent-docs-writer.md (exists)
+create .omi/agents/omi-agent-engineer.md
+skip   .omi/agents/omi-agent-qa-tester.md (exists)
+skip   .omi/agents/omi-agent-researcher.md (exists)
+skip   .omi/agents/omi-agent-reviewer.md (exists)
+skip   .omi/agents/omi-agent-security-reviewer.md (exists)
+skip   .omi/config.json (exists)
+skip   .omi/decisions.md (exists)
+skip   .omi/hooks/post-run.sh (exists)
+skip   .omi/plans/PLAN-000.md (exists)
+skip   .omi/references/nextjs-app-router.md (exists)
+skip   .omi/references/patterns/adapter.md (exists)
+skip   .omi/references/patterns/anti-patterns.md (exists)
+skip   .omi/references/patterns/cqrs.md (exists)
+skip   .omi/references/patterns/factory.md (exists)
+skip   .omi/references/patterns/repository.md (exists)
+skip   .omi/references/patterns/state.md (exists)
+skip   .omi/references/patterns/strategy.md (exists)
+skip   .omi/references/postgres-conventions.md (exists)
+skip   .omi/rules/docker.md (exists)
+skip   .omi/rules/go.md (exists)
+skip   .omi/rules/nextjs.md (exists)
+skip   .omi/rules/postgres.md (exists)
+skip   .omi/rules/python.md (exists)
+skip   .omi/skills/.gitkeep (exists)
+skip   .omi/skills/data/omi-skill-data-review/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-incident/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md (exists)
+skip   .omi/skills/qa-web/omi-skill-web-qa/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-diff-security-review/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-simplify-review/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-verify-evidence/SKILL.md (exists)
+skip   .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md (exists)
+skip   .omi/skills/ui/omi-skill-ui-direction/SKILL.md (exists)
+skip   .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md (exists)
+skip   .omi/skills/workflow/omi-skill-brainstorm-ac/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-change-request/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-issue-types/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-lean-implementation/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-task-brief/SKILL.md (exists)
+skip   .omi/structure.example.md (exists)
+skip   .omi/tasks/_template.md (exists)
+skip   .omi/workflows/omi-flow-bugfix.md (exists)
+skip   .omi/workflows/omi-flow-change-request.md (exists)
+skip   .omi/workflows/omi-flow-docs-only.md (exists)
+skip   .omi/workflows/omi-flow-feature-sensitive.md (exists)
+skip   .omi/workflows/omi-flow-feature-ui.md (exists)
+skip   .omi/workflows/omi-flow-feature.md (exists)
+skip   .omi/workflows/omi-flow-incident.md (exists)
+skip   .omi/workflows/omi-flow-promote.md (exists)
+skip   .omi/workflows/omi-flow-refactor.md (exists)
+skip   .omi/workflows/omi-flow-release.md (exists)
+skip   .omi/workflows/omi-flow-spike.md (exists)
+stamp  .omi/version (0.5.0)
+wrote /tmp/tmpl2cg1yj3/.omi/skills/CATALOG.md (19 skills)
+wrote /tmp/tmpl2cg1yj3/.omi/agents/CATALOG.md (9 roles)
+wrote /tmp/tmpl2cg1yj3/.omi/workflows/CATALOG.md (11 workflows)
+wrote /tmp/tmpl2cg1yj3/.omi/rules/CATALOG.md (5 rules)
+wrote /tmp/tmpl2cg1yj3/.omi/references/CATALOG.md (9 references)
+wrote /tmp/tmpl2cg1yj3/.omi/plans/CATALOG.md (1 plans)
+tools: git ok, gh MISSING, docker MISSING, claude ok, codex ok
+next: open Claude Code or Codex here and type omi-idea
+create AGENTS.md
+create docker/Dockerfile
+create docker/prove.sh
+create docker/proxy.py
+create .claude/settings.json
+create .claude/skills/omi-idea/SKILL.md
+create .claude/skills/omi-release/SKILL.md
+create .claude/skills/omi-status/SKILL.md
+create .claude/skills/omi-task/SKILL.md
+create .claude/skills/omi-upgrade/SKILL.md
+create .omi/agents/omi-agent-architect.md
+create .omi/agents/omi-agent-designer-ui.md
+create .omi/agents/omi-agent-devops.md
+create .omi/agents/omi-agent-docs-writer.md
+create .omi/agents/omi-agent-engineer.md
+create .omi/agents/omi-agent-qa-tester.md
+create .omi/agents/omi-agent-researcher.md
+create .omi/agents/omi-agent-reviewer.md
+create .omi/agents/omi-agent-security-reviewer.md
+create .omi/config.json
+create .omi/decisions.md
+create .omi/hooks/post-run.sh
+create .omi/plans/PLAN-000.md
+create .omi/references/nextjs-app-router.md
+create .omi/references/patterns/adapter.md
+create .omi/references/patterns/anti-patterns.md
+create .omi/references/patterns/cqrs.md
+create .omi/references/patterns/factory.md
+create .omi/references/patterns/repository.md
+create .omi/references/patterns/state.md
+create .omi/references/patterns/strategy.md
+create .omi/references/postgres-conventions.md
+create .omi/rules/docker.md
+create .omi/rules/go.md
+create .omi/rules/nextjs.md
+create .omi/rules/postgres.md
+create .omi/rules/python.md
+create .omi/skills/.gitkeep
+create .omi/skills/data/omi-skill-data-review/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+create .omi/skills/workflow/omi-skill-brainstorm-ac/SKILL.md
+create .omi/skills/workflow/omi-skill-change-request/SKILL.md
+create .omi/skills/workflow/omi-skill-issue-types/SKILL.md
+create .omi/skills/workflow/omi-skill-lean-implementation/SKILL.md
+create .omi/skills/workflow/omi-skill-task-brief/SKILL.md
+create .omi/structure.example.md
+create .omi/tasks/_template.md
+create .omi/workflows/omi-flow-bugfix.md
+create .omi/workflows/omi-flow-change-request.md
+create .omi/workflows/omi-flow-docs-only.md
+create .omi/workflows/omi-flow-feature-sensitive.md
+create .omi/workflows/omi-flow-feature-ui.md
+create .omi/workflows/omi-flow-feature.md
+create .omi/workflows/omi-flow-incident.md
+create .omi/workflows/omi-flow-promote.md
+create .omi/workflows/omi-flow-refactor.md
+create .omi/workflows/omi-flow-release.md
+create .omi/workflows/omi-flow-spike.md
+stamp  .omi/version (0.5.0)
+create .gitattributes (* text=auto eol=lf)
+update .gitignore (__pycache__/)
+update .gitignore (.omi-cache/)
+wrote /tmp/tmpxbwb8d4c/.omi/skills/CATALOG.md (19 skills)
+wrote /tmp/tmpxbwb8d4c/.omi/agents/CATALOG.md (9 roles)
+wrote /tmp/tmpxbwb8d4c/.omi/workflows/CATALOG.md (11 workflows)
+wrote /tmp/tmpxbwb8d4c/.omi/rules/CATALOG.md (5 rules)
+wrote /tmp/tmpxbwb8d4c/.omi/references/CATALOG.md (9 references)
+wrote /tmp/tmpxbwb8d4c/.omi/plans/CATALOG.md (1 plans)
+git init (branch main)
+tools: git ok, gh MISSING, docker MISSING, claude ok, codex ok
+next: open Claude Code or Codex here and type omi-idea
+create AGENTS.md
+create docker/Dockerfile
+create docker/prove.sh
+create docker/proxy.py
+create .claude/settings.json
+create .claude/skills/omi-idea/SKILL.md
+create .claude/skills/omi-release/SKILL.md
+create .claude/skills/omi-status/SKILL.md
+create .claude/skills/omi-task/SKILL.md
+create .claude/skills/omi-upgrade/SKILL.md
+create .omi/agents/omi-agent-architect.md
+create .omi/agents/omi-agent-designer-ui.md
+create .omi/agents/omi-agent-devops.md
+create .omi/agents/omi-agent-docs-writer.md
+create .omi/agents/omi-agent-engineer.md
+create .omi/agents/omi-agent-qa-tester.md
+create .omi/agents/omi-agent-researcher.md
+create .omi/agents/omi-agent-reviewer.md
+create .omi/agents/omi-agent-security-reviewer.md
+create .omi/config.json
+create .omi/decisions.md
+create .omi/hooks/post-run.sh
+create .omi/plans/PLAN-000.md
+create .omi/references/nextjs-app-router.md
+create .omi/references/patterns/adapter.md
+create .omi/references/patterns/anti-patterns.md
+create .omi/references/patterns/cqrs.md
+create .omi/references/patterns/factory.md
+create .omi/references/patterns/repository.md
+create .omi/references/patterns/state.md
+create .omi/references/patterns/strategy.md
+create .omi/references/postgres-conventions.md
+create .omi/rules/docker.md
+create .omi/rules/go.md
+create .omi/rules/nextjs.md
+create .omi/rules/postgres.md
+create .omi/rules/python.md
+create .omi/skills/.gitkeep
+create .omi/skills/data/omi-skill-data-review/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+create .omi/skills/workflow/omi-skill-brainstorm-ac/SKILL.md
+create .omi/skills/workflow/omi-skill-change-request/SKILL.md
+create .omi/skills/workflow/omi-skill-issue-types/SKILL.md
+create .omi/skills/workflow/omi-skill-lean-implementation/SKILL.md
+create .omi/skills/workflow/omi-skill-task-brief/SKILL.md
+create .omi/structure.example.md
+create .omi/tasks/_template.md
+create .omi/workflows/omi-flow-bugfix.md
+create .omi/workflows/omi-flow-change-request.md
+create .omi/workflows/omi-flow-docs-only.md
+create .omi/workflows/omi-flow-feature-sensitive.md
+create .omi/workflows/omi-flow-feature-ui.md
+create .omi/workflows/omi-flow-feature.md
+create .omi/workflows/omi-flow-incident.md
+create .omi/workflows/omi-flow-promote.md
+create .omi/workflows/omi-flow-refactor.md
+create .omi/workflows/omi-flow-release.md
+create .omi/workflows/omi-flow-spike.md
+stamp  .omi/version (0.5.0)
+create .gitattributes (* text=auto eol=lf)
+update .gitignore (__pycache__/)
+update .gitignore (.omi-cache/)
+wrote /tmp/tmp81zqgaab/.omi/skills/CATALOG.md (19 skills)
+wrote /tmp/tmp81zqgaab/.omi/agents/CATALOG.md (9 roles)
+wrote /tmp/tmp81zqgaab/.omi/workflows/CATALOG.md (11 workflows)
+wrote /tmp/tmp81zqgaab/.omi/rules/CATALOG.md (5 rules)
+wrote /tmp/tmp81zqgaab/.omi/references/CATALOG.md (9 references)
+wrote /tmp/tmp81zqgaab/.omi/plans/CATALOG.md (1 plans)
+git init (branch main)
+tools: git ok, gh MISSING, docker MISSING, claude ok, codex ok
+next: open Claude Code or Codex here and type omi-idea
+skip   AGENTS.md (exists)
+skip   docker/Dockerfile (exists)
+skip   docker/prove.sh (exists)
+skip   docker/proxy.py (exists)
+skip   .claude/settings.json (exists)
+skip   .claude/skills/omi-idea/SKILL.md (exists)
+skip   .claude/skills/omi-release/SKILL.md (exists)
+skip   .claude/skills/omi-status/SKILL.md (exists)
+skip   .claude/skills/omi-task/SKILL.md (exists)
+skip   .claude/skills/omi-upgrade/SKILL.md (exists)
+skip   .omi/agents/omi-agent-architect.md (exists)
+skip   .omi/agents/omi-agent-designer-ui.md (exists)
+skip   .omi/agents/omi-agent-devops.md (exists)
+skip   .omi/agents/omi-agent-docs-writer.md (exists)
+skip   .omi/agents/omi-agent-engineer.md (exists)
+skip   .omi/agents/omi-agent-qa-tester.md (exists)
+skip   .omi/agents/omi-agent-researcher.md (exists)
+skip   .omi/agents/omi-agent-reviewer.md (exists)
+skip   .omi/agents/omi-agent-security-reviewer.md (exists)
+skip   .omi/config.json (exists)
+skip   .omi/decisions.md (exists)
+skip   .omi/hooks/post-run.sh (exists)
+skip   .omi/plans/PLAN-000.md (exists)
+skip   .omi/references/nextjs-app-router.md (exists)
+skip   .omi/references/patterns/adapter.md (exists)
+skip   .omi/references/patterns/anti-patterns.md (exists)
+skip   .omi/references/patterns/cqrs.md (exists)
+skip   .omi/references/patterns/factory.md (exists)
+skip   .omi/references/patterns/repository.md (exists)
+skip   .omi/references/patterns/state.md (exists)
+skip   .omi/references/patterns/strategy.md (exists)
+skip   .omi/references/postgres-conventions.md (exists)
+skip   .omi/rules/docker.md (exists)
+skip   .omi/rules/go.md (exists)
+skip   .omi/rules/nextjs.md (exists)
+skip   .omi/rules/postgres.md (exists)
+skip   .omi/rules/python.md (exists)
+skip   .omi/skills/.gitkeep (exists)
+skip   .omi/skills/data/omi-skill-data-review/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-incident/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md (exists)
+skip   .omi/skills/qa-web/omi-skill-web-qa/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-diff-security-review/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-simplify-review/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-verify-evidence/SKILL.md (exists)
+skip   .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md (exists)
+skip   .omi/skills/ui/omi-skill-ui-direction/SKILL.md (exists)
+skip   .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md (exists)
+skip   .omi/skills/workflow/omi-skill-brainstorm-ac/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-change-request/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-issue-types/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-lean-implementation/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-task-brief/SKILL.md (exists)
+skip   .omi/structure.example.md (exists)
+skip   .omi/tasks/_template.md (exists)
+skip   .omi/workflows/omi-flow-bugfix.md (exists)
+skip   .omi/workflows/omi-flow-change-request.md (exists)
+skip   .omi/workflows/omi-flow-docs-only.md (exists)
+skip   .omi/workflows/omi-flow-feature-sensitive.md (exists)
+skip   .omi/workflows/omi-flow-feature-ui.md (exists)
+skip   .omi/workflows/omi-flow-feature.md (exists)
+skip   .omi/workflows/omi-flow-incident.md (exists)
+skip   .omi/workflows/omi-flow-promote.md (exists)
+skip   .omi/workflows/omi-flow-refactor.md (exists)
+skip   .omi/workflows/omi-flow-release.md (exists)
+skip   .omi/workflows/omi-flow-spike.md (exists)
+stamp  .omi/version (0.5.0)
+wrote /tmp/tmp81zqgaab/.omi/skills/CATALOG.md (19 skills)
+wrote /tmp/tmp81zqgaab/.omi/agents/CATALOG.md (9 roles)
+wrote /tmp/tmp81zqgaab/.omi/workflows/CATALOG.md (11 workflows)
+wrote /tmp/tmp81zqgaab/.omi/rules/CATALOG.md (5 rules)
+wrote /tmp/tmp81zqgaab/.omi/references/CATALOG.md (9 references)
+wrote /tmp/tmp81zqgaab/.omi/plans/CATALOG.md (1 plans)
+tools: git ok, gh MISSING, docker MISSING, claude ok, codex ok
+next: open Claude Code or Codex here and type omi-idea
+skip   AGENTS.md (exists)
+skip   docker/Dockerfile (exists)
+skip   docker/prove.sh (exists)
+skip   docker/proxy.py (exists)
+skip   .claude/settings.json (exists)
+skip   .claude/skills/omi-idea/SKILL.md (exists)
+skip   .claude/skills/omi-release/SKILL.md (exists)
+skip   .claude/skills/omi-status/SKILL.md (exists)
+skip   .claude/skills/omi-task/SKILL.md (exists)
+skip   .claude/skills/omi-upgrade/SKILL.md (exists)
+skip   .omi/agents/omi-agent-architect.md (exists)
+skip   .omi/agents/omi-agent-designer-ui.md (exists)
+skip   .omi/agents/omi-agent-devops.md (exists)
+skip   .omi/agents/omi-agent-docs-writer.md (exists)
+skip   .omi/agents/omi-agent-engineer.md (exists)
+skip   .omi/agents/omi-agent-qa-tester.md (exists)
+skip   .omi/agents/omi-agent-researcher.md (exists)
+skip   .omi/agents/omi-agent-reviewer.md (exists)
+skip   .omi/agents/omi-agent-security-reviewer.md (exists)
+skip   .omi/config.json (exists)
+skip   .omi/decisions.md (exists)
+skip   .omi/hooks/post-run.sh (exists)
+skip   .omi/plans/PLAN-000.md (exists)
+skip   .omi/references/nextjs-app-router.md (exists)
+skip   .omi/references/patterns/adapter.md (exists)
+skip   .omi/references/patterns/anti-patterns.md (exists)
+skip   .omi/references/patterns/cqrs.md (exists)
+skip   .omi/references/patterns/factory.md (exists)
+skip   .omi/references/patterns/repository.md (exists)
+skip   .omi/references/patterns/state.md (exists)
+skip   .omi/references/patterns/strategy.md (exists)
+skip   .omi/references/postgres-conventions.md (exists)
+skip   .omi/rules/docker.md (exists)
+skip   .omi/rules/go.md (exists)
+skip   .omi/rules/nextjs.md (exists)
+skip   .omi/rules/postgres.md (exists)
+skip   .omi/rules/python.md (exists)
+skip   .omi/skills/.gitkeep (exists)
+skip   .omi/skills/data/omi-skill-data-review/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-incident/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md (exists)
+skip   .omi/skills/qa-web/omi-skill-web-qa/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-diff-security-review/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-simplify-review/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-verify-evidence/SKILL.md (exists)
+skip   .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md (exists)
+skip   .omi/skills/ui/omi-skill-ui-direction/SKILL.md (exists)
+skip   .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md (exists)
+skip   .omi/skills/workflow/omi-skill-brainstorm-ac/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-change-request/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-issue-types/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-lean-implementation/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-task-brief/SKILL.md (exists)
+skip   .omi/structure.example.md (exists)
+skip   .omi/tasks/_template.md (exists)
+skip   .omi/workflows/omi-flow-bugfix.md (exists)
+skip   .omi/workflows/omi-flow-change-request.md (exists)
+skip   .omi/workflows/omi-flow-docs-only.md (exists)
+skip   .omi/workflows/omi-flow-feature-sensitive.md (exists)
+skip   .omi/workflows/omi-flow-feature-ui.md (exists)
+skip   .omi/workflows/omi-flow-feature.md (exists)
+skip   .omi/workflows/omi-flow-incident.md (exists)
+skip   .omi/workflows/omi-flow-promote.md (exists)
+skip   .omi/workflows/omi-flow-refactor.md (exists)
+skip   .omi/workflows/omi-flow-release.md (exists)
+skip   .omi/workflows/omi-flow-spike.md (exists)
+stamp  .omi/version (0.5.0)
+wrote /tmp/tmp81zqgaab/.omi/skills/CATALOG.md (19 skills)
+wrote /tmp/tmp81zqgaab/.omi/agents/CATALOG.md (9 roles)
+wrote /tmp/tmp81zqgaab/.omi/workflows/CATALOG.md (11 workflows)
+wrote /tmp/tmp81zqgaab/.omi/rules/CATALOG.md (5 rules)
+wrote /tmp/tmp81zqgaab/.omi/references/CATALOG.md (9 references)
+wrote /tmp/tmp81zqgaab/.omi/plans/CATALOG.md (1 plans)
+tools: git ok, gh MISSING, docker MISSING, claude ok, codex ok
+next: open Claude Code or Codex here and type omi-idea
+create AGENTS.md
+create docker/Dockerfile
+create docker/prove.sh
+create docker/proxy.py
+create .claude/settings.json
+create .claude/skills/omi-idea/SKILL.md
+create .claude/skills/omi-release/SKILL.md
+create .claude/skills/omi-status/SKILL.md
+create .claude/skills/omi-task/SKILL.md
+create .claude/skills/omi-upgrade/SKILL.md
+create .omi/agents/omi-agent-architect.md
+create .omi/agents/omi-agent-designer-ui.md
+create .omi/agents/omi-agent-devops.md
+create .omi/agents/omi-agent-docs-writer.md
+create .omi/agents/omi-agent-engineer.md
+create .omi/agents/omi-agent-qa-tester.md
+create .omi/agents/omi-agent-researcher.md
+create .omi/agents/omi-agent-reviewer.md
+create .omi/agents/omi-agent-security-reviewer.md
+create .omi/config.json
+create .omi/decisions.md
+create .omi/hooks/post-run.sh
+create .omi/plans/PLAN-000.md
+create .omi/references/nextjs-app-router.md
+create .omi/references/patterns/adapter.md
+create .omi/references/patterns/anti-patterns.md
+create .omi/references/patterns/cqrs.md
+create .omi/references/patterns/factory.md
+create .omi/references/patterns/repository.md
+create .omi/references/patterns/state.md
+create .omi/references/patterns/strategy.md
+create .omi/references/postgres-conventions.md
+create .omi/rules/docker.md
+create .omi/rules/go.md
+create .omi/rules/nextjs.md
+create .omi/rules/postgres.md
+create .omi/rules/python.md
+create .omi/skills/.gitkeep
+create .omi/skills/data/omi-skill-data-review/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+create .omi/skills/workflow/omi-skill-brainstorm-ac/SKILL.md
+create .omi/skills/workflow/omi-skill-change-request/SKILL.md
+create .omi/skills/workflow/omi-skill-issue-types/SKILL.md
+create .omi/skills/workflow/omi-skill-lean-implementation/SKILL.md
+create .omi/skills/workflow/omi-skill-task-brief/SKILL.md
+create .omi/structure.example.md
+create .omi/tasks/_template.md
+create .omi/workflows/omi-flow-bugfix.md
+create .omi/workflows/omi-flow-change-request.md
+create .omi/workflows/omi-flow-docs-only.md
+create .omi/workflows/omi-flow-feature-sensitive.md
+create .omi/workflows/omi-flow-feature-ui.md
+create .omi/workflows/omi-flow-feature.md
+create .omi/workflows/omi-flow-incident.md
+create .omi/workflows/omi-flow-promote.md
+create .omi/workflows/omi-flow-refactor.md
+create .omi/workflows/omi-flow-release.md
+create .omi/workflows/omi-flow-spike.md
+stamp  .omi/version (0.5.0)
+create .gitattributes (* text=auto eol=lf)
+update .gitignore (__pycache__/)
+update .gitignore (.omi-cache/)
+wrote /tmp/tmpj5m5qiaq/.omi/skills/CATALOG.md (19 skills)
+wrote /tmp/tmpj5m5qiaq/.omi/agents/CATALOG.md (9 roles)
+wrote /tmp/tmpj5m5qiaq/.omi/workflows/CATALOG.md (11 workflows)
+wrote /tmp/tmpj5m5qiaq/.omi/rules/CATALOG.md (5 rules)
+wrote /tmp/tmpj5m5qiaq/.omi/references/CATALOG.md (9 references)
+wrote /tmp/tmpj5m5qiaq/.omi/plans/CATALOG.md (1 plans)
+git init (branch main)
+tools: git ok, gh MISSING, docker MISSING, claude ok, codex ok
+next: open Claude Code or Codex here and type omi-idea
+create AGENTS.md
+create docker/Dockerfile
+create docker/prove.sh
+create docker/proxy.py
+create .claude/settings.json
+create .claude/skills/omi-idea/SKILL.md
+create .claude/skills/omi-release/SKILL.md
+create .claude/skills/omi-status/SKILL.md
+create .claude/skills/omi-task/SKILL.md
+create .claude/skills/omi-upgrade/SKILL.md
+create .omi/agents/omi-agent-architect.md
+create .omi/agents/omi-agent-designer-ui.md
+create .omi/agents/omi-agent-devops.md
+create .omi/agents/omi-agent-docs-writer.md
+create .omi/agents/omi-agent-engineer.md
+create .omi/agents/omi-agent-qa-tester.md
+create .omi/agents/omi-agent-researcher.md
+create .omi/agents/omi-agent-reviewer.md
+create .omi/agents/omi-agent-security-reviewer.md
+create .omi/config.json
+create .omi/decisions.md
+create .omi/hooks/post-run.sh
+create .omi/plans/PLAN-000.md
+create .omi/references/nextjs-app-router.md
+create .omi/references/patterns/adapter.md
+create .omi/references/patterns/anti-patterns.md
+create .omi/references/patterns/cqrs.md
+create .omi/references/patterns/factory.md
+create .omi/references/patterns/repository.md
+create .omi/references/patterns/state.md
+create .omi/references/patterns/strategy.md
+create .omi/references/postgres-conventions.md
+create .omi/rules/docker.md
+create .omi/rules/go.md
+create .omi/rules/nextjs.md
+create .omi/rules/postgres.md
+create .omi/rules/python.md
+create .omi/skills/.gitkeep
+create .omi/skills/data/omi-skill-data-review/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+create .omi/skills/workflow/omi-skill-brainstorm-ac/SKILL.md
+create .omi/skills/workflow/omi-skill-change-request/SKILL.md
+create .omi/skills/workflow/omi-skill-issue-types/SKILL.md
+create .omi/skills/workflow/omi-skill-lean-implementation/SKILL.md
+create .omi/skills/workflow/omi-skill-task-brief/SKILL.md
+create .omi/structure.example.md
+create .omi/tasks/_template.md
+create .omi/workflows/omi-flow-bugfix.md
+create .omi/workflows/omi-flow-change-request.md
+create .omi/workflows/omi-flow-docs-only.md
+create .omi/workflows/omi-flow-feature-sensitive.md
+create .omi/workflows/omi-flow-feature-ui.md
+create .omi/workflows/omi-flow-feature.md
+create .omi/workflows/omi-flow-incident.md
+create .omi/workflows/omi-flow-promote.md
+create .omi/workflows/omi-flow-refactor.md
+create .omi/workflows/omi-flow-release.md
+create .omi/workflows/omi-flow-spike.md
+stamp  .omi/version (0.5.0)
+create .gitattributes (* text=auto eol=lf)
+update .gitignore (.omi-cache/)
+wrote /tmp/tmpoqri07ju/.omi/skills/CATALOG.md (19 skills)
+wrote /tmp/tmpoqri07ju/.omi/agents/CATALOG.md (9 roles)
+wrote /tmp/tmpoqri07ju/.omi/workflows/CATALOG.md (11 workflows)
+wrote /tmp/tmpoqri07ju/.omi/rules/CATALOG.md (5 rules)
+wrote /tmp/tmpoqri07ju/.omi/references/CATALOG.md (9 references)
+wrote /tmp/tmpoqri07ju/.omi/plans/CATALOG.md (1 plans)
+git init (branch main)
+tools: git ok, gh MISSING, docker MISSING, claude ok, codex ok
+next: open Claude Code or Codex here and type omi-idea
+skip   AGENTS.md (exists)
+skip   docker/Dockerfile (exists)
+skip   docker/prove.sh (exists)
+skip   docker/proxy.py (exists)
+skip   .claude/settings.json (exists)
+skip   .claude/skills/omi-idea/SKILL.md (exists)
+skip   .claude/skills/omi-release/SKILL.md (exists)
+skip   .claude/skills/omi-status/SKILL.md (exists)
+skip   .claude/skills/omi-task/SKILL.md (exists)
+skip   .claude/skills/omi-upgrade/SKILL.md (exists)
+skip   .omi/agents/omi-agent-architect.md (exists)
+skip   .omi/agents/omi-agent-designer-ui.md (exists)
+skip   .omi/agents/omi-agent-devops.md (exists)
+skip   .omi/agents/omi-agent-docs-writer.md (exists)
+skip   .omi/agents/omi-agent-engineer.md (exists)
+skip   .omi/agents/omi-agent-qa-tester.md (exists)
+skip   .omi/agents/omi-agent-researcher.md (exists)
+skip   .omi/agents/omi-agent-reviewer.md (exists)
+skip   .omi/agents/omi-agent-security-reviewer.md (exists)
+skip   .omi/config.json (exists)
+skip   .omi/decisions.md (exists)
+skip   .omi/hooks/post-run.sh (exists)
+skip   .omi/plans/PLAN-000.md (exists)
+skip   .omi/references/nextjs-app-router.md (exists)
+skip   .omi/references/patterns/adapter.md (exists)
+skip   .omi/references/patterns/anti-patterns.md (exists)
+skip   .omi/references/patterns/cqrs.md (exists)
+skip   .omi/references/patterns/factory.md (exists)
+skip   .omi/references/patterns/repository.md (exists)
+skip   .omi/references/patterns/state.md (exists)
+skip   .omi/references/patterns/strategy.md (exists)
+skip   .omi/references/postgres-conventions.md (exists)
+skip   .omi/rules/docker.md (exists)
+skip   .omi/rules/go.md (exists)
+skip   .omi/rules/nextjs.md (exists)
+skip   .omi/rules/postgres.md (exists)
+skip   .omi/rules/python.md (exists)
+skip   .omi/skills/.gitkeep (exists)
+skip   .omi/skills/data/omi-skill-data-review/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-incident/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md (exists)
+skip   .omi/skills/qa-web/omi-skill-web-qa/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-diff-security-review/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-simplify-review/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-verify-evidence/SKILL.md (exists)
+skip   .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md (exists)
+skip   .omi/skills/ui/omi-skill-ui-direction/SKILL.md (exists)
+skip   .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md (exists)
+skip   .omi/skills/workflow/omi-skill-brainstorm-ac/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-change-request/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-issue-types/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-lean-implementation/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-task-brief/SKILL.md (exists)
+skip   .omi/structure.example.md (exists)
+skip   .omi/tasks/_template.md (exists)
+skip   .omi/workflows/omi-flow-bugfix.md (exists)
+skip   .omi/workflows/omi-flow-change-request.md (exists)
+skip   .omi/workflows/omi-flow-docs-only.md (exists)
+skip   .omi/workflows/omi-flow-feature-sensitive.md (exists)
+skip   .omi/workflows/omi-flow-feature-ui.md (exists)
+skip   .omi/workflows/omi-flow-feature.md (exists)
+skip   .omi/workflows/omi-flow-incident.md (exists)
+skip   .omi/workflows/omi-flow-promote.md (exists)
+skip   .omi/workflows/omi-flow-refactor.md (exists)
+skip   .omi/workflows/omi-flow-release.md (exists)
+skip   .omi/workflows/omi-flow-spike.md (exists)
+stamp  .omi/version (0.5.0)
+update .gitignore (.omi-cache/)
+wrote /tmp/tmpoqri07ju/.omi/skills/CATALOG.md (19 skills)
+wrote /tmp/tmpoqri07ju/.omi/agents/CATALOG.md (9 roles)
+wrote /tmp/tmpoqri07ju/.omi/workflows/CATALOG.md (11 workflows)
+wrote /tmp/tmpoqri07ju/.omi/rules/CATALOG.md (5 rules)
+wrote /tmp/tmpoqri07ju/.omi/references/CATALOG.md (9 references)
+wrote /tmp/tmpoqri07ju/.omi/plans/CATALOG.md (1 plans)
+tools: git ok, gh MISSING, docker MISSING, claude ok, codex ok
+next: open Claude Code or Codex here and type omi-idea
+skip   AGENTS.md (exists)
+skip   docker/Dockerfile (exists)
+skip   docker/prove.sh (exists)
+skip   docker/proxy.py (exists)
+skip   .claude/settings.json (exists)
+skip   .claude/skills/omi-idea/SKILL.md (exists)
+skip   .claude/skills/omi-release/SKILL.md (exists)
+skip   .claude/skills/omi-status/SKILL.md (exists)
+skip   .claude/skills/omi-task/SKILL.md (exists)
+skip   .claude/skills/omi-upgrade/SKILL.md (exists)
+skip   .omi/agents/omi-agent-architect.md (exists)
+skip   .omi/agents/omi-agent-designer-ui.md (exists)
+skip   .omi/agents/omi-agent-devops.md (exists)
+skip   .omi/agents/omi-agent-docs-writer.md (exists)
+skip   .omi/agents/omi-agent-engineer.md (exists)
+skip   .omi/agents/omi-agent-qa-tester.md (exists)
+skip   .omi/agents/omi-agent-researcher.md (exists)
+skip   .omi/agents/omi-agent-reviewer.md (exists)
+skip   .omi/agents/omi-agent-security-reviewer.md (exists)
+skip   .omi/config.json (exists)
+skip   .omi/decisions.md (exists)
+skip   .omi/hooks/post-run.sh (exists)
+skip   .omi/plans/PLAN-000.md (exists)
+skip   .omi/references/nextjs-app-router.md (exists)
+skip   .omi/references/patterns/adapter.md (exists)
+skip   .omi/references/patterns/anti-patterns.md (exists)
+skip   .omi/references/patterns/cqrs.md (exists)
+skip   .omi/references/patterns/factory.md (exists)
+skip   .omi/references/patterns/repository.md (exists)
+skip   .omi/references/patterns/state.md (exists)
+skip   .omi/references/patterns/strategy.md (exists)
+skip   .omi/references/postgres-conventions.md (exists)
+skip   .omi/rules/docker.md (exists)
+skip   .omi/rules/go.md (exists)
+skip   .omi/rules/nextjs.md (exists)
+skip   .omi/rules/postgres.md (exists)
+skip   .omi/rules/python.md (exists)
+skip   .omi/skills/.gitkeep (exists)
+skip   .omi/skills/data/omi-skill-data-review/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-incident/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md (exists)
+skip   .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md (exists)
+skip   .omi/skills/qa-web/omi-skill-web-qa/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-diff-security-review/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-simplify-review/SKILL.md (exists)
+skip   .omi/skills/quality/omi-skill-verify-evidence/SKILL.md (exists)
+skip   .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md (exists)
+skip   .omi/skills/ui/omi-skill-ui-direction/SKILL.md (exists)
+skip   .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md (exists)
+skip   .omi/skills/workflow/omi-skill-brainstorm-ac/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-change-request/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-issue-types/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-lean-implementation/SKILL.md (exists)
+skip   .omi/skills/workflow/omi-skill-task-brief/SKILL.md (exists)
+skip   .omi/structure.example.md (exists)
+skip   .omi/tasks/_template.md (exists)
+skip   .omi/workflows/omi-flow-bugfix.md (exists)
+skip   .omi/workflows/omi-flow-change-request.md (exists)
+skip   .omi/workflows/omi-flow-docs-only.md (exists)
+skip   .omi/workflows/omi-flow-feature-sensitive.md (exists)
+skip   .omi/workflows/omi-flow-feature-ui.md (exists)
+skip   .omi/workflows/omi-flow-feature.md (exists)
+skip   .omi/workflows/omi-flow-incident.md (exists)
+skip   .omi/workflows/omi-flow-promote.md (exists)
+skip   .omi/workflows/omi-flow-refactor.md (exists)
+skip   .omi/workflows/omi-flow-release.md (exists)
+skip   .omi/workflows/omi-flow-spike.md (exists)
+stamp  .omi/version (0.5.0)
+update .gitignore (.omi-cache/)
+wrote /tmp/tmpoqri07ju/.omi/skills/CATALOG.md (19 skills)
+wrote /tmp/tmpoqri07ju/.omi/agents/CATALOG.md (9 roles)
+wrote /tmp/tmpoqri07ju/.omi/workflows/CATALOG.md (11 workflows)
+wrote /tmp/tmpoqri07ju/.omi/rules/CATALOG.md (5 rules)
+wrote /tmp/tmpoqri07ju/.omi/references/CATALOG.md (9 references)
+wrote /tmp/tmpoqri07ju/.omi/plans/CATALOG.md (1 plans)
+tools: git ok, gh MISSING, docker MISSING, claude ok, codex ok
+next: open Claude Code or Codex here and type omi-idea
+create AGENTS.md
+create docker/Dockerfile
+create docker/prove.sh
+create docker/proxy.py
+create .claude/settings.json
+create .claude/skills/omi-idea/SKILL.md
+create .claude/skills/omi-release/SKILL.md
+create .claude/skills/omi-status/SKILL.md
+create .claude/skills/omi-task/SKILL.md
+create .claude/skills/omi-upgrade/SKILL.md
+create .omi/agents/omi-agent-architect.md
+create .omi/agents/omi-agent-designer-ui.md
+create .omi/agents/omi-agent-devops.md
+create .omi/agents/omi-agent-docs-writer.md
+create .omi/agents/omi-agent-engineer.md
+create .omi/agents/omi-agent-qa-tester.md
+create .omi/agents/omi-agent-researcher.md
+create .omi/agents/omi-agent-reviewer.md
+create .omi/agents/omi-agent-security-reviewer.md
+create .omi/config.json
+create .omi/decisions.md
+create .omi/hooks/post-run.sh
+create .omi/plans/PLAN-000.md
+create .omi/references/nextjs-app-router.md
+create .omi/references/patterns/adapter.md
+create .omi/references/patterns/anti-patterns.md
+create .omi/references/patterns/cqrs.md
+create .omi/references/patterns/factory.md
+create .omi/references/patterns/repository.md
+create .omi/references/patterns/state.md
+create .omi/references/patterns/strategy.md
+create .omi/references/postgres-conventions.md
+create .omi/rules/docker.md
+create .omi/rules/go.md
+create .omi/rules/nextjs.md
+create .omi/rules/postgres.md
+create .omi/rules/python.md
+create .omi/skills/.gitkeep
+create .omi/skills/data/omi-skill-data-review/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-docker-worker-pitfalls/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-incident/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-release-checklist/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-rollback/SKILL.md
+create .omi/skills/delivery-ops/omi-skill-windows-powershell/SKILL.md
+create .omi/skills/qa-web/omi-skill-web-qa/SKILL.md
+create .omi/skills/quality/omi-skill-ci-workflow-audit/SKILL.md
+create .omi/skills/quality/omi-skill-debug-root-cause/SKILL.md
+create .omi/skills/quality/omi-skill-diff-security-review/SKILL.md
+create .omi/skills/quality/omi-skill-simplify-review/SKILL.md
+create .omi/skills/quality/omi-skill-verify-evidence/SKILL.md
+create .omi/skills/ui/omi-skill-ui-a11y-review/SKILL.md
+create .omi/skills/ui/omi-skill-ui-direction/SKILL.md
+create .omi/skills/ui/omi-skill-ui-direction/references/style-presets.md
+create .omi/skills/workflow/omi-skill-brainstorm-ac/SKILL.md
+create .omi/skills/workflow/omi-skill-change-request/SKILL.md
+create .omi/skills/workflow/omi-skill-issue-types/SKILL.md
+create .omi/skills/workflow/omi-skill-lean-implementation/SKILL.md
+create .omi/skills/workflow/omi-skill-task-brief/SKILL.md
+create .omi/structure.example.md
+create .omi/tasks/_template.md
+create .omi/workflows/omi-flow-bugfix.md
+create .omi/workflows/omi-flow-change-request.md
+create .omi/workflows/omi-flow-docs-only.md
+create .omi/workflows/omi-flow-feature-sensitive.md
+create .omi/workflows/omi-flow-feature-ui.md
+create .omi/workflows/omi-flow-feature.md
+create .omi/workflows/omi-flow-incident.md
+create .omi/workflows/omi-flow-promote.md
+create .omi/workflows/omi-flow-refactor.md
+create .omi/workflows/omi-flow-release.md
+create .omi/workflows/omi-flow-spike.md
+stamp  .omi/version (0.5.0)
+create .gitattributes (* text=auto eol=lf)
+update .gitignore (__pycache__/)
+update .gitignore (.omi-cache/)
+wrote /tmp/tmpsl4ygc5g/.omi/skills/CATALOG.md (19 skills)
+wrote /tmp/tmpsl4ygc5g/.omi/agents/CATALOG.md (9 roles)
+wrote /tmp/tmpsl4ygc5g/.omi/workflows/CATALOG.md (11 workflows)
+wrote /tmp/tmpsl4ygc5g/.omi/rules/CATALOG.md (5 rules)
+wrote /tmp/tmpsl4ygc5g/.omi/references/CATALOG.md (9 references)
+wrote /tmp/tmpsl4ygc5g/.omi/plans/CATALOG.md (1 plans)
+git init (branch main)
+tools: git ok, gh MISSING, docker MISSING, claude ok, codex ok
+next: open Claude Code or Codex here and type omi-idea
+skip   AGENTS.md (exists)
+skip   docker/Dockerfile (exists)
+skip   docker/prove.sh (exists)
+skip   docker/proxy.py (exists)
+skip   .claude/settings.json (exists)
+skip   .claude/skills/omi-idea/SKILL.md (exists)
+skip   .claude/skills/omi-release/SKILL.md (exists)
+skip   .claude/skills/omi-status/SKILL.md (exists)
+skip   .claude/skills/omi-task/SKILL.md (exists)
+skip   .claude/skills/omi-upgrade/SKILL.md (exists)
+skip   .omi/agents/omi-agent-architect.md (exists)
+skip   .omi/agents/omi-agent-designer-ui.md (exists)OMI: README.md is outside the scope of TASK-001. Stop and report NEEDS SCOPE to the Coordinator.
+OMI: .omi/tasks/TASK-002.md is outside the scope of TASK-001. Stop and report NEEDS SCOPE to the Coordinator.
+OMI: src/x.py is product code; TASK-001 is running, write inside its worktree.
+OMI: README.md is outside the scope of TASK-001. Stop and report NEEDS SCOPE to the Coordinator.
+OMI: .claude/settings.json is outside the scope of TASK-001. Stop and report NEEDS SCOPE to the Coordinator.
+OMI: src/x.py is outside the task worktree.
+OMI: /tmp/tmp6_dohun_/x.py is outside the task worktree.
+OMI: /tmp/tmp6_dohun_/.claude/settings.json is Claude Code config; only a task whose scope names it may change it.
+OMI: x.py is product code; TASK-1 is running, write inside its worktree.
+OMI: /tmp/tmp6_dohun_/.claude/settings.json is Claude Code config; only a task whose scope names it may change it.
+OMI: app.py cannot be checked: TASK-NESTED is not on development yet. Stop and report to the Coordinator.
+OMI: .claude/settings.json cannot be checked: TASK-NESTED is not on development yet. Stop and report to the Coordinator.
+OMI: src/x.py cannot be checked: TASK-099 is not on development yet. Stop and report to the Coordinator.
