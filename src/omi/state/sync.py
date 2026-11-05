@@ -21,7 +21,7 @@ def git(root: Path, *args: str) -> subprocess.CompletedProcess:
     """Run state git with bounded network waits and useful errors."""
     try:
         return subprocess.run(["git", "--literal-pathspecs", "-C", str(root), *args], capture_output=True,
-                              encoding="utf-8", errors="replace", timeout=30)
+                              encoding="utf-8", errors="replace", timeout=30, env={**os.environ, "LC_ALL": "C"})
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise state.StateError(f"state git {args[0]} failed: {exc}") from exc
 

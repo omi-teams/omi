@@ -131,6 +131,17 @@ def test_detached_commit_twice_and_failure_message():
                 assert "OUT-TEXT" in str(exc) and "ERR-TEXT" in str(exc)
 
 
+def test_state_git_uses_c_locale():
+    """Keep rejection diagnostics English even when the caller uses another locale."""
+    inherited = {"LC_ALL": "fr_FR.UTF-8", "LANG": "fr_FR.UTF-8", "OMI_STATE_LOCALE_TEST": "preserved"}
+    result = subprocess.CompletedProcess([], 0, "", "")
+    with patch.dict(os.environ, inherited), patch("omi.state.sync.subprocess.run", return_value=result) as run:
+        assert omi.state.sync.git(Path("state"), "push") is result
+        child_env = run.call_args.kwargs["env"]
+        assert child_env == {**os.environ, "LC_ALL": "C"}
+        assert all(os.environ[key] == value for key, value in inherited.items())
+
+
 def test_state_push_remote_advanced():
     """Preserve real rejection stderr and rebase a competing remote commit."""
     with detached_project() as (code, project, wt, task):
@@ -433,6 +444,7 @@ def test_user_session_start():
 
 
 def main():
+    test_state_git_uses_c_locale()
     test_state_push_remote_advanced()
     test_state_push_transport_retry()
     test_state_commits_serialized()
