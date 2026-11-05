@@ -251,7 +251,8 @@ def test_hooks():
     with tempfile.TemporaryDirectory() as d:
         sh = shutil.which("sh")
         if sh:
-            r = subprocess.run([sh, str(omi.common.core.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh")], cwd=d, capture_output=True, text=True)
+            r = subprocess.run([sh, str(omi.common.core.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh")], cwd=d, capture_output=True, text=True,
+                               env={k: v for k, v in os.environ.items() if k not in ("OMI_PROJECT_STATE", "OMI_GIT_DIR")})  # a hook runs this suite with both set
             assert r.returncode == 0 and "no tests found" in r.stdout, r
             # tests exist but the runner is missing: exit 1 naming the tool (empty PATH; the script uses only sh builtins)
             bindir = Path(d) / "bin"
@@ -270,6 +271,21 @@ def test_hooks():
             (w / "tests" / "test_x.py").write_text("")
             r = subprocess.run([sh, str(omi.common.core.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh")], cwd=w, capture_output=True, text=True, env=env)
             assert "no tests found" not in r.stdout and "pytest not in the worker image" in r.stdout, r
+            # structure check: GIT_DIR comes from OMI_GIT_DIR for the omi command only, not for the project tests
+            fake = Path(d) / "fake"
+            (fake / "state" / ".omi").mkdir(parents=True)
+            (fake / "state" / ".omi" / "structure.md").write_text("", encoding="utf-8")
+            (fake / "omi").mkdir()
+            (fake / "omi" / "__init__.py").write_text("", encoding="utf-8")  # a regular package, so it wins over an installed omi
+            (fake / "omi" / "__main__.py").write_text("import os,sys;print('omi', os.environ.get('GIT_DIR'), os.environ.get('GIT_WORK_TREE'), sys.argv[1:])\n", encoding="utf-8")
+            (fake / "state" / ".omi" / "config.json").write_text('{"test": "echo test GIT_DIR=${GIT_DIR:-unset}"}', encoding="utf-8")
+            base = {k: v for k, v in os.environ.items() if k not in ("OMI_PROJECT_STATE", "OMI_GIT_DIR")}
+            for extra, want in (({}, "omi None None"), ({"OMI_GIT_DIR": "/gitdir/worktrees/T"}, "omi /gitdir/worktrees/T ")):
+                env = {**base, "PYTHONPATH": str(fake), "MSYS2_ENV_CONV_EXCL": "*", "OMI_PROJECT_STATE": str(fake / "state"), **extra}
+                r = subprocess.run([sh, str(omi.common.core.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh")], cwd=fake, capture_output=True, text=True, env=env)
+                assert want in r.stdout and "test GIT_DIR=unset" in r.stdout, r
+                if extra:  # Git-bash spells $PWD /tmp/..., so compare the dir name only
+                    assert re.search(r"omi /gitdir/worktrees/T \S*/fake \[", r.stdout), r
     text = (omi.common.core.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh").read_text()
     assert all(w in text for w in ("pytest", "go test", "npm test"))
     for f in (omi.common.core.TEMPLATE / "AGENTS.md",
@@ -529,7 +545,25 @@ def test_host_only_criteria():
             assert "Host: <command> -> <result>" in text and "no merge without one `Host:` line" in text
 
 
+def test_ci_structure_fetch():
+    ci = (Path(__file__).parents[1] / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    # PRs targeting development use a detached merge ref and still need the local branch.
+    assert re.search(r"- name: Fetch development for the structure check\n"
+                     r"        if: github\.ref != 'refs/heads/development'\n"
+                     r"        run: git fetch origin development:development", ci)
+
+
+def test_ci_structure_skip_notice():
+    ci = (Path(__file__).parents[1] / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    # A failed checkout with a key must fail the job, rather than claim a missing key.
+    assert re.search(r"- name: Structure check skipped\n"
+                     r"        if: env\.HAS_STATE_KEY != 'true'\n", ci)
+    assert "continue-on-error:" not in ci
+
+
 def main():
+    test_ci_structure_fetch()
+    test_ci_structure_skip_notice()
     test_host_only_criteria()
     test_windows_test_shell()
     test_hooks()

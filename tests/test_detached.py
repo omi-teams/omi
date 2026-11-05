@@ -243,6 +243,9 @@ def test_detached_run_and_hooks():
             argv, kwargs = next((a, k) for a, k in reversed(calls) if a[:2] == ["docker", "run"])
             assert f"{project}:/state:ro" in argv and f"{wt}:/work:ro" in argv
             assert "OMI_PROJECT_STATE=/state" in argv
+            gitdir = Path(wt.joinpath(".git").read_text(encoding="utf-8").split(":", 1)[1].strip())
+            assert f"{gitdir.parents[1]}:/gitdir:ro" in argv and f"OMI_GIT_DIR=/gitdir/worktrees/{gitdir.name}" in argv
+            assert "GIT_DIR=/gitdir" not in argv and "GIT_CONFIG_KEY_0=safe.directory" in argv
             key = omi.worker.docker.repo_key(project)  # hook containers carry the hashed key; the name keeps the plain label
             assert argv[argv.index(f"omi-repo={key}") - 1] == "--label" and argv[argv.index("--name") + 1].startswith("sample-")
             assert kwargs["input"] == (project / ".omi" / "hooks" / "post-run.sh").read_bytes().replace(b"\r\n", b"\n")
@@ -283,6 +286,22 @@ def test_detached_default_hook_config():
             assert result.returncode == 9, ("in-repo hook ignored local config", result.stdout, result.stderr)
 
 
+def test_project_state_env():
+    """Inside a hook container OMI_PROJECT_STATE makes the checkout detached at that path, without a registry."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        with patch.dict(os.environ, {"OMI_PROJECT_STATE": str(root / "state"), "OMI_STATE": str(root / "none")}):
+            with patch.object(omi.state.resolve, "HOOK_CODE", root.resolve()):
+                project = omi.state.resolve.resolve(root)
+            assert project == omi.state.resolve.Project(root / "state", root.resolve(), True)
+            assert not omi.state.resolve.resolve(root).detached  # other checkouts, e.g. test repos run by a hook, keep their own state
+        (root / "wt").mkdir()
+        assert omi.worker.hooks.git_env(root / "wt") is None
+        (root / "wt" / ".git").write_text("gitdir: /host/repo/.git/worktrees/T-1\n", encoding="utf-8")
+        mount, env = omi.worker.hooks.git_env(root / "wt")
+        assert Path(mount) == Path("/host/repo/.git") and "OMI_GIT_DIR=/gitdir/worktrees/T-1" in env
+
+
 def test_user_session_start():
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
@@ -301,6 +320,7 @@ def test_user_session_start():
 
 
 def main():
+    test_project_state_env()
     test_user_session_start()
     test_detached_resolution()
     test_detached_commands_and_steps()
