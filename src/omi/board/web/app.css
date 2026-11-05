@@ -390,3 +390,25 @@ progress.bar-t{max-width:420px;flex:none;width:100%}
 summary.colh{justify-content:flex-start;min-height:44px}summary.colh>.muted{margin-left:auto}
 .col>summary+*{margin-top:8px}.col[open]{gap:8px}
 .tree-block>summary{min-height:44px}.tree .done-leaves>summary{padding:8px}
+
+/* The shared sticky header also anchors the board navigation. */
+.top{z-index:3}
+#board-sidebar{position:absolute;top:100%;left:0;width:216px;max-height:calc(100dvh - 180px);overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-top:0;padding:16px 12px}
+#board-sidebar ul{list-style:none;padding:0;margin:0;display:grid;gap:4px}
+#board-sidebar a{display:flex;align-items:center;min-height:44px;padding:8px 12px;border-radius:6px;overflow-wrap:anywhere}
+#board-sidebar a:hover,#board-sidebar a[aria-current]{background:var(--po);color:var(--accent-hover)}
+#board-sidebar a[aria-current]{font-weight:600;text-decoration:underline}
+.sidebar-open .wrap{margin-left:216px;max-width:1200px}
+#sidebar-backdrop{position:fixed;inset:0;z-index:2;background:rgb(25 30 28 / 35%);border:0}
+[hidden]{display:none!important}
+#board-tree,#board-kanban,#notification-settings{scroll-margin-top:12rem}
+@media(max-width:767px){
+ .bar{grid-template-columns:auto minmax(0,1fr) auto;gap:4px 8px}
+ #sidebar-toggle{grid-column:1;grid-row:1;padding:0 8px}
+ .brand{grid-column:2;grid-row:1;font-size:14px;gap:4px}.brand-mark{width:18px}
+ .tools .btn{grid-column:3}.refresh-text{display:none}
+ #inbox-link{grid-column:1/-1;grid-row:2}.updated{grid-row:3}
+ .sidebar-open .wrap{margin-left:0}
+ #board-sidebar{width:min(280px,calc(100vw - 32px))}
+}
+@media print{#sidebar-toggle,#board-sidebar,#sidebar-backdrop{display:none!important}.sidebar-open .wrap{margin-left:0}}
