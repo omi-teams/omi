@@ -264,7 +264,9 @@ function initSidebar() {
   });
   document.addEventListener("keydown", event => {
     if (sidebar.hidden) return;
-    if (event.key === "Escape") { event.preventDefault(); setOpen(false, true); toggle.focus(); }
+    if (event.key === "Escape" && (phone.matches || sidebar.contains(document.activeElement) || document.activeElement === toggle)) {
+      event.preventDefault(); setOpen(false, true); toggle.focus();
+    }
     if (event.key === "Tab" && phone.matches) {
       const controls = [toggle, ...sidebar.querySelectorAll("a")];
       const index = controls.indexOf(document.activeElement);

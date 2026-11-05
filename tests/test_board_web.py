@@ -968,6 +968,26 @@ catch(e) {
         assert(await sidebar.locator('a').last().evaluate(n=>n===document.activeElement));
         await page.keyboard.press('Tab');assert(await toggle.evaluate(n=>n===document.activeElement));
       }
+      if(width>=768) {
+        const search=page.getByRole('searchbox',{name:'Tìm ID hoặc tiêu đề'});
+        for(const saved of [null,'open']) {
+          if(saved) {
+            await toggle.click();await toggle.click();
+          }
+          assert.equal(await page.evaluate(()=>localStorage.getItem('omi-board-sidebar')),saved);
+          await search.fill('TASK-115');await page.keyboard.press('Escape');
+          if(screens && saved===null) await page.screenshot({path:path.join(screens,`sidebar-search-escape-${width}.png`)});
+          assert.equal(await toggle.getAttribute('aria-expanded'),'true','search Escape must leave sidebar open');
+          assert(await sidebar.isVisible());
+          assert.equal(await page.evaluate(()=>localStorage.getItem('omi-board-sidebar')),saved,'search Escape must preserve sidebar preference');
+          assert.equal(await search.inputValue(),'');
+          assert(await search.evaluate(n=>n===document.activeElement));
+        }
+        await page.locator('#refresh').focus();await page.keyboard.press('Escape');
+        assert(await sidebar.isVisible(),'Escape outside navigation must leave sidebar open');
+        assert.equal(await page.evaluate(()=>localStorage.getItem('omi-board-sidebar')),'open');
+        assert(await page.locator('#refresh').evaluate(n=>n===document.activeElement));
+      }
       assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`sidebar overflow ${width}`);
       await page.evaluate(axeSource);await audit(`sidebar open ${width} light`);
       await page.emulateMedia({colorScheme:'dark'});await audit(`sidebar open ${width} dark`);
@@ -989,6 +1009,7 @@ catch(e) {
         await sidebar.getByRole('link',{name:label,exact:true}).click();await page.locator(selector).waitFor();
       }
       if(!(await sidebar.isVisible())) await toggle.click();
+      await sidebar.locator('a').first().focus();
       await page.keyboard.press('Escape');
       assert.equal(await toggle.getAttribute('aria-expanded'),'false');
       assert(await toggle.evaluate(n=>n===document.activeElement));
@@ -996,6 +1017,8 @@ catch(e) {
       await page.reload();assert.equal(await sidebar.isVisible(),false);
       await toggle.focus();await page.keyboard.press('Enter');
       assert.equal(await page.evaluate(()=>localStorage.getItem('omi-board-sidebar')),'open');
+      await page.keyboard.press('Escape');assert.equal(await sidebar.isVisible(),false);
+      await page.keyboard.press('Enter');
       await page.reload();assert.equal(await sidebar.isVisible(),width>=768);
     }
     await page.addInitScript(()=>{
@@ -1186,6 +1209,8 @@ catch(e) {
       assert.equal(await page.getByLabel('Liên kết chế độ xem').inputValue(),page.url());
       assert(await page.getByLabel('Liên kết chế độ xem').evaluate(n=>n.readOnly));
       if(width===1280) {
+        // Keep the toolbar's full-width zoom check independent of search Escape.
+        if(await page.locator('#board-sidebar').isVisible()) await page.locator('#sidebar-toggle').click();
         await page.evaluate(()=>{document.body.style.zoom='2';});
         assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'filters 200% zoom overflow');
         await page.evaluate(()=>{document.body.style.zoom='';});
