@@ -40,9 +40,9 @@ SCOPE_LINE = re.compile(r"^Run scope: (.*)$\n?", re.M)  # the task scope at the 
 
 
 def widened_scope(text, now):
-    """Scope entries in `now` that the session's previous run did not have; [] without a recorded previous scope."""
+    """Scope entries in `now` that the session's previous run did not have; all of `now` for a legacy session without a record."""
     m = SCOPE_LINE.search(text or "")
-    return [g for g in now if g not in core.split(m[1])] if m else []
+    return [g for g in now if g not in core.split(m[1])] if m else list(now)
 
 
 def record_scope(task, now):

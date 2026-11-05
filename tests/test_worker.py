@@ -637,6 +637,11 @@ def test_session_resume():
                 assert "Run scope: src/**, tests/test_worker.py" in task.read_text(encoding="utf-8")
                 go()
                 assert "SCOPE SYNCED" not in calls[0][calls[0].index("-p") + 1]  # said once
+                # a legacy session (no `Run scope:` line) gets the whole current scope restated
+                task.write_text(re.sub(r"^Run scope:.*\n", "", task.read_text(encoding="utf-8"), flags=re.M), encoding="utf-8")
+                go()
+                prompt = calls[0][calls[0].index("-p") + 1]
+                assert "--resume" in calls[0] and "SCOPE SYNCED" in prompt and "src/**, tests/test_worker.py" in prompt, prompt
             finally:
                 state["stdout"] = saved_out
                 state.pop("scope", None)
