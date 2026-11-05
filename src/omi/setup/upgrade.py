@@ -89,8 +89,8 @@ def ensure_gitattributes(target: Path) -> None:
         print("create .gitattributes (* text=auto eol=lf)")
 
 
-def ensure_gitignore(target: Path) -> None:
-    """Ignore generated Python files and worktree download caches without duplicating entries."""
+def ensure_gitignore(target: Path, *, detached: bool = False) -> None:
+    """Ignore caches and detached upgrade candidates without duplicating entries."""
     if not upgrade_write_safe(target, ".gitignore"):
         return
     ignore = target / ".gitignore"
@@ -100,6 +100,10 @@ def ensure_gitignore(target: Path) -> None:
             lines.append(name + "/")
             ignore.write_text("".join(line + "\n" for line in lines), encoding="utf-8", newline="\n")
             print(f"update .gitignore ({name}/)")
+    if detached and "*.omi-new" not in lines:
+        lines.append("*.omi-new")
+        ignore.write_text("".join(line + "\n" for line in lines), encoding="utf-8", newline="\n")
+        print("update .gitignore (*.omi-new)")
 
 
 def init(target: str | Path = ".", *, detached: bool = False) -> None:
@@ -233,6 +237,8 @@ def upgrade_apply(target: str | Path = ".", *, detached: bool = False) -> int:
                 candidate = dst.with_name(dst.name + ".omi-new")
                 stale = candidate.exists()
                 candidate.write_bytes(new)
+                if detached:
+                    print(f"review {rel}.omi-new (Coordinator: merge by hand)")
                 if stale:
                     print(f"replaced stale {rel}.omi-new")
             counts["kept"] += 1
@@ -250,7 +256,7 @@ def upgrade_apply(target: str | Path = ".", *, detached: bool = False) -> int:
         if upgrade_write_safe(target, f".omi/{kind}/CATALOG.md"):
             catalog(target)
     ensure_gitattributes(target)
-    ensure_gitignore(target)
+    ensure_gitignore(target, detached=detached)
     print(f"upgrade {core.version()}: {counts['created']} created, {counts['updated']} updated, {counts['kept']} kept (see *.omi-new)")
     return 0
 
