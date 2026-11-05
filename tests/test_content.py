@@ -735,6 +735,7 @@ def main():
     test_bugfix_steps_have_root_cause_skill()
     test_docs_writer_steps_have_skills()
     test_review_and_docs_role_default_skills()
+    test_release_verifies_before_pr()
     test_only_merge_workflows_have_po_gate()
     test_every_auto_gate_follows_a_review_gate()
     test_skills()
