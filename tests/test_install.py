@@ -434,7 +434,8 @@ def test_install_user_accepts_unreleased_task160_skill():
             current = (home / rel).read_bytes()
             (home / rel).write_bytes(old)
             record = json.loads((home / ".omi/install-user.json").read_text(encoding="utf-8"))
-            record["skills"][rel]["sha256"] = "0" * 64  # The drifted record of the report.
+            key = next(k for k in record["skills"] if Path(k).as_posix() == rel)  # OS separators on Windows.
+            record["skills"][key]["sha256"] = "0" * 64  # The drifted record of the report.
             (home / ".omi/install-user.json").write_text(json.dumps(record), encoding="utf-8")
             known = {rel: {omi.setup.upgrade.norm_sha(old)}}
             with patch("omi.setup.install.UNRELEASED_SKILL_SHAS", known):
