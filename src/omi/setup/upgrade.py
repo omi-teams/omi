@@ -166,6 +166,28 @@ def upgrade_write_safe(target: Path, rel: str) -> bool:
     return True
 
 
+def stale_template_hint(target: str | Path, *, detached: bool = False) -> None:
+    """Report manifest-recorded files that apply can safely update between releases."""
+    target = Path(target).resolve()
+    if not upgrade_write_safe(target, ".omi/manifest.json"):
+        return
+    files = read_manifest(target)
+    if not files:
+        return
+    count = 0
+    for rel, src in template_map().items():
+        base = files.get(rel)
+        if not base or protected(rel) or (detached and (rel == "AGENTS.md" or rel.startswith(".claude/"))):
+            continue
+        if norm_sha(src.read_bytes()) == base or not upgrade_write_safe(target, rel):
+            continue
+        dst = target / rel
+        if dst.is_file() and norm_sha(dst.read_bytes()) == base:
+            count += 1
+    if count:
+        print(f"{count} unmodified template files are stale; run `python -m omi upgrade --apply`")
+
+
 def upgrade_apply(target: str | Path = ".", *, detached: bool = False) -> int:
     target = Path(target).resolve()
     # parse the project config before any file changes, so a broken one leaves the project untouched
@@ -283,6 +305,7 @@ def upgrade_cmd(rest: list[str], root: str | Path = ".", *, detached: bool = Fal
         sys.exit(f"no vX.Y.Z tag in {repo}")
     if "--check" in rest:
         print(f"omi {core.version()} -> {latest[1:]}" if core.semver(latest) > core.semver(core.version()) else "up to date")
+        stale_template_hint(root, detached=detached)
         return 0
     tag = requested or latest
     if "://" not in repo:

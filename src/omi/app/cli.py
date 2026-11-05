@@ -65,6 +65,7 @@ def status(cwd="."):
         old = True
     if old:
         print(f"run `python -m omi upgrade --apply` to bring the project files to omi {core.version()}")
+    upgrade.stale_template_hint(root, detached=project.detached)
     if install.stale_user_integration():
         print("installed omi user skills or Codex block differ from the current template; run `python -m omi install-user`")
     source = project.state.name if project.detached else project.code.name

@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 from helpers import omi
 
 
@@ -514,6 +515,72 @@ def test_upgrade_skill_repo_confirmation():
     assert "older than" in skill and "python -m omi upgrade --apply" in skill and "steps 4-5" in skill
 
 
+def test_same_version_stale_template_hints():
+    for detached in (False, True):
+        with tempfile.TemporaryDirectory() as d, contextlib.ExitStack() as stack:
+            root = Path(d).resolve()
+            code = root / "code" if detached else root
+            code.mkdir(exist_ok=True)
+            project = omi.state.resolve.Project(root, code, detached)
+            stack.enter_context(patch("omi.state.resolve.resolve", return_value=project))
+            stack.enter_context(patch("omi.state.sync.pull"))
+            stack.enter_context(patch("omi.setup.attach.warn_in_repo_files"))
+            stack.enter_context(patch("omi.common.core.git", return_value="development"))
+            stack.enter_context(patch("omi.setup.install.stale_user_integration", return_value=False))
+            stack.enter_context(patch("omi.project.improve.open_count", return_value=0))
+            stack.enter_context(patch("omi.worker.docker.full_volumes", return_value=[]))
+            stack.enter_context(patch("omi.worker.docker.print_workers"))
+            stack.enter_context(patch("omi.setup.upgrade.latest_tag", return_value="v" + omi.common.core.version()))
+            files = {}
+            sources = omi.setup.upgrade.template_map()
+            roles = [rel for rel in sources if rel.startswith(".omi/agents/")][:3]
+            for rel in roles:
+                dst = root / rel
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                dst.write_bytes(sources[rel].read_bytes())
+                files[rel] = omi.setup.upgrade.norm_sha(dst.read_bytes())
+            omi.setup.upgrade.write_manifest(root, files)
+            (root / ".omi/version").write_text(omi.common.core.version() + "\n", encoding="utf-8")
+
+            def check(count):
+                before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+                for command in (lambda: omi.app.cli.status(code),
+                                lambda: omi.setup.upgrade.upgrade_cmd(["--check"], root, detached=detached)):
+                    out = io.StringIO()
+                    with contextlib.redirect_stdout(out):
+                        command()
+                    text = out.getvalue()
+                    if count:
+                        assert f"{count} unmodified template files are stale" in text, text
+                        assert "run `python -m omi upgrade --apply`" in text, text
+                    else:
+                        assert "upgrade --apply" not in text, text
+                assert before == {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}, "checks must be read-only"
+
+            check(0)
+            for rel in roles[:2]:
+                # Model a template change between releases, with CRLF in the checkout.
+                (root / rel).write_bytes(b"old role\r\n")
+                files[rel] = omi.setup.upgrade.norm_sha(b"old role\n")
+            omi.setup.upgrade.write_manifest(root, files)
+            (root / roles[2]).write_bytes(b"hand-modified role\n")
+            check(2)
+            (root / roles[0]).write_bytes(b"hand-modified role\n")
+            check(1)
+            (root / roles[1]).write_bytes(sources[roles[1]].read_bytes())
+            check(0)
+            # Missing, unrecorded and protected files cannot be safely updated as stale.
+            (root / roles[0]).unlink()
+            files.pop(roles[2])
+            for rel in (".omi/decisions.md", ".omi/tasks/TASK-001.md") + (("AGENTS.md", ".claude/settings.json") if detached else ()):
+                dst = root / rel
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                dst.write_bytes(b"old template\n")
+                files[rel] = omi.setup.upgrade.norm_sha(dst.read_bytes())
+            omi.setup.upgrade.write_manifest(root, files)
+            check(0)
+
+
 def test_status_drift_hints():
     def status_text(root):
         buf = io.StringIO()
@@ -564,6 +631,7 @@ def main():
     test_upgrade_cmd()
     test_upgrade_repo_confirmation()
     test_upgrade_skill_repo_confirmation()
+    test_same_version_stale_template_hints()
     test_status_drift_hints()
 
 
