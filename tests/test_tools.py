@@ -531,6 +531,23 @@ def test_task_start_copies_match():
         assert "from the PO's pick" not in text
 
 
+def test_reviewer_skill_reads_counted():
+    """A read-only reviewer's prompt lists readable /state skill paths and says to open them; its reads in claude and codex output count."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        for sid in ("omi-skill-a", "omi-skill-b"):
+            (root / ".omi" / "skills" / "g" / sid).mkdir(parents=True)
+            (root / ".omi" / "skills" / "g" / sid / "SKILL.md").write_text("x", encoding="utf-8")
+        files = [root / ".omi" / "skills" / "g" / s / "SKILL.md" for s in ("omi-skill-a", "omi-skill-b")]
+        prompt = omi.project.catalogs.skill_prompt(root, files).replace("/work/", "/state/")
+        assert "open every one below before you start" in prompt and "/state/.omi/skills/g/omi-skill-a/SKILL.md" in prompt
+        ids = ["omi-skill-a", "omi-skill-b"]
+        read = {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Read", "input": {"file_path": "/state/.omi/skills/g/omi-skill-a/SKILL.md"}}]}}
+        cx = {"type": "item.completed", "item": {"type": "command_execution", "command": "cat /state/.omi/skills/g/omi-skill-b/SKILL.md"}}
+        assert omi.worker.run.skills_read(root, ids, omi.worker.tools.opened_files("claude", json.dumps(read))) == ["omi-skill-a"]
+        assert omi.worker.run.skills_read(root, ids, omi.worker.tools.opened_files("codex", json.dumps(cx))) == ["omi-skill-b"]
+
+
 def main():
     test_task_start_proposal()
     test_po_decides_short_list()
@@ -538,6 +555,7 @@ def main():
     test_model_catalog_and_task_start()
     test_tool_choice_and_quota_switch()
     test_found_bug_rule()
+    test_reviewer_skill_reads_counted()
 
 
 if __name__ == "__main__":
