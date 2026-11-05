@@ -116,10 +116,12 @@ def next_action(project: state.Project, rec: dict, text: str, report: str) -> st
     tid, rc, v = rec["tid"], rec["rc"], verdict(report)
     if rc is None:
         return f"DECIDE: LOST, the wrapper died without an exit code; check docker and {rec['dir'] / 'log'}, then rerun"
+    if v == "NEEDS SCOPE":
+        return f"DECIDE: {report.splitlines()[0]}; widen scope or file a new task; see the report and the log"
     why = {3: "out of scope or plan violation: accept the paths (NEEDS SCOPE) or revert them",
            5: "usage limit on every tool: wait, or rerun with another tool/model (TASK-216)",
            6: "hook failed: the task cannot move on until it is fixed"}.get(rc)
-    if why or v in ("NEEDS SCOPE", "BLOCKED") or rc:
+    if why or v == "BLOCKED" or rc:
         return f"DECIDE: {why or (v if v != 'n/a' else f'exit {rc}')}; see the report and the log"
     access = catalogs.load_roles(project.state).get(rec["role"], {}).get("access")
     if access == "write":

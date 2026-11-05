@@ -94,6 +94,28 @@ def test_lost_wrapper_and_exit_codes() -> None:
             assert "rc=LOST" in out and "DECIDE: LOST" in out, out
 
 
+def test_needs_scope_over_hook_failure() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        project = state.Project(state=root, code=root)
+        started = datetime.datetime(2026, 11, 5, 22, 11)
+        rec = {"tid": "TASK-225", "role": "omi-agent-engineer", "rc": 6, "dir": root,
+               "started": started, "running": False, "reported": False}
+        (root / "log").write_text("post-run hook failed: the task cannot move to review\n", encoding="utf-8")
+        for report in ("NEEDS SCOPE: src/extra.py, tests/test_extra.py - cover the affected behavior", "NEEDS SCOPE"):
+            text = (f"\n## Reports\n2026-11-05 22:11 omi-agent-engineer (codex):\n> {report}\n"
+                    "2026-11-05 22:11 hook post-run FAILED (exit 1):\n> missing coverage\n")
+            with patch.object(dispatch, "records", return_value=[rec]), \
+                    patch.object(dispatch.tasks, "tasks", return_value={"TASK-225": {"_text": text}}), \
+                    patch.object(dispatch.docker, "print_workers"):
+                out = watch(project)
+            assert "rc=6 verdict=NEEDS SCOPE" in out, out
+            assert "DECIDE: NEEDS SCOPE" in out and "DECIDE: hook failed" not in out, out
+            assert "widen scope" in out and "new task" in out, out
+            if ":" in report:
+                assert "src/extra.py, tests/test_extra.py" in out, out
+
+
 def test_record_before_wrapper_starts() -> None:
     with patch.dict(os.environ, SRC), tempfile.TemporaryDirectory() as d:
         root = Path(d).resolve()
@@ -129,6 +151,7 @@ def test_reviewer_next_action() -> None:
 def main():
     test_two_runs_finish_together()
     test_lost_wrapper_and_exit_codes()
+    test_needs_scope_over_hook_failure()
     test_record_before_wrapper_starts()
     test_reviewer_next_action()
 
