@@ -272,6 +272,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         prompt_skills = prompt_skills.replace("/work/", "/state/")
         prompt_skills += ("\nDetached state: /state is read-only. Do not edit the task or catalogs. "
                           "Include checkpoint updates in your final report; the Coordinator records them.")
+    resume_skills = catalogs.skill_prompt(catalog, declared).replace("/work/", "/state/" if project.detached else "/work/")
     prompt_skills += "\nTests: " + test_prompt_line(wt, main)
     if problems:
         prompt_skills += "\nThe pre-review checks currently fail:\n" + "\n".join(problems)
@@ -291,6 +292,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         env[env_name] = value
         mdl, eff = models[t], efforts[t]
         cmd = (tools.engineer_cmd if t == "claude" else tools.codex_cmd)(text, task_rel, mdl, eff, prompt_skills + note, resume, hook_tail)
+        if resume and declared:  # the resume prompt is short: point again at the step's skills so reading them is counted
+            cmd[2 if t == "claude" else -1] += resume_skills + "\nRe-read them now, they are not in your context after a resume."
         if not read:  # the CLI's transcripts go to the per-task cache so a fix round can resume them
             cmd = session.wrap(t, cmd)
         chatgpt = env_name == creds.CODEX_AUTH_ENV
@@ -342,6 +345,10 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         if read:
             result = tools.full_report(t, r.stdout, result)
         done = skills_read(catalog, ids, tools.opened_files(t, r.stdout))
+        seen = done  # every skill this session has read, for the Session line
+        if resume and task.exists():  # skills the resumed session read earlier count too
+            seen = list(dict.fromkeys([*session.skills_recorded(core.read_task(task), t, role), *done]))
+            done = [sid for sid in ids if sid in seen]
         verdict = (tools.verdict_of(result) or "n/a") if read else "-"
         head = core.git(wt, "rev-parse", "--short=7", "HEAD") if read and verdict != "n/a" else None
         if head:
@@ -351,7 +358,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         if tools.quota_hit(t, r.stdout, r.returncode):
             verdict = f"QUOTA->{'codex' if t == 'claude' else 'claude'}"
         if not read and not dropped and (sid := session.session_id(t, r.stdout)) and task.exists():
-            task.write_text(session.with_session(core.read_task(task), t, sid, role), encoding="utf-8", newline="\n")
+            task.write_text(session.with_session(core.read_task(task), t, sid, role, seen), encoding="utf-8", newline="\n")
         tasks.record_usage(task, role, models[t] + (" (codex)" if t == "codex" else ""), efforts[t], nums,
                      time.monotonic() - t0, skills_cell(ids, done), verdict)
         return r, result, done

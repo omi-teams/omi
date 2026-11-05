@@ -528,6 +528,74 @@ def test_session_resume():
             assert len(usage) >= 8, usage  # the retries are recorded like any run
             (hooks / "post-run.sh").unlink()
             state["hook"] = []
+            # a resumed fix round points at the task's skills again and counts the skills the session read earlier
+            skill = wt / ".omi" / "skills" / "g" / "omi-skill-x"
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text("---\nid: omi-skill-x\n---\nbody\n", encoding="utf-8")
+            other = skill.parent / "omi-skill-y"
+            other.mkdir()
+            (other / "SKILL.md").write_text("---\nid: omi-skill-y\n---\nbody\n", encoding="utf-8")
+            (skill.parent.parent / "CATALOG.md").write_text("- omi-skill-x g\n- omi-skill-y g\n", encoding="utf-8")
+            plain = task.read_text(encoding="utf-8")
+            with_skill = plain.replace("scope:", "skills: [omi-skill-x]\nscope:", 1)
+            path = "/work/.omi/skills/g/omi-skill-x/SKILL.md"
+            read_ev = json.dumps({"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Read", "input": {"file_path": path}}]}})
+            sid_ev = lambda i: json.dumps({"type": "system", "session_id": i}) + "\n"
+            last_cell = lambda: [l for l in task.read_text(encoding="utf-8").splitlines() if l.startswith("| omi-agent-engineer")][-1].split(" | ")[7]
+            saved_out = state["stdout"]
+            try:
+                task.write_text(with_skill, encoding="utf-8")
+                state["stdout"] = sid_ev("S3") + read_ev + "\n"
+                go(fresh=True)  # the first run reads the skill; the Session line keeps that
+                assert "--resume" not in calls[0] and last_cell() == "1/1 omi-skill-x" and "skills=omi-skill-x" in task.read_text(encoding="utf-8")
+                state["stdout"] = sid_ev("S3")  # the fix round reads nothing itself
+                go()
+                prompt = calls[0][calls[0].index("-p") + 1]
+                assert "--resume" in calls[0] and path in prompt and "Re-read" in prompt, prompt
+                assert last_cell() == "1/1 omi-skill-x" and "SKILL NOT READ" not in buf.getvalue() and "skills=omi-skill-x" in task.read_text(encoding="utf-8")
+                # X -> Y -> X in one session: the history is cumulative, X stays read
+                read_y = read_ev.replace("omi-skill-x", "omi-skill-y")
+                task.write_text(task.read_text(encoding="utf-8").replace("skills: [omi-skill-x]", "skills: [omi-skill-y]"), encoding="utf-8")
+                state["stdout"] = sid_ev("S3") + read_y + "\n"
+                go()
+                assert last_cell() == "1/1 omi-skill-y" and "skills=omi-skill-x,omi-skill-y" in task.read_text(encoding="utf-8")
+                task.write_text(task.read_text(encoding="utf-8").replace("skills: [omi-skill-y]", "skills: [omi-skill-x]"), encoding="utf-8")
+                state["stdout"] = sid_ev("S3")
+                go()
+                assert last_cell() == "1/1 omi-skill-x" and "skills=omi-skill-x,omi-skill-y" in task.read_text(encoding="utf-8")
+                # the post-run hook retry resumes with the skills too
+                (hooks / "post-run.sh").write_text("exit 1\n")
+                state["hook"] = [1, 0]
+                go()
+                assert len(calls) == 2 and path in calls[1][calls[1].index("-p") + 1] and last_cell() == "1/1 omi-skill-x"
+                (hooks / "post-run.sh").unlink()
+                state["hook"] = []
+                # codex: the prompt is the last argument
+                task.write_text(sess.with_session(with_skill, "codex", "T3", skills=["omi-skill-x"]), encoding="utf-8")
+                state["stdout"] = json.dumps({"type": "thread.started", "thread_id": "T3"}) + "\n"
+                os.environ[omi.worker.creds.CODEX_ENV] = "key"
+                vols.add(sess.volume(repo, "TASK-001", "codex"))
+                try:
+                    go(tool="codex", model="gpt-5")
+                finally:
+                    del os.environ[omi.worker.creds.CODEX_ENV]
+                    vols.discard(sess.volume(repo, "TASK-001", "codex"))
+                assert "resume" in calls[0] and path in calls[0][-1] and last_cell() == "1/1 omi-skill-x", calls[0]
+                # detached: the paths point at the read-only /state mount
+                task.write_text(sess.with_session(with_skill, "claude", "S3", skills=["omi-skill-x"]), encoding="utf-8")
+                state["stdout"] = sid_ev("S3")
+                real_resolve = omi.state.resolve.resolve
+                omi.state.resolve.resolve = lambda cwd=".": omi.state.resolve.Project(wt, wt, True)
+                try:
+                    go()
+                finally:
+                    omi.state.resolve.resolve = real_resolve
+                prompt = calls[0][calls[0].index("-p") + 1]
+                assert "--resume" in calls[0] and "/state/.omi/skills/g/omi-skill-x/SKILL.md" in prompt and "/work/.omi/skills" not in prompt, prompt
+            finally:
+                state["stdout"] = saved_out
+            task.write_text(plain, encoding="utf-8")
+            shutil.rmtree(wt / ".omi" / "skills")
             # scan rc 0 (token), 2 (unreadable entry) and 125 (docker error) drop the volume and the Session line; 1 keeps both
             for rc, why in ((0, "token found in transcript"), (2, "cannot scan the session volume"), (125, "cannot scan the session volume")):
                 task.write_text(sess.with_session(task.read_text(encoding="utf-8"), "claude", "S2"), encoding="utf-8")
