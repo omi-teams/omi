@@ -376,9 +376,10 @@ def step(root, tid, action, why=None, now=None, to=None, po=None):
             sys.exit(f"{tid}: step {cur} is a po gate; tick the reviewed acceptance criteria first:\n"
                      + "\n".join(unticked(text)) + "\nNothing changed.")
         if steps[at]["gate"] == "review":
-            if last_verdict(text, steps[at]["role"]) == "FAIL":
+            verdict = last_verdict(text, steps[at]["role"])
+            if verdict != "PASS":
                 if not (po or "").strip():
-                    sys.exit(f"{tid}: the last {steps[at]['role']} verdict is FAIL; run `omi step {tid} back` "
+                    sys.exit(f"{tid}: the last {steps[at]['role']} verdict is {verdict or 'missing'}; run `omi step {tid} back` "
                              "or `done --po <PO words>` for an explicit override. Nothing changed.")
                 text = add_step_log(text, f"PO review override {cur}: {' '.join(po.split())}")
         if steps[at]["gate"] == "auto":

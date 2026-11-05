@@ -327,6 +327,8 @@ def test_cli_characterization():
         assert "\nstep: build\n" in text and re.search(r"\n## Steps\n- plan started [\d-]+ [\d:]+\n- plan done ", text), text
         rc, out, _ = cli(root, "status")
         assert rc == 0 and "[Chưa bắt đầu] TASK-001 T1\n" in out
+        tfile = root / ".omi" / "tasks" / "TASK-001.md"
+        tfile.write_text(tfile.read_text(encoding="utf-8") + "\n## Usage\n| role | verdict |\n| omi-agent-reviewer | PASS abc1234 |\n", encoding="utf-8")
         assert cli(root, "step", "TASK-001", "done")[0] == 0 and cli(root, "step", "TASK-001", "next")[0] == 0
         assert cli(root, "step", "TASK-001", "back", "--to", "build", "--why", "re-plan", "the API") == (
             0, "TASK-001: step review failed; back to build (omi-agent-engineer), then `omi step TASK-001 done` and `next`\n", "")
