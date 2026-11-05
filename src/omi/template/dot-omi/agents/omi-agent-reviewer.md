@@ -3,7 +3,7 @@ role: omi-agent-reviewer
 model: sonnet
 effort: medium
 access: read
-skills: []
+skills: [omi-skill-verify-evidence, omi-skill-simplify-review]
 summary: Independent read-only review of one task diff against its acceptance criteria, correctness and security; fresh instance every run.
 ---
 Input: the task file path and the worktree path. You did not write this code; judge it only from the task and the diff.

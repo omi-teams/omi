@@ -327,6 +327,8 @@ def test_run_read_role():
     with tempfile.TemporaryDirectory() as d:
         wt = Path(d).resolve()
         (wt / ".git").write_text("gitdir: /x")
+        shutil.copytree(omi.common.core.TEMPLATE / "dot-omi" / "skills", wt / ".omi" / "skills")
+        omi.project.catalogs.skills_catalog(wt)
         task = wt / ".omi" / "tasks" / "TASK-001.md"
         subprocess.run, shutil.which = run, lambda _: "docker"
         omi.common.core.main_checkout, omi.common.core.WINDOWS = (lambda _: wt), False
@@ -413,7 +415,7 @@ def test_run_read_role():
             omi.worker.run.run_role("omi-agent-engineer", wt, task)
             assert "omi-skill-zz" in prompt()
             assert go() == 0, out.getvalue()
-            assert "omi-skill-zz" not in prompt() and task.read_text().splitlines()[-1].endswith("| - | n/a |"), task.read_text()
+            assert "omi-skill-zz" not in prompt() and task.read_text().splitlines()[-1].endswith("| 0/2 | n/a |"), task.read_text()
         finally:
             sys.stdout = saved
             subprocess.run, shutil.which, omi.common.core.main_checkout, omi.common.core.WINDOWS, tok = real
@@ -494,6 +496,8 @@ def test_review_round_flow():
     with tempfile.TemporaryDirectory() as d:
         wt = Path(d).resolve()
         (wt / ".git").write_text("gitdir: /x")
+        shutil.copytree(omi.common.core.TEMPLATE / "dot-omi" / "skills", wt / ".omi" / "skills")
+        omi.project.catalogs.skills_catalog(wt)
         task = wt / ".omi" / "tasks" / "TASK-001.md"
         task.parent.mkdir(parents=True)
         task.write_text("---\nid: TASK-001\nscope: src/**\n---\n## Checkpoint\n### Review round 1\n- src/a.py bad\n", encoding="utf-8")

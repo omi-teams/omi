@@ -4,7 +4,7 @@ summary: Time-boxed research question: researcher gathers cited findings, docs-w
 steps:
 - id: plan | role: coordinator | skills: omi-skill-task-brief | input: PO question | output: task file with the question, time box and a scope limited to docs/** | gate: none | stop: task file complete and PO picked it
 - id: research | role: omi-agent-researcher | skills: | input: task file | output: findings with a source for every claim, options and a recommendation (read-only, returned as text) | gate: none | stop: every claim cited; open questions listed
-- id: write | role: omi-agent-docs-writer | skills: | input: researcher findings, task file | output: cited report saved under docs/, Checkpoint updated | gate: none | stop: report saved, all citations kept, no product code changed
+- id: write | role: omi-agent-docs-writer | skills: omi-skill-verify-evidence | input: researcher findings, task file | output: cited report saved under docs/, Checkpoint updated | gate: none | stop: report saved, all citations kept, no product code changed
 - id: decide | role: coordinator | skills: | input: report path, recommendation | output: decision (adopt, adjust, drop) in ## Steps | gate: none | stop: Coordinator decides; omi-agent-architect advises on design
 ---
 # Spike

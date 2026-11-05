@@ -3,9 +3,9 @@ id: omi-flow-bugfix
 summary: Fix a defect at its root cause: failing test first, root-cause fix across all callers, regression test, independent review, automatic acceptance on review PASS. Use for a reported bug with a reproducible symptom; use feature for new behaviour.
 steps:
 - id: plan | role: coordinator | skills: omi-skill-task-brief | input: PO bug report | output: task file with symptom, expected behaviour, scope and acceptance criteria | gate: none | stop: task file complete and PO picked it
-- id: reproduce | role: omi-agent-engineer | skills: omi-skill-lean-implementation | input: task file, worktree | output: failing test that shows the symptom, Checkpoint updated | gate: none | stop: test fails for the reported reason; if it cannot be reproduced, stop and report
+- id: reproduce | role: omi-agent-engineer | skills: omi-skill-lean-implementation, omi-skill-debug-root-cause | input: task file, worktree | output: failing test that shows the symptom, Checkpoint updated | gate: none | stop: test fails for the reported reason; if it cannot be reproduced, stop and report
 - id: fix | role: omi-agent-engineer | skills: omi-skill-debug-root-cause | input: task file, failing test | output: root-cause fix after grep of all callers, regression test, diff, tests passing | gate: none | stop: reproducing test passes, full suite green, no symptom-only patch
-- id: review | role: omi-agent-reviewer | skills: | input: task file, diff | output: VERDICT PASS or FAIL | gate: review | stop: VERDICT PASS
+- id: review | role: omi-agent-reviewer | skills: omi-skill-verify-evidence, omi-skill-simplify-review | input: task file, diff | output: VERDICT PASS or FAIL | gate: review | stop: VERDICT PASS
 - id: accept | role: coordinator | skills: | input: PASS verdict, diff summary | output: `Auto accept: review PASS` line in ## Steps | gate: auto | stop: every review-type step passed or an explicit PO approval line
 ---
 # Bugfix
