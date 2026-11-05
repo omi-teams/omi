@@ -349,6 +349,27 @@ def test_session_role_record():
         assert sess.recorded(f"Session: {tool} S1", tool, engineer) == "S1"
 
 
+def test_record_runs():
+    runs = omi.project.runs
+    assert runs.skill_sources(["a", "b"], ["b", "c"], ["c", "d"]) == {"a": "role", "b": "role", "c": "task", "d": "step"}
+    with tempfile.TemporaryDirectory() as d:
+        task = Path(d) / "TASK-001.md"
+        task.write_text("---\nid: TASK-001\n---\n## Goal\nx\n\n## Usage\n| role |\n", encoding="utf-8")
+        runs.record_run(task, "omi-agent-engineer", "claude", "sonnet", "medium", "build",
+                        runs.skill_sources(["a"], ["b"], ["c"]), ["a", "b"], ["python"], ["ref1"])
+        runs.record_run(task, "omi-agent-engineer", "codex", "gpt", None, "build", {"a": "role", "b": "task"}, ["a"], ["python"], [])
+        runs.record_run(task, "omi-agent-reviewer", "claude", "opus", "high", "review", {"r": "role"}, [], [], [])
+        text = task.read_text(encoding="utf-8")
+        assert text.index("## Runs") < text.index("## Usage") and text.count("## Runs") == 1
+        got = runs.parse_runs(text.partition("## Runs\n")[2].partition("\n\n")[0])
+    assert [(r["role"], r["tool"], r["effort"], r["step"]) for r in got] == [
+        ("omi-agent-engineer", "claude", "medium", "build"), ("omi-agent-engineer", "codex", "n/a", "build"),
+        ("omi-agent-reviewer", "claude", "high", "review")]
+    assert got[0]["skills"] == [{"id": "a", "source": "role"}, {"id": "b", "source": "task"}, {"id": "c", "source": "step"}]
+    assert got[0]["read"] == ["a", "b"] and got[0]["rules"] == ["python"] and got[0]["references"] == ["ref1"]
+    assert got[1]["references"] == [] and got[2]["read"] == [] and got[2]["rules"] == []
+
+
 def test_session_resume():
     sess, tools = omi.worker.session, omi.worker.tools
     out = '{"type":"system","session_id":"S1"}\n{"type":"result","session_id":"S2","result":"DONE","usage":{}}\n'
@@ -501,6 +522,8 @@ def test_session_resume():
             # read roles never resume, mount nor scan a session volume
             argv = go("omi-agent-reviewer")
             assert "--resume" not in argv and "--mount" not in argv and not runs
+            lines = [l for l in task.read_text(encoding="utf-8").partition("\n## Runs\n")[2].partition("\n\n")[0].splitlines()]
+            assert lines[-1].startswith("- omi-agent-reviewer | claude ") and any(l.startswith(f"- {designer} | claude ") for l in lines), lines
             # the other tool as the last one: fresh, silent, a new volume
             task.write_text(sess.with_session(task.read_text(encoding="utf-8"), "codex", "T1"), encoding="utf-8")
             argv = go()
@@ -1206,6 +1229,7 @@ def main():
     test_run_role_plan_violation_alone_exits_3()
     test_session_role_record()
     test_session_resume()
+    test_record_runs()
     test_container_names()
     test_clip_report()
     test_report_note_keeps_full_report()

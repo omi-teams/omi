@@ -552,6 +552,21 @@ def test_cost():
         assert not data.cost("sample")["has_prices"]
 
 
+def test_task_runs() -> None:
+    runs = ("- omi-agent-engineer | claude sonnet medium | build | skills: a@role b@task | read: a | rules: python | refs: -\n"
+            "- omi-agent-engineer | claude sonnet low | fix | skills: a@role c@step | read: a c | rules: python omi-modules | refs: r1\n"
+            "- omi-agent-reviewer | claude opus high | review | skills: v@role | read: - | rules: - | refs: -\n"
+            "- junk line\n")
+    snap = type("S", (), {"paths": set()})()
+    detail = lambda text: data._detail(snap, Path("p"), "TASK-001", text)
+    got = detail(f"---\nid: TASK-001\n---\n## Goal\nx\n\n## Runs\n{runs}\n## Usage\n| role |\n")["runs"]
+    assert [(r["role"], r["step"]) for r in got] == [("omi-agent-engineer", "build"), ("omi-agent-engineer", "fix"), ("omi-agent-reviewer", "review")]
+    assert got[1]["skills"] == [{"id": "a", "source": "role"}, {"id": "c", "source": "step"}]
+    assert got[1]["read"] == ["a", "c"] and got[1]["rules"] == ["python", "omi-modules"] and got[1]["references"] == ["r1"]
+    assert got[2]["read"] == [] and got[0]["references"] == [] and got[0]["effort"] == "medium"
+    assert detail("---\nid: TASK-001\n---\n## Goal\nx\n")["runs"] == []
+
+
 def test_cost_legacy_usage() -> None:
     # Usage tables copied from TASK-026 (7 columns) and TASK-035 (8 columns).
     tables = (
@@ -865,6 +880,7 @@ def main():
     test_projects_cached_per_commit_and_minute()
     test_cost()
     test_cost_legacy_usage()
+    test_task_runs()
     test_cost_mixed_tools_per_task()
     test_timeline()
     test_task_detail_files()
