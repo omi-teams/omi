@@ -595,6 +595,12 @@ Từ 2026-10-27 đến 2026-11-03
   assert.equal(find(elements.view,'col-done')[0].attrs.open,undefined);assert.equal(find(elements.view,'col-planned').length,0);
   assert(tree.textContent.includes('tổng hợp'));
   assert.deepEqual(all(tree).filter(n=>n.tagName==='progress').map(n=>n.attrs.value),['1','1']);
+  const leaf2={...leaf,id:'TASK-002',parent:'FR-002'};
+  const parent2={...parent,id:'FR-002',children:['TASK-002']};
+  const epic2={...epic,children:['FR-001','FR-002']};
+  const two=invoke(`taskTree('omi',${JSON.stringify([epic2,parent,parent2,leaf,leaf2])})`);
+  const groups=all(two).filter(n=>n.tagName==='details'&&n.children[0].textContent.endsWith('task đã xong'));
+  assert.equal(groups.length,1);assert.equal(groups[0].children[0].textContent,'2 task đã xong');assert.equal(groups[0].attrs.open,undefined);
   const branch=all(tree).find(n=>n.tagName==='details');
   branch.open=false;branch.listeners.toggle();
   data={...data,decisions:[]};await invoke('route()');

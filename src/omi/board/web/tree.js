@@ -31,19 +31,16 @@ function taskTree(name, items, matches = null) {
     bar.setAttribute("aria-label", `${t.id}: ${done}/${kids.length} con trực tiếp đã xong`);
     return disclosure(`tree:${t.id}`, el("summary", null, {}, [box("chips", badges), el("span", t.frontmatter.title || "—"),
       box("progress-row", [bar, el("span", `${done}/${kids.length}`, {class: "small"})])]),
-      [box("children", nodes(kids, path, t.id))],
+      [box("children", kids.filter(k => !isDoneLeaf(k)).map(k => node(k, path)))],
       !["done", "blocked"].includes(statusOf(t)), "", !!matches);
   }
-  // Done leaves collapse into one disclosure per parent; the key keeps its state in `disclosures`.
-  function nodes(list, path, key) {
-    const isDoneLeaf = k => statusOf(k) === "done" && !(k.children || []).some(id => byId.has(id));
-    const finished = list.filter(isDoneLeaf);
-    const rows = list.filter(k => !isDoneLeaf(k)).map(k => node(k, path));
-    return finished.length ? [...rows, disclosure(`tree-done:${key}`, el("summary", `${num(finished.length)} task đã xong`),
-      finished.map(k => node(k, path)), false, "done-leaves", !!matches)] : rows;
-  }
+  // Every done leaf joins one closed group after the tree; its state lives in `disclosures`.
+  const isDoneLeaf = k => statusOf(k) === "done" && !(k.children || []).some(id => byId.has(id));
   const roots = items.filter(t => !byId.has(t.parent)).sort((a, b) => a.id.localeCompare(b.id));
-  return box("tree", roots.length ? nodes(roots, new Set(), "") : [empty("Chưa có task. Các task sẽ xuất hiện sau lần cập nhật dữ liệu kế tiếp.")]);
+  const finished = items.filter(isDoneLeaf);
+  const rows = roots.filter(t => !isDoneLeaf(t)).map(t => node(t));
+  return box("tree", roots.length ? [...rows, ...(finished.length ? [disclosure("tree-done", el("summary", `${num(finished.length)} task đã xong`),
+    finished.map(k => node(k)), false, "done-leaves", !!matches)] : [])] : [empty("Chưa có task. Các task sẽ xuất hiện sau lần cập nhật dữ liệu kế tiếp.")]);
 }
 function leafCounts(d) {
   const count = Object.fromEntries(Object.keys(STATUS).map(s => [s, 0]));
