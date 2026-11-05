@@ -44,3 +44,31 @@ selects its collapsed-sidebar layout instead of depending on the search bug.
 `python3 tests/test_board_web.py` exited 0 after the fix: runtime, Chromium,
 light/dark axe, keyboard, print and layout checks executed; no browser console
 or unexpected request errors. Wheel packaging skipped because pip is missing.
+
+## Build round 3: phone preference isolation
+
+Repro: clear `omi-board-sidebar`, load the project at 375px, and open the
+sidebar. The original code stores `open`; closing the overlay can then store
+`closed`, changing the desktop preference. The new browser regression fails
+against the original implementation with `phone open preserves desktop preference`.
+
+The shared persistence guard now saves only on desktop. Browser checks cover
+unset, `open`, and `closed` preferences across phone opening and closing by
+toggle, backdrop, Escape, and navigation link; phone reloads stay collapsed,
+and desktop resize/reload restores the original preference. Existing desktop
+keyboard persistence, Escape ownership, and disabled-storage checks remain.
+
+| Flow | Before | After | Evidence |
+| --- | --- | --- | --- |
+| Phone opening preserves unset desktop preference | FAIL | PASS | `persistence-before/sidebar-375.png`, `persistence-after/sidebar-375.png`; storage assertions |
+| All phone dismissal paths preserve each desktop preference | Not run | PASS | Browser assertions at 375px, resize/reload at 1280px |
+| Open sidebar beside dashboard, cost tables and dependency graph | Not run | PASS | `scrollWidth <= innerWidth` assertions at 768px and 1024px |
+
+The before/after phone screenshots were visually inspected: the overlay layout
+is unchanged; the regression concerns stored state. The focused browser runs
+reported no console or unexpected request errors. `python3 tests/test_board_web.py`
+exited 0, executing runtime, Chromium, keyboard, light/dark axe, print, and layout
+checks. Wheel packaging skipped because pip is missing.
+
+`python3 tests/test_omi.py` also exited 0 with final `ok`, including the board
+runtime and Chromium checks. Wheel packaging skipped because pip is missing.

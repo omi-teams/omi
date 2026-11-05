@@ -249,7 +249,7 @@ function initSidebar() {
     document.body.classList.toggle("sidebar-open", open);
     backdrop.hidden = !(open && phone.matches);
     main.inert = open && phone.matches;
-    if (remember) {
+    if (remember && !phone.matches) {
       preferred = open ? "open" : "closed";
       try { window.localStorage.setItem("omi-board-sidebar", preferred); } catch (_) { /* Keep this tab usable. */ }
     }

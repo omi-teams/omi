@@ -944,6 +944,49 @@ catch(e) {
       await route.fulfill({body:fs.readFileSync(path.join(process.argv[1],name)),contentType:types[path.extname(name)],
         headers:{'Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'"}});
     });
+    // Phone overlay actions must preserve the desktop preference, including its default.
+    for(const saved of [null,'open','closed']) {
+      await page.setViewportSize({width:375,height:900});
+      await page.goto('http://omi.test/#/p/omi');
+      await page.evaluate(saved=>{
+        if(saved===null) localStorage.removeItem('omi-board-sidebar');
+        else localStorage.setItem('omi-board-sidebar',saved);
+      },saved);
+      await page.reload();
+      await page.locator('#status').filter({hasText:'Cập nhật lần cuối'}).waitFor();
+      const toggle=page.locator('#sidebar-toggle'), sidebar=page.locator('#board-sidebar');
+      for(const close of ['toggle','backdrop','Escape','link']) {
+        assert.equal(await sidebar.isVisible(),false,'phone overlay starts closed');
+        await toggle.click();
+        assert.equal(await page.evaluate(()=>localStorage.getItem('omi-board-sidebar')),saved,'phone open preserves desktop preference');
+        if(close==='toggle') await toggle.click();
+        else if(close==='backdrop') await page.locator('#sidebar-backdrop').click({position:{x:350,y:400}});
+        else if(close==='Escape') await page.keyboard.press('Escape');
+        else await sidebar.getByRole('link',{name:'Kanban',exact:true}).click();
+        assert.equal(await sidebar.isVisible(),false);
+        assert.equal(await page.evaluate(()=>localStorage.getItem('omi-board-sidebar')),saved,`phone ${close} preserves desktop preference`);
+      }
+      await page.reload();
+      await page.locator('#status').filter({hasText:'Cập nhật lần cuối'}).waitFor();
+      assert.equal(await sidebar.isVisible(),false);
+      await page.setViewportSize({width:1280,height:900});
+      await sidebar.waitFor({state:saved==='closed'?'hidden':'visible'});
+      assert.equal(await sidebar.isVisible(),saved!=='closed','resize restores desktop preference');
+      await page.reload();
+      await page.locator('#status').filter({hasText:'Cập nhật lần cuối'}).waitFor();
+      assert.equal(await sidebar.isVisible(),saved!=='closed','desktop reload restores preference');
+    }
+    // Tablet tables and graphs must fit beside the open sidebar.
+    for(const width of [768,1024]) {
+      await page.setViewportSize({width,height:900});
+      for(const [hash,selector] of [['#/p/omi','#board-tree'],['#/p/omi/cost','.cost-stats'],['#/p/omi/graph','.g-summary']]) {
+        await page.goto(`http://omi.test/${hash}`);
+        await page.locator(selector).waitFor();
+        if(!(await page.locator('#board-sidebar').isVisible())) await page.locator('#sidebar-toggle').click();
+        assert(await page.locator('#board-sidebar').isVisible());
+        assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`sidebar overflow ${width} ${hash}`);
+      }
+    }
     // TASK-191: sidebar links, native keyboard toggle, storage and mobile overlay.
     for(const width of [1280,375,320]) {
       await page.setViewportSize({width,height:900});
@@ -1013,10 +1056,10 @@ catch(e) {
       await page.keyboard.press('Escape');
       assert.equal(await toggle.getAttribute('aria-expanded'),'false');
       assert(await toggle.evaluate(n=>n===document.activeElement));
-      assert.equal(await page.evaluate(()=>localStorage.getItem('omi-board-sidebar')),'closed');
+      assert.equal(await page.evaluate(()=>localStorage.getItem('omi-board-sidebar')),width>=768?'closed':null);
       await page.reload();assert.equal(await sidebar.isVisible(),false);
       await toggle.focus();await page.keyboard.press('Enter');
-      assert.equal(await page.evaluate(()=>localStorage.getItem('omi-board-sidebar')),'open');
+      assert.equal(await page.evaluate(()=>localStorage.getItem('omi-board-sidebar')),width>=768?'open':null);
       await page.keyboard.press('Escape');assert.equal(await sidebar.isVisible(),false);
       await page.keyboard.press('Enter');
       await page.reload();assert.equal(await sidebar.isVisible(),width>=768);
