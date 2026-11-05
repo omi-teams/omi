@@ -747,6 +747,7 @@ def main():
     test_post_run_structure_check()
     test_plans()
     test_skills_check()
+    test_reviewer_mockup_evidence_is_qa()
 
 
 if __name__ == "__main__":

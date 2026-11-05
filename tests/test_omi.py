@@ -37,6 +37,21 @@ def report_failure(exc_type, exc, tb):
     print(f"FAILED {name} {filename}:{lineno} {exc_type.__name__}: {exc}".replace("\n", " "), file=sys.stderr, flush=True)
 
 
+def track_calls(modules):
+    """Wrap each module's test_* functions to record calls; returns (all defined, called) sets of (module, function)."""
+    defined, called = set(), set()
+    for mod in modules:
+        for name, fn in list(vars(mod).items()):
+            if name.startswith("test_") and callable(fn) and getattr(fn, "__module__", None) == mod.__name__:
+                key = (mod.__name__, name)
+                defined.add(key)
+                def wrapper(*a, _fn=fn, _key=key, **kw):
+                    called.add(_key)
+                    return _fn(*a, **kw)
+                setattr(mod, name, wrapper)
+    return defined, called
+
+
 def test_release_0_5_0():
     assert omi.common.core.version() == "0.5.0"
     assert upgrade.template_shas() == json.loads(upgrade.SHAS.read_text(encoding="utf-8"))["0.5.0"]
@@ -77,6 +92,8 @@ def test_phase():
 
 if __name__ == "__main__":
     sys.excepthook = report_failure
+    defined, called = track_calls([m for m in list(sys.modules.values()) if getattr(m, "__file__", None)
+                                   and Path(m.__file__).parent == Path(__file__).parent and Path(m.__file__).name.startswith("test_")])
     test_phase()
     test_release_0_5_0()
     test_upgrade.main()
@@ -97,4 +114,6 @@ if __name__ == "__main__":
     test_board_web.main()
     test_structure.main()
     test_dispatch.main()
+    skipped = sorted(f"{mod}.{name}" for mod, name in defined - called)
+    assert not skipped, f"test functions never called by a main(): {', '.join(skipped)}"
     print("ok")

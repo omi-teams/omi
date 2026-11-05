@@ -550,6 +550,7 @@ def main():
     test_cli_correctness()
     test_cli_characterization()
     test_failure_report()
+    test_step_why_keeps_flag_words()
 
 
 if __name__ == "__main__":
