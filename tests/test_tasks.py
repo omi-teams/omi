@@ -974,6 +974,7 @@ def main():
     test_note()
     test_host_test()
     test_review_prompts_and_host_test_docs()
+    test_warn_skills_empty()
     test_task_skill_step_commands()
     test_parallel()
     test_workflows()
