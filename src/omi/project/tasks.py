@@ -6,11 +6,12 @@ import re
 import sys
 from pathlib import Path
 
-from . import catalogs, structure, tree, verdicts, workflows
+from . import catalogs, scope, structure, tree, verdicts, workflows
 from ..common import core
 from ..state import resolve as state
 
 
+glob_prefix, globs_overlap = scope.glob_prefix, scope.globs_overlap
 STEP_LOG = re.compile(r"^- (\S+) (started|done|skipped|failed) ", re.M)
 
 
@@ -92,11 +93,11 @@ def round_gate(root, tid, text, po):
 
 
 def run_gate(root, tid, po):
-    """`omi run <write role>`: the round limit check on the task file; logs the override when `po` allows one more round."""
+    """Require scope and check the round limit before `omi run <write role>`."""
     project = state.resolve(root)
-    task = state.task_file(project, tid)
-    if task.exists():
+    if (task := state.task_file(project, tid)).exists():
         text = core.read_task(task)
+        scope.require_scope(tid, text)
         new = round_gate(project.state, tid, text, po)
         if new != text:
             task.write_text(new, encoding="utf-8", newline="\n")
@@ -244,8 +245,7 @@ def step(root, tid, action, why=None, now=None, to=None, po=None):
     `approve` records PO words; `reopen` restarts the last write step of a completed workflow.
     Either `back` stops at the round limit unless `po` (the PO's words) allows one more round; from round 2 a review FAIL
     with `ROOT: same` sends plain `back` to the architect step instead (no architect step: `po` is required).
-    `done` with `po` explicitly overrides a review FAIL and records the PO words.
-    Gate steps cannot be skipped; a `po` gate needs the PO approval line."""
+    `done --po` overrides a review FAIL; gates cannot be skipped and a `po` gate needs the PO approval line."""
     if not re.fullmatch(r"[A-Za-z0-9_-]+", tid):
         sys.exit(f"invalid task id `{tid}`: use letters, digits, `-` and `_`. Nothing changed.")
     project = state.resolve(root)
@@ -326,6 +326,8 @@ def step(root, tid, action, why=None, now=None, to=None, po=None):
         new = steps[at + 1]
         if new["role"] != workflows.COORDINATOR:
             catalogs.get_role(root, m.get("role") or "omi-agent-engineer")  # unknown task role fails too
+            if catalogs.get_role(root, new["role"])["access"] == "write":
+                scope.require_scope(tid, text)
         catalogs.check_skills(root, workflows.step_skill_ids(root, new, m))
         tree.warn_type_workflow(m)
         if not cur:
@@ -419,19 +421,6 @@ def tasks(root):
     return dict(sorted(found.items()))
 
 
-def glob_prefix(glob):
-    return re.split(r"[*?\[]", glob, 1)[0]
-
-
-def globs_overlap(a, b):
-    """# ponytail: compares only the literal prefix before the first wildcard; may report a false overlap, never misses one."""
-    for x, y in ((a, b), (b, a)):
-        px, py = glob_prefix(x), glob_prefix(y)
-        if px == py or (px.startswith(py) and (py != y or py.endswith("/") or px[len(py)] == "/")):
-            return True
-    return False
-
-
 def parallel(root, ids):
     """Conflicts that forbid running these tasks in parallel (empty list: ok)."""
     found = tasks(root)
@@ -442,6 +431,8 @@ def parallel(root, ids):
             out.append(f"{tid}: no task file")
         elif found[tid].get("status") not in ("planned", "in-progress"):
             out.append(f"{tid}: status {found[tid].get('status')} (need planned or in-progress)")
+        if tid in found and not core.split(found[tid].get("scope")):
+            out.append(f"{tid} has no scope")
 
     def deps(tid, seen=()):
         for d in core.split(found.get(tid, {}).get("depends")):

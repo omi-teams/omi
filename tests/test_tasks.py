@@ -274,7 +274,7 @@ def test_step_approve_reopen():
                         raise AssertionError(f"{action} should fail")
                     assert task.read_text(encoding="utf-8") == before and len(commits) == count
 
-                task.write_text("---\nid: TASK-109\nworkflow: omi-flow-feature\nstatus: in-progress\n---\n"
+                task.write_text("---\nid: TASK-109\nscope: src/**\nworkflow: omi-flow-feature\nstatus: in-progress\n---\n"
                                 "## Acceptance criteria\n- [x] tested\n\n## Steps\n\n## Checkpoint\nDone:\n",
                                 encoding="utf-8")
                 refuses("approve", "yes", "no step started")
@@ -466,7 +466,7 @@ def test_round_limit_and_replan():
         roles = lambda root, role: {"access": "write" if role == "omi-agent-engineer" else "read"}
 
         def put(verdicts, log="", step="review", *, extra=""):
-            task.write_text(f"---\nid: TASK-139\nstatus: in-progress\nstep: {step}\n---\n## Steps\n- plan done 2026-11-02 10:00\n"
+            task.write_text(f"---\nid: TASK-139\nscope: src/**\nstatus: in-progress\nstep: {step}\n---\n## Steps\n- plan done 2026-11-02 10:00\n"
                             f"- architect done 2026-11-02 10:00\n- build done 2026-11-02 10:00\n- review started 2026-11-02 10:00\n{log}\n"
                             f"## Usage\n| role | model | effort | input | output | cache | duration | skills read | verdict |\n|---|---|---|---|---|---|---|---|---|\n"
                             f"{rows(*verdicts)}{extra}", encoding="utf-8")
@@ -645,7 +645,7 @@ def test_workflows():
 
             # step state
             task = root / ".omi" / "tasks" / "TASK-001.md"
-            task.write_text("---\nid: TASK-001\nworkflow: omi-flow-demo\nstep:\n---\n## Goal\nG\n\n## Checkpoint\nDone:\n")
+            task.write_text("---\nid: TASK-001\nscope: src/**\nworkflow: omi-flow-demo\nstep:\n---\n## Goal\nG\n\n## Checkpoint\nDone:\n")
             go = lambda action, why=None: omi.project.tasks.step(root, "TASK-001", action, why)  # noqa: E731
             front = lambda: omi.common.core.meta(task)  # noqa: E731
             fails(lambda: go("done"), "no step started")
@@ -701,7 +701,7 @@ def test_workflows():
             assert re.search(r"## Steps\n- plan started .+\n- plan skipped .+: PO wrote the AC already\n- build started", text), text
             assert omi.project.tasks.step_states(text) == {"plan": "skipped", "build": "done", "review": "done", "accept": "done"}
             # back: a started review gate fails and the nearest earlier write step restarts
-            task.write_text("---\nid: TASK-001\nworkflow: omi-flow-demo\nstep: plan\n---\n## Steps\n- plan started 2026-01-01 10:00\n")
+            task.write_text("---\nid: TASK-001\nscope: src/**\nworkflow: omi-flow-demo\nstep: plan\n---\n## Steps\n- plan started 2026-01-01 10:00\n")
             fails(lambda: go("back"), "not a review gate")
             go("done"), go("next")
             fails(lambda: go("back"), "not a review gate")  # build is not a review gate
@@ -716,7 +716,7 @@ def test_workflows():
             go("done")
             fails(lambda: go("back"), "already done")
             # a PASS from an earlier round does not satisfy a restarted review (back)
-            task.write_text("---\nid: TASK-001\nworkflow: omi-flow-demo\nstep:\n---\n## Usage\n| role | verdict |\n| omi-agent-reviewer | PASS old |\n")
+            task.write_text("---\nid: TASK-001\nscope: src/**\nworkflow: omi-flow-demo\nstep:\n---\n## Usage\n| role | verdict |\n| omi-agent-reviewer | PASS old |\n")
             go("next"), go("done"), go("next"), go("done"), go("next")
             assert front()["step"] == "review"
             fails(lambda: go("done"), "verdict is missing")
@@ -729,7 +729,7 @@ def test_workflows():
                     "id: review | role: omi-agent-reviewer | skills: | input: d | output: v | gate: review | stop: PASS",
                     "id: security | role: omi-agent-reviewer | skills: | input: d | output: v | gate: review | stop: PASS")
             flow("omi-flow-sens", *sens)
-            task.write_text("---\nid: TASK-001\nworkflow: omi-flow-sens\nstep:\n---\n## Usage\n| role | verdict |\n")
+            task.write_text("---\nid: TASK-001\nscope: src/**\nworkflow: omi-flow-sens\nstep:\n---\n## Usage\n| role | verdict |\n")
             go("next"), go("done"), go("next")
             omi.project.tasks.append_note(task, "Usage", "| omi-agent-reviewer | PASS abc1234 |")
             go("done"), go("next")
@@ -742,18 +742,18 @@ def test_workflows():
             (wf / "omi-flow-sens.md").unlink()
 
             # unknown workflow on the task, default workflow, unknown task role
-            task.write_text("---\nid: TASK-001\nworkflow: omi-flow-ghost\n---\n")
+            task.write_text("---\nid: TASK-001\nscope: src/**\nworkflow: omi-flow-ghost\n---\n")
             fails(lambda: go("next"), "unknown workflow `omi-flow-ghost`")
-            task.write_text("---\nid: TASK-001\n---\n")
+            task.write_text("---\nid: TASK-001\nscope: src/**\n---\n")
             go("next")  # default workflow omi-flow-feature now exists
             assert front()["step"] == "plan"
-            task.write_text("---\nid: TASK-001\nworkflow: omi-flow-demo\nrole: omi-agent-ghost\nstep: plan\n---\n"
+            task.write_text("---\nid: TASK-001\nscope: src/**\nworkflow: omi-flow-demo\nrole: omi-agent-ghost\nstep: plan\n---\n"
                             "## Steps\n- plan done 2026-10-25 10:00\n")
             fails(lambda: go("next"), "unknown role `omi-agent-ghost`")
             fails(lambda: omi.project.tasks.step(root, "TASK-404", "next"), "no task file")
             fails(lambda: omi.project.tasks.step(root, "../TASK-001", "next"), "invalid task id")
             # a PO approval line outside ## Steps does not count
-            task.write_text("---\nid: TASK-001\nworkflow: omi-flow-demo\nstep: accept\n---\nPO approval accept: sneaky\n\n"
+            task.write_text("---\nid: TASK-001\nscope: src/**\nworkflow: omi-flow-demo\nstep: accept\n---\nPO approval accept: sneaky\n\n"
                             "## Steps\n- plan done 2026-10-25 10:00\n- build done 2026-10-25 10:00\n- review done 2026-10-25 10:00\n"
                             "- accept started 2026-10-25 10:00\n\n## Checkpoint\nPO approval accept: x\n")
             fails(lambda: go("done"), "po gate")
@@ -761,8 +761,8 @@ def test_workflows():
             wt = root / "wt"
             (wt / ".omi" / "tasks").mkdir(parents=True)
             wtask = wt / ".omi" / "tasks" / "TASK-001.md"
-            wtask.write_text("---\nid: TASK-001\nworkflow: omi-flow-demo\nstatus: in-progress\n---\n")
-            task.write_text("---\nid: TASK-001\nworkflow: omi-flow-demo\n---\n")
+            wtask.write_text("---\nid: TASK-001\nscope: src/**\nworkflow: omi-flow-demo\nstatus: in-progress\n---\n")
+            task.write_text("---\nid: TASK-001\nscope: src/**\nworkflow: omi-flow-demo\n---\n")
             real_wts, omi.common.core.task_worktrees = omi.common.core.task_worktrees, lambda r: {"TASK-001": str(wt)}
             try:
                 assert go("next") == 0
@@ -781,6 +781,71 @@ def test_workflows():
             a = tpl / "workflows" / f"{name}.md"
             assert not omi.project.workflows.validate_workflow(repo, a), name
             assert "Review-fail rule" in a.read_text() and "PO gates" in a.read_text()
+
+
+def test_missing_scope():
+    class Out(io.StringIO):
+        def reconfigure(self, **kw): pass
+    for detached in (False, True):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d).resolve()
+            folder = root / ".omi" / "tasks"
+            folder.mkdir(parents=True)
+            project = omi.state.resolve.Project(root, root / "code" if detached else root, detached)
+            task = folder / "TASK-001.md"
+            (folder / "TASK-002.md").write_text("---\nid: TASK-002\nstatus: planned\nscope: src/**\n---\n", encoding="utf-8")
+            flow = [dict(id=sid, role=role, gate="none", input="task", output="result", stop="done", skills="")
+                    for sid, role in (("plan", "coordinator"), ("review", "reader"), ("build", "writer"))]
+            def role(_, name):
+                return {"access": "write" if name == "writer" else "read", "skills": ""}
+            with patch("omi.common.core.main_checkout", return_value=root), \
+                    patch("omi.state.resolve.resolve", return_value=project), \
+                    patch("omi.common.core.task_worktrees", return_value={}), \
+                    patch("omi.common.core.git", return_value=None), \
+                    patch("omi.project.tasks.commit_task_file"), \
+                    patch("omi.project.workflows.get_workflow", return_value=flow), \
+                    patch("omi.project.catalogs.get_role", side_effect=role), \
+                    patch("omi.project.catalogs.check_skills"), \
+                    patch("omi.project.catalogs.warn_skills_empty"), \
+                    patch("omi.worker.run.run_cmd", return_value=0) as run, \
+                    patch("sys.stdout", Out()) as out:
+                for scope_line in ("", "scope:\n", "scope: ,  ,\n"):
+                    text = "---\nid: TASK-001\nstatus: planned\n" + scope_line + "---\n"
+                    task.write_text(text, encoding="utf-8")
+                    out.seek(0)
+                    out.truncate()
+                    try:
+                        omi.app.cli.dispatch(["parallel", "TASK-001", "TASK-002"])
+                    except SystemExit as exc:
+                        assert "TASK-001 has no scope" in str(exc), str(exc)
+                    else:
+                        raise AssertionError(out.getvalue())
+                    assert "parallel ok" not in out.getvalue()
+                    assert tasks.parallel(project, ["TASK-001", "TASK-002"]) == ["TASK-001 has no scope"]
+                    assert tasks.step(project, "TASK-001", "next") == 0  # coordinator
+                    assert tasks.step(project, "TASK-001", "done") == 0
+                    assert tasks.step(project, "TASK-001", "next") == 0  # read role
+                    assert tasks.step(project, "TASK-001", "done") == 0
+                    before = task.read_text(encoding="utf-8")
+                    for invoke in (lambda: tasks.step(project, "TASK-001", "next"),
+                                   lambda: omi.app.cli.dispatch(["run", "writer", "TASK-001", "--po", "approved"])):
+                        try:
+                            invoke()
+                        except SystemExit as exc:
+                            assert "TASK-001 has no scope" in str(exc), str(exc)
+                        else:
+                            raise AssertionError("write without scope allowed")
+                        assert task.read_text(encoding="utf-8") == before
+                    run.assert_not_called()
+                    try:
+                        omi.app.cli.dispatch(["run", "reader", "TASK-001"])
+                    except SystemExit as exc:
+                        assert exc.code == 0
+                    run.assert_called_once()
+                    run.reset_mock()
+                task.write_text("---\nid: TASK-001\nstatus: planned\nscope: src/**\n---\n", encoding="utf-8")
+                assert tasks.run_gate(project, "TASK-001", None) is None
+    assert len(Path(tasks.__file__).read_text(encoding="utf-8").splitlines()) <= 600
 
 
 def test_parallel():
@@ -1022,6 +1087,7 @@ def main():
     test_review_prompts_and_host_test_docs()
     test_warn_skills_empty()
     test_task_skill_step_commands()
+    test_missing_scope()
     test_parallel()
     test_workflows()
     test_roles()

@@ -558,7 +558,7 @@ def test_ui_mockup_workflow() -> None:
             "omi-skill-lean-implementation", "omi-skill-ui-direction"]
         assert ".omi/tasks/<ID>-mockup/" in steps[3]["input"]
         task = root / ".omi" / "tasks" / "TASK-122.md"
-        task.write_text("---\nid: TASK-122\nworkflow: omi-flow-feature-ui\nstep: design\n---\n"
+        task.write_text("---\nid: TASK-122\nscope: src/**\nworkflow: omi-flow-feature-ui\nstep: design\n---\n"
                         "## Steps\n- plan done 2026-10-31 10:00\n- design started 2026-10-31 10:00\n",
                         encoding="utf-8")
         step = lambda action, why=None: omi.project.tasks.step(root, "TASK-122", action, why)

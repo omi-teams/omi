@@ -173,3 +173,22 @@ def plan_violations(wt, tid):
         if not structure.match(rules, p):
             out.append(f"UNMAPPED: {p}")
     return out
+
+
+def require_scope(tid: str, text: str) -> None:
+    """Refuse a write operation without a declared task scope."""
+    if not core.split(core.parse(text).get("scope")):
+        sys.exit(f"{tid} has no scope; set scope before starting a write role. Nothing changed.")
+
+
+def glob_prefix(glob: str) -> str:
+    return re.split(r"[*?\[]", glob, 1)[0]
+
+
+def globs_overlap(a: str, b: str) -> bool:
+    """# ponytail: compares only the literal prefix before the first wildcard; may report a false overlap, never misses one."""
+    for x, y in ((a, b), (b, a)):
+        px, py = glob_prefix(x), glob_prefix(y)
+        if px == py or (px.startswith(py) and (py != y or py.endswith("/") or px[len(py)] == "/")):
+            return True
+    return False
