@@ -335,6 +335,8 @@ def step(root, tid, action, why=None, now=None, to=None, po=None):
             catalogs.get_role(root, m.get("role") or "omi-agent-engineer")  # unknown task role fails too
         catalogs.check_skills(root, workflows.step_skill_ids(root, new, m))
         tree.warn_type_workflow(m)
+        if not cur:
+            catalogs.warn_skills_empty(root, m)
         if cur == "plan":
             warn_sensitive(m)
         text = add_step_log(set_front(text, "step", new["id"]), f"- {new['id']} started {stamp}")

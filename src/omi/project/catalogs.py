@@ -107,6 +107,21 @@ def task_skills(m):
     return core.split((m.get("skills") or "").strip().strip("[]"))
 
 
+TYPE_SKILLS = {"bug": "omi-skill-debug-root-cause", "security": "omi-skill-diff-security-review",
+               "incident": "omi-skill-incident", "change": "omi-skill-change-request"}  # task type -> catalog skill to suggest
+DEFAULT_SKILLS = ("omi-skill-lean-implementation", "omi-skill-verify-evidence")
+
+
+def warn_skills_empty(root, m):
+    """Print a warning (never fail) when the task declares no skills, suggesting catalog skills that fit its type."""
+    if task_skills(m):
+        return
+    cat = Path(root) / ".omi" / "skills" / "CATALOG.md"
+    listed = set(re.findall(r"^- (\S+) ", cat.read_text(encoding="utf-8"), re.M)) if cat.exists() else set()
+    fit = [s for s in (TYPE_SKILLS.get(m.get("type") or "task"), *DEFAULT_SKILLS) if s in listed]
+    print("WARN: skills empty" + (f" - consider {', '.join(fit)} from skills/CATALOG.md" if fit else ""))
+
+
 def check_skills(root, ids):
     """Files of the declared skills; exits on an unknown id, a skill missing from the catalog, or over budget."""
     root = Path(root)
