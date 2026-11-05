@@ -504,6 +504,7 @@ Từ 2026-10-27 đến 2026-11-03
   assert.equal(find(elements.view,'usage-summary')[0].textContent,'1 lượt · 1.234 output');
   data=crowded;await invoke('route()');
   assert.equal(find(elements.view,'col-done')[0].children.filter(n=>n.tagName==='article').length,4);
+  assert.equal(find(elements.view,'col-done')[0].tagName,'details');
   assert.equal(find(elements.view,'card').length,5);
   assert(find(elements.view,'card')[0].textContent.includes('bước 3/6'));
   assert(find(elements.view,'card')[0].textContent.includes('Vòng review: 2'));
@@ -587,8 +588,11 @@ Từ 2026-10-27 đến 2026-11-03
   assert.equal(find(elements.view,'card').length,1);
   assert.equal(find(elements.view,'stat')[3].textContent,'1 / 1Task lá đã xong');
   const tree=find(elements.view,'tree')[0];
-  assert.equal(all(tree).filter(n=>n.tagName==='details').length,2);
+  assert.equal(all(tree).filter(n=>n.tagName==='details').length,3);
   assert.equal(all(tree).filter(n=>n.tagName==='details')[1].attrs.open,undefined);
+  assert.equal(all(tree).filter(n=>n.tagName==='details')[2].children[0].textContent,'1 task đã xong');
+  assert.equal(find(elements.view,'tree-block')[0].attrs.open,'');
+  assert.equal(find(elements.view,'col-done')[0].attrs.open,undefined);assert.equal(find(elements.view,'col-planned').length,0);
   assert(tree.textContent.includes('tổng hợp'));
   assert.deepEqual(all(tree).filter(n=>n.tagName==='progress').map(n=>n.attrs.value),['1','1']);
   const branch=all(tree).find(n=>n.tagName==='details');
@@ -989,6 +993,8 @@ catch(e) {
           const columns=await page.locator('.col:visible').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().x));
           assert.equal(new Set(columns).size,width<768?1:2);
           assert.equal(columns.length,2);
+          assert.equal(await page.locator('.col-done .card:visible').count(),0);
+          await page.locator('.col-done>summary').focus();await page.keyboard.press('Enter');
           assert.equal(await page.locator('.col-done .card:visible').count(),4);
           const parent=page.locator('.tree details').first();
           const summary=parent.locator(':scope > summary');

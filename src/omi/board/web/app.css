@@ -387,3 +387,6 @@ progress.bar-t{max-width:420px;flex:none;width:100%}
  .tl>li .ev{grid-column:2;grid-row:2}
 }
 @media (forced-colors:active){.mk,.chip,.round{border:1px solid CanvasText}}
+summary.colh{justify-content:flex-start;min-height:44px}summary.colh>.muted{margin-left:auto}
+.col>summary+*{margin-top:8px}.col[open]{gap:8px}
+.tree-block>summary{min-height:44px}.tree .done-leaves>summary{padding:8px}

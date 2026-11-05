@@ -31,11 +31,19 @@ function taskTree(name, items, matches = null) {
     bar.setAttribute("aria-label", `${t.id}: ${done}/${kids.length} con trực tiếp đã xong`);
     return disclosure(`tree:${t.id}`, el("summary", null, {}, [box("chips", badges), el("span", t.frontmatter.title || "—"),
       box("progress-row", [bar, el("span", `${done}/${kids.length}`, {class: "small"})])]),
-      [box("children", kids.map(k => node(k, path)))],
+      [box("children", nodes(kids, path, t.id))],
       !["done", "blocked"].includes(statusOf(t)), "", !!matches);
   }
+  // Done leaves collapse into one disclosure per parent; the key keeps its state in `disclosures`.
+  function nodes(list, path, key) {
+    const isDoneLeaf = k => statusOf(k) === "done" && !(k.children || []).some(id => byId.has(id));
+    const finished = list.filter(isDoneLeaf);
+    const rows = list.filter(k => !isDoneLeaf(k)).map(k => node(k, path));
+    return finished.length ? [...rows, disclosure(`tree-done:${key}`, el("summary", `${num(finished.length)} task đã xong`),
+      finished.map(k => node(k, path)), false, "done-leaves", !!matches)] : rows;
+  }
   const roots = items.filter(t => !byId.has(t.parent)).sort((a, b) => a.id.localeCompare(b.id));
-  return box("tree", roots.length ? roots.map(t => node(t)) : [empty("Chưa có task. Các task sẽ xuất hiện sau lần cập nhật dữ liệu kế tiếp.")]);
+  return box("tree", roots.length ? nodes(roots, new Set(), "") : [empty("Chưa có task. Các task sẽ xuất hiện sau lần cập nhật dữ liệu kế tiếp.")]);
 }
 function leafCounts(d) {
   const count = Object.fromEntries(Object.keys(STATUS).map(s => [s, 0]));
@@ -223,8 +231,9 @@ function taskResults(name, tasks, state) {
         box("chips", [typeChip(t), chip(ph.label, ph.key)]), el("span", stepText(t), {class: "small"}),
         el("span", `Vòng review: ${t.review_round ?? "—"}`, {class: "small"})]);
     });
-    const column = box(`col col-${key}`, [box("colh", [chip(label, key), el("span", num(items.length), {class: "muted"})]),
-      ...(cards.length ? cards : [empty("Chưa có task.")])]);
+    const head = el("summary", null, {class: "colh"}, [chip(label, key), el("span", num(items.length), {class: "muted"})]);
+    const column = items.length ? disclosure(`col:${key}`, head, cards, key !== "done", `col col-${key}`)
+      : box(`col col-${key}`, [box("colh", [chip(label, key), el("span", "0", {class: "muted"})]), empty("Chưa có task.")]);
     (items.length ? columns : vacant).push(column);
   }
   const board = leaves.length ? box("stack", [box("kanban", columns), ...(vacant.length ? [disclosure("empty-phases",
@@ -238,6 +247,7 @@ function taskResults(name, tasks, state) {
       el("p", "Thử từ khóa khác hoặc đặt lại bộ lọc."), reset])];
   }
   return [section("Cây công việc", [el("p", "Trạng thái cha tổng hợp từ con trực tiếp; mở một hàng để xem cấp dưới.", {class: "muted small"}),
-    taskTree(name, tasks.filter(t => visible.has(t.id)), activeFilters(state) ? matches : null)]),
+    disclosure("tree-block", el("summary", "Thu gọn / mở cây công việc"),
+      [taskTree(name, tasks.filter(t => visible.has(t.id)), activeFilters(state) ? matches : null)], true, "tree-block")]),
     section("Kanban", [el("p", "Chỉ task lá · thứ tự pha cố định · cột trống thu gọn", {class: "muted small"}), board])];
 }
