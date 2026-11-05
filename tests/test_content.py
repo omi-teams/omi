@@ -494,11 +494,25 @@ def test_qa_host_criteria_do_not_fail() -> None:
     rule = ("a criterion whose text names the host (e.g. \"on the Windows host\") cannot run in your container; "
             "report it `HOST <criterion>`, it does not block PASS. A mixed criterion is split: verify the worker part, "
             "mark only the host part `HOST`")
-    assert rule in reviewer
+    assert "mark only the host part `HOST`" in reviewer
     assert rule in qa
     assert "citing the task's host-test row" in qa
     assert "`RESULT` is FAIL only when an item is ✗" in qa
     assert "AC: <criterion> ✓|✗|HOST <evidence" in qa
+
+
+def test_reviewers_accept_host_evidence() -> None:
+    agents = omi.common.core.TEMPLATE / "dot-omi" / "agents"
+    for role in ("reviewer", "security-reviewer"):
+        text = (agents / f"omi-agent-{role}.md").read_text(encoding="utf-8")
+        for wording in ("git metadata, live CI, Windows", "even when the criterion does not name the host",
+                        "report it `HOST <criterion>`, it does not block PASS",
+                        "never FAIL or `ROOT: same` for unavailable host checks",
+                        "FAIL requires a concrete code or test finding",
+                        "passing `Host:` lines recorded by the Coordinator count as evidence",
+                        "cite the matching line", "verify the worker part"):
+            assert wording in text, (role, wording)
+        assert "HOST: <criterion> <evidence or required host check>" in text
 
 
 def test_reviewer_mockup_evidence_is_qa() -> None:
@@ -686,6 +700,7 @@ def main():
     test_ui_mockup_requires_designer_review()
     test_ui_mockup_review_contract()
     test_qa_host_criteria_do_not_fail()
+    test_reviewers_accept_host_evidence()
     test_ui_mockup_workflow()
     test_issue_types_skill()
     test_ui_mockup_generated_catalogs()
