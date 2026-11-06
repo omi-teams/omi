@@ -1,6 +1,8 @@
 """Detached `omi run` launcher, per-run records and `omi watch`: every finished run is reported once with its next action."""
 
+import contextlib
 import datetime
+import io
 import json
 import os
 import re
@@ -10,8 +12,9 @@ import time
 from pathlib import Path
 
 from ..common import core
-from ..project import catalogs, tasks
+from ..project import catalogs, tasks, tree, workflows
 from ..state import resolve as state
+from ..state import sync as state_sync
 from . import docker, tools
 
 START_GRACE = 10  # seconds launch() waits for the wrapper
@@ -89,6 +92,83 @@ def launch(project: state.Project, tid: str, role: str, argv: list[str] | None =
         time.sleep(0.05)
     print(f"started {role} on {tid}: {rundir.name} (omi watch)")
     return rundir
+
+
+def dispatch_next(project: state.Project, maximum: int = 1) -> None:
+    """Start ready planned tasks in status order, stopping at the first launch failure."""
+    if maximum < 1:
+        raise state.StateError("--max must be a positive integer")
+    found = tasks.rolled_up(tasks.tasks(project))
+    containers = tree.children_map(found)
+    running = list(dict.fromkeys(r["tid"] for r in records(project.code) if r["running"]))
+    picked = []
+    for tid, meta in found.items():
+        if meta.get("status", "planned") != "planned":
+            continue
+        if tid in containers:
+            print(f"skip {tid}: has child tasks")
+            continue
+        reason = ""
+        deps = [d for d in core.split(meta.get("depends")) if found.get(d, {}).get("status") != "done"]
+        if deps:
+            reason = "depends not done: " + ", ".join(deps)
+        elif not core.split(meta.get("scope")):
+            reason = "no scope"
+        else:
+            try:
+                catalogs.check_skills(project.state, catalogs.task_skill_ids(project.state, meta))
+            except SystemExit as exc:
+                reason = " ".join(str(exc).splitlines())
+        if not reason:
+            conflicts = [c for other in dict.fromkeys([*running, *picked])
+                         for c in tasks.parallel(project, [tid, other])]
+            if conflicts:
+                reason = "; ".join(conflicts)
+        if not reason and len(picked) >= maximum:
+            reason = f"max {maximum} reached"
+        if reason:
+            print(f"skip {tid}: {reason}")
+            continue
+        task = state.task_file(project, tid)
+        steps = workflows.get_workflow(project.state, meta.get("workflow") or workflows.DEFAULT_WORKFLOW)
+        first = next((s for s in steps if s["role"] != workflows.COORDINATOR), None)
+        if first is None:
+            raise state.StateError(f"{tid}: workflow has no agent step")
+        with contextlib.redirect_stdout(io.StringIO()):
+            core.write_text(task, tasks.set_front(core.read_task(task), "status", "in-progress"))
+            owner = project if project.detached else state.Project(state=task.parents[2], code=project.code)
+            root = state_sync.repo(owner)
+            state_sync.commit(owner, [task.relative_to(root).as_posix()], f"{tid}: start task")
+            wt = core.task_worktrees(project.code).get(tid)
+            if not wt:
+                wt = project.code.parent / f"{project.code.name}.wt" / tid
+                if core.git(project.code, "worktree", "add", str(wt), "-b", f"task/{tid}", "development") is None:
+                    raise state.StateError(f"{tid}: git worktree add failed for {wt}")
+            step_root = project if project.detached else Path(wt)
+            task = state.task_file(project, tid)
+            while True:
+                current = core.meta(task)
+                sid = current.get("step")
+                if not sid or tasks.step_states(current["_text"]).get(sid) in ("done", "skipped"):
+                    tasks.step(step_root, tid, "next")
+                    current = core.meta(task)
+                    sid = current.get("step")
+                if sid == first["id"]:
+                    break
+                selected = next((s for s in steps if s["id"] == sid), None)
+                if selected is None or selected["role"] != workflows.COORDINATOR:
+                    raise state.StateError(f"{tid}: expected first agent step {first['id']}, got {sid}")
+                tasks.step(step_root, tid, "skip", why="dispatch next: task file has scope, skills and criteria")
+            if project.detached:
+                state_sync.commit(project, [task.relative_to(root).as_posix()], f"{tid}: first agent step")
+        argv = [sys.executable, "-m", "omi", "run", first["role"], tid]
+        for key in ("tool", "model", "effort"):
+            if meta.get(key):
+                argv.extend([f"--{key}", meta[key]])
+        launch(project, tid, first["role"], argv)
+        picked.append(tid)
+    if not picked:
+        print("dispatch next: nothing ready")
 
 
 def spawn(rundir: Path) -> None:

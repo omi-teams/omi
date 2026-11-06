@@ -317,7 +317,179 @@ def test_records_sort_across_roles() -> None:
             assert [r['role'] for r in dispatch.records(root)] == ['omi-agent-reviewer', 'omi-agent-engineer']
 
 
+@contextlib.contextmanager
+def next_fixture():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve() / "code"
+        root.mkdir()
+        omi.setup.upgrade.init(root)
+        helpers.git(root, "add", ".")
+        helpers.git(root, "commit", "-qm", "base")
+        helpers.git(root, "branch", "-m", "development")
+        project = state.resolve(root)
+        def planned(tid, scope="a.py", extra=""):
+            path = root / ".omi/tasks" / f"{tid}.md"
+            path.write_text(f"---\nid: {tid}\nstatus: planned\nscope: {scope}\n"
+                            f"tool: codex\nmodel: task-model\neffort: high\n{extra}---\n"
+                            "## Acceptance criteria\n- [ ] works\n\n## Checkpoint\nDone:\n", encoding="utf-8")
+            return path
+        with patch.object(dispatch, "records", return_value=[]), \
+                patch.object(dispatch, "launch") as launch:
+            yield project, planned, launch
+
+
+def test_next_two_ready() -> None:
+    with next_fixture() as (project, planned, launch), contextlib.redirect_stdout(io.StringIO()) as out:
+        planned("TASK-002", "b.py")
+        planned("TASK-001")
+        dispatch.dispatch_next(project, 2)
+        assert [c.args[1] for c in launch.call_args_list] == ["TASK-001", "TASK-002"]
+        for call in launch.call_args_list:
+            _, tid, role, argv = call.args
+            assert role == "omi-agent-engineer"
+            assert argv == [sys.executable, "-m", "omi", "run", role, tid,
+                            "--tool", "codex", "--model", "task-model", "--effort", "high"]
+            wt = project.code.parent / "code.wt" / tid
+            assert wt.exists()
+            meta = dispatch.core.meta(wt / ".omi/tasks" / f"{tid}.md")
+            assert meta["status"] == "in-progress" and meta["step"] == "build"
+            assert "plan skipped" in meta["_text"]
+            assert "dispatch next: task file has scope, skills and criteria" in meta["_text"]
+            assert dispatch.core.git(wt, "status", "--porcelain") == ""
+        assert "nothing ready" not in out.getvalue()
+
+
+def test_next_conflicts_and_dependencies() -> None:
+    with next_fixture() as (project, planned, launch), contextlib.redirect_stdout(io.StringIO()) as out:
+        planned("TASK-001", "busy/x.py")
+        planned("TASK-002", "free/**")
+        planned("TASK-003", "free/x.py")
+        planned("TASK-004", "other.py", "depends: TASK-999\n")
+        planned("TASK-005", "last.py")
+        planned("TASK-900", "busy/**", "depends: TASK-005\n")
+        path = project.state / ".omi/tasks/TASK-900.md"
+        path.write_text(path.read_text(encoding="utf-8").replace("status: planned", "status: in-progress"), encoding="utf-8")
+        with patch.object(dispatch, "records", return_value=[{"tid": "TASK-900", "running": True}]):
+            dispatch.dispatch_next(project, 3)
+        assert [c.args[1] for c in launch.call_args_list] == ["TASK-002"]
+        output = out.getvalue()
+        assert "skip TASK-001:" in output and "scopes overlap" in output
+        assert "skip TASK-003:" in output
+        assert "skip TASK-004:" in output and "TASK-999" in output
+        assert "skip TASK-005:" in output and "depends on TASK-005" in output
+
+
+def test_next_readiness_and_limit() -> None:
+    with next_fixture() as (project, planned, launch), contextlib.redirect_stdout(io.StringIO()) as out:
+        planned("TASK-001", "")
+        planned("TASK-002", extra="skills: missing-skill\n")
+        planned("TASK-003")
+        planned("TASK-004", "b.py")
+        dispatch.dispatch_next(project)
+        assert [c.args[1] for c in launch.call_args_list] == ["TASK-003"]
+        output = out.getvalue()
+        assert "skip TASK-001:" in output and "scope" in output
+        assert "skip TASK-002:" in output and "missing-skill" in output
+        assert "skip TASK-004:" in output and "max" in output
+
+
+def test_next_nothing_ready() -> None:
+    with next_fixture() as (project, planned, launch), contextlib.redirect_stdout(io.StringIO()) as out:
+        planned("TASK-001", extra="depends: TASK-999\n")
+        dispatch.dispatch_next(project)
+        launch.assert_not_called()
+        assert out.getvalue().endswith("dispatch next: nothing ready\n")
+
+
+def test_next_failure_stops() -> None:
+    with next_fixture() as (project, planned, launch), contextlib.redirect_stdout(io.StringIO()):
+        planned("TASK-001")
+        second = planned("TASK-002", "b.py")
+        launch.side_effect = state.StateError("launch failed")
+        try:
+            dispatch.dispatch_next(project, 2)
+        except state.StateError as exc:
+            assert "launch failed" in str(exc)
+        else:
+            raise AssertionError("failure swallowed")
+        assert launch.call_count == 1
+        assert dispatch.core.meta(second)["status"] == "planned"
+
+
+def test_next_existing_worktree_and_done_dependency() -> None:
+    with next_fixture() as (project, planned, launch), contextlib.redirect_stdout(io.StringIO()):
+        planned("TASK-001", extra="depends: TASK-000\n")
+        dep = planned("TASK-000", "other.py")
+        dep.write_text(dep.read_text(encoding="utf-8").replace("status: planned", "status: done"), encoding="utf-8")
+        helpers.git(project.code, "add", ".")
+        helpers.git(project.code, "commit", "-qm", "tasks")
+        wt = project.code.parent / "existing"
+        helpers.git(project.code, "worktree", "add", str(wt), "-b", "task/TASK-001", "development")
+        dispatch.dispatch_next(project)
+        assert launch.call_count == 1
+        assert dispatch.core.meta(wt / ".omi/tasks/TASK-001.md")["step"] == "build"
+
+
+def test_next_detached_state() -> None:
+    with helpers.detached_project() as (code, catalog, _, task), contextlib.redirect_stdout(io.StringIO()):
+        home, _, _ = helpers.state_remote(catalog)
+        tid = "TASK-098"
+        target = task.with_name(f"{tid}.md")
+        target.write_text("---\nid: TASK-098\nstatus: planned\nscope: other.py\n"
+                          "tool: codex\nmodel: detached-model\neffort: medium\n---\n"
+                          "## Acceptance criteria\n- [ ] works\n\n## Checkpoint\nDone:\n", encoding="utf-8")
+        project = state.resolve(code)
+        with patch.object(dispatch, "records", return_value=[]), patch.object(dispatch, "launch") as launch:
+            dispatch.dispatch_next(project)
+        launch.assert_called_once()
+        assert launch.call_args.args[1] == tid
+        assert dispatch.core.meta(target)["status"] == "in-progress"
+        assert dispatch.core.meta(target)["step"] == "build"
+        assert dispatch.core.git(home, "status", "--porcelain", "--", str(target)) == ""
+        assert (code.parent / "code.wt" / tid).exists()
+        assert not (code.parent / "code.wt" / tid / ".omi").exists()
+
+
+def test_next_container_skipped() -> None:
+    with next_fixture() as (project, planned, launch), contextlib.redirect_stdout(io.StringIO()) as out:
+        planned("TASK-001", extra="type: epic\n")
+        planned("TASK-002", "b.py", "parent: TASK-001\n")
+        dispatch.dispatch_next(project)
+        assert "skip TASK-001: has child tasks" in out.getvalue()
+        assert [c.args[1] for c in launch.call_args_list] == ["TASK-002"]
+
+
+def test_next_setup_failure_stops() -> None:
+    for stage in ("commit", "worktree"):
+        with next_fixture() as (project, planned, launch), contextlib.redirect_stdout(io.StringIO()):
+            planned("TASK-001")
+            second = planned("TASK-002", "b.py")
+            original = dispatch.core.git
+            def fail_worktree(root, *args):
+                return None if args[:2] == ("worktree", "add") else original(root, *args)
+            target = patch.object(dispatch.state_sync, "commit", side_effect=state.StateError("commit failed")) if stage == "commit" else \
+                patch.object(dispatch.core, "git", side_effect=fail_worktree)
+            with target:
+                try:
+                    dispatch.dispatch_next(project, 2)
+                except state.StateError as exc:
+                    assert stage in str(exc)
+                else:
+                    raise AssertionError(f"{stage} failure swallowed")
+            launch.assert_not_called()
+            assert dispatch.core.meta(second)["status"] == "planned"
+
+
 def main():
+    test_next_container_skipped()
+    test_next_setup_failure_stops()
+    test_next_detached_state()
+    test_next_two_ready()
+    test_next_conflicts_and_dependencies()
+    test_next_readiness_and_limit()
+    test_next_nothing_ready()
+    test_next_failure_stops()
+    test_next_existing_worktree_and_done_dependency()
     test_records_sort_across_roles()
     test_windows_launch_uses_spawner()
     test_windows_launch_waits_for_wrapper()
