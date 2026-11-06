@@ -240,6 +240,64 @@ def test_pass_real_report_format() -> None:
 
 
 
+def test_marked_criteria_real_paraphrased_reports() -> None:
+    # TASK-230 16:56 and TASK-233 19:46 reviewer reports, including their fences.
+    fixtures = [
+        ('\n## Acceptance criteria\n- [ ] Reproduce first: a test with one in-progress task (no running worker, no running dispatch record) and one ready planned task shows `omi status` printing `next:` with only the planned task.\n- [ ] `next:` names in-progress tasks with no running worker or running dispatch record first, marked `(resume)` (several: all of them, space-separated), then the first ready planned task; an in-progress task whose worker is running is not listed there.\n- [ ] When finished runs are not yet reported by `omi watch`, `omi status` prints one line `finished runs not handled: <N>; run python -m omi watch`.\n- [ ] The omi-status SKILL template resumes every `(resume)` task from `next:` (omi-task step 2, `omi-task <ID> <ID>` for several) before the next planned task, and runs `omi watch` first when status names unhandled runs; tests/test_content.py asserts it; template_shas regenerated.\n- [ ] `python tests/test_omi.py` passes.\n\n## Checkpoint\n',
+         "```\nVERDICT: PASS\n- src/omi/app/cli.py:147 `resume` marks any in-progress top-level task with no worker as `(resume)`, including a task whose run has finished but not been reported (`omi watch` handles it). The criteria allow this and status prints the unhandled-runs line first, so nothing to fix. -> none\nAC: Reproduce first: a test shows `next:` with only the planned task ✓ The old code printed `next: {nxt}` with planned tasks only. The reproduce-first step was never run against the old code (the engineer's own report says so), but the diff makes the old behaviour clear, so this does not block PASS.\nAC: `next:` names orphaned in-progress tasks first as `(resume)`, then the first ready planned task; a task with a running worker is not listed ✓ cli.py:140-150 builds `busy` from running dispatch records plus `docker.running_workers`. `test_status_next_resumes_orphaned_and_flags_unhandled` covers several orphans, a task busy by record, a task busy by container, and the all-idle case.\nAC: `finished runs not handled: <N>; run python -m omi watch` ✓ cli.py:151-153 counts records that are not running and not reported, the same filter `dispatch.watch` uses (dispatch.py:174). The test asserts the exact line, and that it is absent when nothing is unhandled.\nAC: omi-status SKILL resumes `(resume)` tasks, runs `omi watch` first, test_content asserts it, shas regenerated ✓ SKILL.md has the new text and the `Bash(python -m omi watch)` allowed-tool. `test_status_skill_resumes_orphans` is added and registered in `main()`. The `.claude/skills/omi-status/SKILL.md` entry in template_shas.json was updated. The full suite passes, so the sha and content checks hold.\nAC: `python tests/test_omi.py` passes ✓ I ran `python3 tests/test_omi.py` here. It exited 0 and printed `ok`. The only skip was `test_wheel_ships_web` (pip missing). The Coordinator also recorded `host-test PASS 37fae12`.\nKnown issues: none\nHOST: none\nROOT: n/a\n```"),
+        ('\n## Acceptance criteria\n- [ ] Reproduce first: a test where `gh pr merge` succeeds but the merge stage is not saved (crash before save, or gh exits non-zero after merging on --delete-branch) shows the rerun stopping at the CI guard.\n- [ ] Before the final CI guard the merge stage checks `gh pr view task/<TID> --json state`; `MERGED` marks the stage done (prints `merge: already merged`) and continues with pull, clean and the post-merge test; any other state keeps the guard unchanged.\n- [ ] `python tests/test_omi.py` passes.\n\n## Checkpoint\n',
+         '```\nVERDICT: PASS\nAC: Reproduce first: a test shows the rerun stopping at the CI guard after gh merges but the stage isn\'t saved (save crash, or non-zero exit after merging on --delete-branch) ✓ `test_pass_merged_pr_resumes_unsaved_merge` (tests/test_accept.py) runs both failure modes. It asserts \'merge FAILED\', a merged PR and progress without `merge`. On the rerun, `gh pr checks` fails on the merged PR, so without the fix it stops at the guard. I did not re-run it against the unfixed code. The engineer\'s report says the regression was reproduced before the fix.\nAC: Before the final CI guard, merge checks `gh pr view task/<TID> --json state`; MERGED marks the stage done, prints `merge: already merged`, and continues with pull, clean and the post-merge test; any other state keeps the guard ✓ src/omi/worker/accept.py `merge()` returns \'already merged\' on MERGED, and `perform` records the stage and prints `merge: already merged`. The test asserts the view call comes first, no `checks` or `merge` calls follow, and the order pull < clean < post-merge test with all stages saved. `test_pass_unmerged_pr_keeps_final_ci_guard` covers OPEN and CLOSED: the guard still runs and no merge happens.\nAC: `python tests/test_omi.py` passes ✓ I ran it and it exited 0, printing "ok". `test_wheel_ships_web` was skipped because pip is missing, which is unrelated to this change. `tests/test_accept.py` also exited 0.\nKnown issues: `merge()` does not catch a malformed `gh pr view` JSON reply. A bad reply raises `JSONDecodeError` or `KeyError` instead of a `StateError`. This is minor, since gh output is trusted.\nHOST: none\nROOT: n/a\n```'),
+    ]
+    for text, report in fixtures:
+        for fenced in (False, True):
+            body = report.removeprefix('```\n').removesuffix('\n```')
+            if fenced:
+                body = '```\n' + body + '\n```'
+            marked = advance.accept.marked_criteria(text, body)
+            assert '- [ ]' not in marked
+            assert marked.count('- [x]') == text.count('- [ ]')
+
+
+def test_marked_criteria_ordered_status_guards() -> None:
+    text = '\n## Acceptance criteria\n- [ ] handles input\n- [ ] rejects invalid input\n\n## Checkpoint\n'
+    good = 'AC: accepts values ✓ input test\nAC: refuses bad values ✓ invalid test'
+    for fenced in (False, True):
+        for report in (good, good.replace('AC: refuses bad values', 'AC: rejects invalid input')):
+            body = 'VERDICT: PASS\n' + report
+            if fenced:
+                body = '```\n' + body + '\n```'
+            assert '- [ ]' not in advance.accept.marked_criteria(text, body)
+        invalid = [good.splitlines()[0], good + '\nAC: extra ✓ evidence',
+                   good.replace('AC: refuses bad values ✓ invalid test', 'AC: malformed'),
+                   good.replace('✓ invalid test', '✓bogus')]
+        invalid += [good.replace('✓ invalid test', status + ' evidence mentions ✓')
+                    for status in ('✗', 'UNVERIFIED', 'QA')]
+        for report in invalid:
+            body = 'VERDICT: PASS\n' + report
+            if fenced:
+                body = '```\n' + body + '\n```'
+            try:
+                advance.accept.marked_criteria(text, body)
+            except advance.state.StateError as exc:
+                assert 'criteria not marked ✓' in str(exc)
+            else:
+                raise AssertionError(body)
+        # A disabled fallback preserves the existing exact-text rule.
+        for extra in ('', '\nAC: extra ✓ evidence', '\nAC: deferred QA evidence'):
+            body = 'AC: handles input ✓ test\nAC: rejects invalid input ✓ test' + extra
+            if fenced:
+                body = '```\n' + body + '\n```'
+            assert '- [ ]' not in advance.accept.marked_criteria(text, body)
+        body = 'AC: handles input ✓ test\n✓ rejects invalid input'
+        assert '- [ ]' not in advance.accept.marked_criteria(text, body)
+    try:
+        advance.accept.marked_criteria('\n## Acceptance criteria\n\n', 'VERDICT: PASS')
+    except advance.state.StateError as exc:
+        assert 'no acceptance criteria' in str(exc)
+    else:
+        raise AssertionError('empty criteria accepted')
+
+
 def test_pass_post_merge_config_command() -> None:
     cmd = 'python check.py && echo ok'
     cases = [(False, None, ['sh', '-c', cmd]),
@@ -389,6 +447,8 @@ def main():
     test_pass_post_merge_config_command()
     test_pass_windows_post_merge_failure()
     test_pass_real_report_format()
+    test_marked_criteria_real_paraphrased_reports()
+    test_marked_criteria_ordered_status_guards()
     test_pass_merge_and_resume()
     test_pass_refusals_do_not_change_task()
     test_pass_next_reviewer()

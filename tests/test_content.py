@@ -707,6 +707,11 @@ def test_structure_rules_in_roles() -> None:
         assert words in reviewer, words
 
 
+def test_reviewer_copies_criteria_verbatim() -> None:
+    reviewer = (omi.common.core.TEMPLATE / "dot-omi/agents/omi-agent-reviewer.md").read_text(encoding="utf-8")
+    assert "Copy each criterion's text verbatim into its `AC:` line, one line per criterion, in task order." in reviewer
+
+
 def test_po_decisions_use_pick_list() -> None:
     line = next(x for x in (omi.common.core.TEMPLATE / "AGENTS.md").read_text(encoding="utf-8").splitlines() if x.startswith("The AskUserQuestion pick-list is used only"))
     for words in ("only for the PO decisions above", "every one is asked", "AskUserQuestion pick-list", "recommended option first", "in Vietnamese", "never as a plain-text question", "numbered option list", "Other questions never use the pick-list"):
@@ -736,6 +741,7 @@ def main():
     test_scope_questions_not_sent_to_po()
     test_pattern_library()
     test_structure_rules_in_roles()
+    test_reviewer_copies_criteria_verbatim()
     test_po_decisions_use_pick_list()
     test_ui_mockup_contract()
     test_ui_mockup_requires_designer_review()

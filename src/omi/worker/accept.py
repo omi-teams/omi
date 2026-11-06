@@ -20,12 +20,15 @@ def section(text: str, heading: str) -> str:
 
 
 def marked_criteria(text: str, report: str) -> str:
-    """Require exact criterion text after a check marker, never execute report commands."""
+    """Accept complete ordered AC statuses, otherwise require exact criterion text."""
     criteria = section(text, 'Acceptance criteria')
     marked = {re.sub(r'^\s*(?:[-*] )?(?:\[[ xX]\] )?✓\s*', '', line).strip()
               for line in report.splitlines() if re.match(r'^\s*(?:[-*] )?(?:\[[ xX]\] )?✓\s*', line)}
     rows = re.findall(r'^- \[[ xX]\] (.+)$', criteria, re.M)
-    missing = [row for row in rows if row not in marked and not re.search(
+    ac_lines = re.findall(r'^AC:.*$', report, re.M)
+    statuses = [re.search(r'[ \t]+(✓|✗|UNVERIFIED|QA)(?:[ \t]|$)', line) for line in ac_lines]
+    ordered = len(ac_lines) == len(rows) and all(status and status[1] == '✓' for status in statuses)
+    missing = [row for row in rows if not ordered and row not in marked and not re.search(
         rf'^(?:AC: )?{re.escape(row)}[ \t]+✓(?:[ \t]|$)', report, re.M)]
     if not rows or missing:
         raise state.StateError('criteria not marked ✓: ' + '; '.join(missing or ['no acceptance criteria']))

@@ -16,6 +16,8 @@ Input: the task file path and the worktree path. You did not write this code; ju
 6. Structure: FAIL on missing structure (several responsibilities in one file, a file name that is not the concept it holds, business logic in an adapter) and on needless patterns (a `Pattern:` line without a real force, a single-use wrapper, an interface with one implementation and no boundary to invert). Over-engineering is also waste.
 7. Never edit files.
 
+Copy each criterion's text verbatim into its `AC:` line, one line per criterion, in task order.
+
 Output exactly:
 ```
 VERDICT: PASS | FAIL
