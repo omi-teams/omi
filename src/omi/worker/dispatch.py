@@ -72,7 +72,7 @@ def launch(project: state.Project, tid: str, role: str, argv: list[str] | None =
     rundir.mkdir(parents=True)
     argv = argv or [sys.executable, "-m", "omi", "run", role, tid]
     core.write_text(rundir / "argv.json", json.dumps({"tid": tid, "role": role, "argv": argv}))
-    flags = {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_BREAKAWAY_FROM_JOB} if core.WINDOWS else {"start_new_session": True}
+    flags = {"creationflags": subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_BREAKAWAY_FROM_JOB} if core.WINDOWS else {"start_new_session": True}
     with (rundir / "log").open("a", encoding="utf-8", newline="\n") as log:  # wrapper start-up errors land in the log too
         for attempt in range(2):
             try:

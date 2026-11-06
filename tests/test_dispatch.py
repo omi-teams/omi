@@ -42,6 +42,7 @@ def windows_launch():
             (Path(argv[-1]) / "started").write_text("123", encoding="utf-8")
         with patch.object(dispatch.core, "WINDOWS", True), \
                 patch.object(dispatch.subprocess, "DETACHED_PROCESS", 8, create=True), \
+                patch.object(dispatch.subprocess, "CREATE_NO_WINDOW", 0x08000000, create=True), \
                 patch.object(dispatch.subprocess, "CREATE_NEW_PROCESS_GROUP", 512, create=True), \
                 patch.object(dispatch.subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0x01000000, create=True), \
                 patch.object(dispatch, "records", return_value=[]), \
@@ -54,7 +55,7 @@ def test_windows_launch_breaks_away() -> None:
     with windows_launch() as (project, popen, _), contextlib.redirect_stdout(io.StringIO()) as out:
         dispatch.launch(project, "TASK-227", "omi-agent-engineer")
         assert popen.call_count == 1
-        assert popen.call_args.kwargs["creationflags"] == 8 | 512 | 0x01000000
+        assert popen.call_args.kwargs["creationflags"] == 0x08000000 | 512 | 0x01000000
         assert "warning" not in out.getvalue().lower()
 
 
@@ -69,7 +70,7 @@ def test_windows_launch_breakaway_denied() -> None:
         popen.side_effect = launch
         dispatch.launch(project, "TASK-227", "omi-agent-engineer")
         assert popen.call_count == 2
-        assert [c.kwargs["creationflags"] for c in popen.call_args_list] == [8 | 512 | 0x01000000, 8 | 512]
+        assert [c.kwargs["creationflags"] for c in popen.call_args_list] == [0x08000000 | 512 | 0x01000000, 0x08000000 | 512]
         assert popen.call_args_list[0].args == popen.call_args_list[1].args
         assert "warning" in out.getvalue().lower() and "dies with the session" in out.getvalue()
 
