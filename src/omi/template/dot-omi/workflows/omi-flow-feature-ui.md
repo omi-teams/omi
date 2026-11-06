@@ -25,7 +25,7 @@ steps:
 - accept: Coordinator; automatic after review PASS.
 
 ## Review-fail rule
-A FAIL at review or qa goes back to build with the findings. Enforced in code: after `max_fix_rounds` (2) failed rounds `omi step <ID> back` and `omi run` refuse with `ROUND LIMIT` until the PO's words for this task and round are given (`--po "<words>"`, one more round; pick-list: rescope, change approach, drop). From round 2 a FAIL whose report ends `ROOT: same` prints `REPLAN: same root cause`; this workflow has no architect step, so `back` needs `--po`.
+A FAIL at review or qa goes back to build with the findings. Enforced in code: after `max_fix_rounds` (2) failed rounds `omi step <ID> back` and `omi run` refuse with `ROUND LIMIT` until the Coordinator decides (rescope, replan, or one more round with `--why "<reason>"`, recorded as `Coordinator round override N: <reason>`). From round 2 a FAIL whose report ends `ROOT: same` prints `REPLAN: same root cause`; this workflow has no architect step, so `back` needs `--why "<reason>"`.
 
 ## Mockup contract
 The repo files in `.omi/tasks/<ID>-mockup/` are the only source of truth: plain self-contained `.html`, one per screen plus a phone-width mockup. They open directly in any browser without an account, network or external tool; no Figma or hosted canvas is required. Use only what the target stack allows; no CDN or web fonts unless the task explicitly allows them.

@@ -23,7 +23,7 @@ steps:
 - accept: Coordinator; automatic after review PASS.
 
 ## Review-fail rule
-A FAIL at review or security goes back to build with the findings. Enforced in code: after `max_fix_rounds` (2) failed rounds `omi step <ID> back` and `omi run` refuse with `ROUND LIMIT` until the PO's words for this task and round are given (`--po "<words>"`, one more round; pick-list: rescope, change approach, drop). From round 2 a FAIL whose report ends `ROOT: same` makes `omi step back` return to architect (opus/high) to re-plan and prints `REPLAN: same root cause`.
+A FAIL at review or security goes back to build with the findings. Enforced in code: after `max_fix_rounds` (2) failed rounds `omi step <ID> back` and `omi run` refuse with `ROUND LIMIT` until the Coordinator decides (rescope, replan, or one more round with `--why "<reason>"`, recorded as `Coordinator round override N: <reason>`). From round 2 a FAIL whose report ends `ROOT: same` makes `omi step back` return to architect (opus/high) to re-plan and prints `REPLAN: same root cause`.
 
 ## PO gates
 `accept` is automatic: `omi step <ID> done` records `Auto accept: review PASS` under `## Steps` when every review-type step passed (or an explicit `PO approval accept:` line exists), and refuses otherwise. Merge to staging/main stays with the PO.
