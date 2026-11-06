@@ -42,6 +42,7 @@ USAGE = """usage: omi <command>
   note <TASK-ID> --step <step> --verdict <verdict> "<text>"   record a Coordinator decision under the task's ## Reports
   run <role> <TASK-ID> [--model M] [--effort E] [--tool claude|codex] [--fresh] [--why "<Coordinator reason>"|--po "<PO's words>"]   run a role in Docker (--fresh: no engineer session resume; read roles: ro worktree, after the deterministic checks)
   hook pre-run|post-run|pre-merge <TASK-ID>   run .omi/hooks/<event> (from the main checkout) in Docker against the task worktree; exits with its code
+  dispatch next [--max N]   start ready parallel-safe planned tasks (default: 1)
   dispatch <role> <TASK-ID>   start `omi run` detached with a run record; refuses when scope or depends conflict with a running task
   advance <TASK-ID> [--message "<msg>"] [--reject <n>[,<n>] --why "<reason>"]   scope-check a DONE write run, commit, rebase, draft PR, host-test and dispatch its reviewer; after a review FAIL: record the findings, step back, PR to draft, rerun the engineer (--reject leaves findings out); after review PASS: accept, pre-merge hook, PR ready, green CI, squash merge, pull, clean and post-merge test
   watch [--wait] [--all]   list running workers and every finished run not yet shown, with its next action (NEXT: deterministic, DECIDE: Coordinator); --wait blocks until a run finishes; --all: whole history
@@ -160,7 +161,7 @@ def main(argv: list[str] | None = None) -> None:
         if cmd != "guard":  # guard handles StateError itself and must exit 2 (blocking), not 1
             state.registry()
         mutates = cmd in {"init", "upgrade", "skills", "rules", "plans", "references", "agents",
-                          "workflows", "step", "note", "host-test", "run", "hook", "worker"}
+                          "workflows", "step", "note", "host-test", "run", "hook", "worker"} or (cmd == "dispatch" and args[1:2] == ["next"])
         target = args[1] if cmd == "init" and len(args) > 1 else "."
         project = state.resolve(target) if mutates else None
         if project and project.detached:
@@ -306,6 +307,12 @@ def dispatch(argv: list[str] | None = None) -> None:
         if catalogs.get_role(project.state, rest[0])["access"] == "write":
             tasks.run_gate(project, rest[1], core.flag(rest, "--po"), core.flag(rest, "--why"))
         sys.exit(run.run_cmd(rest[0], rest[1], rest))
+    elif cmd == "dispatch" and rest[:1] == ["next"]:
+        if len(rest) not in (1, 3) or (len(rest) == 3 and (rest[1] != "--max" or not rest[2].isascii()
+                                                                     or not rest[2].isdigit() or int(rest[2]) < 1)):
+            raise state.StateError("usage: omi dispatch next [--max N] (N must be positive)")
+        worker_dispatch.dispatch_next(state.resolve(core.main_checkout(".") or Path(".").resolve()),
+                                      int(rest[2]) if len(rest) == 3 else 1)
     elif cmd == "dispatch" and len(rest) == 2 and not rest[1].startswith("--"):
         project = state.resolve(core.main_checkout(".") or Path(".").resolve())
         tasks.check_runnable(project, rest[1])

@@ -235,7 +235,7 @@ def test_cli_characterization():
         assert rc == 0 and usage.startswith("usage: omi <command>\n") and not err
         assert [l.split()[0] for l in usage.splitlines()[1:]] == [
             "attach", "install-user", "init", "upgrade", "version", "status", "improve", "sync", "board", "guard", "github", "clean", "skills", "skills", "token", "structure", "plans",
-            "references", "rules", "agents", "workflows", "host-test", "step", "note", "run", "hook", "dispatch", "advance", "watch", "parallel", "worker", "worker"]
+            "references", "rules", "agents", "workflows", "host-test", "step", "note", "run", "hook", "dispatch", "dispatch", "advance", "watch", "parallel", "worker", "worker"]
         # unknown commands and incomplete arguments fall through to the usage text
         for args in (["help"], ["bogus"], ["step", "TASK-001"], ["run", "omi-agent-engineer", "--model"], ["parallel", "X"],
                      ["hook", "pre-run"], ["token"], ["worker"]):
@@ -559,7 +559,29 @@ def test_failure_report() -> None:
     assert done.stderr.splitlines()[-1] == f"FAILED test_x {script}:6 AssertionError: boom", done.stderr
 
 
+def test_dispatch_next_args() -> None:
+    project = object()
+    with patch("omi.state.resolve.resolve", return_value=project), \
+            patch("omi.common.core.main_checkout", return_value=Path(".")), \
+            patch("omi.worker.dispatch.dispatch_next") as start:
+        omi.app.cli.dispatch(["dispatch", "next"])
+        start.assert_called_once_with(project, 1)
+        start.reset_mock()
+        omi.app.cli.dispatch(["dispatch", "next", "--max", "2"])
+        start.assert_called_once_with(project, 2)
+        for args in (["--max"], ["--max", "0"], ["--max", "-1"], ["--max", "x"], ["--other", "2"]):
+            start.reset_mock()
+            try:
+                omi.app.cli.dispatch(["dispatch", "next", *args])
+            except omi.state.resolve.StateError as exc:
+                assert "usage: omi dispatch next" in str(exc)
+            else:
+                raise AssertionError(f"accepted invalid arguments: {args}")
+            start.assert_not_called()
+
+
 def main():
+    test_dispatch_next_args()
     test_block_list_scope_and_bom_writers()
     test_parse_block_list_and_bom()
     test_improve_creation_and_workflows()
