@@ -299,7 +299,7 @@ def test_reviewer_next_action() -> None:
         rec = {"tid": "TASK-001", "role": "omi-agent-reviewer", "rc": 0, "dir": root}
         row = "| omi-agent-reviewer | m | high | 1 | 1 | 1 | 1s | - | FAIL |\n"
         one, two = "\n## Usage\n| role | model |\n|---|---|\n" + row, "\n## Usage\n| role | model |\n|---|---|\n" + row * 2
-        assert dispatch.next_action(project, rec, "", "VERDICT: PASS") == dispatch.READ_PASS
+        assert dispatch.next_action(project, rec, "", "VERDICT: PASS") == dispatch.READ_PASS.format(tid=rec["tid"])
         assert dispatch.next_action(project, rec, one, "VERDICT: FAIL") == dispatch.READ_FAIL.format(tid="TASK-001") == "NEXT: python -m omi advance TASK-001"
         assert "round limit" in dispatch.next_action(project, rec, two, "VERDICT: FAIL")
         assert dispatch.next_action(project, rec, "", "no verdict").startswith("DECIDE")

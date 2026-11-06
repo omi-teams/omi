@@ -12,7 +12,7 @@ from pathlib import Path
 from ..common import core
 from ..project import catalogs, scope, tasks, workflows
 from ..state import resolve as state
-from . import dispatch
+from . import accept, dispatch
 
 
 def diagnostic_tail(output: str) -> str:
@@ -22,11 +22,11 @@ def diagnostic_tail(output: str) -> str:
     return "\n".join(line[-500:] for line in output.strip().splitlines()[-10:])
 
 
-def command(cwd: Path, argv: list[str]) -> str:
+def command(cwd: Path, argv: list[str], allowed: tuple[int, ...] = (0,)) -> str:
     """Run argv without a shell or console; never echo gh or push auth output."""
     result = subprocess.run(argv, cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True, encoding="utf-8", errors="replace",
                             **({"creationflags": subprocess.CREATE_NO_WINDOW} if core.WINDOWS else {}))
-    if result.returncode:
+    if result.returncode not in allowed:
         git_readable = Path(argv[0]).stem.lower() == "git" and "push" not in argv[1:]
         omi_readable = argv[0] == sys.executable and argv[1:3] == ["-m", "omi"]
         tail = diagnostic_tail(result.stdout + "\n" + result.stderr) if git_readable or omi_readable else ""
@@ -342,7 +342,7 @@ def advance_fail(ctx: Context) -> None:
 
 
 def advance(project: state.Project, tid: str, message: str | None = None, reject: list[int] | None = None, why: str | None = None) -> None:
-    """Advance only the newest successful run: a DONE write run to its reviewer, a review FAIL back to the engineer; stop at the first failed stage."""
+    """Advance only the newest successful run: a DONE write run to its reviewer, a review FAIL back to the engineer, or a review PASS through acceptance; stop at the first failed stage."""
     ctx = None
     try:
         rec = newest_run(project, tid)
@@ -350,7 +350,14 @@ def advance(project: state.Project, tid: str, message: str | None = None, reject
             path = rec["dir"] / "advance.json"
             progress = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
             ctx = Context(project, tid, rec, progress, message, reject or [], why)
-            if rec["role"] in tasks.REVIEW_ROLES:
+            if rec["role"] in tasks.REVIEW_ROLES or catalogs.get_role(project.state, rec["role"])["access"] == "read":
+                report = dispatch.last_report(core.read_task(state.task_file(project, tid)), rec["role"], rec["started"])
+                if dispatch.verdict(report) == "PASS":
+                    try:
+                        return accept.advance_pass(ctx, perform, command)
+                    finally:
+                        if ctx.progress.get("ci-failed"):
+                            save_progress(ctx)
                 return advance_fail(ctx)
             if reject or why:
                 raise state.StateError("--reject and --why apply only after a review FAIL")
