@@ -29,7 +29,7 @@ def po_approved(text, sid):
 
 
 REVIEW_ROLES = ("omi-agent-reviewer", "omi-agent-security-reviewer")
-MAX_FIX_ROUNDS = 2  # .omi/config.json "max_fix_rounds" overrides (PO only)
+MAX_FIX_ROUNDS = 2  # .omi/config.json "max_fix_rounds" overrides (the Coordinator may allow one more round)
 
 
 def usage_rows(text):
@@ -76,29 +76,29 @@ def host_test_gate(root, tid, text, head):
     sys.exit(f"HOST TEST MISSING for {head}: run `python -m omi host-test {tid}` on the host first. Nothing changed.")
 
 
-def round_gate(root, tid, text, po):
-    """Exit with `ROUND LIMIT` when the task has used up its failed review rounds, unless `po` (the PO's words) allows one more;
-    returns the text, with the `PO round override` line added when it was needed."""
+def round_gate(root, tid, text, po, why=None):
+    """Exit with `ROUND LIMIT` when the failed rounds are used up, unless `po` or `why` (Coordinator reason) allows one more; returns the text with the override line."""
     try:
         limit = int(json.loads((Path(root) / ".omi" / "config.json").read_text(encoding="utf-8")).get("max_fix_rounds", MAX_FIX_ROUNDS))
     except (OSError, ValueError, AttributeError):
         limit = MAX_FIX_ROUNDS
     steps = text.partition("\n## Steps\n")[2].split("\n## ", 1)[0]
     failed = failed_rounds(text)
-    if failed < max(limit, 1) + len(re.findall(r"^(?:- )?PO round override \d+: *\S", steps, re.M)):
+    if failed < max(limit, 1) + len(re.findall(r"^(?:- )?(?:PO|Coordinator) round override \d+: *\S", steps, re.M)):
         return text
-    if not (po or "").strip():
-        sys.exit(f"ROUND LIMIT: {tid} failed {failed} review rounds; ask the PO")
-    return add_step_log(text, f"PO round override {failed + 1}: {' '.join(po.split())}")
+    for who, words in (("PO", po), ("Coordinator", why)):
+        if (words or "").strip():
+            return add_step_log(text, f"{who} round override {failed + 1}: {' '.join(words.split())}")
+    sys.exit(f"ROUND LIMIT: {tid} failed {failed} review rounds; the Coordinator decides: rescope, replan, or one more round with --why \"<reason>\"")
 
 
-def run_gate(root, tid, po):
+def run_gate(root, tid, po, why=None):
     """Require scope and check the round limit before `omi run <write role>`."""
     project = state.resolve(root)
     if (task := state.task_file(project, tid)).exists():
         text = core.read_task(task)
         scope.require_scope(tid, text)
-        new = round_gate(project.state, tid, text, po)
+        new = round_gate(project.state, tid, text, po, why)
         if new != text:
             task.write_text(new, encoding="utf-8", newline="\n")
 
@@ -243,9 +243,9 @@ def step(root, tid, action, why=None, now=None, to=None, po=None):
     `skip` closes it with a reason, `back` fails a started review gate and restarts the nearest earlier write step;
     `back` with `to` restarts that earlier agent step (e.g. architect) from any current step, with a reason.
     `approve` records PO words; `reopen` restarts the last write step of a completed workflow.
-    Either `back` stops at the round limit unless `po` (the PO's words) allows one more round; from round 2 a review FAIL
-    with `ROOT: same` sends plain `back` to the architect step instead (no architect step: `po` is required).
-    `done --po` overrides a review FAIL; gates cannot be skipped and a `po` gate needs the PO approval line."""
+    Either `back` stops at the round limit unless `why` (Coordinator reason) or `po` allows one more round; from round 2 a review FAIL
+    with `ROOT: same` sends plain `back` to the architect step (none: `po` is required). `done --po` overrides a review FAIL;
+    gates cannot be skipped and a `po` gate needs the PO approval line."""
     if not re.fullmatch(r"[A-Za-z0-9_-]+", tid):
         sys.exit(f"invalid task id `{tid}`: use letters, digits, `-` and `_`. Nothing changed.")
     project = state.resolve(root)
@@ -273,13 +273,13 @@ def step(root, tid, action, why=None, now=None, to=None, po=None):
                 and same_root(text, steps[at]["role"]):
             replan, to = "REPLAN: same root cause", arch
             if to is None:
-                if not (po or "").strip():
-                    sys.exit(f"{replan}; workflow {wid} has no architect step, ask the PO and pass --po. Nothing changed.")
-                text = add_step_log(text, f"PO replan override {cur}: {' '.join(po.split())}")
+                who, words = ("PO", po) if (po or "").strip() else ("Coordinator", why)
+                (words or "").strip() or sys.exit(f"{replan}; workflow {wid} has no architect step: the Coordinator passes --why \"<reason>\". Nothing changed.")
+                text = add_step_log(text, f"{who} replan override {cur}: {' '.join(words.split())}")
             else:
                 why = why or "same root cause"  # a re-plan is the alternative to another build round: no round gate here
         if not (replan and to):
-            text = round_gate(root, tid, text, po)
+            text = round_gate(root, tid, text, po, why)
     if action == "reopen":
         if any(events.get(s) == "started" for s in ids):
             sys.exit(f"{tid}: a step is running; cannot reopen. Nothing changed.")

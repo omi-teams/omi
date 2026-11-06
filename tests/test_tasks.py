@@ -480,10 +480,10 @@ def test_round_limit_and_replan():
             # below the limit, QUOTA rows do not count
             put(["FAIL abc1234 root:new", "QUOTA->codex"])
             assert back() == 0 and omi.common.core.parse(task.read_text(encoding="utf-8"))["step"] == "build"
-            # at the limit: refused, nothing changed, even for a standing instruction in --why
+            # at the limit: refused, nothing changed, even for a blank --why
             text = put(["FAIL abc1234", "FAIL abc1234 root:new"])
-            fails(back, "ROUND LIMIT: TASK-139 failed 2 review rounds; ask the PO")
-            fails(lambda: back(why="pick the recommended option"), "ROUND LIMIT")
+            fails(back, "ROUND LIMIT: TASK-139 failed 2 review rounds; the Coordinator decides")
+            fails(lambda: back(why=" "), "ROUND LIMIT")
             fails(lambda: back(po=" "), "ROUND LIMIT")
             fails(lambda: omi.project.tasks.run_gate(project, "TASK-139", None), "ROUND LIMIT")
             assert task.read_text(encoding="utf-8") == text
@@ -492,6 +492,13 @@ def test_round_limit_and_replan():
             assert "PO round override 3: do one more, new approach\n" in task.read_text(encoding="utf-8")
             omi.project.tasks.run_gate(project, "TASK-139", None)
             assert back() == 0 and omi.common.core.parse(task.read_text(encoding="utf-8"))["step"] == "build"
+            # a Coordinator reason (--why) allows exactly one more round and is recorded
+            put(["FAIL abc1234", "FAIL abc1234"])
+            assert back(why="new approach agreed") == 0 and "Coordinator round override 3: new approach agreed\n" in task.read_text(encoding="utf-8")
+            put(["FAIL abc1234", "FAIL abc1234"])
+            omi.project.tasks.run_gate(project, "TASK-139", None, "one more")
+            assert "Coordinator round override 3: one more\n" in task.read_text(encoding="utf-8")
+            omi.project.tasks.run_gate(project, "TASK-139", None)
             override = "PO round override 3: ok\n"
             put(["FAIL abc1234", "FAIL abc1234", "FAIL abc1234"], override)
             fails(back, "failed 3 review rounds")
@@ -514,15 +521,15 @@ def test_round_limit_and_replan():
             new = task.read_text(encoding="utf-8")
             assert omi.common.core.parse(new)["step"] == "architect" and "REPLAN: same root cause" in out.getvalue()
             assert omi.project.tasks.step_states(new)["review"] == "failed" and "- architect started 2026-11-02 12:00" in new
-        # no architect step: the line is printed and the PO's words are required
+        # no architect step: the line is printed and a Coordinator --why is required
         with patch("omi.project.workflows.get_workflow", side_effect=lambda r, w: steps(("architect",))), \
                 patch("omi.project.catalogs.get_role", side_effect=roles), patch("sys.stdout", io.StringIO()) as out:
             text = put(["FAIL abc1234", "FAIL abc1234 root:same"], override)
-            fails(back, "REPLAN: same root cause", "--po")
+            fails(back, "REPLAN: same root cause", "--why")
             assert task.read_text(encoding="utf-8") == text
-            assert back(po="ok to patch") == 0 and "REPLAN: same root cause" in out.getvalue()
+            assert back(why="ok to patch") == 0 and "REPLAN: same root cause" in out.getvalue()
             new = task.read_text(encoding="utf-8")
-            assert omi.common.core.parse(new)["step"] == "build" and "PO replan override review: ok to patch" in new
+            assert omi.common.core.parse(new)["step"] == "build" and "Coordinator replan override review: ok to patch" in new
     with patch.object(sys, "argv", ["omi"]):
         for name in ("reviewer", "security-reviewer"):
             assert "ROOT: same | new | n/a" in (omi.common.core.TEMPLATE / f"dot-omi/agents/omi-agent-{name}.md").read_text(encoding="utf-8")

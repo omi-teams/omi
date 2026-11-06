@@ -38,9 +38,9 @@ USAGE = """usage: omi <command>
   agents       write .omi/agents/CATALOG.md (one line per role)
   workflows [--check]   write .omi/workflows/CATALOG.md (one line per workflow); --check validates every workflow
   host-test <TASK-ID>   run `host_test` (.omi/config.json) on the host in the task's worktree; failure prints HOST TEST FAILED and counts as a fix round
-  step <TASK-ID> next|done|back|skip|approve|reopen --why <reason>   record the task's workflow step (gates cannot be skipped; back --to <step> --why: return to an earlier agent step, e.g. architect; --po "<PO's words>" allows one round past max_fix_rounds)
+  step <TASK-ID> next|done|back|skip|approve|reopen --why <reason>   record the task's workflow step (gates cannot be skipped; back --to <step> --why: return to an earlier agent step, e.g. architect; --why "<Coordinator reason>" allows one round past max_fix_rounds; --po "<PO's words>" also works)
   note <TASK-ID> --step <step> --verdict <verdict> "<text>"   record a Coordinator decision under the task's ## Reports
-  run <role> <TASK-ID> [--model M] [--effort E] [--tool claude|codex] [--fresh] [--po "<PO's words>"]   run a role in Docker (--fresh: no engineer session resume; read roles: ro worktree, after the deterministic checks)
+  run <role> <TASK-ID> [--model M] [--effort E] [--tool claude|codex] [--fresh] [--why "<Coordinator reason>"|--po "<PO's words>"]   run a role in Docker (--fresh: no engineer session resume; read roles: ro worktree, after the deterministic checks)
   hook pre-run|post-run|pre-merge <TASK-ID>   run .omi/hooks/<event> (from the main checkout) in Docker against the task worktree; exits with its code
   dispatch <role> <TASK-ID>   start `omi run` detached with a run record; refuses when scope or depends conflict with a running task
   watch [--wait] [--all]   list running workers and every finished run not yet shown, with its next action (NEXT: deterministic, DECIDE: Coordinator); --wait blocks until a run finishes; --all: whole history
@@ -292,7 +292,7 @@ def dispatch(argv: list[str] | None = None) -> None:
         project = state.resolve(core.main_checkout(".") or Path(".").resolve())
         tasks.check_runnable(project, rest[1])
         if catalogs.get_role(project.state, rest[0])["access"] == "write":
-            tasks.run_gate(project, rest[1], core.flag(rest, "--po"))
+            tasks.run_gate(project, rest[1], core.flag(rest, "--po"), core.flag(rest, "--why"))
         sys.exit(run.run_cmd(rest[0], rest[1], rest))
     elif cmd == "dispatch" and len(rest) == 2 and not rest[1].startswith("--"):
         project = state.resolve(core.main_checkout(".") or Path(".").resolve())
