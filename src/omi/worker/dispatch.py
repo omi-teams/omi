@@ -72,11 +72,33 @@ def launch(project: state.Project, tid: str, role: str, argv: list[str] | None =
     rundir.mkdir(parents=True)
     argv = argv or [sys.executable, "-m", "omi", "run", role, tid]
     core.write_text(rundir / "argv.json", json.dumps({"tid": tid, "role": role, "argv": argv}))
-    flags = {"creationflags": subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_BREAKAWAY_FROM_JOB} if core.WINDOWS else {"start_new_session": True}
+    command = [sys.executable, "-W", "ignore::RuntimeWarning", "-m", "omi.worker.dispatch"]
+    with (rundir / "log").open("a", encoding="utf-8", newline="\n") as log:
+        if core.WINDOWS:
+            # Reap the short-lived parent before returning, so tree kills cannot find the wrapper.
+            result = subprocess.run([*command, "--spawn", str(rundir)], cwd=project.code, stdin=subprocess.DEVNULL,
+                                    stdout=subprocess.PIPE, stderr=log, text=True, encoding="utf-8", check=True,
+                                    creationflags=subprocess.CREATE_NO_WINDOW)
+            print(result.stdout, end="")  # forward any breakaway warning from the spawner
+        else:
+            subprocess.Popen([*command, str(rundir)], cwd=project.code, stdin=subprocess.DEVNULL,
+                             stdout=log, stderr=log, start_new_session=True)
+    deadline = time.monotonic() + 10
+    while not (rundir / "started").exists():
+        if time.monotonic() > deadline:
+            raise state.StateError(f"the run wrapper did not start; see {rundir}")
+        time.sleep(0.05)
+    print(f"started {role} on {tid}: {rundir.name} (omi watch)")
+    return rundir
+
+
+def spawn(rundir: Path) -> None:
+    """Windows intermediary: start the wrapper and exit, orphaning it before launch() returns."""
+    flags = {"creationflags": subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_BREAKAWAY_FROM_JOB}
     with (rundir / "log").open("a", encoding="utf-8", newline="\n") as log:  # wrapper start-up errors land in the log too
         for attempt in range(2):
             try:
-                subprocess.Popen([sys.executable, "-W", "ignore::RuntimeWarning", "-m", "omi.worker.dispatch", str(rundir)], cwd=project.code, stdin=subprocess.DEVNULL,
+                subprocess.Popen([sys.executable, "-W", "ignore::RuntimeWarning", "-m", "omi.worker.dispatch", str(rundir)], cwd=Path.cwd(), stdin=subprocess.DEVNULL,
                                  stdout=log, stderr=log, **flags)
                 break
             except OSError as exc:
@@ -85,13 +107,6 @@ def launch(project: state.Project, tid: str, role: str, argv: list[str] | None =
                 # Jobs without JOB_OBJECT_LIMIT_BREAKAWAY_OK reject breakaway with access denied.
                 flags["creationflags"] &= ~subprocess.CREATE_BREAKAWAY_FROM_JOB
                 print("warning: the host job forbids breakaway; retrying without it. This run dies with the session.")
-    deadline = time.monotonic() + 10
-    while not (rundir / "started").exists():
-        if time.monotonic() > deadline:
-            raise state.StateError(f"the run wrapper did not start; see {rundir}")
-        time.sleep(0.05)
-    print(f"started {role} on {tid}: {rundir.name} (omi watch)")
-    return rundir
 
 
 def wrap(rundir: Path) -> None:
@@ -180,4 +195,7 @@ def watch(project: state.Project, wait: bool = False, show_all: bool = False) ->
 
 
 if __name__ == "__main__":
-    wrap(Path(sys.argv[1]))
+    if sys.argv[1] == "--spawn":
+        spawn(Path(sys.argv[2]))
+    else:
+        wrap(Path(sys.argv[1]))
