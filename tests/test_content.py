@@ -712,6 +712,11 @@ def test_reviewer_copies_criteria_verbatim() -> None:
     assert "Copy each criterion's text verbatim into its `AC:` line, one line per criterion, in task order." in reviewer
 
 
+def test_engineer_requires_suggested_commit_line() -> None:
+    engineer = (omi.common.core.TEMPLATE / "dot-omi/agents/omi-agent-engineer.md").read_text(encoding="utf-8")
+    assert "`Suggested commit: <type>(<area>): <summary>`" in engineer
+
+
 def test_po_decisions_use_pick_list() -> None:
     line = next(x for x in (omi.common.core.TEMPLATE / "AGENTS.md").read_text(encoding="utf-8").splitlines() if x.startswith("The AskUserQuestion pick-list is used only"))
     for words in ("only for the PO decisions above", "every one is asked", "AskUserQuestion pick-list", "recommended option first", "in Vietnamese", "never as a plain-text question", "numbered option list", "Other questions never use the pick-list"):
@@ -773,6 +778,7 @@ def main():
     test_plans()
     test_skills_check()
     test_reviewer_mockup_evidence_is_qa()
+    test_engineer_requires_suggested_commit_line()
 
 
 if __name__ == "__main__":

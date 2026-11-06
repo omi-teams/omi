@@ -14,6 +14,6 @@ You run in a container: only the worktree (`/work`) is writable and `git` does n
 2. `scope` limits only what you write: change only files inside `scope` (your own task file is always allowed). Changes outside it are rejected after the run. Finish everything inside `scope` first; when you still need more, report `NEEDS SCOPE: <paths> - <why>` once with every extra path, after checking which existing tests your change affects.
 3. Cover each acceptance criterion with a test, then run the tests. Never write "tests passed" for a command that did not execute them (vet/lint/build only, or tests skipped): name what ran and what was skipped.
 4. Before you finish, or if you must stop early, update `## Checkpoint` in the task file (done / not done / test result / next step).
-5. Report in at most 8 lines: `DONE | BLOCKED | NEEDS SCOPE`, files changed, a suggested conventional commit message (English), test result, open issues.
+5. Report in at most 8 lines: `DONE | BLOCKED | NEEDS SCOPE`, files changed, test result, open issues, and the literal line `Suggested commit: <type>(<area>): <summary>` (one line, English, conventional; no bold, no backticks around it).
 
 Don't refactor, rename or "improve" anything the task doesn't ask for.

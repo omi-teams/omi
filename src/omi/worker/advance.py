@@ -38,6 +38,7 @@ def commit_message(report: str, override: str | None) -> str:
     """Validate the untrusted report's one-line conventional commit subject."""
     found = re.findall(r"^Suggested commit:[ \t]*(.*)$", report, re.M)
     message = override if override is not None else (found[0] if len(found) == 1 else "")
+    message = re.sub(r"^`([^`]*)`$", r"\1", message) if override is None else message
     if (not message or any(ord(c) < 32 or 127 <= ord(c) <= 159 or c in "\u2028\u2029" for c in message)
             or not re.fullmatch(r"(?:feat|fix|docs|chore|refactor|test|ci|build|perf|style|revert)(?:\([^()\s]+\))?!?: [^\s].*", message)):
         raise state.StateError('missing or invalid Suggested commit; supply --message "<msg>" (one conventional commit line)')
