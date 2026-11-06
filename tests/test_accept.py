@@ -30,9 +30,10 @@ def accepted():
         h.dirty = False
         original = h.run
         def run(argv, **kw):
-            if argv[0] in ('bash', 'sh'):
+            executable = argv[0].replace('\\', '/').rsplit('/', 1)[-1].lower()
+            if executable in ('bash', 'bash.exe', 'sh', 'sh.exe', 'cmd', 'cmd.exe'):
                 h.calls.append(argv)
-                return subprocess.CompletedProcess(argv, 0, '', '')
+                return subprocess.CompletedProcess(argv, 1 if h.fail == 'post-merge-test' else 0, '', '')
             if argv == ['git', 'status', '--porcelain', '--', 'task.md']:
                 h.calls.append(argv)
                 return subprocess.CompletedProcess(argv, 0, ' M task.md', '')
@@ -157,7 +158,8 @@ def test_pass_local_and_post_merge_failure() -> None:
             if argv[-2:] == ['-c', 'python check.py']:
                 raise advance.state.StateError('test failed')
             return original(cwd, argv, **kw)
-        with patch.object(advance, 'command', side_effect=command):
+        with patch.object(advance, 'command', side_effect=command), \
+                patch.object(advance.accept.run, 'shell_command', return_value=['sh', '-c', 'python check.py']):
             error, _ = h.invoke()
         assert 'post-merge-test FAILED' in error and 'no revert' in error, error
 
@@ -239,16 +241,28 @@ def test_pass_real_report_format() -> None:
 
 
 def test_pass_post_merge_config_command() -> None:
-    with accepted() as h:
-        config = h.project.state / '.omi' / 'config.json'
-        config.parent.mkdir()
-        config.write_text('{"host_test": "FLAG=1 python check.py && echo ok"}', encoding='utf-8')
-        error, _ = h.invoke()
-        assert not error, error
-        test = next(c for c in h.calls if c[0] in ('bash', 'sh'))
-        assert test == [test[0], '-c', 'FLAG=1 python check.py && echo ok']
-        assert h.calls.index(test) > next(i for i, c in enumerate(h.calls) if c[-2:] == ['clean', TID])
-
+    cmd = 'python check.py && echo ok'
+    cases = [(False, ['sh', '-c', cmd], ['sh', '-c', cmd]),
+             (True, [r'C:\Program Files\Git\bin\bash.exe', '-c', cmd],
+              [r'C:\Program Files\Git\bin\bash.exe', '-c', cmd]),
+             (True, f'cmd /d /s /c "{cmd}"', ['cmd', '/d', '/s', '/c', cmd])]
+    for windows, shell_output, expected in cases:
+        with accepted() as h, patch.object(advance.core, 'WINDOWS', windows), \
+                patch.object(advance.accept.run, 'shell_command', return_value=shell_output) as shell, \
+                patch.object(advance.subprocess, 'CREATE_NO_WINDOW', 0x08000000, create=True), \
+                patch.object(advance.subprocess, 'run', wraps=advance.subprocess.run) as run:
+            config = h.project.state / '.omi' / 'config.json'
+            config.parent.mkdir()
+            config.write_text(json.dumps({'host_test': cmd}), encoding='utf-8')
+            error, _ = h.invoke()
+            assert not error, (windows, shell_output, error)
+            shell.assert_called_once_with(cmd)
+            test_calls = [call for call in run.call_args_list if call.args[0] == expected]
+            assert len(test_calls) == 1, (expected, h.calls)
+            options = test_calls[0].kwargs
+            assert options['cwd'] == h.project.code and not options.get('shell')
+            assert options.get('creationflags', 0) == (0x08000000 if windows else 0)
+            assert h.calls.index(expected) > next(i for i, c in enumerate(h.calls) if c[-2:] == ['clean', TID])
 
 
 def test_pass_real_auto_gate_steps() -> None:
@@ -270,18 +284,54 @@ def test_pass_real_auto_gate_steps() -> None:
         assert tasks.step_states(text) == {'review': 'done', 'accept': 'done'}
 
 
+def test_pass_windows_post_merge_failure() -> None:
+    cmd = 'python check.py'
+    for shell_output, expected in [([r'C:\Program Files\Git\bin\bash.exe', '-c', cmd],
+                                   [r'C:\Program Files\Git\bin\bash.exe', '-c', cmd]),
+                                  (f'cmd /d /s /c "{cmd}"', ['cmd', '/d', '/s', '/c', cmd])]:
+        with accepted() as h, patch.object(advance.core, 'WINDOWS', True), \
+                patch.object(advance.accept.run, 'shell_command', return_value=shell_output), \
+                patch.object(advance.subprocess, 'CREATE_NO_WINDOW', 0x08000000, create=True):
+            config = h.project.state / '.omi' / 'config.json'
+            config.parent.mkdir()
+            config.write_text(json.dumps({'host_test': cmd}), encoding='utf-8')
+            h.fail = 'post-merge-test'
+            error, _ = h.invoke()
+            assert 'post-merge-test FAILED' in error and 'no revert' in error, error
+            assert expected in h.calls
+            assert not any(c[:2] == ['git', 'revert'] for c in h.calls)
+
+
+def test_pass_no_ci_checks_blocks_merge() -> None:
+    # The task requires a final checks exit 0, even for repositories without CI.
+    with accepted() as h:
+        original = advance.subprocess.run
+        def run(argv, **kw):
+            if argv[:3] == ['gh', 'pr', 'checks']:
+                h.calls.append(argv)
+                return subprocess.CompletedProcess(argv, 1, '[]' if '--json' in argv else '', 'no checks reported')
+            return original(argv, **kw)
+        with patch.object(advance.subprocess, 'run', side_effect=run):
+            error, _ = h.invoke()
+        assert 'CI failed: unknown check' in error, error
+        assert any(c[-3:] == ['reopen', '--why', 'CI failed: unknown check'] for c in h.calls)
+        assert not any(c[:3] == ['gh', 'pr', 'merge'] for c in h.calls)
+
+
 def main():
     test_pass_every_stage_stops_and_resumes()
     test_pass_review_guards_and_windows()
     test_pass_templates()
     test_pass_real_auto_gate_steps()
     test_pass_post_merge_config_command()
+    test_pass_windows_post_merge_failure()
     test_pass_real_report_format()
     test_pass_merge_and_resume()
     test_pass_refusals_do_not_change_task()
     test_pass_next_reviewer()
     test_pass_stage_failures_and_retry()
     test_pass_ci_red_reopens()
+    test_pass_no_ci_checks_blocks_merge()
     test_pass_local_and_post_merge_failure()
 
 
