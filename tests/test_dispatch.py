@@ -271,6 +271,26 @@ def test_record_before_wrapper_starts() -> None:
         assert "rc=LOST" in watch(project)
 
 
+def test_watch_round_limit() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        project = state.Project(state=root, code=root)
+        rec = {"tid": "TASK-228", "role": "omi-agent-reviewer", "rc": 0, "dir": root,
+               "started": datetime.datetime(2026, 11, 6), "running": False, "reported": False}
+        row = "| omi-agent-reviewer | m | high | 1 | 1 | 1 | 1s | - | FAIL |\n"
+        text = ("\n## Usage\n| role | model |\n|---|---|\n" + row * 2
+                + "\n## Reports\n2026-11-06 00:00 omi-agent-reviewer (codex):\n> VERDICT: FAIL\n")
+        (root / "log").write_text("review finished\n", encoding="utf-8")
+        with patch.object(dispatch, "records", return_value=[rec]), \
+                patch.object(dispatch.tasks, "tasks", return_value={"TASK-228": {"_text": text}}), \
+                patch.object(dispatch.docker, "print_workers"), \
+                patch.object(dispatch.catalogs, "load_roles", return_value={"omi-agent-reviewer": {"access": "read"}}):
+            out = watch(project)
+        assert ('DECIDE: review round limit reached; the Coordinator decides: rescope, replan, '
+                'or one more round with --why "<reason>"') in out, out
+        assert "PO" not in out, out
+
+
 def test_reviewer_next_action() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d).resolve()
@@ -298,6 +318,7 @@ def main():
     test_lost_wrapper_and_exit_codes()
     test_needs_scope_over_hook_failure()
     test_record_before_wrapper_starts()
+    test_watch_round_limit()
     test_reviewer_next_action()
 
 
