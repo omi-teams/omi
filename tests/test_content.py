@@ -731,7 +731,14 @@ def test_dispatch_watch_advance_templates() -> None:
         assert 'Review round N FAIL:' in text and '--reject' in text and 'back to draft' in text
 
 
+def test_status_skill_resumes_orphans() -> None:
+    text = (omi.common.core.TEMPLATE / "dot-claude" / "skills" / "omi-status" / "SKILL.md").read_text(encoding="utf-8")
+    for words in ("`(resume)`", "omi-task step 2", "`omi-task <ID> <ID>`", "before the next planned task", "finished runs not handled", "python -m omi watch"):
+        assert words in text, words
+
+
 def main():
+    test_status_skill_resumes_orphans()
     test_dispatch_watch_advance_templates()
     test_scope_questions_not_sent_to_po()
     test_pattern_library()

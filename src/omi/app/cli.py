@@ -137,9 +137,19 @@ def status(cwd="."):
         for k, m in ts.items():
             if m.get("parent") not in ts:
                 show(k, 0)
+    try:
+        recs = worker_dispatch.records(project.code)
+    except state.StateError:
+        recs = []
+    busy = {r["tid"] for r in recs if r["running"]}
+    busy |= {row[0] for row in docker.running_workers(project.state if project.detached else project.code)}
+    resume = [f"{k} (resume)" for k, m in ts.items() if m.get("status") == "in-progress" and k not in kids and k not in busy]
     nxt = next((k for k, m in ts.items()
                 if m.get("status", "planned") == "planned" and k not in kids and set(core.split(m.get("depends"))) <= done), None)
-    print(f"next: {nxt or 'none ready'}")
+    print(f"next: {' '.join(resume + ([nxt] if nxt else [])) or 'none ready'}")
+    unhandled = sum(not r["running"] and not r["reported"] for r in recs)
+    if unhandled:
+        print(f"finished runs not handled: {unhandled}; run python -m omi watch")
     docker.print_workers(project)
 
 
