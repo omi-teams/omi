@@ -505,7 +505,7 @@ def test_review_fail_stops_and_refusals() -> None:
         with patch.object(advance.subprocess, 'run', side_effect=back_to_plan):
             error, out = h.invoke()
         assert not error and any(c[-3:] == ['dispatch', 'omi-agent-architect', TID] for c in h.calls), (error, out)
-    for change, why in [('pass', 'FAIL'), ('rc', 'FAIL'), ('done', 'step'), ('stale', 'stale'), ('nofinding', 'finding'), ('running', 'running')]:
+    for change, why in [('pass', 'current review step'), ('rc', 'FAIL'), ('done', 'step'), ('stale', 'stale'), ('nofinding', 'finding'), ('running', 'running')]:
         with review_fail() as h:
             if change == 'pass': h.task.write_text(h.text.replace('VERDICT: FAIL', 'VERDICT: PASS'), encoding='utf-8')
             elif change == 'rc': h.rec['rc'] = 1

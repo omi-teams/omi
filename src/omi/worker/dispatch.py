@@ -17,7 +17,7 @@ from . import docker, tools
 START_GRACE = 10  # seconds launch() waits for the wrapper
 STAMP = "%Y%m%d-%H%M%S"
 WRITE_DONE = "NEXT: python -m omi advance {tid}"
-READ_PASS = "NEXT: tick the ✓ criteria, status done, step done, PR ready, CI, squash merge, pull, clean, post-merge test"
+READ_PASS = "NEXT: python -m omi advance {tid}"
 READ_FAIL = "NEXT: python -m omi advance {tid}"
 
 
@@ -157,7 +157,7 @@ def next_action(project: state.Project, rec: dict, text: str, report: str) -> st
     if access == "write":
         return WRITE_DONE.format(tid=tid) if v == "DONE" else "DECIDE: no DONE in the report; read it and the log"
     if v == "PASS":
-        return READ_PASS
+        return READ_PASS.format(tid=tid)
     if v == "FAIL":
         try:
             tasks.round_gate(project.state, tid, text, None)
