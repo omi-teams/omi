@@ -43,7 +43,8 @@ def accepted():
             args = argv[3:] if argv[0] not in ('git', 'gh') else argv[2:] if argv[0] == 'gh' else argv[1:]
             if argv[0] == 'gh' and args[0] == 'view':
                 h.calls.append(argv)
-                return subprocess.CompletedProcess(argv, 0, json.dumps({'title': '[TASK-218] feat: accept'}), '')
+                data = {'state': 'OPEN'} if args[args.index('--json') + 1] == 'state' else {'title': '[TASK-218] feat: accept'}
+                return subprocess.CompletedProcess(argv, 0, json.dumps(data), '')
             if argv[0] == 'gh' and args[:1] == ['checks'] and '--json' in args:
                 h.calls.append(argv)
                 return subprocess.CompletedProcess(argv, 1, '[{"name":"unit","state":"FAILURE","bucket":"fail"}]', '')
@@ -84,6 +85,75 @@ def test_pass_merge_and_resume() -> None:
         h.calls.clear()
         error, out = h.invoke()
         assert not error and 'already done' in out and not h.calls, (error, out, h.calls)
+
+
+def test_pass_merged_pr_resumes_unsaved_merge() -> None:
+    for failure in ('save', 'delete-branch'):
+        with accepted() as h:
+            config = h.project.state / '.omi' / 'config.json'
+            config.parent.mkdir()
+            config.write_text('{"host_test": "python check.py"}', encoding='utf-8')
+            merged = False
+            original_run = advance.subprocess.run
+            original_save = advance.save_progress
+            def run(argv, **kw):
+                nonlocal merged
+                if argv[:3] == ['gh', 'pr', 'view'] and 'state' in argv:
+                    h.calls.append(argv)
+                    return subprocess.CompletedProcess(argv, 0, json.dumps({'state': 'MERGED' if merged else 'OPEN'}), '')
+                if argv[:3] == ['gh', 'pr', 'checks'] and merged:
+                    h.calls.append(argv)
+                    return subprocess.CompletedProcess(argv, 1, '[]' if '--json' in argv else '', 'no checks reported')
+                result = original_run(argv, **kw)
+                if argv[:3] == ['gh', 'pr', 'merge']:
+                    merged = True
+                    if failure == 'delete-branch':
+                        return subprocess.CompletedProcess(argv, 1, '', 'branch deletion failed after merge')
+                return result
+            def save(ctx):
+                if failure == 'save' and ctx.progress.get('merge'):
+                    raise OSError('crash before saving merge')
+                original_save(ctx)
+            with patch.object(advance.subprocess, 'run', side_effect=run), \
+                    patch.object(advance, 'save_progress', side_effect=save):
+                error, _ = h.invoke()
+            assert 'merge FAILED' in error and merged, (failure, error)
+            progress = json.loads((h.run_dir / 'advance.json').read_text(encoding='utf-8'))
+            assert progress['ci'] and not progress.get('merge'), progress
+            h.calls.clear()
+            with patch.object(advance.subprocess, 'run', side_effect=run):
+                error, out = h.invoke()
+            assert not error, (failure, error, out)
+            assert 'merge: already merged' in out, out
+            assert h.calls[0] == ['gh', 'pr', 'view', 'task/' + TID, '--json', 'state', '--repo', 'org/repo']
+            assert not any(c[:3] in (['gh', 'pr', 'checks'], ['gh', 'pr', 'merge']) for c in h.calls)
+            pull = h.calls.index(['git', 'pull'])
+            clean = next(i for i, c in enumerate(h.calls) if c[-2:] == ['clean', TID])
+            post_test = next(i for i, c in enumerate(h.calls) if c[-2:] == ['-c', 'python check.py'])
+            assert pull < clean < post_test
+            progress = json.loads((h.run_dir / 'advance.json').read_text(encoding='utf-8'))
+            assert all(progress.get(s) for s in ('merge', 'pull', 'clean', 'post-merge-test'))
+
+
+def test_pass_unmerged_pr_keeps_final_ci_guard() -> None:
+    for pr_state in ('OPEN', 'CLOSED'):
+        with accepted() as h:
+            original = advance.subprocess.run
+            def run(argv, **kw):
+                if argv[:3] == ['gh', 'pr', 'view'] and 'state' in argv:
+                    h.calls.append(argv)
+                    return subprocess.CompletedProcess(argv, 0, json.dumps({'state': pr_state}), '')
+                if argv[:3] == ['gh', 'pr', 'checks'] and '--watch' not in argv:
+                    h.calls.append(argv)
+                    return subprocess.CompletedProcess(argv, 1, '[]' if '--json' in argv else '', 'no checks reported')
+                return original(argv, **kw)
+            with patch.object(advance.subprocess, 'run', side_effect=run):
+                error, _ = h.invoke()
+            assert 'merge FAILED' in error and 'no checks reported' in error, error
+            query = next(i for i, c in enumerate(h.calls) if c[:3] == ['gh', 'pr', 'view'] and 'state' in c)
+            guard = next(i for i, c in enumerate(h.calls) if c[:3] == ['gh', 'pr', 'checks'] and '--watch' not in c)
+            assert query < guard
+            assert not any(c[:3] == ['gh', 'pr', 'merge'] for c in h.calls)
 
 
 def test_pass_refusals_do_not_change_task() -> None:
@@ -382,6 +452,8 @@ def test_pass_ci_classifies_check_results() -> None:
 
 
 def main():
+    test_pass_merged_pr_resumes_unsaved_merge()
+    test_pass_unmerged_pr_keeps_final_ci_guard()
     test_pass_every_stage_stops_and_resumes()
     test_pass_review_guards_and_windows()
     test_pass_templates()

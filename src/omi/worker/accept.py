@@ -225,7 +225,9 @@ def watch_ci(ctx: Any, command: Callable) -> None:
     checks(ctx, command, '--watch', '--fail-fast')
 
 
-def merge(ctx: Any, command: Callable) -> None:
+def merge(ctx: Any, command: Callable) -> str | None:
+    if json.loads(gh(ctx, command, 'view', 'task/' + ctx.tid, '--json', 'state'))['state'] == 'MERGED':
+        return 'already merged'
     development(ctx, command)
     checks(ctx, command)  # Never journal this guard separately from the irreversible merge.
     gh(ctx, command, 'merge', 'task/' + ctx.tid, '--squash', '--delete-branch', '--subject', ctx.progress['pr-title'])
