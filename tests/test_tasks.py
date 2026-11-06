@@ -921,11 +921,11 @@ def test_auto_accept():
         task = root / ".omi" / "tasks" / "TASK-110.md"
         with patch("omi.project.tasks.commit_task_file"), patch("omi.common.core.task_worktrees", return_value={}), \
                 patch("sys.stdout", io.StringIO()):
-            def run(wid, verdict, extra=""):
+            def run(wid, verdict, extra="", steps=""):
                 done = "".join(f"- {st['id']} done 2026-10-31 10:00\n" for st in omi.project.workflows.get_workflow(root, wid)[:-1])
                 usage = f"\n## Usage\n| role | model | tokens | verdict |\n|---|---|---|---|\n| omi-agent-reviewer | m | 1 | {verdict} |\n{extra}" if verdict else ""
                 task.write_text(f"---\nid: TASK-110\nworkflow: {wid}\nstatus: in-progress\nstep: accept\n---\n"
-                                "## Acceptance criteria\n- [x] ok\n\n## Steps\n" + done + f"- accept started 2026-10-31 10:03\n{usage}", encoding="utf-8")
+                                "## Acceptance criteria\n- [x] ok\n\n## Steps\n" + done + f"- accept started 2026-10-31 10:03\n{steps}{usage}", encoding="utf-8")
                 return omi.project.tasks.step(root, "TASK-110", "done")
 
             for verdict in ("", "FAIL"):
@@ -946,9 +946,53 @@ def test_auto_accept():
             assert run("omi-flow-feature-ui", "PASS", qa("PASS")) == 0
             assert run("omi-flow-feature", "PASS") == 0
             assert "Auto accept: review PASS\n- accept done" in task.read_text(encoding="utf-8")
+            # a `done --po` review override carries through the auto gate; one for another step or round does not
+            override = "- PO review override review: host evidence accepted\n"
+            assert run("omi-flow-feature", "FAIL", steps=override) == 0
+            assert "Auto accept: review PASS\n- accept done" in task.read_text(encoding="utf-8")
+            try:
+                run("omi-flow-feature", "FAIL", steps="- PO review override build: nope\n")
+            except SystemExit as exc:
+                assert "auto gate" in str(exc), str(exc)
+            else:
+                raise AssertionError("auto accept with an override for another step")
         for wid in ("omi-flow-feature", "omi-flow-feature-ui", "omi-flow-bugfix", "omi-flow-refactor"):
             assert omi.project.workflows.get_workflow(root, wid)[-1]["gate"] == "auto", wid
         assert omi.project.workflows.get_workflow(root, "omi-flow-feature-sensitive")[-1]["gate"] == "auto"
+
+
+def test_status_outdated_one_hint_and_silent_stale_check():
+    def status_text(root):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), patch("omi.setup.install.stale_user_integration", return_value=False), \
+                patch("omi.project.improve.open_count", return_value=0), patch("omi.worker.docker.full_volumes", return_value=[]):
+            omi.app.cli.status(root)
+        return buf.getvalue()
+
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        with patch("sys.stdout", io.StringIO()):
+            omi.setup.upgrade.init(root)
+        manifest = json.loads((root / ".omi" / "manifest.json").read_text(encoding="utf-8"))
+        rel = next(r for r in manifest["files"] if r.startswith(".omi/agents/"))
+        manifest["files"][rel] = omi.setup.upgrade.norm_sha(b"older template")  # the shipped template moved on
+        (root / ".omi" / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        (root / rel).write_bytes(b"older template")
+        (root / ".omi" / "version").write_text("0.0.1\n", encoding="utf-8")
+        assert status_text(root).count("upgrade --apply") == 1
+        (root / ".omi" / "version").write_text(omi.common.core.version() + "\n", encoding="utf-8")
+        assert status_text(root).count("upgrade --apply") == 1  # same version: the stale-file hint is the only one
+        other = root / "other.md"
+        other.write_bytes(b"older template")
+        (root / rel).unlink()
+        try:
+            (root / rel).symlink_to(other)
+        except OSError:
+            return  # no symlinks on this host
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            omi.setup.upgrade.stale_template_hint(root)
+        assert "skip (symlink)" not in out.getvalue(), out.getvalue()
 
 
 def test_review_prompts_and_host_test_docs():
@@ -1085,6 +1129,7 @@ def main():
     test_plan_status()
     test_step_approve_reopen()
     test_auto_accept()
+    test_status_outdated_one_hint_and_silent_stale_check()
     test_reopen_last_write_step()
     test_step_back_to()
     test_round_limit_and_replan()

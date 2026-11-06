@@ -160,12 +160,13 @@ def protected(rel: str) -> bool:
     return rel.startswith(".omi/plans/PLAN-") and rel != ".omi/plans/PLAN-000.md"
 
 
-def upgrade_write_safe(target: Path, rel: str) -> bool:
-    """Skip links (including parent directories) and destinations outside the project."""
+def upgrade_write_safe(target: Path, rel: str, quiet: bool = False) -> bool:
+    """Skip links (including parent directories) and destinations outside the project; `quiet` prints nothing."""
     dst = target / rel
     if (any(p.is_symlink() for p in (dst, *dst.parents) if p.is_relative_to(target))
             or not dst.resolve().is_relative_to(target)):
-        print(f"skip (symlink): {rel}")
+        if not quiet:
+            print(f"skip (symlink): {rel}")
         return False
     return True
 
@@ -173,7 +174,7 @@ def upgrade_write_safe(target: Path, rel: str) -> bool:
 def stale_template_hint(target: str | Path, *, detached: bool = False) -> None:
     """Report manifest-recorded files that apply can safely update between releases."""
     target = Path(target).resolve()
-    if not upgrade_write_safe(target, ".omi/manifest.json"):
+    if not upgrade_write_safe(target, ".omi/manifest.json", True):
         return
     files = read_manifest(target)
     if not files:
@@ -183,7 +184,7 @@ def stale_template_hint(target: str | Path, *, detached: bool = False) -> None:
         base = files.get(rel)
         if not base or protected(rel) or (detached and (rel == "AGENTS.md" or rel.startswith(".claude/"))):
             continue
-        if norm_sha(src.read_bytes()) == base or not upgrade_write_safe(target, rel):
+        if norm_sha(src.read_bytes()) == base or not upgrade_write_safe(target, rel, True):
             continue
         dst = target / rel
         if dst.is_file() and norm_sha(dst.read_bytes()) == base:
