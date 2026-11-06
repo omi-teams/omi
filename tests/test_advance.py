@@ -4,6 +4,7 @@ import datetime
 import io
 import json
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -48,7 +49,7 @@ class Handoff:
         if name == 'step':
             name = 'step-' + args[-1]
         if name == self.fail or (argv[0] == 'gh' and 'pr-' + args[0] == self.fail):
-            return subprocess.CompletedProcess(argv, 1, '', 'secret credential must not be printed')
+            return subprocess.CompletedProcess(argv, 1, '', 'secret credential must not be printed' if name in ('push', 'pr') else 'action failed with a useful diagnostic')
         out = ''
         if argv[0] == 'git':
             if args[0] == 'branch': out = 'task/TASK-218'
@@ -103,7 +104,7 @@ def test_all_stages_and_rerun() -> None:
         error, out = h.invoke()
         assert not error, error
         assert out.splitlines() == ['eligibility: DONE write run for build', 'scope: checked',
-                                    'commit: done (clean worktree)', 'rebase: done', 'push: done', 'pr: done',
+                                    'commit: committed', 'rebase: done', 'push: done', 'pr: done',
                                     'host-test: done', 'step-done: done', 'step-next: done', 'dispatch: done'], out
         assert ['git', 'commit', '-m', 'feat(worker): advance task'] in h.calls
         assert any(c[-3:] == ['dispatch', 'omi-agent-security-reviewer', TID] for c in h.calls)
@@ -123,6 +124,8 @@ def test_each_stage_failure_and_retry() -> None:
             error, out = h.invoke()
             assert f'advance {stage} FAILED' in error, (failure, error)
             assert 'secret' not in error + out
+            if failure not in ('push', 'pr', 'pr-create'):
+                assert 'useful diagnostic' in error, (failure, error)
             failed_at = next(i for i, c in enumerate(h.calls) if (c[1:2] == [failure] or
                               (failure == 'pr' and c[0] == 'gh') or (failure == 'pr-create' and c[:3] == ['gh', 'pr', 'create']) or c[-1:] == [failure.removeprefix('step-')] and failure.startswith('step-') or failure in ('host-test', 'dispatch') and failure in c))
             later = h.calls[failed_at + 1:]
@@ -286,7 +289,96 @@ def test_real_git_local_origin() -> None:
             assert git('ls-remote', 'origin') == '', 'local bare origin must stay untouched'
 
 
+def test_commit_stage_reports_clean_and_committed() -> None:
+    for dirty, expected in [(True, 'committed'), (False, 'nothing to commit')]:
+        with handoff() as h:
+            h.dirty = dirty
+            error, output = h.invoke()
+            assert not error, error
+            assert 'commit: ' + expected in output
+            assert any(c[1:2] == ['commit'] for c in h.calls) == dirty
+
+
+def test_task_branch_push_uses_lease() -> None:
+    with handoff() as h:
+        assert not h.invoke()[0]
+        pushes = [c for c in h.calls if c[1:2] == ['push']]
+        assert pushes == [['git', 'push', '--force-with-lease', '-u', 'origin', 'task/TASK-218']], pushes
+
+
+def test_failure_output_tail_and_auth_suppression() -> None:
+    output = '\n'.join(f'line {i}' for i in range(15)) + '\n\x1b[31museful\x00 detail\x7f\x85\x1b[0m'
+    safe = [['git', 'status'], ['git', 'rebase', 'development'], [sys.executable, '-m', 'omi', 'host-test', TID]]
+    hidden = [['gh', 'pr', 'list'], ['git', 'push', '--force-with-lease', 'origin', 'task/' + TID]]
+    for argv in safe + hidden:
+        for stream in ('stdout', 'stderr'):
+            result = subprocess.CompletedProcess(argv, 1, output if stream == 'stdout' else '', output if stream == 'stderr' else '')
+            with patch.object(advance.subprocess, 'run', return_value=result):
+                try:
+                    advance.command(Path('.'), argv)
+                except state.StateError as exc:
+                    error = str(exc)
+                else:
+                    raise AssertionError('command failure was swallowed')
+            assert error.startswith('command exited 1')
+            if argv in hidden:
+                assert error == 'command exited 1', error
+            else:
+                assert 'useful detail' in error and 'line 5\n' not in error and 'line 6\n' in error, repr(error)
+                assert not any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in error if c != '\n'), repr(error)
+                assert '[31m' not in error and len(error.splitlines()) <= 11, repr(error)
+
+
+def test_real_git_push_after_rebase_keeps_lease() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        repo, origin = root / 'repo', root / 'origin.git'
+        repo.mkdir()
+
+        def git(*args):
+            return advance.command(repo, ['git', *args])
+
+        git('init', '-q', '-b', 'development')
+        git('init', '--bare', '-q', str(origin))
+        git('remote', 'add', 'origin', str(origin))
+        (repo / 'app.py').write_text('value = 1\n', encoding='utf-8')
+        git('add', '.')
+        git('commit', '-qm', 'chore: base')
+        git('checkout', '-qb', 'task/' + TID)
+        (repo / 'app.py').write_text('value = 2\n', encoding='utf-8')
+        git('commit', '-qam', 'fix: task change')
+        git('push', '-u', 'origin', 'task/' + TID)
+        git('checkout', '-q', 'development')
+        (repo / 'base.txt').write_text('development moved\n', encoding='utf-8')
+        git('add', '.')
+        git('commit', '-qm', 'chore: development change')
+        git('push', 'origin', 'development')
+        development = git('rev-parse', 'HEAD')
+        git('checkout', '-q', 'task/' + TID)
+        git('rebase', 'development')
+        ctx = advance.Context(state.Project(repo, repo), TID, {}, {})
+        ctx.wt, ctx.target = repo, 'origin'
+        advance.push(ctx)
+        head = git('rev-parse', 'HEAD')
+        assert git('--git-dir', str(origin), 'rev-parse', 'refs/heads/task/' + TID) == head
+        assert git('--git-dir', str(origin), 'rev-parse', 'refs/heads/development') == development
+        # An unseen remote change must still block the next task-branch push.
+        git('--git-dir', str(origin), 'update-ref', 'refs/heads/task/' + TID, development)
+        try:
+            advance.push(ctx)
+        except state.StateError as exc:
+            assert str(exc) == 'command exited 1', str(exc)
+        else:
+            raise AssertionError('push ignored a changed remote lease')
+        assert git('--git-dir', str(origin), 'rev-parse', 'refs/heads/task/' + TID) == development
+        assert git('--git-dir', str(origin), 'rev-parse', 'refs/heads/development') == development
+
+
 def main():
+    test_commit_stage_reports_clean_and_committed()
+    test_task_branch_push_uses_lease()
+    test_real_git_push_after_rebase_keeps_lease()
+    test_failure_output_tail_and_auth_suppression()
     test_all_stages_and_rerun()
     test_each_stage_failure_and_retry()
     test_eligibility_refuses_without_mutations()
