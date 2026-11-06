@@ -544,7 +544,7 @@ def test_host_only_criteria():
                           "src/omi/template/dot-claude/skills/omi-task/SKILL.md"):
         text = (root / template_copy).read_text(encoding="utf-8")
         if "reviewer" in template_copy:
-            assert "`HOST <criterion>`" in text and "UNVERIFIED|HOST" in text and "is `UNVERIFIED`" in text
+            assert "`HOST <criterion>`" in text and "Host items go only on the single `HOST:` line" in text and "is `UNVERIFIED`" in text
         else:
             assert "Host: <command> -> <result>" in text and "no merge without one `Host:` line" in text
 

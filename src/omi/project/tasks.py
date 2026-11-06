@@ -21,11 +21,11 @@ def step_states(text):
     return dict(STEP_LOG.findall(rest.split("\n## ", 1)[0])) if sep else {}
 
 
-def po_approved(text, sid):
-    """The Coordinator records the PO's words as a line `PO approval <step>: <text>` inside `## Steps`."""
+def po_approved(text, sid, kind="approval"):
+    """The Coordinator records the PO's words as a line `PO approval <step>: <text>` inside `## Steps`; `kind="review override"` finds a `done --po` review override."""
     _, sep, rest = text.partition("\n## Steps\n")
     current = re.split(r"^- workflow (?:reopened|back to) .*", rest.split("\n## ", 1)[0], flags=re.M)[-1]
-    return bool(sep) and re.search(rf"^(?:- )?PO approval {re.escape(sid)}: *\S", current, re.M) is not None
+    return bool(sep) and re.search(rf"^(?:- )?PO {kind} {re.escape(sid)}: *\S", current, re.M) is not None
 
 
 REVIEW_ROLES = ("omi-agent-reviewer", "omi-agent-security-reviewer")
@@ -380,7 +380,7 @@ def step(root, tid, action, why=None, now=None, to=None, po=None):
         if steps[at]["gate"] == "auto":
             gates = [s for s in steps[:at] if s["gate"] == "review"]
             if not po_approved(text, cur):  # an explicit PO approval line also passes
-                bad = next((g for g in gates if verdicts.last(text, g["role"]) != "PASS"), None)
+                bad = next((g for g in gates if verdicts.last(text, g["role"]) != "PASS" and not po_approved(text, g["id"], "review override")), None)
                 if not gates or bad:
                     sys.exit(f"{tid}: step {cur} is an auto gate; it needs a {(bad or {'role': 'review'})['role']} verdict PASS. Nothing changed.")
                 text = add_step_log(text, "Auto accept: review PASS")

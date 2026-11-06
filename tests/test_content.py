@@ -537,7 +537,8 @@ def test_reviewer_mockup_evidence_is_qa() -> None:
     root = omi.common.core.TEMPLATE / "dot-omi"
     reviewer = (root / "agents" / "omi-agent-reviewer.md").read_text(encoding="utf-8")
     assert "report that part of the criterion as `QA <criterion>`; it does not block PASS" in reviewer
-    assert "✓|✗|UNVERIFIED|HOST|QA <evidence>" in reviewer
+    assert "✓|✗|UNVERIFIED|QA <evidence>" in reviewer
+    assert "Host items go only on the single `HOST:` line" in reviewer and "|HOST|" not in reviewer
     assert "comparison evidence cannot receive PASS" not in reviewer
     flow = (root / "workflows" / "omi-flow-feature-ui.md").read_text(encoding="utf-8")
     assert "`QA <criterion>`, which does not block PASS" in flow

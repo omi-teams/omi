@@ -38,7 +38,7 @@ USAGE = """usage: omi <command>
   agents       write .omi/agents/CATALOG.md (one line per role)
   workflows [--check]   write .omi/workflows/CATALOG.md (one line per workflow); --check validates every workflow
   host-test <TASK-ID>   run `host_test` (.omi/config.json) on the host in the task's worktree; failure prints HOST TEST FAILED and counts as a fix round
-  step <TASK-ID> next|done|back|skip|approve|reopen --why <reason>   record the task's workflow step (gates cannot be skipped; back --to <step> --why: return to an earlier agent step, e.g. architect; --why "<Coordinator reason>" allows one round past max_fix_rounds; --po "<PO's words>" also works)
+  step <TASK-ID> next|done|back|skip|approve|reopen --why <reason>   record the task's workflow step (gates cannot be skipped; back --to <step> --why: return to an earlier agent step, e.g. architect; back and done take --why "<Coordinator reason>" (one round past max_fix_rounds) or --po "<PO's words>"; done --po overrides a review FAIL)
   note <TASK-ID> --step <step> --verdict <verdict> "<text>"   record a Coordinator decision under the task's ## Reports
   run <role> <TASK-ID> [--model M] [--effort E] [--tool claude|codex] [--fresh] [--why "<Coordinator reason>"|--po "<PO's words>"]   run a role in Docker (--fresh: no engineer session resume; read roles: ro worktree, after the deterministic checks)
   hook pre-run|post-run|pre-merge <TASK-ID>   run .omi/hooks/<event> (from the main checkout) in Docker against the task worktree; exits with its code
@@ -67,7 +67,8 @@ def status(cwd="."):
         old = True
     if old:
         print(f"run `python -m omi upgrade --apply` to bring the project files to omi {core.version()}")
-    upgrade.stale_template_hint(root, detached=project.detached)
+    if not old:
+        upgrade.stale_template_hint(root, detached=project.detached)
     if install.stale_user_integration():
         print("installed omi user skills or Codex block differ from the current template; run `python -m omi install-user`")
     source = project.state.name if project.detached else project.code.name
