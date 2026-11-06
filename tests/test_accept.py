@@ -298,6 +298,33 @@ def test_marked_criteria_ordered_status_guards() -> None:
         raise AssertionError('empty criteria accepted')
 
 
+def test_marked_criteria_status_after_verbatim_criterion() -> None:
+    for criterion in ('each carries ✓ as its status', 'criteria not marked ✓',
+                      'QA and UNVERIFIED and ✗ are statuses'):
+        for mixed in (False, True):
+            task = '\n## Acceptance criteria\n- [ ] ' + criterion + '\n'
+            if mixed:
+                task += '- [ ] another criterion\n'
+            task += '\n## Checkpoint\n'
+            for fenced in (False, True):
+                for status in ('✗', 'UNVERIFIED', 'QA', '✓'):
+                    report = 'AC: ' + criterion + ' ' + status + ' evidence mentions ✓'
+                    if mixed:
+                        # Recognize the verbatim prefix even in a different position.
+                        report = 'AC: paraphrased second criterion ✓ evidence\n' + report
+                    report = 'VERDICT: PASS\n' + report
+                    if fenced:
+                        report = '```\n' + report + '\n```'
+                    try:
+                        marked = advance.accept.marked_criteria(task, report)
+                    except advance.state.StateError as exc:
+                        assert status != '✓', str(exc)
+                        assert 'criteria not marked ✓' in str(exc)
+                    else:
+                        assert status == '✓', report
+                        assert '- [ ]' not in marked
+
+
 def test_pass_post_merge_config_command() -> None:
     cmd = 'python check.py && echo ok'
     cases = [(False, None, ['sh', '-c', cmd]),
@@ -449,6 +476,7 @@ def main():
     test_pass_real_report_format()
     test_marked_criteria_real_paraphrased_reports()
     test_marked_criteria_ordered_status_guards()
+    test_marked_criteria_status_after_verbatim_criterion()
     test_pass_merge_and_resume()
     test_pass_refusals_do_not_change_task()
     test_pass_next_reviewer()

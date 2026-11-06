@@ -26,7 +26,11 @@ def marked_criteria(text: str, report: str) -> str:
               for line in report.splitlines() if re.match(r'^\s*(?:[-*] )?(?:\[[ xX]\] )?✓\s*', line)}
     rows = re.findall(r'^- \[[ xX]\] (.+)$', criteria, re.M)
     ac_lines = re.findall(r'^AC:.*$', report, re.M)
-    statuses = [re.search(r'[ \t]+(✓|✗|UNVERIFIED|QA)(?:[ \t]|$)', line) for line in ac_lines]
+    statuses = []
+    for line in ac_lines:
+        body = line.removeprefix('AC: ')
+        criterion = max((row for row in rows if body.startswith(row)), key=len, default='')
+        statuses.append(re.search(r'[ \t]+(✓|✗|UNVERIFIED|QA)(?:[ \t]|$)', body[len(criterion):]))
     ordered = len(ac_lines) == len(rows) and all(status and status[1] == '✓' for status in statuses)
     missing = [row for row in rows if not ordered and row not in marked and not re.search(
         rf'^(?:AC: )?{re.escape(row)}[ \t]+✓(?:[ \t]|$)', report, re.M)]
