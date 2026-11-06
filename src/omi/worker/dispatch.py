@@ -163,7 +163,7 @@ def next_action(project: state.Project, rec: dict, text: str, report: str) -> st
         try:
             tasks.round_gate(project.state, tid, text, None)
         except SystemExit:
-            return "DECIDE: review round limit reached; ask the PO for another round or stop"
+            return 'DECIDE: review round limit reached; the Coordinator decides: rescope, replan, or one more round with --why "<reason>"'
         return READ_FAIL
     return "DECIDE: reviewer gave no PASS or FAIL; read the report"
 
