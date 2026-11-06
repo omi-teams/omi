@@ -728,6 +728,7 @@ def test_dispatch_watch_advance_templates() -> None:
             assert command in text, (relative, command)
         assert 'GitHub remote' in text and 'host-test' in text
         assert 'security reviewer' in text and 'completed stages' in text
+        assert 'Review round N FAIL:' in text and '--reject' in text and 'back to draft' in text
 
 
 def main():

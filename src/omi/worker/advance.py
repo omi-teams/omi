@@ -52,6 +52,10 @@ class Context:
     rec: dict
     progress: dict
     message: str | None = None
+    reject: list[int] = field(default_factory=list)
+    why: str | None = None
+    round: int = 0
+    findings: list[str] = field(default_factory=list)
     wt: Path = field(init=False)
     subject: str = field(init=False)
     meta: dict = field(init=False)
@@ -225,15 +229,131 @@ def reviewer(ctx: Context) -> None:
         omi(ctx, "dispatch", ctx.following["role"], ctx.tid)
 
 
-def advance(project: state.Project, tid: str, message: str | None = None) -> None:
-    """Advance only the newest successful write run; stop at the first failed stage."""
+class Stop(SystemExit):
+    """A deliberate non-zero stop whose reason was already printed."""
+
+
+FINDING = re.compile(r"- \S+:\d+")
+
+
+def eligible_fail(ctx: Context) -> str:
+    """Validate the newest review run as a FAIL for the current review step; returns the report."""
+    rec = ctx.rec
+    text = core.read_task(state.task_file(ctx.project, ctx.tid))
+    report = dispatch.last_report(text, rec["role"], rec["started"])
+    if rec["rc"] != 0 or dispatch.verdict(report) != "FAIL":
+        raise state.StateError("newest finished run is not a write role with DONE or a review role with FAIL")
+    wt = core.task_worktrees(ctx.project.code).get(ctx.tid)
+    if not wt:
+        raise state.StateError("task worktree is missing")
+    ctx.wt = Path(wt)
+    ctx.meta = core.parse(text)
+    steps = workflows.get_workflow(ctx.project.state, ctx.meta.get("workflow") or workflows.DEFAULT_WORKFLOW)
+    sid = ctx.progress.get("step", ctx.meta.get("step"))
+    ctx.step = next((s for s in steps if s["id"] == sid), {})
+    if not ctx.step or ctx.step["role"] != rec["role"]:
+        raise state.StateError("run role does not match the current review step")
+    log = text.partition("\n## Steps\n")[2].split("\n## ", 1)[0]
+    starts = re.findall(rf"^- {re.escape(sid)} started (\d{{4}}-\d\d-\d\d \d\d:\d\d)", log, re.M)
+    if not starts or datetime.datetime.strptime(starts[-1], "%Y-%m-%d %H:%M") > rec["started"].replace(second=0, microsecond=0):
+        raise state.StateError("finished run is stale for the current step")
+    if not ctx.progress.get("step-back") and (ctx.meta.get("step") != sid or tasks.step_states(text).get(sid) != "started"):
+        raise state.StateError("finished run is not for the current step")
+    if any(r["running"] and not (ctx.progress.get("step-back") and r["role"] != rec["role"])
+           for r in dispatch.records(ctx.project.code) if r["tid"] == ctx.tid):
+        raise state.StateError("task has a running worker")
+    ctx.findings = [l for l in report.splitlines() if FINDING.match(l)]
+    if not ctx.findings:
+        raise state.StateError("the FAIL report has no finding lines (- <file:line> ...)")
+    ctx.progress["step"] = sid
+    ctx.round = ctx.progress.setdefault("round", tasks.failed_rounds(text))
+    return report
+
+
+def record_findings(ctx: Context) -> str:
+    task = state.task_file(ctx.project, ctx.tid)
+    text = core.read_task(task)
+    head, sep, rest = text.partition("\n## Checkpoint\n")
+    body, sep2, tail = rest.partition("\n## ")
+    marker = f"Review round {ctx.round} FAIL:"
+    if not sep or not sep2:
+        raise state.StateError("task file has no ## Checkpoint section before another section")
+    if re.search(rf"^{re.escape(marker)}", body, re.M):
+        return "already recorded"
+    kept = [f for n, f in enumerate(ctx.findings, 1) if n not in ctx.reject]
+    why = " ".join((ctx.why or "").split())
+    lines = [marker, *kept, *(f"Coordinator rejected finding {n}: {why}" for n in ctx.reject)]
+    core.write_text(task, head + sep + body.rstrip("\n") + "\n" + tasks.clean_text("\n".join(lines)) + "\n" + sep2 + tail)
+    return f"{len(kept)} finding(s) under {marker}"
+
+
+def step_back(ctx: Context) -> str:
+    try:
+        out = omi(ctx, "step", ctx.tid, "back", *(["--why", ctx.why] if ctx.why else []))
+    except state.StateError as exc:
+        limit = next((l for l in str(exc).splitlines() if l.startswith("ROUND LIMIT")), None)
+        if limit:
+            print(limit)
+            raise Stop(1) from exc
+        raise
+    ctx.progress["replan"] = next((l for l in out.splitlines() if l.startswith("REPLAN")), "")
+    return "done"
+
+
+def pr_back_to_draft(ctx: Context) -> str:
+    select_remote(ctx)
+    if not ctx.target:
+        return "skipped (no GitHub remote)"
+    open_prs = json.loads(gh(ctx, "list", "--state", "open", "--head", f"task/{ctx.tid}", "--json", "number,isDraft"))
+    ready = [p for p in open_prs if not p.get("isDraft")]
+    if not ready:
+        return "skipped (no open non-draft PR)"
+    gh(ctx, "ready", "--undo", str(ready[0]["number"]))
+    return "back to draft"
+
+
+def engineer(ctx: Context) -> str:
+    text = core.read_task(state.task_file(ctx.project, ctx.tid))
+    meta = core.parse(text)
+    steps = workflows.get_workflow(ctx.project.state, meta.get("workflow") or workflows.DEFAULT_WORKFLOW)
+    role = next(s["role"] for s in steps if s["id"] == meta.get("step"))
+    if ctx.progress.get("replan") and role != "omi-agent-architect":
+        print(ctx.progress["replan"])
+        raise Stop(1)
+    if not any(r["tid"] == ctx.tid and r["role"] == role and r["started"] >= ctx.rec["started"] for r in dispatch.records(ctx.project.code)):
+        omi(ctx, "dispatch", role, ctx.tid)
+    return f"{role} dispatched"
+
+
+def advance_fail(ctx: Context) -> None:
+    ctx.report = eligible_fail(ctx)
+    print(f"eligibility: review FAIL for {ctx.step['id']}, round {ctx.round}")
+    if ctx.reject and (bad := [n for n in ctx.reject if not 1 <= n <= len(ctx.findings)]):
+        raise state.StateError(f"--reject {bad}: the report has {len(ctx.findings)} finding(s)")
+    if ctx.reject and not (ctx.why or "").strip():
+        raise state.StateError('--reject needs --why "<reason>"')
+    if not [n for n in range(1, len(ctx.findings) + 1) if n not in ctx.reject]:
+        print("all findings rejected: nothing stepped back; the Coordinator decides (override with `omi step done --po` or fix)")
+        raise Stop(1)
+    perform(ctx, "findings", record_findings)
+    perform(ctx, "step-back", step_back)
+    perform(ctx, "pr-draft", pr_back_to_draft)
+    perform(ctx, "dispatch", engineer)
+
+
+def advance(project: state.Project, tid: str, message: str | None = None, reject: list[int] | None = None, why: str | None = None) -> None:
+    """Advance only the newest successful run: a DONE write run to its reviewer, a review FAIL back to the engineer; stop at the first failed stage."""
     ctx = None
     try:
         rec = newest_run(project, tid)
         with core.file_lock(rec["dir"] / "advance.lock", 0):
             path = rec["dir"] / "advance.json"
             progress = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-            ctx = Context(project, tid, rec, progress, message)
+            ctx = Context(project, tid, rec, progress, message, reject or [], why)
+            if rec["role"] in tasks.REVIEW_ROLES:
+                return advance_fail(ctx)
+            if reject or why:
+                raise state.StateError("--reject and --why apply only after a review FAIL")
             ctx.rec, ctx.report, ctx.step, ctx.following = eligible(ctx)
             print("eligibility: DONE write run for " + ctx.step["id"])
             perform(ctx, "scope", check_scope, remember=False)
@@ -251,6 +371,8 @@ def advance(project: state.Project, tid: str, message: str | None = None) -> Non
             perform(ctx, "step-done", step_done)
             perform(ctx, "step-next", step_next)
             perform(ctx, "dispatch", reviewer)
+    except Stop:
+        raise
     except (SystemExit, state.StateError, OSError, ValueError, TimeoutError) as exc:
         stage = ctx.stage if ctx else "eligibility"
         raise SystemExit(f"advance {stage} FAILED: {exc}") from exc
