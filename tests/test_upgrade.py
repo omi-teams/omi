@@ -14,6 +14,31 @@ from unittest.mock import patch
 from helpers import detached_cli, detached_project, omi, state_remote
 
 
+
+def test_template_map_without_per_file_stats() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        contents = {
+            "AGENTS.md": b"agents\n",
+            "dot-omi/rules/python.md": b"rules\n",
+            "dot-omi/rules/CATALOG.md": b"generated\n",
+            "dot-omi/__pycache__/cached.py": b"cache\n",
+            "dot-omi/compiled.pyc": b"bytecode\n",
+            "docker/prove.sh": b"prove\n",
+        }
+        for rel, data in contents.items():
+            path = root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        with patch.object(Path, "is_dir", side_effect=AssertionError("per-entry template stat")):
+            found = omi.setup.upgrade.template_map(root)
+        assert list(found) == ["AGENTS.md", "docker/prove.sh", ".omi/rules/python.md"], found
+        assert found[".omi/rules/python.md"] == root / "dot-omi/rules/python.md"
+        assert omi.setup.upgrade.template_shas(root)["AGENTS.md"] == omi.setup.upgrade.norm_sha(b"agents\n")
+        (root / "AGENTS.md").write_bytes(b"changed\n")
+        assert omi.setup.upgrade.template_shas(root)["AGENTS.md"] == omi.setup.upgrade.norm_sha(b"changed\n")
+
+
 def test_version_stamp_package_hook():
     import fnmatch, glob
     want = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
@@ -669,6 +694,7 @@ def test_status_drift_hints():
 
 
 def main():
+    test_template_map_without_per_file_stats()
     test_upgrade_gitattributes()
     test_version_stamp_package_hook()
     test_upgrade()
