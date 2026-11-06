@@ -72,10 +72,17 @@ def launch(project: state.Project, tid: str, role: str, argv: list[str] | None =
     rundir.mkdir(parents=True)
     argv = argv or [sys.executable, "-m", "omi", "run", role, tid]
     core.write_text(rundir / "argv.json", json.dumps({"tid": tid, "role": role, "argv": argv}))
-    flags = {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP} if core.WINDOWS else {"start_new_session": True}
-    with (rundir / "log").open("a", encoding="utf-8", newline="\n") as log:  # wrapper start-up errors land in the log too
-        subprocess.Popen([sys.executable, "-W", "ignore::RuntimeWarning", "-m", "omi.worker.dispatch", str(rundir)], cwd=project.code, stdin=subprocess.DEVNULL,
-                         stdout=log, stderr=log, **flags)
+    command = [sys.executable, "-W", "ignore::RuntimeWarning", "-m", "omi.worker.dispatch"]
+    with (rundir / "log").open("a", encoding="utf-8", newline="\n") as log:
+        if core.WINDOWS:
+            # Reap the short-lived parent before returning, so tree kills cannot find the wrapper.
+            result = subprocess.run([*command, "--spawn", str(rundir)], cwd=project.code, stdin=subprocess.DEVNULL,
+                                    stdout=subprocess.PIPE, stderr=log, text=True, encoding="utf-8", check=True,
+                                    creationflags=subprocess.CREATE_NO_WINDOW)
+            print(result.stdout, end="")  # forward any breakaway warning from the spawner
+        else:
+            subprocess.Popen([*command, str(rundir)], cwd=project.code, stdin=subprocess.DEVNULL,
+                             stdout=log, stderr=log, start_new_session=True)
     deadline = time.monotonic() + 10
     while not (rundir / "started").exists():
         if time.monotonic() > deadline:
@@ -83,6 +90,23 @@ def launch(project: state.Project, tid: str, role: str, argv: list[str] | None =
         time.sleep(0.05)
     print(f"started {role} on {tid}: {rundir.name} (omi watch)")
     return rundir
+
+
+def spawn(rundir: Path) -> None:
+    """Windows intermediary: start the wrapper and exit, orphaning it before launch() returns."""
+    flags = {"creationflags": subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_BREAKAWAY_FROM_JOB}
+    with (rundir / "log").open("a", encoding="utf-8", newline="\n") as log:  # wrapper start-up errors land in the log too
+        for attempt in range(2):
+            try:
+                subprocess.Popen([sys.executable, "-W", "ignore::RuntimeWarning", "-m", "omi.worker.dispatch", str(rundir)], cwd=Path.cwd(), stdin=subprocess.DEVNULL,
+                                 stdout=log, stderr=log, **flags)
+                break
+            except OSError as exc:
+                if not core.WINDOWS or attempt or getattr(exc, "winerror", None) != 5:
+                    raise
+                # Jobs without JOB_OBJECT_LIMIT_BREAKAWAY_OK reject breakaway with access denied.
+                flags["creationflags"] &= ~subprocess.CREATE_BREAKAWAY_FROM_JOB
+                print("warning: the host job forbids breakaway; retrying without it. This run dies with the session.")
 
 
 def wrap(rundir: Path) -> None:
@@ -111,11 +135,18 @@ def verdict(report: str) -> str:
     return m[1] if m else tools.verdict_of(report) or "n/a"
 
 
+def killed(rc: int | None) -> bool:
+    """Recognize signal exits and Windows control-event / NTSTATUS termination codes."""
+    return rc is not None and (rc < 0 or (core.WINDOWS and (rc == 0x40010004 or rc >= 0x80000000)))
+
+
 def next_action(project: state.Project, rec: dict, text: str, report: str) -> str:
     """One line: `NEXT:` the deterministic follow-up, or `DECIDE:` what the Coordinator must judge."""
     tid, rc, v = rec["tid"], rec["rc"], verdict(report)
     if rc is None:
         return f"DECIDE: LOST, the wrapper died without an exit code; check docker and {rec['dir'] / 'log'}, then rerun"
+    if killed(rc):
+        return f"DECIDE: LOST, killed: rerun; check docker and {rec['dir'] / 'log'}"
     if v == "NEEDS SCOPE":
         return f"DECIDE: {report.splitlines()[0]}; widen scope or file a new task; see the report and the log"
     why = {3: "out of scope or plan violation: accept the paths (NEEDS SCOPE) or revert them",
@@ -153,7 +184,7 @@ def watch(project: state.Project, wait: bool = False, show_all: bool = False) ->
     for r in fresh:
         text = found.get(r["tid"], {}).get("_text", "")
         report = last_report(text, r["role"], r["started"])
-        print(f"finished: {r['tid']} {r['role']} rc={'LOST' if r['rc'] is None else r['rc']} verdict={verdict(report)} ({r['dir'].name})")
+        print(f"finished: {r['tid']} {r['role']} rc={'LOST' if r['rc'] is None or killed(r['rc']) else r['rc']} verdict={verdict(report)} ({r['dir'].name})")
         print("  " + next_action(project, r, text, report))
         if r["rc"] is not None:
             tail = (r["dir"] / "log").read_text(encoding="utf-8", errors="replace").strip().splitlines()[-1:]
@@ -164,4 +195,7 @@ def watch(project: state.Project, wait: bool = False, show_all: bool = False) ->
 
 
 if __name__ == "__main__":
-    wrap(Path(sys.argv[1]))
+    if sys.argv[1] == "--spawn":
+        spawn(Path(sys.argv[2]))
+    else:
+        wrap(Path(sys.argv[1]))

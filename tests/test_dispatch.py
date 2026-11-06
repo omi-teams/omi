@@ -3,6 +3,8 @@ import contextlib
 import datetime
 import io
 import os
+import runpy
+import warnings
 import signal
 import sys
 import tempfile
@@ -31,6 +33,141 @@ def watch(project, *flags):
     with contextlib.redirect_stdout(out):
         dispatch.watch(project, "--wait" in flags, "--all" in flags)
     return out.getvalue()
+
+
+@contextlib.contextmanager
+def windows_launch():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        project = state.Project(state=root, code=root)
+        def started(argv, **kwargs):
+            (Path(argv[-1]) / "started").write_text("123", encoding="utf-8")
+        def spawner(argv, **kwargs):
+            out = io.StringIO()
+            with patch.object(sys, "argv", argv[4:]), contextlib.chdir(kwargs["cwd"]), contextlib.redirect_stdout(out), warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                runpy.run_module("omi.worker.dispatch", run_name="__main__")
+            return dispatch.subprocess.CompletedProcess(argv, 0, stdout=out.getvalue())
+        with patch.object(dispatch.core, "WINDOWS", True), \
+                patch.object(dispatch.subprocess, "DETACHED_PROCESS", 8, create=True), \
+                patch.object(dispatch.subprocess, "CREATE_NO_WINDOW", 0x08000000, create=True), \
+                patch.object(dispatch.subprocess, "CREATE_NEW_PROCESS_GROUP", 512, create=True), \
+                patch.object(dispatch.subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0x01000000, create=True), \
+                patch.object(dispatch, "records", return_value=[]), \
+                patch.object(dispatch, "runs_dir", return_value=root / "runs"), \
+                patch.object(dispatch.subprocess, "Popen", side_effect=started) as popen, \
+                patch.object(dispatch.subprocess, "run", side_effect=spawner) as run:
+            yield project, popen, started, run
+
+
+def test_windows_launch_uses_spawner() -> None:
+    with windows_launch() as (project, popen, _, run), contextlib.redirect_stdout(io.StringIO()):
+        rundir = dispatch.launch(project, "TASK-227", "omi-agent-engineer")
+        assert run.call_count == 1, "Windows launch must wait for a short-lived spawner"
+        assert run.call_args.args[0][-2:] == ["--spawn", str(rundir)]
+        assert run.call_args.kwargs["creationflags"] == 0x08000000
+        assert run.call_args.kwargs["check"] is True
+        assert run.call_args.kwargs["cwd"] == project.code
+        assert popen.call_args.args[0][-1] == str(rundir)
+        assert "--spawn" not in popen.call_args.args[0]
+        assert popen.call_args.kwargs["cwd"] == project.code
+        assert (rundir / "started").exists()
+
+
+def test_windows_launch_waits_for_wrapper() -> None:
+    with windows_launch() as (project, popen, started, run), contextlib.redirect_stdout(io.StringIO()):
+        popen.side_effect = lambda *a, **kw: None
+        with patch.object(dispatch.time, "sleep", side_effect=lambda _: started(popen.call_args.args[0])) as sleep:
+            dispatch.launch(project, "TASK-227", "omi-agent-engineer")
+        assert run.call_count == 1
+        sleep.assert_called_once_with(0.05)
+
+
+def test_posix_launch_stays_direct() -> None:
+    with windows_launch() as (project, popen, _, run), patch.object(dispatch.core, "WINDOWS", False), \
+            contextlib.redirect_stdout(io.StringIO()):
+        rundir = dispatch.launch(project, "TASK-227", "omi-agent-engineer")
+        run.assert_not_called()
+        assert popen.call_count == 1
+        assert popen.call_args.args[0][-1] == str(rundir)
+        assert "--spawn" not in popen.call_args.args[0]
+        assert popen.call_args.kwargs["start_new_session"] is True
+        assert "creationflags" not in popen.call_args.kwargs
+
+
+def test_windows_spawner_failure_propagates() -> None:
+    with windows_launch() as (project, popen, _, run), contextlib.redirect_stdout(io.StringIO()):
+        error = dispatch.subprocess.CalledProcessError(1, ["spawner"])
+        run.side_effect = error
+        try:
+            dispatch.launch(project, "TASK-227", "omi-agent-engineer")
+        except dispatch.subprocess.CalledProcessError as exc:
+            assert exc is error
+        else:
+            raise AssertionError("spawner failure was swallowed")
+        popen.assert_not_called()
+
+
+def test_windows_launch_breaks_away() -> None:
+    with windows_launch() as (project, popen, _, _), contextlib.redirect_stdout(io.StringIO()) as out:
+        dispatch.launch(project, "TASK-227", "omi-agent-engineer")
+        assert popen.call_count == 1
+        assert popen.call_args.kwargs["creationflags"] == 0x08000000 | 512 | 0x01000000
+        assert "warning" not in out.getvalue().lower()
+
+
+def test_windows_launch_breakaway_denied() -> None:
+    denied = OSError("job forbids breakaway")
+    denied.winerror = 5
+    with windows_launch() as (project, popen, started, _), contextlib.redirect_stdout(io.StringIO()) as out:
+        def launch(argv, **kwargs):
+            if popen.call_count == 1:
+                raise denied
+            return started(argv, **kwargs)
+        popen.side_effect = launch
+        dispatch.launch(project, "TASK-227", "omi-agent-engineer")
+        assert popen.call_count == 2
+        assert [c.kwargs["creationflags"] for c in popen.call_args_list] == [0x08000000 | 512 | 0x01000000, 0x08000000 | 512]
+        assert popen.call_args_list[0].args == popen.call_args_list[1].args
+        assert "warning" in out.getvalue().lower() and "dies with the session" in out.getvalue()
+
+
+def test_windows_launch_errors_propagate() -> None:
+    for winerror, expected_calls in ((2, 1), (5, 2)):
+        error = OSError("launch failed")
+        error.winerror = winerror
+        with windows_launch() as (project, popen, _, _), contextlib.redirect_stdout(io.StringIO()):
+            popen.side_effect = error
+            try:
+                dispatch.launch(project, "TASK-227", "omi-agent-engineer")
+            except OSError as exc:
+                assert exc is error
+            else:
+                raise AssertionError("launch failure was swallowed")
+            assert popen.call_count == expected_calls
+
+
+def test_watch_windows_termination_codes() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        project = state.Project(state=root, code=root)
+        (root / "log").write_text("interrupted\n", encoding="utf-8")
+        rec = {"tid": "TASK-227", "role": "omi-agent-engineer", "dir": root,
+               "started": datetime.datetime(2026, 11, 6), "running": False, "reported": False}
+        text = "\n## Reports\n2026-11-06 00:00 omi-agent-engineer (codex):\n> DONE\n"
+        for rc in (1073807364, 0x80000000, 0xFFFFFFFF, -1073741510, -1, 0, 6, 0x40010003, 0x7FFFFFFF):
+            killed = rc == 1073807364 or rc >= 0x80000000 or rc < 0
+            with patch.object(dispatch.core, "WINDOWS", True), \
+                    patch.object(dispatch, "records", return_value=[{**rec, "rc": rc}]), \
+                    patch.object(dispatch.tasks, "tasks", return_value={"TASK-227": {"_text": text}}), \
+                    patch.object(dispatch.docker, "print_workers"), \
+                    patch.object(dispatch.catalogs, "load_roles", return_value={"omi-agent-engineer": {"access": "write"}}):
+                out = watch(project)
+            if killed:
+                assert "rc=LOST" in out and "killed: rerun" in out, out
+                assert "NEXT:" not in out and f"exit {rc}" not in out, out
+            else:
+                assert f"rc={rc}" in out and "killed: rerun" not in out, out
 
 
 def test_two_runs_finish_together() -> None:
@@ -149,6 +286,14 @@ def test_reviewer_next_action() -> None:
 
 
 def main():
+    test_windows_launch_uses_spawner()
+    test_windows_launch_waits_for_wrapper()
+    test_posix_launch_stays_direct()
+    test_windows_spawner_failure_propagates()
+    test_windows_launch_breaks_away()
+    test_windows_launch_breakaway_denied()
+    test_windows_launch_errors_propagate()
+    test_watch_windows_termination_codes()
     test_two_runs_finish_together()
     test_lost_wrapper_and_exit_codes()
     test_needs_scope_over_hook_failure()
