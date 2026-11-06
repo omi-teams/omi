@@ -382,6 +382,29 @@ def test_status_phase_and_step_lines() -> None:
         assert "bước 0/" not in output.getvalue()
 
 
+def test_status_next_resumes_orphaned_and_flags_unhandled() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        omi.setup.upgrade.init(root)
+        for tid, status in (("TASK-001", "in-progress"), ("TASK-002", "in-progress"), ("TASK-003", "planned")):
+            (root / f".omi/tasks/{tid}.md").write_text(f"---\nid: {tid}\ntitle: T\nstatus: {status}\n---\n", encoding="utf-8")
+
+        def run(recs: list[dict], rows: list[list[str]]) -> str:
+            output = io.StringIO()
+            with patch("omi.worker.dispatch.records", return_value=recs), patch("omi.worker.docker.running_workers", return_value=rows), \
+                    contextlib.redirect_stdout(output):
+                omi.app.cli.status(root)
+            return output.getvalue()
+
+        out = run([], [])
+        assert "next: TASK-001 (resume) TASK-002 (resume) TASK-003\n" in out
+        assert "not handled" not in out
+        busy = {"tid": "TASK-001", "running": True, "reported": False}
+        assert "next: TASK-002 (resume) TASK-003\n" in run([busy], [])
+        assert "next: TASK-001 (resume) TASK-003\n" in run([], [["TASK-002", "r", "m", "e", "0"]])
+        done = {"tid": "TASK-002", "running": False, "reported": False}
+        assert "finished runs not handled: 1; run python -m omi watch\n" in run([done], [])
+
 
 def register_omi(project: Path) -> Path:
     root = project.parent / "omi"
@@ -544,6 +567,7 @@ def main():
     test_improve_fallback_and_validation()
     test_improve_status_count()
     test_status_phase_and_step_lines()
+    test_status_next_resumes_orphaned_and_flags_unhandled()
     test_step_po_flag()
     test_clean_args()
     test_step_records_behind()

@@ -369,7 +369,7 @@ def test_init_guard_status():
         finally:
             sys.stdout = real
         text = out.getvalue()
-        assert "Next: wire it" in text and "next: TASK-003" in text, text
+        assert "Next: wire it" in text and "next: TASK-001 (resume) TASK-003" in text, text
         assert "(step:" not in text
         (wt / ".omi" / "tasks" / "TASK-001.md").write_text(
             "---\ntitle: A\nstatus: in-progress\nstep: build\nscope: src/**\n---\n## Checkpoint\nNext: wire it\n")
