@@ -28,6 +28,7 @@ import test_board_server
 import test_board_web
 import test_structure
 import test_dispatch
+import test_advance
 
 from omi.project import tasks
 from omi.setup import upgrade
@@ -208,6 +209,7 @@ if __name__ == "__main__":
     test_board_web.main()
     test_structure.main()
     test_dispatch.main()
+    test_advance.main()
     skipped = sorted(f"{mod}.{name}" for mod, name in defined - called)
     assert not skipped, f"test functions never called by a main(): {', '.join(skipped)}"
     print("skipped: " + ("; ".join(real_skips) if real_skips else "none"))

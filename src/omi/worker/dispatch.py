@@ -16,8 +16,7 @@ from . import docker, tools
 
 START_GRACE = 10  # seconds launch() waits for the wrapper
 STAMP = "%Y%m%d-%H%M%S"
-# Until `omi advance` exists the Coordinator does the deterministic steps by hand; the text names them.
-WRITE_DONE = "NEXT: diff and scope check, commit with the report's Suggested commit, host-test, step done/next, start the reviewer"
+WRITE_DONE = "NEXT: python -m omi advance {tid}"
 READ_PASS = "NEXT: tick the ✓ criteria, status done, step done, PR ready, CI, squash merge, pull, clean, post-merge test"
 READ_FAIL = "NEXT: step back, copy the finding lines under `Review round N FAIL:` in Checkpoint, PR back to draft, rerun the engineer"
 
@@ -55,7 +54,7 @@ def records(code: Path) -> list[dict]:
         found.append({"dir": d, "tid": info["tid"], "role": info["role"], "rc": rc, "running": live,
                       "reported": (d / "reported").exists(),
                       "started": datetime.datetime.strptime(d.name.rsplit("-", 2)[1] + "-" + d.name.rsplit("-", 2)[2], STAMP)})
-    return found
+    return sorted(found, key=lambda r: r["started"])
 
 
 def launch(project: state.Project, tid: str, role: str, argv: list[str] | None = None) -> Path:
@@ -156,7 +155,7 @@ def next_action(project: state.Project, rec: dict, text: str, report: str) -> st
         return f"DECIDE: {why or (v if v != 'n/a' else f'exit {rc}')}; see the report and the log"
     access = catalogs.load_roles(project.state).get(rec["role"], {}).get("access")
     if access == "write":
-        return WRITE_DONE if v == "DONE" else "DECIDE: no DONE in the report; read it and the log"
+        return WRITE_DONE.format(tid=tid) if v == "DONE" else "DECIDE: no DONE in the report; read it and the log"
     if v == "PASS":
         return READ_PASS
     if v == "FAIL":

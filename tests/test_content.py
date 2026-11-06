@@ -721,7 +721,17 @@ def test_scope_questions_not_sent_to_po() -> None:
     assert "Only the PO widens scope" not in change
 
 
+def test_dispatch_watch_advance_templates() -> None:
+    for relative in ('AGENTS.md', 'dot-claude/skills/omi-task/SKILL.md'):
+        text = (omi.common.core.TEMPLATE / relative).read_text(encoding='utf-8')
+        for command in ('omi dispatch', 'omi watch', 'omi advance'):
+            assert command in text, (relative, command)
+        assert 'GitHub remote' in text and 'host-test' in text
+        assert 'security reviewer' in text and 'completed stages' in text
+
+
 def main():
+    test_dispatch_watch_advance_templates()
     test_scope_questions_not_sent_to_po()
     test_pattern_library()
     test_structure_rules_in_roles()
