@@ -242,20 +242,22 @@ def test_pass_real_report_format() -> None:
 
 def test_pass_post_merge_config_command() -> None:
     cmd = 'python check.py && echo ok'
-    cases = [(False, ['sh', '-c', cmd], ['sh', '-c', cmd]),
-             (True, [r'C:\Program Files\Git\bin\bash.exe', '-c', cmd],
+    cases = [(False, None, ['sh', '-c', cmd]),
+             (True, r'C:\Program Files\Git\bin\bash.exe',
               [r'C:\Program Files\Git\bin\bash.exe', '-c', cmd]),
-             (True, f'cmd /d /s /c "{cmd}"', ['cmd', '/d', '/s', '/c', cmd])]
-    for windows, shell_output, expected in cases:
+             (True, None, ['cmd', '/d', '/s', '/c', cmd])]
+    for windows, bash_path, expected in cases:
         with accepted() as h, patch.object(advance.core, 'WINDOWS', windows), \
-                patch.object(advance.accept.run, 'shell_command', return_value=shell_output) as shell, \
+                patch.object(advance.accept.run, 'host_bash', return_value=bash_path), \
+                patch.object(advance.accept.run.shutil, 'which', return_value=None), \
+                patch.object(advance.accept.run, 'shell_command', wraps=advance.accept.run.shell_command) as shell, \
                 patch.object(advance.subprocess, 'CREATE_NO_WINDOW', 0x08000000, create=True), \
                 patch.object(advance.subprocess, 'run', wraps=advance.subprocess.run) as run:
             config = h.project.state / '.omi' / 'config.json'
             config.parent.mkdir()
             config.write_text(json.dumps({'host_test': cmd}), encoding='utf-8')
             error, _ = h.invoke()
-            assert not error, (windows, shell_output, error)
+            assert not error, (windows, bash_path, error)
             shell.assert_called_once_with(cmd)
             test_calls = [call for call in run.call_args_list if call.args[0] == expected]
             assert len(test_calls) == 1, (expected, h.calls)
@@ -286,11 +288,11 @@ def test_pass_real_auto_gate_steps() -> None:
 
 def test_pass_windows_post_merge_failure() -> None:
     cmd = 'python check.py'
-    for shell_output, expected in [([r'C:\Program Files\Git\bin\bash.exe', '-c', cmd],
-                                   [r'C:\Program Files\Git\bin\bash.exe', '-c', cmd]),
-                                  (f'cmd /d /s /c "{cmd}"', ['cmd', '/d', '/s', '/c', cmd])]:
+    for bash_path, expected in [(r'C:\Program Files\Git\bin\bash.exe',
+                                 [r'C:\Program Files\Git\bin\bash.exe', '-c', cmd]),
+                                (None, ['cmd', '/d', '/s', '/c', cmd])]:
         with accepted() as h, patch.object(advance.core, 'WINDOWS', True), \
-                patch.object(advance.accept.run, 'shell_command', return_value=shell_output), \
+                patch.object(advance.accept.run, 'host_bash', return_value=bash_path), \
                 patch.object(advance.subprocess, 'CREATE_NO_WINDOW', 0x08000000, create=True):
             config = h.project.state / '.omi' / 'config.json'
             config.parent.mkdir()
@@ -303,7 +305,7 @@ def test_pass_windows_post_merge_failure() -> None:
 
 
 def test_pass_no_ci_checks_blocks_merge() -> None:
-    # The task requires a final checks exit 0, even for repositories without CI.
+    # Missing checks block merge without falsely reopening a completed task.
     with accepted() as h:
         original = advance.subprocess.run
         def run(argv, **kw):
@@ -313,9 +315,70 @@ def test_pass_no_ci_checks_blocks_merge() -> None:
             return original(argv, **kw)
         with patch.object(advance.subprocess, 'run', side_effect=run):
             error, _ = h.invoke()
-        assert 'CI failed: unknown check' in error, error
-        assert any(c[-3:] == ['reopen', '--why', 'CI failed: unknown check'] for c in h.calls)
+        assert 'no checks reported' in error, error
+        assert not any('reopen' in c for c in h.calls)
+        assert not json.loads((h.run_dir / 'advance.json').read_text(encoding='utf-8')).get('ci-failed')
         assert not any(c[:3] == ['gh', 'pr', 'merge'] for c in h.calls)
+
+
+def test_pass_pr_body_filters_reports_and_describes_changes() -> None:
+    with accepted() as h:
+        text = h.text.replace('workflow: flow', 'workflow: flow\nfiles: src/input.py, tests/test_input.py')
+        text = text.replace('## Acceptance criteria', '## Goal\nValidate incoming requests.\n\n## Acceptance criteria')
+        text = text.replace('## Usage', '2026-11-06 11:22 hook post-run passed:\n> Conflict. The container name /tmp/private-token\n'
+                            '> VERDICT: PASS\n> Known issues: /tmp/private-token\n\n## Usage')
+        text = text.replace('> ✓ handles input', '> /tmp/private-token\n> ✓ handles input')
+        h.task.write_text(text, encoding='utf-8')
+        error, _ = h.invoke()
+        assert not error, error
+        body = (h.run_dir / 'pr-body.md').read_text(encoding='utf-8')
+        assert '/tmp/private-token' not in body and 'Conflict.' not in body and 'hook post-run' not in body
+        assert 'Validate incoming requests.' in body
+        assert '- src/input.py' in body and '- tests/test_input.py' in body
+        assert 'Changes outside the task scope' in body
+        assert '- [x] handles input' not in body
+        assert 'omi-agent-reviewer' in body and 'VERDICT: PASS' in body
+
+
+def test_pass_host_error_prints_recordable_line() -> None:
+    with accepted() as h:
+        request = 'native Windows check: run python check.py on the host'
+        text = h.text.replace('HOST: python check.py', 'HOST: ' + request)
+        h.task.write_text(text, encoding='utf-8')
+        error, _ = h.invoke()
+        assert f'Host: {request} -> PASS' in error, error
+        assert not h.calls and h.task.read_text(encoding='utf-8') == text
+        h.task.write_text(text.replace('Host: python check.py -> PASS', f'Host: {request} -> PASS'), encoding='utf-8')
+        assert not h.invoke()[0]
+
+
+def test_pass_ci_classifies_check_results() -> None:
+    for final in (False, True):
+        for bucket in ('pending', 'pass', 'fail', 'cancel', 'empty', 'invalid'):
+            with accepted() as h:
+                original = advance.subprocess.run
+                def run(argv, **kw):
+                    if argv[:3] != ['gh', 'pr', 'checks']:
+                        return original(argv, **kw)
+                    h.calls.append(argv)
+                    if '--json' in argv:
+                        rows = [] if bucket == 'empty' else [{'name': 'unit', 'bucket': bucket}]
+                        return subprocess.CompletedProcess(argv, 1, 'invalid JSON' if bucket == 'invalid' else json.dumps(rows), '')
+                    return subprocess.CompletedProcess(argv, int(not final or '--watch' not in argv), '', '')
+                with patch.object(advance.subprocess, 'run', side_effect=run):
+                    error, _ = h.invoke()
+                assert ('merge FAILED' if final else 'ci FAILED') in error, error
+                reopens = [c for c in h.calls if 'reopen' in c]
+                assert bool(reopens) == (bucket in ('fail', 'cancel')), (bucket, error)
+                assert not any(c[:3] == ['gh', 'pr', 'merge'] for c in h.calls)
+                if bucket in ('fail', 'cancel'):
+                    assert reopens[0][-1] == 'CI failed: unit'
+                else:
+                    assert not json.loads((h.run_dir / 'advance.json').read_text(encoding='utf-8')).get('ci-failed')
+                if bucket == 'empty':
+                    assert 'no checks reported' in error
+                if bucket == 'invalid':
+                    assert 'CI status unavailable' in error
 
 
 def main():
@@ -332,6 +395,9 @@ def main():
     test_pass_stage_failures_and_retry()
     test_pass_ci_red_reopens()
     test_pass_no_ci_checks_blocks_merge()
+    test_pass_pr_body_filters_reports_and_describes_changes()
+    test_pass_host_error_prints_recordable_line()
+    test_pass_ci_classifies_check_results()
     test_pass_local_and_post_merge_failure()
 
 

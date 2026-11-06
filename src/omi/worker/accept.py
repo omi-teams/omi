@@ -5,13 +5,14 @@ import json
 import re
 import sys
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from typing import Any
 
 from ..common import core
 from ..project import tasks, workflows
 from ..state import resolve as state
-from . import dispatch, run
+from . import dispatch, pr, run
 
 
 def section(text: str, heading: str) -> str:
@@ -41,11 +42,12 @@ def check_hosts(text: str, report: str) -> None:
     passed = set(re.findall(r'^Host: (.+?) -> (?:PASS(?:\b.*)?|passed(?:\b.*)?|0|exit 0)$', checkpoint, re.M))
     pending = [h for h in hosts if h not in passed]
     if pending:
-        raise state.StateError('HOST checks need a passing Host: line under ## Checkpoint: ' + '; '.join(pending))
+        raise state.StateError('HOST checks need a passing Host: line under ## Checkpoint; after running each check, record: '
+                               + '; '.join(f'Host: {item} -> PASS' for item in pending))
 
 
-def advance_pass(ctx: Any, perform: Callable, command: Callable) -> None:
-    """Reuse advance's context, atomic stage journal and console-free argv runner."""
+def eligible(ctx: Any) -> bool:
+    """Validate the current review and all report evidence before any mutation."""
     task = state.task_file(ctx.project, ctx.tid)
     text = core.read_task(task)
     ctx.report = dispatch.last_report(text, ctx.rec['role'], ctx.rec['started'])
@@ -78,147 +80,209 @@ def advance_pass(ctx: Any, perform: Callable, command: Callable) -> None:
         raise state.StateError('PASS requires a next reviewer or a final auto acceptance gate')
     if not next_review:
         marked_criteria(text, ctx.report)  # all untrusted-input checks precede mutation
+    ctx.step, ctx.following = steps[at], following
+    ctx.review_roles = tuple(s['role'] for s in steps if s.get('gate') == 'review')
     ctx.progress['step'] = sid
-    print('eligibility: review PASS for ' + sid)
+    return next_review
 
-    def omi(*args):
-        return command(ctx.project.code, [sys.executable, '-m', 'omi', *args])
 
-    def done(_):
-        if tasks.step_states(core.read_task(task)).get(sid) != 'done':
-            omi('step', ctx.tid, 'done')
+def task_file(ctx: Any) -> Path:
+    return state.task_file(ctx.project, ctx.tid)
 
-    def next_step(_):
-        if core.meta(task).get('step') != following['id']:
-            omi('step', ctx.tid, 'next')
 
+def omi(ctx: Any, command: Callable, *args: str) -> str:
+    return command(ctx.project.code, [sys.executable, '-m', 'omi', *args])
+
+
+def gh(ctx: Any, command: Callable, *args: str, allowed: tuple[int, ...] = (0,)) -> str:
+    # The main checkout survives --delete-branch and supplies host authentication.
+    return command(ctx.project.code, ['gh', 'pr', *args, '--repo', ctx.progress['repository']], allowed=allowed)
+
+
+def stage(ctx: Any, perform: Callable, command: Callable, name: str, action: Callable) -> None:
+    perform(ctx, name, partial(action, command=command))
+
+
+def tick_criteria(ctx: Any, command: Callable) -> None:
+    task = task_file(ctx)
+    core.write_text(task, tasks.set_front(marked_criteria(core.read_task(task), ctx.report), 'status', 'done'))
+
+
+def step_done(ctx: Any, command: Callable) -> None:
+    if tasks.step_states(core.read_task(task_file(ctx))).get(ctx.step['id']) != 'done':
+        omi(ctx, command, 'step', ctx.tid, 'done')
+
+
+def step_next(ctx: Any, command: Callable) -> None:
+    if core.meta(task_file(ctx)).get('step') != ctx.following['id']:
+        omi(ctx, command, 'step', ctx.tid, 'next')
+
+
+def reviewer(ctx: Any, command: Callable) -> None:
+    if not any(r['tid'] == ctx.tid and r['role'] == ctx.following['role'] and r['started'] >= ctx.rec['started']
+               for r in dispatch.records(ctx.project.code)):
+        omi(ctx, command, 'dispatch', ctx.following['role'], ctx.tid)
+
+
+def accept_done(ctx: Any, command: Callable) -> None:
+    if tasks.step_states(core.read_task(task_file(ctx))).get(ctx.following['id']) != 'done':
+        omi(ctx, command, 'step', ctx.tid, 'done')
+
+
+def pre_merge(ctx: Any, command: Callable) -> None:
+    omi(ctx, command, 'hook', 'pre-merge', ctx.tid)
+
+
+def accept_review(ctx: Any, perform: Callable, command: Callable, next_review: bool) -> None:
+    """Tick final criteria and finish acceptance, or hand off to the next reviewer."""
+    if not next_review:
+        stage(ctx, perform, command, 'criteria', tick_criteria)
+    stage(ctx, perform, command, 'step-done', step_done)
+    stage(ctx, perform, command, 'step-next', step_next)
     if next_review:
-        perform(ctx, 'step-done', done)
-        perform(ctx, 'step-next', next_step)
-        def reviewer(_):
-            if not any(r['tid'] == ctx.tid and r['role'] == following['role'] and r['started'] >= ctx.rec['started']
-                       for r in dispatch.records(ctx.project.code)):
-                omi('dispatch', following['role'], ctx.tid)
-        perform(ctx, 'dispatch', reviewer)
-        return
-
-    def criteria(_):
-        core.write_text(task, tasks.set_front(marked_criteria(core.read_task(task), ctx.report), 'status', 'done'))
-
-    perform(ctx, 'criteria', criteria)
-    perform(ctx, 'step-done', done)
-    perform(ctx, 'step-next', next_step)
-    def accept_done(_):
-        if tasks.step_states(core.read_task(task)).get(following['id']) != 'done':
-            omi('step', ctx.tid, 'done')
-    perform(ctx, 'accept-done', accept_done)
-    perform(ctx, 'pre-merge', lambda _: omi('hook', 'pre-merge', ctx.tid) and None)
-
-    # Persist remote and title before merging: gh may remove the worktree/branch.
-    def remote(_):
-        wt = core.task_worktrees(ctx.project.code).get(ctx.tid)
-        if not wt:
-            raise state.StateError('task worktree is missing')
-        if command(ctx.project.code, ['git', 'branch', '--show-current']) != 'development':
-            raise state.StateError('main checkout must be on development')
-        ctx.progress['worktree'] = str(wt)
-        for name in sorted(command(Path(wt), ['git', 'remote']).splitlines(), key=lambda n: n != 'origin'):
-            url = state.normalise_url(command(Path(wt), ['git', 'remote', 'get-url', name]))
-            if url.startswith('github.com/'):
-                ctx.progress.update(target=name, repository=url.removeprefix('github.com/'))
-                break
-    perform(ctx, 'remote', remote)
-    wt = Path(ctx.progress['worktree'])
-    repository = ctx.progress.get('repository')
-    branch = 'task/' + ctx.tid
-
-    def gh(*args, allowed=(0,)):
-        # Main checkout survives --delete-branch and supplies host authentication.
-        return command(ctx.project.code, ['gh', 'pr', *args, '--repo', repository], allowed=allowed)
-
-    def development():
-        if command(ctx.project.code, ['git', 'branch', '--show-current']) != 'development':
-            raise state.StateError('main checkout must be on development')
-        if command(ctx.project.code, ['git', 'status', '--porcelain']):
-            raise state.StateError('main checkout must be clean')
-
-    def commit(_):
-        if command(wt, ['git', 'status', '--porcelain', '--', '.', f':(exclude).omi/tasks/{ctx.tid}.md']):
-            raise state.StateError('worktree has changes beyond the acceptance task file')
-        if not ctx.project.detached:
-            relative = str(task.relative_to(wt))
-            if command(wt, ['git', 'status', '--porcelain', '--', relative]):
-                command(wt, ['git', 'add', '--', relative])
-                command(wt, ['git', 'commit', '-m', f'chore({ctx.tid}): accept review PASS'])
-    perform(ctx, 'commit', commit)
-
-    def title(_):
-        ctx.progress['pr-title'] = (json.loads(gh('view', branch, '--json', 'title'))['title'] if repository
-                                 else f'[{ctx.tid}] {ctx.meta.get("title", ctx.tid)}')
-    perform(ctx, 'title', title)
-    subject = ctx.progress['pr-title']
-    if repository:
-        perform(ctx, 'push', lambda _: command(wt, ['git', 'push', '-u', ctx.progress['target'], branch]) and None)
-        def body(_):
-            current = core.read_task(task)
-            verification = '\n'.join([section(current, 'Usage'),
-                                      '\n'.join(l for l in section(current, 'Checkpoint').splitlines() if l.startswith('Host:')),
-                                      section(current, 'Steps'), section(current, 'Reports')])
-            path = ctx.rec['dir'] / 'pr-body.md'
-            known = section(current, 'Known issues') or '\n'.join(
-                line.removeprefix('>').strip() for line in section(current, 'Reports').splitlines()
-                if line.removeprefix('>').strip().startswith('Known issues:')) or 'None reported.'
-            core.write_text(path, tasks.clean_text(f'## Summary\n{ctx.tid}: {ctx.meta.get("title", subject)}\n\n'
-                f'## Changes\n{section(current, "Acceptance criteria")}\n## Not in this PR\nNone.\n\n'
-                f'## Verification\n{verification}\n## Known issues\n{known}\n'))
-            gh('edit', branch, '--body-file', str(path))
-        perform(ctx, 'pr-body', body)
-        perform(ctx, 'ready', lambda _: gh('ready', branch) and None)
-
-        def checks(*args):
-            try:
-                gh('checks', branch, *args)
-            except state.StateError as exc:
-                names = []
-                try:
-                    rows = json.loads(gh('checks', branch, '--json', 'name,state,bucket', allowed=(0, 1, 8)))
-                    names = [r['name'] for r in rows if r.get('bucket') != 'pass']
-                except (state.StateError, ValueError, KeyError):
-                    pass
-                reason = 'CI failed: ' + ', '.join(re.sub(r'[^\w .:/()-]', '', n)[:120] for n in names or ['unknown check'])
-                # Save a terminal marker even when reopen itself fails.
-                ctx.progress['ci-failed'] = True
-                omi('step', ctx.tid, 'reopen', '--why', reason)
-                raise state.StateError(reason + '; finish a fresh review') from exc
-        perform(ctx, 'ci', lambda _: checks('--watch', '--fail-fast'))
-        def merge(_):
-            development()
-            checks()  # never journal this guard separately from the irreversible merge
-            gh('merge', branch, '--squash', '--delete-branch', '--subject', subject)
-        perform(ctx, 'merge', merge)
-        def pull(_):
-            development()
-            command(ctx.project.code, ['git', 'pull'])
-        perform(ctx, 'pull', pull)
+        stage(ctx, perform, command, 'dispatch', reviewer)
     else:
-        def squash(_):
-            development()
-            command(ctx.project.code, ['git', 'merge', '--squash', branch])
-        perform(ctx, 'local-squash', squash)
-        perform(ctx, 'merge', lambda _: command(ctx.project.code, ['git', 'commit', '-m', subject]) and None)
-    perform(ctx, 'clean', lambda _: omi('clean', ctx.tid) and None)
+        stage(ctx, perform, command, 'accept-done', accept_done)
+        stage(ctx, perform, command, 'pre-merge', pre_merge)
 
-    def post_test(_):
-        if command(ctx.project.code, ['git', 'branch', '--show-current']) != 'development':
-            raise state.StateError('post-merge test requires development; no revert')
-        cmd = tasks.host_test_command(ctx.project.state)
-        if not cmd:
-            return 'skipped (host_test is empty)'
+
+def remote(ctx: Any, command: Callable) -> None:
+    wt = core.task_worktrees(ctx.project.code).get(ctx.tid)
+    if not wt:
+        raise state.StateError('task worktree is missing')
+    if command(ctx.project.code, ['git', 'branch', '--show-current']) != 'development':
+        raise state.StateError('main checkout must be on development')
+    ctx.progress['worktree'] = str(wt)
+    for name in sorted(command(Path(wt), ['git', 'remote']).splitlines(), key=lambda n: n != 'origin'):
+        url = state.normalise_url(command(Path(wt), ['git', 'remote', 'get-url', name]))
+        if url.startswith('github.com/'):
+            ctx.progress.update(target=name, repository=url.removeprefix('github.com/'))
+            break
+
+
+def development(ctx: Any, command: Callable) -> None:
+    if command(ctx.project.code, ['git', 'branch', '--show-current']) != 'development':
+        raise state.StateError('main checkout must be on development')
+    if command(ctx.project.code, ['git', 'status', '--porcelain']):
+        raise state.StateError('main checkout must be clean')
+
+
+def commit(ctx: Any, command: Callable) -> None:
+    wt = Path(ctx.progress['worktree'])
+    if command(wt, ['git', 'status', '--porcelain', '--', '.', f':(exclude).omi/tasks/{ctx.tid}.md']):
+        raise state.StateError('worktree has changes beyond the acceptance task file')
+    if not ctx.project.detached:
+        relative = str(task_file(ctx).relative_to(wt))
+        if command(wt, ['git', 'status', '--porcelain', '--', relative]):
+            command(wt, ['git', 'add', '--', relative])
+            command(wt, ['git', 'commit', '-m', f'chore({ctx.tid}): accept review PASS'])
+
+
+def title(ctx: Any, command: Callable) -> None:
+    ctx.progress['pr-title'] = (json.loads(gh(ctx, command, 'view', 'task/' + ctx.tid, '--json', 'title'))['title']
+                                if ctx.progress.get('repository') else f'[{ctx.tid}] {ctx.meta.get("title", ctx.tid)}')
+
+
+def push(ctx: Any, command: Callable) -> None:
+    command(Path(ctx.progress['worktree']), ['git', 'push', '-u', ctx.progress['target'], 'task/' + ctx.tid])
+
+
+def update_body(ctx: Any, command: Callable) -> None:
+    path = ctx.rec['dir'] / 'pr-body.md'
+    core.write_text(path, pr.acceptance_body(ctx.tid, core.read_task(task_file(ctx)), ctx.review_roles))
+    gh(ctx, command, 'edit', 'task/' + ctx.tid, '--body-file', str(path))
+
+
+def ready(ctx: Any, command: Callable) -> None:
+    gh(ctx, command, 'ready', 'task/' + ctx.tid)
+
+
+def checks(ctx: Any, command: Callable, *args: str) -> None:
+    """Only actual failed/cancelled checks reopen; missing or pending CI blocks merge."""
+    try:
+        gh(ctx, command, 'checks', 'task/' + ctx.tid, *args)
+    except state.StateError as exc:
         try:
-            argv = run.shell_command(cmd)
-            if not isinstance(argv, list):
-                argv = ['cmd', '/d', '/s', '/c', cmd]
-            command(ctx.project.code, argv)
-        except state.StateError as exc:
-            raise state.StateError('POST-MERGE TEST FAILED; no revert: ' + str(exc)) from exc
-    perform(ctx, 'post-merge-test', post_test)
+            rows = json.loads(gh(ctx, command, 'checks', 'task/' + ctx.tid, '--json', 'name,state,bucket', allowed=(0, 1, 8)))
+            if not isinstance(rows, list) or any(not isinstance(r, dict) for r in rows):
+                raise ValueError('invalid check list')
+            names = [r['name'] for r in rows if r.get('bucket') in ('fail', 'cancel')]
+            if any(not isinstance(name, str) for name in names):
+                raise ValueError('invalid check name')
+        except (state.StateError, ValueError, KeyError) as query_error:
+            raise state.StateError('CI status unavailable; merge blocked; retry advance') from query_error
+        if not rows:
+            raise state.StateError('no checks reported; merge blocked; configure CI and rerun advance') from exc
+        if not names:
+            raise state.StateError('CI not passing; merge blocked; retry advance') from exc
+        reason = 'CI failed: ' + ', '.join(re.sub(r'[^\w .:/()-]', '', n)[:120] for n in names)
+        ctx.progress['ci-failed'] = True
+        omi(ctx, command, 'step', ctx.tid, 'reopen', '--why', reason)
+        raise state.StateError(reason + '; finish a fresh review') from exc
+
+
+def watch_ci(ctx: Any, command: Callable) -> None:
+    checks(ctx, command, '--watch', '--fail-fast')
+
+
+def merge(ctx: Any, command: Callable) -> None:
+    development(ctx, command)
+    checks(ctx, command)  # Never journal this guard separately from the irreversible merge.
+    gh(ctx, command, 'merge', 'task/' + ctx.tid, '--squash', '--delete-branch', '--subject', ctx.progress['pr-title'])
+
+
+def pull(ctx: Any, command: Callable) -> None:
+    development(ctx, command)
+    command(ctx.project.code, ['git', 'pull'])
+
+
+def local_squash(ctx: Any, command: Callable) -> None:
+    development(ctx, command)
+    command(ctx.project.code, ['git', 'merge', '--squash', 'task/' + ctx.tid])
+
+
+def local_commit(ctx: Any, command: Callable) -> None:
+    command(ctx.project.code, ['git', 'commit', '-m', ctx.progress['pr-title']])
+
+
+def clean(ctx: Any, command: Callable) -> None:
+    omi(ctx, command, 'clean', ctx.tid)
+
+
+def post_test(ctx: Any, command: Callable) -> str | None:
+    if command(ctx.project.code, ['git', 'branch', '--show-current']) != 'development':
+        raise state.StateError('post-merge test requires development; no revert')
+    cmd = tasks.host_test_command(ctx.project.state)
+    if not cmd:
+        return 'skipped (host_test is empty)'
+    try:
+        argv = run.shell_command(cmd)
+        # run.shell_command returns a list, or a cmd command string on Windows
+        # without Git Bash. Preserve that fallback using explicit argv (no shell=True).
+        if isinstance(argv, str):
+            argv = ['cmd', '/d', '/s', '/c', cmd]
+        command(ctx.project.code, argv)
+    except state.StateError as exc:
+        raise state.StateError('POST-MERGE TEST FAILED; no revert: ' + str(exc)) from exc
+    return None
+
+
+def merge_task(ctx: Any, perform: Callable, command: Callable) -> None:
+    """Prepare the reviewed branch, enforce CI, merge, clean and test development."""
+    for name, action in [('remote', remote), ('commit', commit), ('title', title)]:
+        stage(ctx, perform, command, name, action)
+    if ctx.progress.get('repository'):
+        actions = [('push', push), ('pr-body', update_body), ('ready', ready), ('ci', watch_ci), ('merge', merge), ('pull', pull)]
+    else:
+        actions = [('local-squash', local_squash), ('merge', local_commit)]
+    for name, action in [*actions, ('clean', clean), ('post-merge-test', post_test)]:
+        stage(ctx, perform, command, name, action)
+
+
+def advance_pass(ctx: Any, perform: Callable, command: Callable) -> None:
+    """Run the validated review handoff or final acceptance and merge stages."""
+    next_review = eligible(ctx)
+    print('eligibility: review PASS for ' + ctx.step['id'])
+    accept_review(ctx, perform, command, next_review)
+    if not next_review:
+        merge_task(ctx, perform, command)
