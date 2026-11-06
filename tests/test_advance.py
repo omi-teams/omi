@@ -156,6 +156,40 @@ def test_eligibility_refuses_without_mutations() -> None:
             assert not any(c[0] != 'git' or c[1] not in ('branch',) for c in h.calls)
 
 
+def test_reproduce_and_fix_in_one_run() -> None:
+    for reproduced in (True, False):
+        with handoff() as h:
+            h.steps = [dict(id='reproduce', role=ROLE), dict(id='fix', role=ROLE), dict(id='security', role=REVIEWER)]
+            h.text = h.text.replace('step: build', 'step: reproduce').replace('- build started', '- reproduce started')
+            if reproduced:
+                h.text = h.text.replace('> DONE\n', '> DONE\n> Reproduced: test_x failed before the fix\n')
+            h.task.write_text(h.text, encoding='utf-8')
+            plain = h.run
+
+            def run(argv, **kwargs):
+                args = argv[3:]
+                if argv[0] != 'git' and argv[0] != 'gh' and args[:1] == ['step']:
+                    h.calls.append(argv)
+                    text = h.task.read_text(encoding='utf-8')
+                    cur = text.split('step: ')[1].split('\n')[0]
+                    if args[-1] == 'done':
+                        text = text.replace('\n## Reports', f'- {cur} done 2026-11-06 11:22\n\n## Reports')
+                    else:
+                        nxt = {'reproduce': 'fix', 'fix': 'security'}[cur]
+                        text = text.replace(f'step: {cur}', f'step: {nxt}').replace('\n## Reports', f'- {nxt} started 2026-11-06 11:23\n\n## Reports')
+                    h.task.write_text(text, encoding='utf-8')
+                    return subprocess.CompletedProcess(argv, 0, '', '')
+                return plain(argv, **kwargs)
+            with patch.object(advance.subprocess, 'run', side_effect=run):
+                error, out = h.invoke()
+            if reproduced:
+                assert not error, error
+                assert [c[-1] for c in h.calls if c[0] not in ('git', 'gh') and c[3] == 'step'] == ['done', 'next', 'done', 'next']
+                assert any(c[-3:] == ['dispatch', REVIEWER, TID] for c in h.calls)
+            else:
+                assert 'the next workflow step is not a reviewer' in error, error
+
+
 def test_scope_stops_before_staging() -> None:
     with handoff() as h:
         h.bad = ['outside.py', '.github/workflows/ci.yml']
@@ -543,6 +577,7 @@ def main():
     test_all_stages_and_rerun()
     test_each_stage_failure_and_retry()
     test_eligibility_refuses_without_mutations()
+    test_reproduce_and_fix_in_one_run()
     test_scope_stops_before_staging()
     test_scope_git_path_exact_match()
     test_commit_messages()

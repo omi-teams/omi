@@ -63,6 +63,7 @@ class Context:
     report: str = field(init=False)
     step: dict = field(init=False)
     following: dict = field(init=False)
+    fix: dict | None = None
     stage: str = "eligibility"
     target: str = ""
     repository: str = ""
@@ -115,10 +116,16 @@ def eligible(ctx: Context) -> tuple[dict, str, dict, dict]:
                         text.partition("\n## Steps\n")[2].split("\n## ", 1)[0], re.M)
     if not starts or datetime.datetime.strptime(starts[-1], "%Y-%m-%d %H:%M") > rec["started"].replace(second=0, microsecond=0):
         raise state.StateError("finished run is stale for the current step")
-    if at + 1 >= len(steps) or steps[at + 1]["role"] not in tasks.REVIEW_ROLES:
+    # A reproduce DONE whose report has `Reproduced:` also covers the same role's fix step that follows it.
+    ctx.fix = None
+    if (steps[at]["id"] == "reproduce" and at + 2 < len(steps) and steps[at + 1]["id"] == "fix"
+            and steps[at + 1]["role"] == rec["role"] and re.search(r"^Reproduced:[ \t]*\S", report, re.M)):
+        ctx.fix = steps[at + 1]
+    last = at + 1 + (ctx.fix is not None)
+    if last >= len(steps) or steps[last]["role"] not in tasks.REVIEW_ROLES:
         raise state.StateError("the next workflow step is not a reviewer")
-    following = steps[at + 1]
-    if ctx.meta.get("step") != sid and not (ctx.progress.get("step-done") and ctx.meta.get("step") == following["id"]):
+    following = steps[last]
+    if ctx.meta.get("step") != sid and not (ctx.fix and ctx.meta.get("step") == ctx.fix["id"]) and not (ctx.progress.get("step-done") and ctx.meta.get("step") == following["id"]):
         raise state.StateError("finished run is not for the current step")
     recs = [r for r in dispatch.records(ctx.project.code) if r["tid"] == ctx.tid]
     if any(r["running"] and not (ctx.progress.get("step-next") and r["role"] == following["role"]) for r in recs):
@@ -214,8 +221,11 @@ def host_test(ctx: Context) -> None:
 
 
 def step_done(ctx: Context) -> None:
-    if tasks.step_states(core.read_task(state.task_file(ctx.project, ctx.tid))).get(ctx.step["id"]) != "done":
-        omi(ctx, "step", ctx.tid, "done")
+    for s in (ctx.step, ctx.fix) if ctx.fix else (ctx.step,):
+        if tasks.step_states(core.read_task(state.task_file(ctx.project, ctx.tid))).get(s["id"]) != "done":
+            if core.meta(state.task_file(ctx.project, ctx.tid)).get("step") != s["id"]:
+                omi(ctx, "step", ctx.tid, "next")
+            omi(ctx, "step", ctx.tid, "done")
 
 
 def step_next(ctx: Context) -> None:
