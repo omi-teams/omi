@@ -39,8 +39,8 @@ def usage_rows(text):
 
 
 def failed_rounds(text):
-    """Review, security or host-test FAIL rows of `## Usage`."""
-    return sum(r[0] in (*REVIEW_ROLES, "host-test") and r[-1].startswith("FAIL") for r in usage_rows(text))
+    """Review and security FAIL rows of `## Usage`, plus host-test FAIL rows counted once per commit sha."""
+    return len({(r[0], r[-1] if r[0] == "host-test" else i) for i, r in enumerate(usage_rows(text)) if r[0] in (*REVIEW_ROLES, "host-test") and r[-1].startswith("FAIL")})
 
 
 def root_of(report):
