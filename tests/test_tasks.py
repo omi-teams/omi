@@ -1083,6 +1083,10 @@ def test_host_test():
         text = task.read_text(encoding="utf-8")
         assert tasks.failed_rounds(text) == 1
         cfg.write_text(json.dumps({"host_test": "x"}), encoding="utf-8")
+        # the same failing commit run twice counts once; another sha counts again; review FAIL rows each count
+        assert tasks.failed_rounds(text + row("host-test", "FAIL " + sha)) == 1
+        assert tasks.failed_rounds(text + row("host-test", "FAIL 0000000")) == 2
+        assert tasks.failed_rounds(text + row("omi-agent-reviewer", "FAIL a") * 2) == 3
         refuses("HOST TEST FAILED")
         text = text + row("omi-agent-reviewer", "FAIL abc1234")
         try:
