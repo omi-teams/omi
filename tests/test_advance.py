@@ -189,6 +189,13 @@ def test_commit_messages() -> None:
             pass
         else:
             raise AssertionError(report)
+    try:
+        advance.commit_message('DONE\n**Commit message:** `feat(x): y`', None)
+    except state.StateError:
+        pass
+    else:
+        raise AssertionError('free-form commit line accepted')
+    assert advance.commit_message('Suggested commit: `fix(a): b`', None) == 'fix(a): b'
     with handoff() as h:
         error, _ = h.invoke('fix(worker)!: handle `$(literal)` safely')
         assert not error and ['git', 'commit', '-m', 'fix(worker)!: handle `$(literal)` safely'] in h.calls
