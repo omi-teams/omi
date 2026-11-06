@@ -75,11 +75,11 @@ class Handoff:
             self.task.write_text(text, encoding='utf-8')
         return subprocess.CompletedProcess(argv, 0, out, '')
 
-    def invoke(self, message=None):
+    def invoke(self, message=None, reject=None, why=None):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             try:
-                advance.advance(self.project, TID, message)
+                advance.advance(self.project, TID, message, reject, why)
             except SystemExit as exc:
                 return str(exc), output.getvalue()
         return '', output.getvalue()
@@ -231,7 +231,10 @@ def test_cli_and_windows_no_console() -> None:
             patch.object(cli.core, 'main_checkout', return_value=h.project.code), \
             patch.object(cli.advance, 'advance') as call:
         cli.dispatch(['advance', TID, '--message', 'fix: task'])
-        call.assert_called_once_with(h.project, TID, 'fix: task')
+        call.assert_called_once_with(h.project, TID, 'fix: task', None, None)
+        call.reset_mock()
+        cli.dispatch(['advance', TID, '--reject', '1,3', '--why', 'not a bug'])
+        call.assert_called_once_with(h.project, TID, None, [1, 3], 'not a bug')
     with handoff() as h, patch.object(advance.core, 'WINDOWS', True), \
             patch.object(advance.subprocess, 'CREATE_NO_WINDOW', 0x08000000, create=True):
         with patch.object(advance.subprocess, 'run', wraps=h.run) as run:
@@ -374,6 +377,157 @@ def test_real_git_push_after_rebase_keeps_lease() -> None:
         assert git('--git-dir', str(origin), 'rev-parse', 'refs/heads/development') == development
 
 
+REVIEWER = 'omi-agent-security-reviewer'
+
+
+class ReviewFail(Handoff):
+    """A security review FAIL for the `security` step; `omi step back` is faked on the task file."""
+    def __init__(self, root):
+        super().__init__(root)
+        self.text = ("---\nid: TASK-218\nstep: security\nworkflow: flow\n---\n## Checkpoint\nDone: build\nNext: review\n\n## Steps\n"
+                     "- build done 2026-11-06 11:10\n- security started 2026-11-06 11:18\n\n## Reports\n"
+                     "2026-11-06 11:21 omi-agent-security-reviewer (codex):\n> VERDICT: FAIL\n"
+                     "> Review round 1 FAIL: quoted by the reviewer\n> - a.py:1 quotes Review round 1 FAIL:\n"
+                     "> - b.py:2 see ## Steps\n> ## Steps\n> - c.py:3 control\x07 char\n> ROOT: new\n")
+        self.task.write_text(self.text, encoding='utf-8')
+        self.rec.update(role=REVIEWER)
+        self.steps = [dict(id='build', role=ROLE), dict(id='security', role=REVIEWER)]
+        self.pr = [{'number': 7, 'isDraft': False}]
+        self.back_out = 'TASK-218: step security failed; back to build'
+
+    def run(self, argv, **kwargs):
+        if argv[0] not in ('git', 'gh') and argv[3:5] == ['step', TID]:
+            self.calls.append(argv)
+            if self.fail == 'step-back':
+                return subprocess.CompletedProcess(argv, 1, '', 'ROUND LIMIT: TASK-218 failed 2 review rounds; the Coordinator decides')
+            self.why = argv[argv.index('--why') + 1] if '--why' in argv else None
+            self.task.write_text(self.task.read_text(encoding='utf-8').replace('step: security', 'step: build'), encoding='utf-8')
+            return subprocess.CompletedProcess(argv, 0, self.back_out, '')
+        return super().run(argv, **kwargs)
+
+    def invoke(self, *args, **kwargs):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            try:
+                advance.advance(self.project, TID, *args, **kwargs)
+            except SystemExit as exc:
+                return str(exc), output.getvalue()
+        return '', output.getvalue()
+
+
+@contextlib.contextmanager
+def review_fail():
+    with tempfile.TemporaryDirectory() as d, contextlib.ExitStack() as stack:
+        h = ReviewFail(Path(d))
+        h.recs[0].update(role=REVIEWER)
+        stack.enter_context(patch.object(advance.dispatch, 'records', side_effect=lambda _: h.recs))
+        stack.enter_context(patch.object(advance.state, 'task_file', return_value=h.task))
+        stack.enter_context(patch.object(advance.workflows, 'get_workflow', side_effect=lambda *_: h.steps))
+        stack.enter_context(patch.object(advance.core, 'task_worktrees', return_value={TID: h.project.code}))
+        stack.enter_context(patch.object(advance.subprocess, 'run', side_effect=h.run))
+        yield h
+
+
+USAGE = "\n## Usage\n| role | model |\n|---|---|\n| omi-agent-security-reviewer | m | high | 1 | 1 | 1 | 1s | - | FAIL |\n"
+
+
+def checkpoint_of(h):
+    return h.task.read_text(encoding='utf-8').partition('\n## Checkpoint\n')[2].split('\n## ', 1)[0]
+
+
+def test_review_fail_path_and_rerun() -> None:
+    with review_fail() as h:
+        h.task.write_text(h.text + USAGE, encoding='utf-8')
+        error, out = h.invoke()
+        assert not error, (error, out)
+        assert out.splitlines()[1:] == ['findings: 3 finding(s) under Review round 1 FAIL:', 'step-back: done',
+                                        'pr-draft: back to draft', f'dispatch: {ROLE} dispatched'], out
+        text = h.task.read_text(encoding='utf-8')
+        # Placed between ## Checkpoint and ## Steps; the quoted marker and heading in findings do not confuse it.
+        assert text.index('## Checkpoint') < text.index('\nReview round 1 FAIL:\n- a.py:1') < text.index('\n## Steps\n')
+        assert checkpoint_of(h).endswith('Next: review\nReview round 1 FAIL:\n- a.py:1 quotes Review round 1 FAIL:\n'
+                                         '- b.py:2 see ## Steps\n- c.py:3 control char\n'), repr(checkpoint_of(h))
+        assert [c for c in h.calls if c[:2] == ['gh', 'pr'] and 'ready' in c] == [['gh', 'pr', 'ready', '--undo', '7', '--repo', 'org/repo']]
+        assert any(c[-3:] == ['dispatch', ROLE, TID] for c in h.calls)
+        h.calls.clear()
+        h.recs.append(dict(tid=TID, role=ROLE, rc=None, running=True, started=STAMP.replace(minute=30)))
+        error, out = h.invoke()
+        assert not error and out.count('already done') == 4 and not h.calls, (error, out, h.calls)
+        assert h.task.read_text(encoding='utf-8').count('\nReview round 1 FAIL:\n') == 1
+
+
+def test_review_fail_resume_does_not_duplicate() -> None:
+    with review_fail() as h:
+        h.task.write_text(h.text + USAGE, encoding='utf-8')
+        h.fail = 'dispatch'
+        assert 'dispatch FAILED' in h.invoke()[0]
+        h.fail = None
+        assert not h.invoke()[0]
+        assert h.task.read_text(encoding='utf-8').count('\nReview round 1 FAIL:\n') == 1
+
+
+def test_review_fail_reject() -> None:
+    with review_fail() as h:
+        error, out = h.invoke(None, [2], 'not a defect')
+        assert not error, error
+        cp = checkpoint_of(h)
+        assert '- b.py:2' not in cp and '- a.py:1' in cp and '- c.py:3' in cp
+        assert 'Coordinator rejected finding 2: not a defect' in cp and h.why == 'not a defect'
+    with review_fail() as h:
+        error, out = h.invoke(None, [1, 2, 3], 'all noise')
+        assert error == '1' and 'the Coordinator decides' in out and '--po' in out, (error, out)
+        assert h.task.read_text(encoding='utf-8') == h.text and not h.calls
+    with review_fail() as h:
+        assert '--reject needs --why' in h.invoke(None, [1])[0] and 'finding(s)' in h.invoke(None, [9], 'x')[0]
+        assert h.task.read_text(encoding='utf-8') == h.text and not h.calls
+
+
+def test_review_fail_stops_and_refusals() -> None:
+    with review_fail() as h:
+        h.fail = 'step-back'
+        error, out = h.invoke()
+        assert error == '1' and 'ROUND LIMIT: TASK-218' in out and not any(c[0] == 'gh' for c in h.calls), (error, out)
+    with review_fail() as h:
+        h.back_out = 'TASK-218: step security failed; back to build\nREPLAN: same root cause'
+        error, out = h.invoke()
+        assert error == '1' and 'REPLAN: same root cause' in out and not any(c[-3:-1] == ['dispatch', ROLE] for c in h.calls)
+    with review_fail() as h:
+        h.back_out = 'REPLAN: same root cause'
+        h.steps.insert(0, dict(id='plan', role='omi-agent-architect'))
+        h.task.write_text(h.text.replace('step: security', 'step: security'), encoding='utf-8')
+        real = h.run
+
+        def back_to_plan(argv, **kw):
+            result = real(argv, **kw)
+            if argv[0] not in ('git', 'gh') and argv[3:5] == ['step', TID]:
+                h.task.write_text(h.task.read_text(encoding='utf-8').replace('step: build', 'step: plan'), encoding='utf-8')
+            return result
+        with patch.object(advance.subprocess, 'run', side_effect=back_to_plan):
+            error, out = h.invoke()
+        assert not error and any(c[-3:] == ['dispatch', 'omi-agent-architect', TID] for c in h.calls), (error, out)
+    for change, why in [('pass', 'FAIL'), ('rc', 'FAIL'), ('done', 'step'), ('stale', 'stale'), ('nofinding', 'finding'), ('running', 'running')]:
+        with review_fail() as h:
+            if change == 'pass': h.task.write_text(h.text.replace('VERDICT: FAIL', 'VERDICT: PASS'), encoding='utf-8')
+            elif change == 'rc': h.rec['rc'] = 1
+            elif change == 'done': h.task.write_text(h.text.replace('- security started 2026-11-06 11:18', '- security done 2026-11-06 11:30'), encoding='utf-8')
+            elif change == 'stale': h.rec['started'] = STAMP.replace(hour=10)
+            elif change == 'nofinding': h.task.write_text(h.text.replace('> - ', '> * '), encoding='utf-8')
+            else: h.recs.append({**h.rec, 'running': True})
+            error, _ = h.invoke()
+            assert 'eligibility FAILED' in error and why in error, (change, error)
+            assert not h.calls and not (h.run_dir / 'advance.json').exists()
+    with review_fail() as h:
+        h.remote = 'https://example.org/repo.git'
+        error, out = h.invoke()
+        assert not error and 'pr-draft: skipped (no GitHub remote)' in out and not any(c[0] == 'gh' for c in h.calls)
+    with review_fail() as h:
+        h.pr = [{'number': 7, 'isDraft': True}]
+        error, out = h.invoke()
+        assert not error and 'skipped (no open non-draft PR)' in out and not any(c[:3] == ['gh', 'pr', 'ready'] for c in h.calls)
+    with handoff() as h:
+        assert '--reject and --why apply only after a review FAIL' in h.invoke(None, [1], 'x')[0]
+
+
 def main():
     test_commit_stage_reports_clean_and_committed()
     test_task_branch_push_uses_lease()
@@ -389,6 +543,10 @@ def main():
     test_head_change_and_launch_recovery()
     test_cli_and_windows_no_console()
     test_real_git_local_origin()
+    test_review_fail_path_and_rerun()
+    test_review_fail_resume_does_not_duplicate()
+    test_review_fail_reject()
+    test_review_fail_stops_and_refusals()
 
 
 if __name__ == '__main__':

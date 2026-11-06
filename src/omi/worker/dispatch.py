@@ -18,7 +18,7 @@ START_GRACE = 10  # seconds launch() waits for the wrapper
 STAMP = "%Y%m%d-%H%M%S"
 WRITE_DONE = "NEXT: python -m omi advance {tid}"
 READ_PASS = "NEXT: tick the ✓ criteria, status done, step done, PR ready, CI, squash merge, pull, clean, post-merge test"
-READ_FAIL = "NEXT: step back, copy the finding lines under `Review round N FAIL:` in Checkpoint, PR back to draft, rerun the engineer"
+READ_FAIL = "NEXT: python -m omi advance {tid}"
 
 
 def runs_dir(code: Path) -> Path:
@@ -163,7 +163,7 @@ def next_action(project: state.Project, rec: dict, text: str, report: str) -> st
             tasks.round_gate(project.state, tid, text, None)
         except SystemExit:
             return 'DECIDE: review round limit reached; the Coordinator decides: rescope, replan, or one more round with --why "<reason>"'
-        return READ_FAIL
+        return READ_FAIL.format(tid=tid)
     return "DECIDE: reviewer gave no PASS or FAIL; read the report"
 
 
