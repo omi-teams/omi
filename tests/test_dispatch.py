@@ -201,7 +201,7 @@ def test_two_runs_finish_together() -> None:
             time.sleep(0.05)
         out = watch(project)
         assert out.count("finished:") == 2, out
-        assert "TASK-001 omi-agent-engineer rc=0 verdict=DONE" in out and "NEXT: diff and scope check" in out, out
+        assert "TASK-001 omi-agent-engineer rc=0 verdict=DONE" in out and "NEXT: python -m omi advance TASK-001" in out, out
         assert "TASK-002 omi-agent-engineer rc=0 verdict=NEEDS SCOPE" in out and "DECIDE: NEEDS SCOPE" in out, out
         assert "no new finished runs" in watch(project)
         assert watch(project, "--all").count("finished:") == 2
@@ -305,7 +305,20 @@ def test_reviewer_next_action() -> None:
         assert dispatch.next_action(project, rec, "", "no verdict").startswith("DECIDE")
 
 
+def test_records_sort_across_roles() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        for role, stamp in [('omi-agent-engineer', '20261106-120000'), ('omi-agent-reviewer', '20261106-110000')]:
+            directory = root / f'TASK-218-{role}-{stamp}'
+            directory.mkdir()
+            (directory / 'argv.json').write_text('{"tid": "TASK-218", "role": "' + role + '"}', encoding='utf-8')
+            (directory / 'rc').write_text('0', encoding='utf-8')
+        with patch.object(dispatch, 'runs_dir', return_value=root):
+            assert [r['role'] for r in dispatch.records(root)] == ['omi-agent-reviewer', 'omi-agent-engineer']
+
+
 def main():
+    test_records_sort_across_roles()
     test_windows_launch_uses_spawner()
     test_windows_launch_waits_for_wrapper()
     test_posix_launch_stays_direct()

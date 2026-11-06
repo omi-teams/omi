@@ -235,7 +235,7 @@ def test_cli_characterization():
         assert rc == 0 and usage.startswith("usage: omi <command>\n") and not err
         assert [l.split()[0] for l in usage.splitlines()[1:]] == [
             "attach", "install-user", "init", "upgrade", "version", "status", "improve", "sync", "board", "guard", "github", "clean", "skills", "skills", "token", "structure", "plans",
-            "references", "rules", "agents", "workflows", "host-test", "step", "note", "run", "hook", "dispatch", "watch", "parallel", "worker", "worker"]
+            "references", "rules", "agents", "workflows", "host-test", "step", "note", "run", "hook", "dispatch", "advance", "watch", "parallel", "worker", "worker"]
         # unknown commands and incomplete arguments fall through to the usage text
         for args in (["help"], ["bogus"], ["step", "TASK-001"], ["run", "omi-agent-engineer", "--model"], ["parallel", "X"],
                      ["hook", "pre-run"], ["token"], ["worker"]):
