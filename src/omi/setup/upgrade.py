@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -27,12 +26,8 @@ def norm_sha(data: bytes) -> str:
 def template_map(tpl: Path = core.TEMPLATE) -> dict[str, Path]:
     """{project posix path: template file}; dot-xxx dirs become .xxx, generated CATALOG.md files are left out."""
     found = {}
-    sources = []
-    for directory, dirs, files in os.walk(tpl):
-        dirs[:] = [name for name in dirs if name != "__pycache__"]
-        sources.extend(Path(directory) / name for name in files)
-    for src in sorted(sources):
-        if "__pycache__" in src.parts or src.suffix == ".pyc" or src.name == "CATALOG.md":
+    for src in sorted(Path(tpl).rglob("*")):
+        if src.is_dir() or "__pycache__" in src.parts or src.suffix == ".pyc" or src.name == "CATALOG.md":
             continue
         parts = ["." + p[4:] if p.startswith("dot-") else p for p in src.relative_to(tpl).parts]
         found[PurePosixPath(*parts).as_posix()] = src

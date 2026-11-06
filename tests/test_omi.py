@@ -54,6 +54,7 @@ def track_calls(modules, skips=None):
                 def wrapper(*a, _fn=fn, _key=key, **kw):
                     called.add(_key)
                     out = io.StringIO()
+                    # omi.app.cli.main reconfigures stdout to UTF-8; StringIO already stores Unicode.
                     out.reconfigure = lambda **kw: None
                     try:
                         with contextlib.redirect_stdout(out), helpers.quiet_fixtures():
@@ -74,11 +75,6 @@ def check_test_modules(root: Path, modules: list) -> None:
     imported = {Path(m.__file__).resolve() for m in modules if getattr(m, "__file__", None)}
     missing = sorted(p.name for p in root.glob("test_*.py") if p.resolve() not in imported)
     assert not missing, f"test files never imported by the suite: {', '.join(missing)}"
-
-
-def report_success(skips: list[str]) -> None:
-    print("skipped: " + ("; ".join(skips) if skips else "none"))
-    print("ok")
 
 
 def test_fixture_output_capture() -> None:
@@ -119,14 +115,11 @@ def test_skip_summary() -> None:
     with patch("builtins.print") as printed:
         mod.test_missing_dependency()
     printed.assert_called_once_with("skip test_missing_dependency: dependency missing")
-    with contextlib.redirect_stdout(io.StringIO()) as out:
-        report_success(skips)
-    assert out.getvalue().splitlines() == [
-        "skipped: test_missing_dependency (dependency missing); test_symlink (symlink creation unavailable); "
-        "test_missing_shell (no sh on PATH or in Git for Windows)", "ok"]
-    with contextlib.redirect_stdout(io.StringIO()) as out:
-        report_success([])
-    assert out.getvalue() == "skipped: none\nok\n"
+    assert skips == [
+        "test_missing_dependency (dependency missing)",
+        "test_symlink (symlink creation unavailable)",
+        "test_missing_shell (no sh on PATH or in Git for Windows)",
+    ]
 
 
 def test_unimported_test_file() -> None:
@@ -217,4 +210,5 @@ if __name__ == "__main__":
     test_dispatch.main()
     skipped = sorted(f"{mod}.{name}" for mod, name in defined - called)
     assert not skipped, f"test functions never called by a main(): {', '.join(skipped)}"
-    report_success(real_skips)
+    print("skipped: " + ("; ".join(real_skips) if real_skips else "none"))
+    print("ok")
