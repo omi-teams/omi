@@ -17,7 +17,7 @@ from helpers import detached_cli, detached_project, omi, state_remote
 def test_version_stamp_package_hook():
     import fnmatch, glob
     want = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
-    assert want == "0.5.0" and omi.common.core.version() == want
+    assert want == "0.6.0" and omi.common.core.version() == want
     real = importlib.metadata.version
     importlib.metadata.version = lambda n: "9.9.9"
     try:
