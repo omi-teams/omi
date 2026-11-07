@@ -1,3 +1,4 @@
+import os
 import io
 import shutil
 import json
@@ -9,13 +10,14 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from helpers import omi
+from unittest.mock import patch
+from helpers import detached_cli, detached_project, omi, state_remote
 
 
 def test_version_stamp_package_hook():
     import fnmatch, glob
     want = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
-    assert want == "0.5.0" and omi.common.core.version() == want
+    assert want == "0.6.0" and omi.common.core.version() == want
     real = importlib.metadata.version
     importlib.metadata.version = lambda n: "9.9.9"
     try:
@@ -35,6 +37,13 @@ def test_version_stamp_package_hook():
     importlib.metadata.version = missing
     try:
         assert omi.common.core.version() == want  # source checkout: pyproject.toml
+        real_file = omi.common.core.__file__
+        with tempfile.TemporaryDirectory() as d:
+            omi.common.core.__file__ = str(Path(d) / "a" / "b" / "omi" / "core.py")  # no pyproject, no metadata
+            try:
+                assert omi.common.core.version() == "unknown"
+            finally:
+                omi.common.core.__file__ = real_file
         buf = io.StringIO()
         buf.reconfigure = lambda **kw: None
         with contextlib.redirect_stdout(buf):
@@ -98,7 +107,7 @@ def test_version_stamp_package_hook():
         c = json.loads(cfg.read_text())
         c["test"] = "exit 7"
         cfg.write_text(json.dumps(c))
-        assert subprocess.run([omi.worker.run.host_bash() or "sh", hook], cwd=d).returncode == 7
+        assert subprocess.run([omi.worker.run.host_bash() or "sh", hook], cwd=d, env={**os.environ, "OMI_PROJECT_STATE": d}).returncode == 7
 
 
 def test_upgrade():
@@ -219,6 +228,58 @@ def test_upgrade_stale_candidate():
         assert "replaced stale AGENTS.md.omi-new" in out.getvalue()
         assert candidate.read_bytes() == (omi.common.core.TEMPLATE / "AGENTS.md").read_bytes()
         assert dst.read_text(encoding="utf-8") == "local edits\n"
+
+
+def test_detached_upgrade_candidates_stay_local():
+    with detached_project() as (code, project, _, _):
+        # Existing detached projects do not yet ignore upgrade candidates.
+        ignore = project / ".gitignore"
+        ignore.write_text(ignore.read_text(encoding="utf-8").replace("*.omi-new\n", ""), encoding="utf-8")
+        home, remote, _ = state_remote(project)
+        rels = (".omi/agents/omi-agent-engineer.md", "docker/Dockerfile")
+        for rel in rels:
+            dst = project / rel
+            dst.write_text(dst.read_text(encoding="utf-8") + "\nlocal edits\n", encoding="utf-8")
+        for _ in range(2):
+            out = detached_cli(code, "upgrade", "--apply")
+            tracked = omi.common.core.git(home, "ls-tree", "-r", "--name-only", "HEAD")
+            assert not any(p.endswith(".omi-new") for p in tracked.splitlines()), tracked
+            assert omi.common.core.git(home, "rev-parse", "HEAD") == omi.common.core.git(remote, "rev-parse", "refs/heads/main")
+            for rel in rels:
+                candidate = project / (rel + ".omi-new")
+                assert candidate.read_bytes() == omi.setup.upgrade.template_map()[rel].read_bytes()
+                assert (project / rel).read_text(encoding="utf-8").endswith("\nlocal edits\n")
+                assert rel + ".omi-new" in out, out
+                assert omi.common.core.git(home, "check-ignore", candidate.as_posix())
+            assert "Coordinator" in out and "merge by hand" in out, out
+        assert (project / ".gitignore").read_text(encoding="utf-8").splitlines().count("*.omi-new") == 1
+        assert "upgrade state" in omi.common.core.git(home, "log", "-1", "--format=%s")
+
+
+def test_attached_upgrade_candidates_unchanged():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / "AGENTS.md").write_text("local edits\n", encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            assert omi.setup.upgrade.upgrade_cmd(["--apply"], root) == 0
+        assert (root / "AGENTS.md.omi-new").read_bytes() == (omi.common.core.TEMPLATE / "AGENTS.md").read_bytes()
+        assert "*.omi-new" not in (root / ".gitignore").read_text(encoding="utf-8")
+        assert "Coordinator" not in out.getvalue()
+
+
+def test_detached_upgrade_existing_candidate_stays_local():
+    with detached_project() as (code, project, _, _):
+        ignore = project / ".gitignore"
+        ignore.write_text(ignore.read_text(encoding="utf-8").replace("*.omi-new\n", ""), encoding="utf-8")
+        home, _, _ = state_remote(project)
+        dst = project / "docker/Dockerfile"
+        dst.write_text("local edits\n", encoding="utf-8")
+        candidate = dst.with_name(dst.name + ".omi-new")
+        candidate.write_text("previous candidate\n", encoding="utf-8")
+        out = detached_cli(code, "upgrade", "--apply")
+        assert candidate.read_bytes() == omi.setup.upgrade.template_map()["docker/Dockerfile"].read_bytes()
+        assert "docker/Dockerfile.omi-new" in out and "Coordinator" in out
+        assert ".omi-new" not in omi.common.core.git(home, "ls-tree", "-r", "--name-only", "HEAD")
 
 
 def test_upgrade_protected():
@@ -498,14 +559,78 @@ def test_upgrade_repo_confirmation():
 
 
 def test_upgrade_skill_repo_confirmation():
-    root = Path(__file__).parents[1]
-    skill = (root / ".claude/skills/omi-upgrade/SKILL.md").read_text(encoding="utf-8")
-    assert skill == (omi.common.core.TEMPLATE / "dot-claude/skills/omi-upgrade/SKILL.md").read_text(encoding="utf-8")
+    skill = (omi.common.core.TEMPLATE / "dot-claude/skills/omi-upgrade/SKILL.md").read_text(encoding="utf-8")
     assert "repo" in skill and "pick-list" in skill
     assert "confirm" in skill and "non-default" in skill and "--repo <url>" in skill
     assert "--check" in skill and "--to <tag>" in skill and ".omi-new" in skill
     assert "development" in skill and "tests" in skill
     assert "older than" in skill and "python -m omi upgrade --apply" in skill and "steps 4-5" in skill
+
+
+def test_same_version_stale_template_hints():
+    for detached in (False, True):
+        with tempfile.TemporaryDirectory() as d, contextlib.ExitStack() as stack:
+            root = Path(d).resolve()
+            code = root / "code" if detached else root
+            code.mkdir(exist_ok=True)
+            project = omi.state.resolve.Project(root, code, detached)
+            stack.enter_context(patch("omi.state.resolve.resolve", return_value=project))
+            stack.enter_context(patch("omi.state.sync.pull"))
+            stack.enter_context(patch("omi.setup.attach.warn_in_repo_files"))
+            stack.enter_context(patch("omi.common.core.git", return_value="development"))
+            stack.enter_context(patch("omi.setup.install.stale_user_integration", return_value=False))
+            stack.enter_context(patch("omi.project.improve.open_count", return_value=0))
+            stack.enter_context(patch("omi.worker.docker.full_volumes", return_value=[]))
+            stack.enter_context(patch("omi.worker.docker.print_workers"))
+            stack.enter_context(patch("omi.setup.upgrade.latest_tag", return_value="v" + omi.common.core.version()))
+            files = {}
+            sources = omi.setup.upgrade.template_map()
+            roles = [rel for rel in sources if rel.startswith(".omi/agents/")][:3]
+            for rel in roles:
+                dst = root / rel
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                dst.write_bytes(sources[rel].read_bytes())
+                files[rel] = omi.setup.upgrade.norm_sha(dst.read_bytes())
+            omi.setup.upgrade.write_manifest(root, files)
+            (root / ".omi/version").write_text(omi.common.core.version() + "\n", encoding="utf-8")
+
+            def check(count):
+                before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+                for command in (lambda: omi.app.cli.status(code),
+                                lambda: omi.setup.upgrade.upgrade_cmd(["--check"], root, detached=detached)):
+                    out = io.StringIO()
+                    with contextlib.redirect_stdout(out):
+                        command()
+                    text = out.getvalue()
+                    if count:
+                        assert f"{count} unmodified template files are stale" in text, text
+                        assert "run `python -m omi upgrade --apply`" in text, text
+                    else:
+                        assert "upgrade --apply" not in text, text
+                assert before == {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}, "checks must be read-only"
+
+            check(0)
+            for rel in roles[:2]:
+                # Model a template change between releases, with CRLF in the checkout.
+                (root / rel).write_bytes(b"old role\r\n")
+                files[rel] = omi.setup.upgrade.norm_sha(b"old role\n")
+            omi.setup.upgrade.write_manifest(root, files)
+            (root / roles[2]).write_bytes(b"hand-modified role\n")
+            check(2)
+            (root / roles[0]).write_bytes(b"hand-modified role\n")
+            check(1)
+            (root / roles[1]).write_bytes(sources[roles[1]].read_bytes())
+            check(0)
+            # Missing, unrecorded and protected files cannot be safely updated as stale.
+            (root / roles[0]).unlink()
+            files.pop(roles[2])
+            for rel in (".omi/decisions.md", ".omi/tasks/TASK-001.md") + (("AGENTS.md", ".claude/settings.json") if detached else ()):
+                dst = root / rel
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                dst.write_bytes(b"old template\n")
+                files[rel] = omi.setup.upgrade.norm_sha(dst.read_bytes())
+            omi.setup.upgrade.write_manifest(root, files)
+            check(0)
 
 
 def test_status_drift_hints():
@@ -549,6 +674,9 @@ def main():
     test_upgrade()
     test_upgrade_non_object_config()
     test_upgrade_stale_candidate()
+    test_detached_upgrade_candidates_stay_local()
+    test_attached_upgrade_candidates_unchanged()
+    test_detached_upgrade_existing_candidate_stays_local()
     test_upgrade_protected()
     test_upgrade_symlink_files()
     test_upgrade_symlink_metadata()
@@ -558,6 +686,7 @@ def main():
     test_upgrade_cmd()
     test_upgrade_repo_confirmation()
     test_upgrade_skill_repo_confirmation()
+    test_same_version_stale_template_hints()
     test_status_drift_hints()
 
 

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Thiết kế TASK-126, chờ PO duyệt.">
+<title>Chi phí, các trạng thái — omi board mockup</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%230f6e6e'/%3E%3Ccircle cx='12' cy='12' r='5' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E">
+<style>*{box-sizing:border-box}:root{--bg:#f6f6f4;--surface:#fff;--fg:#1f2421;--muted:#5f6661;--line:#d3d2cd;--control:#747d77;--accent:#0f6e6e;--track:#e4e8e5;--warn-fg:#9b343b;--warn-bg:#ffebed;--note-bg:#fff2d9;--note-fg:#77521b;color-scheme:light}@media(prefers-color-scheme:dark){:root{--bg:#191e1c;--surface:#232a26;--fg:#e3e9e5;--muted:#a9b6ad;--line:#58665d;--control:#95a59a;--accent:#78c9c2;--track:#3b4840;--warn-fg:#f6b5b9;--warn-bg:#49292d;--note-bg:#44351f;--note-fg:#efd094;color-scheme:dark}}
+body{margin:0;min-height:100dvh;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif;font-variant-numeric:tabular-nums}
+h1,h2{line-height:1.25;text-wrap:balance;font-weight:600}h1{font-size:28px;letter-spacing:-.025em;margin:4px 0}h2{font-size:17px;margin:0}p{margin:6px 0;max-width:65ch}
+a{color:var(--accent);text-underline-offset:3px}:focus-visible,.focus-example{outline:3px solid var(--accent);outline-offset:3px}
+button,a{transition:transform 220ms cubic-bezier(.32,.72,0,1),opacity 220ms cubic-bezier(.32,.72,0,1)}button{font:inherit;background:var(--surface);color:var(--fg);border:1px solid var(--control);border-radius:6px;min-height:40px;padding:6px 14px}button:active{transform:scale(.98)}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+.skip{position:absolute;top:-100px;left:16px}.skip:focus{top:12px;background:var(--surface);padding:12px;z-index:2}
+.page{container-type:inline-size;max-width:1200px;margin:auto}.phone{max-width:390px;border-inline:1px solid var(--line);min-height:100dvh}
+header.top{background:var(--surface);border-bottom:1px solid var(--line)}.bar{padding:10px 24px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 24px}.brand{font-weight:650;font-size:16px;color:var(--fg);text-decoration:none}
+nav.crumb ol{display:flex;flex-wrap:wrap;gap:8px;list-style:none;margin:0;padding:0;color:var(--muted);font-size:14px}nav.crumb li+li::before{content:'/';margin-right:8px}.crumb [aria-current]{color:var(--fg);font-weight:600}
+main{padding:24px;display:grid;gap:20px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px;min-width:0}.ph{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:6px 12px;margin-bottom:12px}
+.muted{color:var(--muted)}.small{font-size:13px}.mono,code{font-family:ui-monospace,'Cascadia Mono',Consolas,monospace;font-size:12.5px}
+.stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}.stat{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px}.stat .n{font-size:26px;font-weight:600;line-height:1.15}.stat .l{font-size:13px;color:var(--muted)}
+.jump{display:flex;flex-wrap:wrap;gap:8px}.jump a{display:inline-flex;align-items:center;min-height:40px;padding:0 14px;border:1px solid var(--control);border-radius:6px;background:var(--surface);text-decoration:none}.jump a[aria-current]{border-color:var(--accent);font-weight:600;box-shadow:inset 0 -3px 0 var(--accent)}
+.note{display:flex;gap:10px;padding:12px 16px;border-radius:8px;background:var(--note-bg);color:var(--note-fg);border:1px solid currentColor}.note.err{background:var(--warn-bg);color:var(--warn-fg)}
+table{width:100%;border-collapse:collapse}caption{text-align:left;color:var(--muted);font-size:13px;padding-bottom:8px}th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}th{font-size:13px;font-weight:600;color:var(--muted)}td.num,th.num{text-align:right;white-space:nowrap}
+.cell{display:flex;align-items:center;gap:10px}.bar-t{flex:1;min-width:90px;height:12px;background:var(--track);border:1px solid var(--control);border-radius:3px;overflow:hidden}.bar-f{height:100%;background:var(--accent)}
+.hatch{background:repeating-linear-gradient(135deg,var(--accent) 0 4px,var(--surface) 4px 7px)}
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;padding:2px 8px;border-radius:5px;border:1px solid currentColor;white-space:nowrap}.b-top{color:var(--accent)}.b-fail{color:var(--warn-fg);background:var(--warn-bg)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--muted);margin:0 0 10px;padding:0;list-style:none}.legend i{display:inline-block;width:22px;height:10px;border:1px solid var(--control);vertical-align:middle;margin-right:6px}
+.skel{height:14px;border-radius:4px;background:var(--track);animation:p 1.4s ease-in-out infinite}@keyframes p{50%{opacity:.45}}
+.empty{text-align:center;padding:32px 12px;color:var(--muted)}
+@container (max-width:700px){main{padding:16px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.stat:last-child{grid-column:1/-1}h1{font-size:24px}
+table,tbody,tr,td{display:block}thead{position:absolute;left:-9999px}tr{padding:10px 0;border-bottom:1px solid var(--line)}td{border:0;padding:3px 0;display:flex;justify-content:space-between;gap:12px;text-align:right}td::before{content:attr(data-l);color:var(--muted);font-size:13px;text-align:left}td.name{display:block;text-align:left;font-weight:600}td.name::before{content:none}td.barc{display:block}td.barc::before{content:none}}</style>
+</head>
+<body>
+<a class="skip" href="#main">Bỏ qua đến nội dung</a>
+<div class="page">
+<header class="top"><div class="bar"><a class="brand" href="#">omi board</a>
+<nav class="crumb" aria-label="Điều hướng"><ol><li><a href="#">Dự án</a></li><li><a href="#">omi</a></li><li><a href="#" aria-current="page">Chi phí</a></li></ol></nav></div></header>
+<main id="main" tabindex="-1">
+<div><p class="muted small" style="margin:0">Các trạng thái · không phải một trang</p><h1>Chi phí: trạng thái</h1></div>
+<section class="panel" aria-labelledby="s1"><h2 id="s1">Đang tải (skeleton, có <code>role="status"</code> “Đang tải số liệu chi phí…”)</h2><div class="skel" style="width:60%;margin:14px 0"></div><div class="skel" style="margin:14px 0"></div><div class="skel" style="width:80%"></div></section>
+<section class="panel" aria-labelledby="s2"><h2 id="s2">Trống: chưa có hàng nào trong ## Usage</h2><div class="empty"><strong>Chưa có dữ liệu sử dụng</strong><p style="margin:6px auto">Số liệu xuất hiện sau lần <code>omi run</code> đầu tiên ghi vào mục <code>## Usage</code> của task.</p></div></section>
+<section class="panel" aria-labelledby="s3"><h2 id="s3">Lỗi: API không đọc được</h2><div class="note err" role="alert"><div><strong>Không tải được số liệu chi phí.</strong><br>Máy chủ board trả về lỗi 500. Kiểm tra lại <code>.omi/config.json</code> rồi thử lại.</div></div><p><button type="button">Thử lại</button></p></section>
+<section class="panel" aria-labelledby="s4"><h2 id="s4">Một số giá trị thiếu</h2><p>Hàng Usage ghi <code>n/a</code> được tính là 0 và hiện dấu “—”, kèm chú thích “thiếu số liệu ở n lượt chạy”. Model không có trong <code>prices</code>: ô ước tính hiện “Thiếu giá” (chữ, không để trống) và tổng USD ghi “chưa đủ giá”.</p></section>
+<section class="panel" aria-labelledby="s5"><h2 id="s5">Tiêu điểm bàn phím và nút</h2><p>Mọi liên kết task và nút chuyển nhóm có vòng focus 3 px, cách 3 px, đạt 3:1.</p><p><span class="focus-example" style="padding:8px 14px;display:inline-block;border-radius:6px"><a href="#">TASK-124</a></span> <button type="button" disabled>Đang làm mới…</button></p></section>
+</main></div></body></html>

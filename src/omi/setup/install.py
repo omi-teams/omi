@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -10,15 +11,22 @@ from pathlib import Path
 
 from ..common import core
 from ..state import resolve as state
+from . import upgrade
 
 
-def _hook() -> dict:
+def _hook(command: str = "session-start") -> dict:
     executable = (subprocess.list2cmdline([sys.executable]) if sys.platform == "win32"
                   else shlex.quote(sys.executable))
-    return {"hooks": [{"type": "command", "command": executable + " -m omi session-start"}]}
+    return {"hooks": [{"type": "command", "command": executable + " -m omi " + command}]}
 
 
 HOOK = _hook()
+GUARD_MATCHER = "Edit|Write|MultiEdit|NotebookEdit"
+GUARD_HOOK = {"matcher": GUARD_MATCHER, **_hook("guard")}
+# Shipped before a tagged release recorded it in template_shas.json (norm_sha, by skill path).
+UNRELEASED_SKILL_SHAS = {
+    ".claude/skills/omi-task/SKILL.md": {"fc63de3755ac4cf4002c1e98bd6c712967e32df1f83cb7fd8686e43c0c248709"},  # TASK-160, 42afa0e
+}
 LEGACY_HOOK = {"hooks": [{"type": "command", "command": "python -m omi session-start"}]}
 START, END = "<!-- omi -->", "<!-- /omi -->"
 
@@ -36,6 +44,36 @@ def coordinator_rules() -> str:
             "not the code checkout.\n\n" + rules)
 
 
+def codex_instructions() -> str:
+    """Point Codex at the live rules instead of embedding a copy that goes stale."""
+    return ("These Coordinator instructions apply only in an attached omi repository. "
+            "At the start of a session there, run `python -m omi session-start` and follow its "
+            "output; if it prints nothing, ignore this block.")
+
+
+def _skill_payloads() -> dict[str, bytes]:
+    root = core.TEMPLATE / "dot-claude" / "skills"
+    return {str(Path(".claude/skills") / p.relative_to(root)): p.read_bytes()
+            for p in sorted(root.rglob("*")) if p.is_file()}
+
+
+def stale_user_integration() -> list[str]:
+    """Name installed user files that differ from the current template (empty if not installed)."""
+    home = Path.home()
+    if not (home / ".omi" / "install-user.json").exists():
+        return []
+    stale = [Path(rel).as_posix() for rel, data in _skill_payloads().items()
+             if not (home / rel).is_file() or (home / rel).read_bytes() != data]
+    agents = home / ".codex" / "AGENTS.md"
+    try:
+        current = _block(agents.read_text(encoding="utf-8")) if agents.exists() else ""
+    except (OSError, UnicodeError, state.StateError):
+        current = ""
+    if current != START + "\n" + codex_instructions() + "\n" + END:
+        stale.append(".codex/AGENTS.md")
+    return stale
+
+
 def _object(path: Path) -> dict:
     try:
         value = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
@@ -47,8 +85,14 @@ def _object(path: Path) -> dict:
 
 
 def _write(path: Path, data: bytes) -> None:
+    """Replace the file whole or not at all, so an interrupted write never leaves a partial file."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(data)
+    temp = path.with_name(path.name + ".omi-tmp")
+    try:
+        temp.write_bytes(data)
+        os.replace(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
 
 
 def _json(path: Path, data: dict) -> None:
@@ -90,6 +134,10 @@ def _validate_manifest(record: dict, manifest: Path) -> None:
             if (not isinstance(digest, str) or len(digest) != 64
                     or any(c not in "0123456789abcdef" for c in digest)):
                 raise ValueError("invalid skill hash")
+            pending = item.get("pending", digest)
+            if (not isinstance(pending, str) or len(pending) != 64
+                    or any(c not in "0123456789abcdef" for c in pending)):
+                raise ValueError("invalid pending skill hash")
             before = item["before"]
             if before is not None:
                 if not isinstance(before, str):
@@ -102,11 +150,21 @@ def _validate_manifest(record: dict, manifest: Path) -> None:
             if (path.is_absolute() or ".." in path.parts or not path.parts
                     or path.parts[0] not in (".claude", ".codex", ".omi")):
                 raise ValueError("invalid directory path")
-        if "hook" in record:
-            hook = record["hook"]
-            if (not isinstance(hook, dict) or set(hook) != {"hooks"}
+        if any(key in record for key in ("guard_hook", "guard_added", "pretool_created")):
+            if (not isinstance(record.get("guard_added"), bool)
+                    or not isinstance(record.get("pretool_created"), bool)
+                    or "guard_hook" not in record):
+                raise ValueError("invalid guard fields")
+        for key in ("hook", "guard_hook"):
+            if key not in record:
+                continue
+            hook = record[key]
+            expected = {"hooks", "matcher"} if key == "guard_hook" else {"hooks"}
+            if (not isinstance(hook, dict) or set(hook) != expected
                     or not isinstance(hook["hooks"], list) or len(hook["hooks"]) != 1):
                 raise ValueError("invalid hook")
+            if key == "guard_hook" and hook["matcher"] != GUARD_MATCHER:
+                raise ValueError("invalid guard matcher")
             command = hook["hooks"][0]
             if (not isinstance(command, dict) or set(command) != {"type", "command"}
                     or command["type"] != "command" or not isinstance(command["command"], str)
@@ -126,10 +184,13 @@ def install_user(remove: bool = False) -> None:
     if manifest.exists():
         _validate_manifest(record, manifest)
     hook = record.get("hook", LEGACY_HOOK) if record else _hook()
+    guard_hook = record.get("guard_hook", {"matcher": GUARD_MATCHER, **_hook("guard")})
     config = _object(settings)
     hooks = config.get("hooks", {})
     if not isinstance(hooks, dict) or not isinstance(hooks.get("SessionStart", []), list):
         raise state.StateError(f"{settings}: expected hooks object and SessionStart list")
+    if not isinstance(hooks.get("PreToolUse", []), list):
+        raise state.StateError(f"{settings}: expected hooks object and PreToolUse list")
     text = agents.read_bytes().decode("utf-8") if agents.exists() else ""
     old_block = _block(text)
     if remove:
@@ -138,7 +199,7 @@ def install_user(remove: bool = False) -> None:
             return
         for rel, item in record["skills"].items():
             path = home / rel
-            if path.exists() and hashlib.sha256(path.read_bytes()).hexdigest() == item["sha256"]:
+            if path.exists() and hashlib.sha256(path.read_bytes()).hexdigest() in (item["sha256"], item.get("pending")):
                 if item["before"] is None:
                     path.unlink()
                 else:
@@ -149,6 +210,10 @@ def install_user(remove: bool = False) -> None:
             hooks["SessionStart"].remove(hook)
         if record["session_created"] and not hooks.get("SessionStart"):
             hooks.pop("SessionStart", None)
+        if record.get("guard_added") and guard_hook in hooks.get("PreToolUse", []):
+            hooks["PreToolUse"].remove(guard_hook)
+        if record.get("pretool_created") and not hooks.get("PreToolUse"):
+            hooks.pop("PreToolUse", None)
         if record["hooks_created"] and not hooks:
             config.pop("hooks", None)
         if record["settings_created"] and not config:
@@ -177,26 +242,42 @@ def install_user(remove: bool = False) -> None:
                 pass  # Leave directories that now contain user files.
         print("removed omi user integration")
         return
-    sources = sorted((core.TEMPLATE / "dot-claude" / "skills").rglob("*"))
-    sources = [p for p in sources if p.is_file()]
-    payloads = {str(Path(".claude/skills") / p.relative_to(core.TEMPLATE / "dot-claude/skills")): p.read_bytes()
-                for p in sources}
+    payloads = _skill_payloads()
     if not record:
         record = {"skills": {}, "settings_created": not settings.exists(), "agents_created": not agents.exists(),
                   "hooks_created": "hooks" not in config, "session_created": "SessionStart" not in hooks,
                   "hook": hook, "hook_added": hook not in hooks.get("SessionStart", []), "block_before": old_block,
                   "prefix": "" if old_block or not text else "\n\n", "directories": [],
                   "settings_before": base64.b64encode(settings.read_bytes()).decode("ascii") if settings.exists() else None,
-                  "backup_created": settings.exists() and not settings.with_name("settings.json.omi-bak").exists() and hook not in hooks.get("SessionStart", [])}
+                  "backup_created": False}
+    if "guard_hook" not in record:
+        record.update({"guard_hook": guard_hook, "guard_added": guard_hook not in hooks.get("PreToolUse", []),
+                       "pretool_created": "PreToolUse" not in hooks})
+    if (settings.exists() and not settings.with_name("settings.json.omi-bak").exists()
+            and (hook not in hooks.get("SessionStart", []) or guard_hook not in hooks.get("PreToolUse", []))):
+        record["backup_created"] = True
     # Read all originals before writing anything, including on an upgrade.
+    released = upgrade.released_shas()
+    pending = {}
     for rel, data in payloads.items():
         path = home / rel
         item = record["skills"].get(rel)
-        if item and path.exists() and hashlib.sha256(path.read_bytes()).hexdigest() != item["sha256"]:
-            raise state.StateError(f"modified installed skill: {path}; preserve or remove it before reinstalling")
+        if item and path.exists() and path.read_bytes() != data:
+            disk = path.read_bytes()
+            owned = {item["sha256"], item.get("pending")}  # What omi wrote, or was writing when interrupted.
+            if (hashlib.sha256(disk).hexdigest() not in owned
+                    and upgrade.norm_sha(disk) not in released.get(Path(rel).as_posix(), ())
+                    and upgrade.norm_sha(disk) not in UNRELEASED_SKILL_SHAS.get(Path(rel).as_posix(), ())
+                    and (item["before"] is None or disk != base64.b64decode(item["before"]))):
+                raise state.StateError(f"modified installed skill: {path}; preserve or remove it before reinstalling")
         if not item:
-            record["skills"][rel] = {"before": base64.b64encode(path.read_bytes()).decode("ascii") if path.exists() else None}
-        record["skills"][rel]["sha256"] = hashlib.sha256(data).hexdigest()
+            # A new entry names the template it is about to write; an unwritten file is simply absent.
+            record["skills"][rel] = {"before": base64.b64encode(path.read_bytes()).decode("ascii") if path.exists() else None,
+                                     "sha256": hashlib.sha256(data).hexdigest()}
+        elif item["sha256"] != hashlib.sha256(data).hexdigest():
+            item["pending"] = pending[rel] = hashlib.sha256(data).hexdigest()  # Becomes the sha once written.
+        else:
+            item.pop("pending", None)
     for path in [settings, agents, manifest, *(home / rel for rel in payloads)]:
         for parent in path.parents:
             if parent == home:
@@ -208,15 +289,22 @@ def install_user(remove: bool = False) -> None:
     _json(manifest, record)  # Persist undo data before the first integration write.
     for rel, data in payloads.items():
         _write(home / rel, data)
-    updated = {**config, "hooks": {**hooks, "SessionStart": [*hooks.get("SessionStart", [])]}}
+        if rel in pending:  # The record always names what omi last wrote, even if a later write fails.
+            record["skills"][rel]["sha256"] = pending.pop(rel)
+            record["skills"][rel].pop("pending", None)
+            _json(manifest, record)
+    updated = {**config, "hooks": {**hooks, "SessionStart": [*hooks.get("SessionStart", [])],
+                                 "PreToolUse": [*hooks.get("PreToolUse", [])]}}
     if hook not in updated["hooks"]["SessionStart"]:
         updated["hooks"]["SessionStart"].append(hook)
+    if guard_hook not in updated["hooks"]["PreToolUse"]:
+        updated["hooks"]["PreToolUse"].append(guard_hook)
     if updated != config:
         backup = settings.with_name("settings.json.omi-bak")
         if settings.exists() and not backup.exists():
             _write(backup, settings.read_bytes())
         _json(settings, updated)
-    block = START + "\n" + coordinator_rules().rstrip() + "\n" + END
+    block = START + "\n" + codex_instructions() + "\n" + END
     text = text.replace(old_block, block, 1) if old_block else text + record["prefix"] + block
     _write(agents, text.encode("utf-8"))
     print("installed omi user integration")

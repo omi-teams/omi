@@ -1,4 +1,5 @@
 import io
+import re
 import shutil
 import contextlib
 import os
@@ -57,6 +58,8 @@ def test_rules():
             def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
 
         def run(cmd, **kw):
+            if cmd[:2] == ["docker", "run"] and ("chmod" in cmd or "grep" in cmd):
+                return R(rc=1 if "grep" in cmd else 0)
             if "--git-common-dir" in cmd:
                 return R(str(Path(cmd[2]) / "shared.git"))
             calls.append(cmd)
@@ -132,8 +135,8 @@ def test_plans():
         plans = root / ".omi" / "plans"
         assert (plans / "PLAN-000.md").is_file()
         assert "- PLAN-000 (done): Example plan" in (plans / "CATALOG.md").read_text()
-        for base in (Path(__file__).resolve().parents[1], omi.common.core.TEMPLATE):
-            task_dir = base / ("dot-omi" if base == omi.common.core.TEMPLATE else ".omi") / "tasks"
+        for base in (omi.common.core.TEMPLATE,):
+            task_dir = base / "dot-omi" / "tasks"
             assert omi.common.core.meta(task_dir / "_template.md")["plan"] == ""
             assert "Coordinator-owned" in (task_dir / "_template.md").read_text().split("plan:", 1)[1].splitlines()[0]
             assert ".omi/plans/PLAN-NNN.md" in (base / "AGENTS.md").read_text()
@@ -221,6 +224,30 @@ def test_plans():
             omi.common.core.main_checkout = real
 
 
+def test_post_run_structure_check():
+    sh = shutil.which("sh") or next((c for c in (r"C:\Program Files\Git\bin\sh.exe", r"C:\Program Files (x86)\Git\bin\sh.exe") if Path(c).is_file()), None)
+    if sh is None:
+        print("SKIP test_post_run_structure_check: no sh on PATH or in Git for Windows")
+        return
+    hook = omi.setup.upgrade.template_map()[".omi/hooks/post-run.sh"]
+    with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as b:
+        root, bin_ = Path(d).resolve(), Path(b)
+        (bin_ / "omi").mkdir()
+        (bin_ / "omi" / "__init__.py").write_text("", encoding="utf-8")
+        (bin_ / "omi" / "__main__.py").write_text(
+            "import os, sys\nopen(os.environ['CALLS'], 'a').write(' '.join(sys.argv[1:]) + '\\n')\nsys.exit(int(os.environ['RC']))\n", encoding="utf-8")
+        env = dict(os.environ, OMI_PROJECT_STATE=str(root), PYTHONPATH=str(bin_), CALLS=str(root / "calls"), RC="0")
+        run = lambda: subprocess.run([sh, str(hook)], cwd=root, env=env, capture_output=True, text=True)
+        assert run().returncode == 0 and not (root / "calls").exists()  # no map: no check
+        (root / ".omi").mkdir()
+        (root / ".omi" / "structure.md").write_text("---\nid: structure\n---\n", encoding="utf-8")
+        assert run().returncode == 0
+        assert (root / "calls").read_text().strip() == "structure check --changed"
+        env["RC"] = "1"
+        r = run()
+        assert r.returncode == 1 and "structure check failed" in r.stdout
+
+
 def test_references():
     with tempfile.TemporaryDirectory() as d:
         root = Path(d).resolve()
@@ -229,6 +256,18 @@ def test_references():
         for rid in ("postgres-conventions", "nextjs-app-router"):
             assert (refs / f"{rid}.md").is_file()
             assert f"- {rid}:" in (refs / "CATALOG.md").read_text()
+        pat = refs / "patterns"
+        (pat / "custom.md").write_text("---\nid: custom\nsummary: Custom pattern\n---\nbody", encoding="utf-8")
+        omi.project.catalogs.references_catalog(root)
+        assert "- patterns/custom: Custom pattern" in (refs / "CATALOG.md").read_text()
+        # A pattern file never shadows a top-level reference of the same stem.
+        (refs / "custom.md").write_text("---\nid: custom\nsummary: Top level\n---\nbody", encoding="utf-8")
+        assert set(omi.project.catalogs.load_references(root)) >= {"custom", "patterns/custom"}
+        omi.project.catalogs.references_catalog(root)
+        assert omi.project.catalogs.task_references(root, {"refs": "patterns/custom"}) == [pat / "custom.md"]
+        (refs / "custom.md").unlink()
+        (pat / "custom.md").unlink()
+        omi.project.catalogs.references_catalog(root)
         assert omi.project.catalogs.task_references(root, {}) == []
         assert omi.project.catalogs.reference_prompt(root, []) == ""
         assert omi.project.catalogs.task_references(root, {"refs": "[postgres-conventions, nextjs-app-router]"}) == [
@@ -237,7 +276,7 @@ def test_references():
         cli = [sys.executable, "-m", "omi", "references"]
         env = dict(os.environ, PYTHONPATH=str(Path(omi.__file__).parent.parent))
         result = subprocess.run(cli, cwd=root, env=env, capture_output=True, text=True)
-        assert result.returncode == 0 and "2 references" in result.stdout, result.stderr
+        assert result.returncode == 0 and "9 references" in result.stdout, result.stderr
         cat = (refs / "CATALOG.md").read_text()
         for header in ("id: other\nsummary:", "summary: example"):
             (refs / "bad.md").write_text(f"---\n{header}\n---\nbody")
@@ -247,8 +286,8 @@ def test_references():
                 assert "summary" in result.stderr
             assert (refs / "CATALOG.md").read_text() == cat
         (refs / "bad.md").unlink()
-        for base in (Path(__file__).resolve().parents[1], omi.common.core.TEMPLATE):
-            task = base / ("dot-omi" if base == omi.common.core.TEMPLATE else ".omi") / "tasks" / "_template.md"
+        for base in (omi.common.core.TEMPLATE,):
+            task = base / "dot-omi" / "tasks" / "_template.md"
             assert omi.common.core.meta(task)["refs"] == "[]"
             assert "references/CATALOG.md" in (base / "AGENTS.md").read_text()
         task = root / ".omi" / "tasks" / "TASK-001.md"
@@ -333,6 +372,9 @@ def test_skills():
     prompt = omi.project.catalogs.skill_prompt(Path("/r"), [Path("/r/.omi/skills/g/a/SKILL.md")])
     assert "/work/.omi/skills/g/a/SKILL.md" in prompt and "CATALOG" not in prompt and omi.project.catalogs.skill_prompt(Path("/r"), []) == ""
     assert "Skills (read only" in omi.worker.tools.engineer_cmd("---\n---\nbody", "t.md", skills=prompt)[2]
+    for role in ("omi-agent-reviewer", "omi-agent-security-reviewer"):  # reviewer roles must tell the agent to open the listed skills
+        text = (omi.common.core.TEMPLATE / "dot-omi" / "agents" / f"{role}.md").read_text(encoding="utf-8")
+        assert "open every skill file the prompt lists, and only those" in text, role
 
 
 def test_skills_check():
@@ -395,12 +437,348 @@ source_use: rewrite
     assert not ws.exists() or omi.project.catalogs.validate_skill(ws, 2000) == []
 
 
+def test_ui_mockup_contract() -> None:
+    template = omi.common.core.TEMPLATE / "dot-omi"
+    designer = omi.common.core.meta(template / "agents" / "omi-agent-designer-ui.md")
+    assert designer["access"] == "write"
+    text = designer["_text"]
+    for requirement in (
+        'add the acceptance criterion "pages match the mockup with designer/UI review PASS in `.omi/tasks/<ID>-mockup/`"',
+        "plain self-contained `.html`", "one per screen plus a phone-width mockup",
+        "Use only what the target stack allows", "no CDN or web fonts unless the task explicitly allows them",
+        "no account, network or external tool", "repo files are the only source of truth",
+        "no Figma or hosted canvas", "Never edit app code", "In REVIEW mode, never edit files",
+        "designer/UI review before build", "Do not review your own design",
+        "Record designer/UI review PASS under `## Steps`", "fresh designer/UI review",
+    ):
+        assert requirement in text, requirement
+    workflow = (template / "workflows" / "omi-flow-feature-ui.md").read_text(encoding="utf-8")
+    assert 'adds the acceptance criterion "pages match the mockup with designer/UI review PASS' in workflow
+    assert "`approve-mockup` has no gate: the Coordinator proceeds after the designer/UI review PASS" in workflow
+
+
+def test_ui_mockup_requires_designer_review() -> None:
+    template = omi.common.core.TEMPLATE / "dot-omi"
+    paths = [template / "workflows" / "omi-flow-feature-ui.md"] + [
+        template / "agents" / f"omi-agent-{role}.md"
+        for role in ("designer-ui", "reviewer", "qa-tester")]
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        assert "PO-approved" not in text, path
+        assert "PO approval before build" not in text, path
+        assert "fresh PO approval" not in text, path
+        assert "mockups for PO approval" not in text, path
+        assert "designer/UI review PASS" in text, path
+    workflow, _, reviewer, qa = [path.read_text(encoding="utf-8") for path in paths]
+    for text in (workflow, reviewer):
+        assert "missing mockup or missing designer/UI review PASS" in text
+    assert "Missing mockups, designer/UI review PASS or comparison screenshots cannot receive PASS" in qa
+
+
+def test_ui_mockup_review_contract() -> None:
+    agents = omi.common.core.TEMPLATE / "dot-omi" / "agents"
+    for role in ("reviewer", "qa-tester"):
+        agent = omi.common.core.meta(agents / f"omi-agent-{role}.md")
+        assert agent["access"] == "read"
+        for requirement in ("repo HTML with designer/UI review PASS in `.omi/tasks/<ID>-mockup/`",
+                            "designer/UI review PASS recorded under `## Steps`"):
+            assert requirement in agent["_text"], (role, requirement)
+    assert "FAIL on clear mismatches in layout, components or colours" in omi.common.core.meta(
+        agents / "omi-agent-qa-tester.md")["_text"]
+    qa = (agents / "omi-agent-qa-tester.md").read_text(encoding="utf-8")
+    assert "mockup and build screenshots side by side per screen at matching viewport sizes, including phone width" in qa
+    assert "name both files in the evidence" in qa
+
+
+def test_qa_host_criteria_do_not_fail() -> None:
+    agents = omi.common.core.TEMPLATE / "dot-omi" / "agents"
+    reviewer = (agents / "omi-agent-reviewer.md").read_text(encoding="utf-8")
+    qa = (agents / "omi-agent-qa-tester.md").read_text(encoding="utf-8")
+    rule = ("a criterion whose text names the host (e.g. \"on the Windows host\") cannot run in your container; "
+            "report it `HOST <criterion>`, it does not block PASS. A mixed criterion is split: verify the worker part, "
+            "mark only the host part `HOST`")
+    assert "mark only the host part `HOST`" in reviewer
+    assert rule in qa
+    assert "citing the task's host-test row" in qa
+    assert "`RESULT` is FAIL only when an item is ✗" in qa
+    assert "AC: <criterion> ✓|✗|HOST <evidence" in qa
+
+
+def test_reviewers_accept_host_evidence() -> None:
+    agents = omi.common.core.TEMPLATE / "dot-omi" / "agents"
+    for role in ("reviewer", "security-reviewer"):
+        text = (agents / f"omi-agent-{role}.md").read_text(encoding="utf-8")
+        for wording in ("git metadata, live CI, Windows", "even when the criterion does not name the host",
+                        "report it `HOST <criterion>`, it does not block PASS",
+                        "never FAIL or `ROOT: same` for unavailable host checks",
+                        "FAIL requires a concrete code or test finding",
+                        "passing `Host:` lines recorded by the Coordinator count as evidence",
+                        "cite the matching line", "verify the worker part"):
+            assert wording in text, (role, wording)
+        assert "HOST: <criterion> <evidence or required host check>" in text
+
+
+def test_reviewer_mockup_rule_depends_on_workflow() -> None:
+    root = omi.common.core.TEMPLATE / "dot-omi"
+    reviewer = (root / "agents" / "omi-agent-reviewer.md").read_text(encoding="utf-8")
+    rule = next(line for line in reviewer.splitlines() if line.startswith("4. "))
+    assert "Read the task's workflow" in rule
+    assert "Only when that workflow has a `design` or `approve-mockup` step" in rule
+    assert "(for example, `omi-flow-feature-ui`)" in rule
+    assert "For workflows without those steps (including `omi-flow-feature`), use browser tests and screenshots as UI evidence" in rule
+    assert "do not FAIL solely for a missing mockup or designer/UI review PASS" in rule
+    assert "4. For UI tasks, compare" not in reviewer
+    for name, has_design in (("omi-flow-feature-ui", True), ("omi-flow-feature", False)):
+        steps = omi.project.workflows.workflow_steps((root / "workflows" / f"{name}.md").read_text(encoding="utf-8"))
+        assert any(step["id"] in ("design", "approve-mockup") for step in steps) == has_design
+
+
+def test_reviewer_mockup_evidence_is_qa() -> None:
+    root = omi.common.core.TEMPLATE / "dot-omi"
+    reviewer = (root / "agents" / "omi-agent-reviewer.md").read_text(encoding="utf-8")
+    assert "report that part of the criterion as `QA <criterion>`; it does not block PASS" in reviewer
+    assert "✓|✗|UNVERIFIED|QA <evidence>" in reviewer
+    assert "Host items go only on the single `HOST:` line" in reviewer and "|HOST|" not in reviewer
+    assert "comparison evidence cannot receive PASS" not in reviewer
+    flow = (root / "workflows" / "omi-flow-feature-ui.md").read_text(encoding="utf-8")
+    assert "`QA <criterion>`, which does not block PASS" in flow
+    assert "qa-tester owns the screenshot comparison" in flow
+
+
+def test_ui_mockup_workflow() -> None:
+    with tempfile.TemporaryDirectory() as d, contextlib.redirect_stdout(io.StringIO()):
+        root = Path(d).resolve()
+        omi.setup.upgrade.init(root)
+        steps = omi.project.workflows.get_workflow(root, "omi-flow-feature-ui")
+        assert [s["id"] for s in steps] == ["plan", "design", "approve-mockup", "build", "review", "qa", "accept"]
+        assert steps[2]["gate"] == "none" and not [s for s in steps if s["gate"] == "po"]
+        assert ".omi/tasks/<ID>-mockup/" in steps[0]["output"]
+        assert steps[2]["role"] == "coordinator"
+        assert steps[-1]["gate"] == "auto"
+        assert omi.project.workflows.step_skill_ids(root, steps[3]) == [
+            "omi-skill-lean-implementation", "omi-skill-ui-direction"]
+        assert ".omi/tasks/<ID>-mockup/" in steps[3]["input"]
+        task = root / ".omi" / "tasks" / "TASK-122.md"
+        task.write_text("---\nid: TASK-122\nscope: src/**\nworkflow: omi-flow-feature-ui\nstep: design\n---\n"
+                        "## Steps\n- plan done 2026-10-31 10:00\n- design started 2026-10-31 10:00\n",
+                        encoding="utf-8")
+        step = lambda action, why=None: omi.project.tasks.step(root, "TASK-122", action, why)
+        step("done")
+        step("next")
+        assert omi.common.core.meta(task)["step"] == "approve-mockup"
+        # Implementation criteria must remain open when the mockups pass review.
+        task.write_text(task.read_text(encoding="utf-8").replace(
+            "## Steps", "## Acceptance criteria\n- [ ] pages match the mockup with designer/UI review PASS in `.omi/tasks/TASK-122-mockup/`\n\n## Steps"),
+            encoding="utf-8")
+        step("done")
+        step("next")
+        assert omi.common.core.meta(task)["step"] == "build"
+        assert omi.project.tasks.unticked(task.read_text(encoding="utf-8")) == [
+            "- [ ] pages match the mockup with designer/UI review PASS in `.omi/tasks/TASK-122-mockup/`"]
+
+
+def test_review_steps_have_skills() -> None:
+    root = omi.common.core.TEMPLATE / "dot-omi" / "workflows"
+    for path in sorted(root.glob("omi-flow-*.md")):
+        steps = omi.project.workflows.workflow_steps(path.read_text(encoding="utf-8"))
+        for step in steps:
+            if step.get("gate") != "review":
+                continue
+            skills = omi.project.catalogs.task_skills(step)
+            label = f"{path.stem}:{step['id']}"
+            assert "omi-skill-verify-evidence" in skills, label
+            if path.stem != "omi-flow-docs-only":
+                assert "omi-skill-simplify-review" in skills, label
+
+
+def test_bugfix_steps_have_root_cause_skill() -> None:
+    path = omi.common.core.TEMPLATE / "dot-omi" / "workflows" / "omi-flow-bugfix.md"
+    steps = {step["id"]: step for step in omi.project.workflows.workflow_steps(path.read_text(encoding="utf-8"))}
+    for name in ("reproduce", "fix"):
+        assert "omi-skill-debug-root-cause" in omi.project.catalogs.task_skills(steps[name]), name
+
+
+def test_docs_writer_steps_have_skills() -> None:
+    root = omi.common.core.TEMPLATE / "dot-omi" / "workflows"
+    for path in sorted(root.glob("omi-flow-*.md")):
+        for step in omi.project.workflows.workflow_steps(path.read_text(encoding="utf-8")):
+            if step.get("role") == "omi-agent-docs-writer":
+                assert "omi-skill-verify-evidence" in omi.project.catalogs.task_skills(step), f"{path.stem}:{step['id']}"
+
+
+def test_review_and_docs_role_default_skills() -> None:
+    root = omi.common.core.TEMPLATE / "dot-omi" / "agents"
+    for name, expected in (
+        ("omi-agent-reviewer", ["omi-skill-verify-evidence", "omi-skill-simplify-review"]),
+        ("omi-agent-docs-writer", ["omi-skill-verify-evidence"]),
+    ):
+        assert omi.project.catalogs.task_skills(omi.common.core.meta(root / f"{name}.md")) == expected, name
+
+
+def test_release_verifies_before_pr() -> None:
+    root = omi.common.core.TEMPLATE / "dot-omi" / "workflows"
+    steps = omi.project.workflows.workflow_steps((root / "omi-flow-release.md").read_text(encoding="utf-8"))
+    ids = [s["id"] for s in steps]
+    assert ids.index("verify") < ids.index("pr")
+    verify = steps[ids.index("verify")]
+    assert verify["role"] == "coordinator" and verify["gate"] == "none"
+    assert omi.project.catalogs.task_skills(verify) == ["omi-skill-release-checklist", "omi-skill-verify-evidence"]
+    assert "origin/staging..origin/development" in verify["input"] and "unproven" in verify["stop"]
+
+
+def test_only_merge_workflows_have_po_gate() -> None:
+    root = omi.common.core.TEMPLATE / "dot-omi" / "workflows"
+    with_po = {f.stem: [s["id"] for s in omi.project.workflows.workflow_steps(f.read_text(encoding="utf-8")) if s.get("gate") == "po"]
+               for f in root.glob("omi-flow-*.md")}
+    assert {k: v for k, v in with_po.items() if v} == {
+        "omi-flow-promote": ["merge-main"], "omi-flow-release": ["merge-staging"], "omi-flow-incident": ["merge-prod"]}
+
+
+def test_every_auto_gate_follows_a_review_gate() -> None:
+    root = omi.common.core.TEMPLATE / "dot-omi" / "workflows"
+    for f in root.glob("omi-flow-*.md"):
+        gates = [s.get("gate") for s in omi.project.workflows.workflow_steps(f.read_text(encoding="utf-8"))]
+        for i, gate in enumerate(gates):
+            assert gate != "auto" or "review" in gates[:i], f.stem
+
+
+def test_issue_types_skill() -> None:
+    with tempfile.TemporaryDirectory() as d, contextlib.redirect_stdout(io.StringIO()):
+        root = Path(d).resolve()
+        omi.setup.upgrade.init(root)
+        omi.project.catalogs.check_all_skills(root)
+        omi.project.catalogs.skills_catalog(root)
+        assert "- omi-skill-issue-types (workflow): " in (root / ".omi/skills/CATALOG.md").read_text(encoding="utf-8")
+        text = (root / ".omi/skills/workflow/omi-skill-issue-types/SKILL.md").read_text(encoding="utf-8")
+        for typ in omi.project.tree.TYPES:
+            assert f"| {typ} |" in text or f"| {typ}, " in text or f", {typ} |" in text, typ
+        for needle in ("| type | log it when |", "| type | parent may be |", "omi improve", "Symptom", "Boundary crossed", "Time-box"):
+            assert needle in text, needle
+        for rel in (".claude/skills/omi-idea/SKILL.md", ".claude/skills/omi-task/SKILL.md", ".omi/skills/workflow/omi-skill-task-brief/SKILL.md", "AGENTS.md"):
+            assert "omi-skill-issue-types" in (root / rel).read_text(encoding="utf-8"), rel
+
+
+def test_ui_mockup_generated_catalogs() -> None:
+    with tempfile.TemporaryDirectory() as d, contextlib.redirect_stdout(io.StringIO()):
+        root = Path(d).resolve()
+        omi.setup.upgrade.init(root)
+        omi.project.catalogs.agents_catalog(root)
+        omi.project.workflows.workflows_catalog(root)
+        omi.project.workflows.check_all_workflows(root)
+        agents = (root / ".omi" / "agents" / "CATALOG.md").read_text(encoding="utf-8")
+        workflows = (root / ".omi" / "workflows" / "CATALOG.md").read_text(encoding="utf-8")
+        assert "omi-agent-designer-ui (write, sonnet/medium): Creates a UI/UX spec and static HTML mockups" in agents
+        assert "[plan > design > approve-mockup > build > review > qa > accept]" in workflows
+        assert "static HTML mockups with designer/UI review PASS first" in workflows
+        manifest = omi.setup.upgrade.read_manifest(root)
+        for relative in (".omi/workflows/omi-flow-feature-ui.md", ".omi/agents/omi-agent-designer-ui.md",
+                         ".omi/agents/omi-agent-reviewer.md", ".omi/agents/omi-agent-qa-tester.md"):
+            assert manifest[relative] == omi.setup.upgrade.template_shas()[relative]
+        template = omi.common.core.TEMPLATE / "dot-omi"
+        for kind in ("agents", "workflows"):
+            generated = (root / ".omi" / kind / "CATALOG.md").read_text(encoding="utf-8")
+            assert (template / kind / "CATALOG.md").read_text(encoding="utf-8") == generated, f"stale template {kind} catalog"
+
+
+def test_pattern_library() -> None:
+    patterns = omi.common.core.TEMPLATE / "dot-omi" / "references" / "patterns"
+    names = {"repository", "strategy", "adapter", "factory", "state", "cqrs", "anti-patterns"}
+    assert {f.stem for f in patterns.glob("*.md")} == names
+    for f in patterns.glob("*.md"):
+        text = f.read_text(encoding="utf-8")
+        assert omi.common.core.meta(f).get("id") == f.stem
+        heads = [h.strip().lower() for h in re.findall(r"^## (.+)$", text, re.M)]
+        for part in ("when to use", "when not to use", "signs to remove it", "sources"):
+            assert part in heads, f"{f.name}: missing {part}"
+        assert re.search(r"https://\S+", text.split("## Sources")[-1]), f"{f.name}: no cited source"
+    catalog = (patterns.parent / "CATALOG.md").read_text(encoding="utf-8")
+    assert all(f"- patterns/{n}:" in catalog for n in names)
+
+
+def test_structure_rules_in_roles() -> None:
+    agents = omi.common.core.TEMPLATE / "dot-omi" / "agents"
+    architect = (agents / "omi-agent-architect.md").read_text(encoding="utf-8")
+    for words in ("## File plan", "- edit|create <path> (<layer>)", "Pattern: <name> - <force> - <why simpler is not enough>",
+                  "patterns/<name>.md", "committed by the Coordinator before build"):
+        assert words in architect, words
+    reviewer = (agents / "omi-agent-reviewer.md").read_text(encoding="utf-8")
+    for words in ("several responsibilities in one file", "not the concept", "business logic in an adapter", "needless patterns",
+                  "interface with one implementation"):
+        assert words in reviewer, words
+
+
+def test_reviewer_copies_criteria_verbatim() -> None:
+    reviewer = (omi.common.core.TEMPLATE / "dot-omi/agents/omi-agent-reviewer.md").read_text(encoding="utf-8")
+    assert "Copy each criterion's text verbatim into its `AC:` line, one line per criterion, in task order." in reviewer
+
+
+def test_engineer_requires_suggested_commit_line() -> None:
+    engineer = (omi.common.core.TEMPLATE / "dot-omi/agents/omi-agent-engineer.md").read_text(encoding="utf-8")
+    assert "`Suggested commit: <type>(<area>): <summary>`" in engineer
+
+
+def test_po_decisions_use_pick_list() -> None:
+    line = next(x for x in (omi.common.core.TEMPLATE / "AGENTS.md").read_text(encoding="utf-8").splitlines() if x.startswith("The AskUserQuestion pick-list is used only"))
+    for words in ("only for the PO decisions above", "every one is asked", "AskUserQuestion pick-list", "recommended option first", "in Vietnamese", "never as a plain-text question", "numbered option list", "Other questions never use the pick-list"):
+        assert words in line, words
+
+
+def test_scope_questions_not_sent_to_po() -> None:
+    task = (omi.common.core.TEMPLATE / "dot-claude" / "skills" / "omi-task" / "SKILL.md").read_text(encoding="utf-8")
+    change = (omi.common.core.TEMPLATE / "dot-omi" / "skills" / "workflow" / "omi-skill-change-request" / "SKILL.md").read_text(encoding="utf-8")
+    needs_scope = next(x for x in task.splitlines() if x.lstrip().startswith("- `NEEDS SCOPE`"))
+    assert "Otherwise ask the PO" not in needs_scope
+    assert "Only the PO widens scope" not in change
+
+
+def test_dispatch_watch_advance_templates() -> None:
+    for relative in ('AGENTS.md', 'dot-claude/skills/omi-task/SKILL.md'):
+        text = (omi.common.core.TEMPLATE / relative).read_text(encoding='utf-8')
+        for command in ('omi dispatch', 'omi watch', 'omi advance'):
+            assert command in text, (relative, command)
+        assert 'GitHub remote' in text and 'host-test' in text
+        assert 'security reviewer' in text and 'completed stages' in text
+        assert 'Review round N FAIL:' in text and '--reject' in text and 'back to draft' in text
+
+
+def test_status_skill_resumes_orphans() -> None:
+    text = (omi.common.core.TEMPLATE / "dot-claude" / "skills" / "omi-status" / "SKILL.md").read_text(encoding="utf-8")
+    for words in ("`(resume)`", "omi-task step 2", "`omi-task <ID> <ID>`", "before the next planned task", "finished runs not handled", "python -m omi watch"):
+        assert words in text, words
+
+
 def main():
+    test_status_skill_resumes_orphans()
+    test_dispatch_watch_advance_templates()
+    test_scope_questions_not_sent_to_po()
+    test_pattern_library()
+    test_structure_rules_in_roles()
+    test_reviewer_copies_criteria_verbatim()
+    test_po_decisions_use_pick_list()
+    test_ui_mockup_contract()
+    test_ui_mockup_requires_designer_review()
+    test_ui_mockup_review_contract()
+    test_reviewer_mockup_rule_depends_on_workflow()
+    test_qa_host_criteria_do_not_fail()
+    test_reviewers_accept_host_evidence()
+    test_ui_mockup_workflow()
+    test_issue_types_skill()
+    test_ui_mockup_generated_catalogs()
+    test_review_steps_have_skills()
+    test_bugfix_steps_have_root_cause_skill()
+    test_docs_writer_steps_have_skills()
+    test_review_and_docs_role_default_skills()
+    test_release_verifies_before_pr()
+    test_only_merge_workflows_have_po_gate()
+    test_every_auto_gate_follows_a_review_gate()
     test_skills()
     test_rules()
     test_references()
+    test_post_run_structure_check()
     test_plans()
     test_skills_check()
+    test_reviewer_mockup_evidence_is_qa()
+    test_engineer_requires_suggested_commit_line()
 
 
 if __name__ == "__main__":

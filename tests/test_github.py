@@ -227,12 +227,27 @@ def test_github_private():
         subprocess.run = real
 
 
+def test_pr_comment_strips_control_bytes():
+    from unittest.mock import patch, MagicMock
+    from omi.worker import pr
+    seen = []
+    def fake(cmd, **kw):
+        if "view" in cmd:
+            return MagicMock(stdout="OPEN\n", returncode=0)
+        seen.append(kw["input"])
+        return MagicMock(returncode=0, stdout="", stderr="")
+    with patch("omi.common.core.git", return_value="origin"), patch("shutil.which", return_value="gh"), patch("subprocess.run", fake):
+        assert pr.post("/tmp", "TASK-1", "x\x00y\x01z\tw\n")
+    assert seen == ["xyz\tw\n"]
+
+
 def main():
     test_github_rulesets()
     test_ci_checks_and_apply()
     test_same_and_no_gh()
     test_github_po()
     test_github_private()
+    test_pr_comment_strips_control_bytes()
 
 
 if __name__ == "__main__":

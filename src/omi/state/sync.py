@@ -1,7 +1,11 @@
 """Git transport and command-scoped commits for detached state."""
 
 import hashlib
+import os
 import subprocess
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from ..common import core
@@ -12,7 +16,7 @@ def git(root: Path, *args: str) -> subprocess.CompletedProcess:
     """Run state git with bounded network waits and useful errors."""
     try:
         return subprocess.run(["git", "--literal-pathspecs", "-C", str(root), *args], capture_output=True,
-                              encoding="utf-8", errors="replace", timeout=30)
+                              encoding="utf-8", errors="replace", timeout=30, env={**os.environ, "LC_ALL": "C"})
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise state.StateError(f"state git {args[0]} failed: {exc}") from exc
 
@@ -20,6 +24,20 @@ def git(root: Path, *args: str) -> subprocess.CompletedProcess:
 def repo(project: state.Project) -> Path:
     """Return the shared state repository containing this project."""
     return Path(core.git(project.state, "rev-parse", "--show-toplevel") or state.state_home())
+
+
+@contextmanager
+def _locked(root: Path) -> Iterator[None]:
+    """Serialize state index writers and rebases across omi processes."""
+    result = git(root, "rev-parse", "--git-common-dir")
+    if result.returncode:
+        raise state.StateError(result.stderr.strip())
+    path = root / result.stdout.strip() / "omi-state.lock"
+    try:
+        with core.file_lock(path, 30):
+            yield
+    except TimeoutError as exc:
+        raise state.StateError(f"state repository busy: {exc}") from exc
 
 
 def conflicts(root: Path) -> None:
@@ -36,6 +54,12 @@ def conflicts(root: Path) -> None:
 
 
 def pull(project: state.Project) -> bool:
+    """Refresh state while excluding other state git writers."""
+    with _locked(repo(project)):
+        return _pull(project)
+
+
+def _pull(project: state.Project) -> bool:
     """Refresh state, allowing offline status and preserving conflict information."""
     root = repo(project)
     conflicts(root)
@@ -69,6 +93,13 @@ def snapshot(project: state.Project) -> dict[str, bytes]:
 
 
 def commit(project: state.Project, paths: list[str], what: str) -> None:
+    """Wait for other state writers before touching the shared index."""
+    if paths:
+        with _locked(repo(project)):
+            _commit(project, paths, what)
+
+
+def _commit(project: state.Project, paths: list[str], what: str) -> None:
     """Commit exactly the selected files, preserving unrelated index entries."""
     if not paths:
         return
@@ -81,23 +112,42 @@ def commit(project: state.Project, paths: list[str], what: str) -> None:
             raise state.StateError("state commit failed: " + result.stderr.strip())
     result = git(root, "commit", "--only", "-m", f"chore({project.state.name}): {what}", "--", *paths)
     if result.returncode:
-        raise state.StateError("state commit failed: " + result.stderr.strip())
+        # Another run may have committed the same change: nothing left for these paths is success.
+        left = git(root, "status", "--porcelain", "--", *paths)
+        if left.returncode == 0 and not left.stdout.strip():
+            return
+        raise state.StateError("state commit failed: " + (result.stdout + result.stderr).strip())
 
 
 def push(project: state.Project) -> bool:
-    """Keep local commits and give a recovery command when transport fails."""
+    """Retry transport failures and rebase rejected pushes under the state lock."""
+    with _locked(repo(project)):
+        return _push(project)
+
+
+def _push(project: state.Project) -> bool:
     root = repo(project)
     if not core.git(root, "remote"):
         print("state push skipped: no remote")
         return True
-    try:
-        upstream = core.git(root, "rev-parse", "--abbrev-ref", "@{upstream}")
-        remote = (core.git(root, "remote") or "").splitlines()[0]
-        result = git(root, "push", *([] if upstream else ["--set-upstream", remote, "HEAD"]))
-        if result.returncode == 0:
-            return True
-    except state.StateError:
-        pass
+    upstream = core.git(root, "rev-parse", "--abbrev-ref", "@{upstream}")
+    remote = (core.git(root, "remote") or "").splitlines()[0]
+    for attempt in range(1, 4):
+        try:
+            result = git(root, "push", *([] if upstream else ["--set-upstream", remote, "HEAD"]))
+            if result.returncode == 0:
+                return True
+            error = (result.stdout + result.stderr).strip()
+        except state.StateError as exc:
+            error = str(exc)
+        print(f"state push failed (attempt {attempt}/3): {error}")
+        if attempt == 3:
+            break
+        if any(reason in error.lower() for reason in ("non-fast-forward", "fetch first", "stale info")):
+            if not _pull(project):
+                break
+        else:
+            time.sleep(0.1 * attempt)
     print("STATE NOT PUSHED: run omi sync")
     return False
 

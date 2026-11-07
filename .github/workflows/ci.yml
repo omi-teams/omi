@@ -12,15 +12,67 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      OMI_BROWSER_REQUIRED: "1"
+      HAS_STATE_KEY: ${{ secrets.OMI_STATE_READ_KEY != '' }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Fetch development for the structure check
+        if: github.ref != 'refs/heads/development'
+        run: git fetch origin development:development
 
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24.11.0"
+
+      - name: Install Browser QA
+        run: |
+          npm install --no-save --package-lock=false playwright@1.56.1
+          npx --no-install playwright install --with-deps --only-shell chromium
+
       - name: Install package
         run: pip install .
 
       - name: Run tests
+        env:
+          OMI_BOARD_SCREENS: ${{ runner.temp }}/board-screens
         run: python tests/test_omi.py
+
+      # The structure map lives in omi-state (detached project); fork PRs get no secret, so they skip it.
+      - name: Check out omi-state map
+        id: state
+        if: env.HAS_STATE_KEY == 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: omi-teams/omi-state
+          ssh-key: ${{ secrets.OMI_STATE_READ_KEY }}
+          path: omi-state-map  # checkout cannot write outside the workspace; git ls-files ignores it
+          sparse-checkout: projects/omi
+          persist-credentials: false
+
+      - name: Structure check
+        if: steps.state.outcome == 'success'
+        env:
+          OMI_STATE: ${{ github.workspace }}/omi-state-map
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then python -m omi structure check --changed; else python -m omi structure check; fi
+
+      - name: Structure check skipped
+        if: env.HAS_STATE_KEY != 'true'
+        run: echo "::notice::OMI_STATE_READ_KEY unavailable (fork PR); structure check skipped"
+
+      - name: Upload board screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: board-screens
+          path: ${{ runner.temp }}/board-screens
+          if-no-files-found: error

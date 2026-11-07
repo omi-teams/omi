@@ -42,7 +42,7 @@ def template_shas_cmd(tpl: str | Path, ver: str) -> None:
     """Maintainer step: record the hashes of a released template (an export of its tag) in template_shas.json."""
     known = json.loads(SHAS.read_text(encoding="utf-8")) if SHAS.is_file() else {}
     known[ver] = template_shas(tpl)
-    SHAS.write_text(json.dumps(known, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    SHAS.write_text(json.dumps(known, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
     print(f"template-shas {ver}: {len(known[ver])} files")
 
 
@@ -63,7 +63,7 @@ def read_manifest(target: str | Path) -> dict[str, str]:
 def write_manifest(target: str | Path, files: dict[str, str]) -> None:
     f = Path(target) / ".omi" / "manifest.json"
     f.parent.mkdir(parents=True, exist_ok=True)
-    f.write_text(json.dumps({"version": core.version(), "files": dict(sorted(files.items()))}, indent=2) + "\n", encoding="utf-8")
+    f.write_text(json.dumps({"version": core.version(), "files": dict(sorted(files.items()))}, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 
 def released_shas() -> dict[str, set[str]]:
@@ -85,12 +85,12 @@ def ensure_gitattributes(target: Path) -> None:
     """Create the project's line-ending policy only when absent."""
     attrs = target / ".gitattributes"
     if upgrade_write_safe(target, ".gitattributes") and not attrs.exists():
-        attrs.write_text("* text=auto eol=lf\n", encoding="utf-8")
+        attrs.write_text("* text=auto eol=lf\n", encoding="utf-8", newline="\n")
         print("create .gitattributes (* text=auto eol=lf)")
 
 
-def ensure_gitignore(target: Path) -> None:
-    """Ignore generated Python files and worktree download caches without duplicating entries."""
+def ensure_gitignore(target: Path, *, detached: bool = False) -> None:
+    """Ignore caches and detached upgrade candidates without duplicating entries."""
     if not upgrade_write_safe(target, ".gitignore"):
         return
     ignore = target / ".gitignore"
@@ -98,8 +98,12 @@ def ensure_gitignore(target: Path) -> None:
     for name in ("__pycache__", ".omi-cache"):
         if not {name, name + "/", "/" + name + "/"} & set(lines):
             lines.append(name + "/")
-            ignore.write_text("".join(line + "\n" for line in lines), encoding="utf-8")
+            ignore.write_text("".join(line + "\n" for line in lines), encoding="utf-8", newline="\n")
             print(f"update .gitignore ({name}/)")
+    if detached and "*.omi-new" not in lines:
+        lines.append("*.omi-new")
+        ignore.write_text("".join(line + "\n" for line in lines), encoding="utf-8", newline="\n")
+        print("update .gitignore (*.omi-new)")
 
 
 def init(target: str | Path = ".", *, detached: bool = False) -> None:
@@ -125,7 +129,7 @@ def init(target: str | Path = ".", *, detached: bool = False) -> None:
     if manifest_safe:
         write_manifest(target, files)
     if upgrade_write_safe(target, ".omi/version"):
-        (target / ".omi" / "version").write_text(core.version() + "\n", encoding="utf-8")
+        (target / ".omi" / "version").write_text(core.version() + "\n", encoding="utf-8", newline="\n")
         print(f"stamp  .omi/version ({core.version()})")
     ensure_gitattributes(target)
     ensure_gitignore(target)
@@ -156,14 +160,37 @@ def protected(rel: str) -> bool:
     return rel.startswith(".omi/plans/PLAN-") and rel != ".omi/plans/PLAN-000.md"
 
 
-def upgrade_write_safe(target: Path, rel: str) -> bool:
-    """Skip links (including parent directories) and destinations outside the project."""
+def upgrade_write_safe(target: Path, rel: str, quiet: bool = False) -> bool:
+    """Skip links (including parent directories) and destinations outside the project; `quiet` prints nothing."""
     dst = target / rel
     if (any(p.is_symlink() for p in (dst, *dst.parents) if p.is_relative_to(target))
             or not dst.resolve().is_relative_to(target)):
-        print(f"skip (symlink): {rel}")
+        if not quiet:
+            print(f"skip (symlink): {rel}")
         return False
     return True
+
+
+def stale_template_hint(target: str | Path, *, detached: bool = False) -> None:
+    """Report manifest-recorded files that apply can safely update between releases."""
+    target = Path(target).resolve()
+    if not upgrade_write_safe(target, ".omi/manifest.json", True):
+        return
+    files = read_manifest(target)
+    if not files:
+        return
+    count = 0
+    for rel, src in template_map().items():
+        base = files.get(rel)
+        if not base or protected(rel) or (detached and (rel == "AGENTS.md" or rel.startswith(".claude/"))):
+            continue
+        if norm_sha(src.read_bytes()) == base or not upgrade_write_safe(target, rel, True):
+            continue
+        dst = target / rel
+        if dst.is_file() and norm_sha(dst.read_bytes()) == base:
+            count += 1
+    if count:
+        print(f"{count} unmodified template files are stale; run `python -m omi upgrade --apply`")
 
 
 def upgrade_apply(target: str | Path = ".", *, detached: bool = False) -> int:
@@ -211,6 +238,8 @@ def upgrade_apply(target: str | Path = ".", *, detached: bool = False) -> int:
                 candidate = dst.with_name(dst.name + ".omi-new")
                 stale = candidate.exists()
                 candidate.write_bytes(new)
+                if detached:
+                    print(f"review {rel}.omi-new (Coordinator: merge by hand)")
                 if stale:
                     print(f"replaced stale {rel}.omi-new")
             counts["kept"] += 1
@@ -218,17 +247,17 @@ def upgrade_apply(target: str | Path = ".", *, detached: bool = False) -> int:
     tpl_cfg = json.loads(template_map()[".omi/config.json"].read_text(encoding="utf-8"))
     if cfg_safe:
         cfg.parent.mkdir(parents=True, exist_ok=True)
-        cfg.write_text(json.dumps(merge_keys(old_cfg, tpl_cfg) if old_cfg is not None else tpl_cfg, indent=2) + "\n", encoding="utf-8")
+        cfg.write_text(json.dumps(merge_keys(old_cfg, tpl_cfg) if old_cfg is not None else tpl_cfg, indent=2) + "\n", encoding="utf-8", newline="\n")
     if manifest_safe:
         write_manifest(target, files)
     if upgrade_write_safe(target, ".omi/version"):
-        (target / ".omi" / "version").write_text(core.version() + "\n", encoding="utf-8")
+        (target / ".omi" / "version").write_text(core.version() + "\n", encoding="utf-8", newline="\n")
     for kind, catalog in (("skills", catalogs.skills_catalog), ("agents", catalogs.agents_catalog), ("workflows", workflows.workflows_catalog),
                           ("rules", catalogs.rules_catalog), ("references", catalogs.references_catalog), ("plans", catalogs.plans_catalog)):
         if upgrade_write_safe(target, f".omi/{kind}/CATALOG.md"):
             catalog(target)
     ensure_gitattributes(target)
-    ensure_gitignore(target)
+    ensure_gitignore(target, detached=detached)
     print(f"upgrade {core.version()}: {counts['created']} created, {counts['updated']} updated, {counts['kept']} kept (see *.omi-new)")
     return 0
 
@@ -283,6 +312,7 @@ def upgrade_cmd(rest: list[str], root: str | Path = ".", *, detached: bool = Fal
         sys.exit(f"no vX.Y.Z tag in {repo}")
     if "--check" in rest:
         print(f"omi {core.version()} -> {latest[1:]}" if core.semver(latest) > core.semver(core.version()) else "up to date")
+        stale_template_hint(root, detached=detached)
         return 0
     tag = requested or latest
     if "://" not in repo:

@@ -1,6 +1,7 @@
 import io
 import re
 import shutil
+import shlex
 import json
 import contextlib
 import os
@@ -9,12 +10,14 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from helpers import omi, git
+from helpers import omi, git, detached_project, detached_cli, state_remote
+from unittest.mock import patch
+from omi.project import improve
+from omi.state import resolve as state
 
 
 def test_cli_correctness():
-    repo = Path(__file__).resolve().parents[1]
-    for base, dot in ((repo, "."), (omi.common.core.TEMPLATE, "dot-")):
+    for base, dot in ((omi.common.core.TEMPLATE, "dot-"),):
         template = (base / f"{dot}omi/tasks/_template.md").read_text(encoding="utf-8")
         assert omi.project.scope.GIT_HINT in template and "edit only on development" in template
         skill = (base / f"{dot}claude/skills/omi-task/SKILL.md").read_text(encoding="utf-8")
@@ -70,6 +73,12 @@ def test_cli_correctness():
         with contextlib.redirect_stdout(buf):
             omi.app.cli.status(root)
         assert "no `test` command" not in buf.getvalue()
+        # status warns when the installed user integration is behind the template
+        for stale, shown in (([".codex/AGENTS.md"], True), ([], False)):
+            buf = io.StringIO()
+            with patch("omi.setup.install.stale_user_integration", return_value=stale), contextlib.redirect_stdout(buf):
+                omi.app.cli.status(root)
+            assert ("run `python -m omi install-user`" in buf.getvalue()) == shown
     # #8 PO approval with or without a leading `- `
     assert omi.project.tasks.po_approved("x\n## Steps\n- PO approval accept: ok\n", "accept")
     assert omi.project.tasks.po_approved("x\n## Steps\nPO approval accept: ok\n", "accept")
@@ -129,6 +138,72 @@ def test_cli_correctness():
         assert omi.project.tasks.step(root, "TASK-001", "done") == 0
 
 
+def test_step_po_flag() -> None:
+    with tempfile.TemporaryDirectory() as d, patch("omi.project.tasks.step", return_value=0) as step_mock, \
+            patch("omi.state.resolve.resolve"), patch("omi.common.core.main_checkout", return_value=Path(d)):
+        for args in (["--po", "PO says go", "--to", "architect", "--why", "bad", "round"],):
+            try:
+                omi.app.cli.dispatch(["step", "TASK-001", "back", *args])
+            except SystemExit:
+                pass
+            assert step_mock.call_args.args[1:4] == ("TASK-001", "back", "bad round") and step_mock.call_args.kwargs == {"to": "architect", "po": "PO says go"}, step_mock.call_args
+
+
+def test_step_why_keeps_flag_words() -> None:
+    with tempfile.TemporaryDirectory() as d, patch("omi.project.tasks.step", return_value=0) as step_mock, \
+            patch("omi.state.resolve.resolve"), patch("omi.common.core.main_checkout", return_value=Path(d)):
+        try:
+            omi.app.cli.dispatch(["step", "TASK-001", "back", "--to", "build", "--why", "retry without --po x and --to y"])
+        except SystemExit:
+            pass
+        assert step_mock.call_args.args[1:4] == ("TASK-001", "back", "retry without --po x and --to y")
+        assert step_mock.call_args.kwargs == {"to": "build", "po": None}
+
+
+def test_clean_args() -> None:
+    with tempfile.TemporaryDirectory() as d, patch("omi.worker.docker.clean") as clean, \
+            patch("omi.state.resolve.resolve"), patch("omi.common.core.main_checkout", return_value=Path(d)):
+        for args, want in ((["TASK-1", "--force"], (False, "TASK-1", True)), ([], (False, None, False)), (["--all"], (True, None, False))):
+            omi.app.cli.dispatch(["clean", *args])
+            assert clean.call_args.kwargs == {"all_images": want[0], "task": want[1], "force": want[2]}, clean.call_args
+
+
+def test_step_records_behind() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        omi.setup.upgrade.init(root)
+        task = root / ".omi/tasks/TASK-001.md"
+        task.parent.mkdir(parents=True, exist_ok=True)
+        task.write_text("---\nid: TASK-001\nworkflow: omi-flow-feature\n---\n## Steps\n", encoding="utf-8")
+        git(root, "add", ".")
+        git(root, "commit", "-qm", "base")
+        git(root, "branch", "-M", "development")
+        omi.project.tasks.step(root, "TASK-001", "next")
+        assert "behind:" not in task.read_text(encoding="utf-8") and "files:" not in task.read_text(encoding="utf-8")  # no task branch: fields untouched
+        git(root, "checkout", "-q", "-b", "task/TASK-001")
+        (root / "src").mkdir()
+        (root / "src/a.py").write_text("x\n", encoding="utf-8")
+        (root / "é.py").write_text("x\n", encoding="utf-8")
+        (root / "a,b.py").write_text("x\n", encoding="utf-8")
+        git(root, "add", "src/a.py", "é.py", "a,b.py")
+        git(root, "commit", "-qm", "work", "--only", "src/a.py", "é.py", "a,b.py")  # the staged task file stays out
+        git(root, "checkout", "-q", "development")
+        for i in range(21):
+            git(root, "commit", "-q", "--allow-empty", "-m", f"dev {i}")
+        omi.project.tasks.step(root, "TASK-001", "done")
+        assert re.search(r"^behind: 21$", task.read_text(encoding="utf-8"), re.M)
+        assert re.search(r"^files: src/a\.py, é\.py$", task.read_text(encoding="utf-8"), re.M)
+        git(root, "checkout", "-q", "-b", "task/TASK-002", "development")  # empty diff: no dangling `files: `
+        task2 = root / ".omi/tasks/TASK-002.md"
+        task2.write_text("---\nid: TASK-002\nworkflow: omi-flow-feature\n---\n## Steps\n", encoding="utf-8")
+        git(root, "checkout", "-q", "development")
+        omi.project.tasks.step(root, "TASK-002", "next")
+        assert "files:" not in task2.read_text(encoding="utf-8")
+        task2.write_text("---\nid: TASK-002\nworkflow: omi-flow-feature\nfiles: stale.py\n---\n## Steps\n", encoding="utf-8")
+        omi.project.tasks.step(root, "TASK-002", "next")  # empty diff removes a stale list
+        assert "files:" not in task2.read_text(encoding="utf-8")
+
+
 def test_cli_characterization():
     """Pins exit code and key output of every USAGE command through `python -m omi` (no internals, no gh/docker on PATH)."""
     src = str(Path(__file__).resolve().parents[1] / "src")
@@ -159,8 +234,8 @@ def test_cli_characterization():
         rc, usage, err = cli(root)
         assert rc == 0 and usage.startswith("usage: omi <command>\n") and not err
         assert [l.split()[0] for l in usage.splitlines()[1:]] == [
-            "attach", "install-user", "init", "upgrade", "version", "status", "sync", "board", "guard", "github", "clean", "skills", "skills", "token", "plans",
-            "references", "rules", "agents", "workflows", "step", "run", "hook", "parallel", "worker", "worker"]
+            "attach", "install-user", "init", "upgrade", "version", "status", "improve", "sync", "board", "guard", "github", "clean", "skills", "skills", "token", "structure", "plans",
+            "references", "rules", "agents", "workflows", "host-test", "step", "note", "run", "hook", "dispatch", "dispatch", "advance", "watch", "parallel", "worker", "worker"]
         # unknown commands and incomplete arguments fall through to the usage text
         for args in (["help"], ["bogus"], ["step", "TASK-001"], ["run", "omi-agent-engineer", "--model"], ["parallel", "X"],
                      ["hook", "pre-run"], ["token"], ["worker"]):
@@ -229,7 +304,8 @@ def test_cli_characterization():
         assert cli(root, "parallel", "TASK-003", "TASK-002") == (0, "parallel ok: TASK-003 TASK-002\n", "")
         assert cli(root, "skills", "check", str(Path(".omi") / "tasks" / "TASK-001.md")) == (0, "skills ok\n", "")
         steps = (
-            (["next"], 0, "TASK-001: step plan (coordinator, gate none): input PO idea; output task file with scope and acceptance criteria; "
+            (["next"], 0, "WARN: skills empty - consider omi-skill-lean-implementation, omi-skill-verify-evidence from skills/CATALOG.md\n"
+                          "TASK-001: step plan (coordinator, gate none): input PO idea; output task file with scope and acceptance criteria; "
                           "stop when task file complete and PO picked it\n"),
             (["next"], 1, "TASK-001: step plan is not done; run `omi step TASK-001 done` or `skip --why`. Nothing changed.\n"),
             (["done"], 0, "TASK-001: step plan done\n"),
@@ -240,7 +316,10 @@ def test_cli_characterization():
             (["next"], 0, "TASK-001: step review (omi-agent-reviewer, gate review): input task file, diff; output VERDICT PASS or FAIL; "
                           "stop when VERDICT PASS\n"),
             (["bogus"], 1, "usage: omi step <TASK-ID> next|done|back|skip|approve|reopen --why <reason>\n"),
-            (["back"], 0, "TASK-001: step review failed; back to build (omi-agent-engineer), then `omi step TASK-001 done` and `next`\n"))
+            (["back"], 0, "TASK-001: step review failed; back to build (omi-agent-engineer), then `omi step TASK-001 done` and `next`\n"),
+            (["back", "--to", "plan", "--why", "x"], 1, "TASK-001: `plan` is not an agent step before build in workflow omi-flow-feature. Nothing changed.\n"),
+            (["back", "--to"], 1, "usage: omi step TASK-001 back --to <step> --why <reason>. Nothing changed.\n"),
+            (["next", "--to", "plan"], 1, "usage: omi step TASK-001 back --to <step> --why <reason>. Nothing changed.\n"))
         for args, code, msg in steps:
             rc, out, err = cli(root, "step", "TASK-001", *args)
             assert (rc, out if code == 0 else err) == (code, msg) and not (err if code == 0 else out), (args, rc, out, err)
@@ -248,6 +327,21 @@ def test_cli_characterization():
         assert "\nstep: build\n" in text and re.search(r"\n## Steps\n- plan started [\d-]+ [\d:]+\n- plan done ", text), text
         rc, out, _ = cli(root, "status")
         assert rc == 0 and "[Chưa bắt đầu] TASK-001 T1\n" in out
+        assert cli(root, "step", "TASK-001", "done")[0] == 0 and cli(root, "step", "TASK-001", "next")[0] == 0
+        tfile = root / ".omi" / "tasks" / "TASK-001.md"
+        tfile.write_text(tfile.read_text(encoding="utf-8") + "\n## Usage\n| role | verdict |\n| omi-agent-reviewer | PASS abc1234 |\n", encoding="utf-8")
+        assert cli(root, "step", "TASK-001", "back", "--to", "build", "--why", "re-plan", "the API") == (
+            0, "TASK-001: step review failed; back to build (omi-agent-engineer), then `omi step TASK-001 done` and `next`\n", "")
+        assert cli(root, "step", "TASK-001", "done")[0] == 0 and cli(root, "step", "TASK-001", "next")[0] == 0
+        assert cli(root, "step", "TASK-001", "done")[0] == 1  # the earlier PASS is stale in the new review round
+        tfile.write_text(tfile.read_text(encoding="utf-8") + "| omi-agent-reviewer | PASS def5678 |\n", encoding="utf-8")
+        assert cli(root, "step", "TASK-001", "done")[0] == 0
+        assert cli(root, "step", "TASK-001", "next")[0] == 0
+        assert cli(root, "step", "TASK-001", "back", "--to", "build", "--why", "late", "reason")[0] == 0
+        text = (root / ".omi" / "tasks" / "TASK-001.md").read_text(encoding="utf-8")
+        assert "workflow back to build" in text and ": late reason\n" in text and "--to" not in text.split("## Steps")[1]
+        text = (root / ".omi" / "tasks" / "TASK-001.md").read_text(encoding="utf-8")
+        assert "\nstep: build\n" in text and re.search(r"^- workflow back to build [\d-]+ [\d:]+: re-plan the API\n- review failed ", text, re.M), text
         assert cli(root, "attach") == (1, "", f"OMI: {root.as_posix()} has no origin remote\n")
         rc, out, err = cli(root, "attach", "--state")
         assert (rc, out, err) == (1, "", "OMI: usage: omi attach [<repo path>] [--state <git url>]\n")
@@ -260,9 +354,249 @@ def test_cli_characterization():
         assert cli(root, "sync", "extra") == (1, "", "OMI: usage: omi sync\n")
 
 
+def test_status_phase_and_step_lines() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        omi.setup.upgrade.init(root)
+        task = root / ".omi/tasks/TASK-001.md"
+        base = ("---\nid: TASK-001\ntitle: Ship board\nstatus: in-progress\nworkflow: omi-flow-feature\n"
+                "tool: codex\nmodel: sonnet\neffort: medium\nstep: {step}\n---\n"
+                "## Usage\n" + omi.project.tasks.USAGE_HEAD + "\n|---|---|---|---|---|---|---|---|---|\n"
+                "| omi-agent-reviewer | sonnet | medium | 1 | 1 | 1 | 1s | - | FAIL |\n")
+        steps = omi.project.workflows.get_workflow(root, "omi-flow-feature")
+        task.write_text(base.format(step="review"), encoding="utf-8")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            omi.app.cli.status(root)
+        lines = output.getvalue().splitlines()
+        first = next(i for i, line in enumerate(lines) if "TASK-001 Ship board" in line)
+        assert lines[first] == "[Đang review] TASK-001 Ship board"
+        index = next(i for i, step in enumerate(steps, 1) if step["id"] == "review")
+        assert lines[first + 1] == f"  bước {index}/{len(steps)} review · vòng 2 · codex sonnet/medium"
+        assert lines[first + 2] == "  " + omi.project.tasks.step_strip({"step": "review", "status": "in-progress"}, steps)
+        task.write_text(base.format(step="unknown"), encoding="utf-8")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            omi.app.cli.status(root)
+        assert f"bước ?/{len(steps)} unknown · codex sonnet/medium" in output.getvalue()
+        assert "bước 0/" not in output.getvalue()
+
+
+def test_status_next_resumes_orphaned_and_flags_unhandled() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        omi.setup.upgrade.init(root)
+        for tid, status in (("TASK-001", "in-progress"), ("TASK-002", "in-progress"), ("TASK-003", "planned")):
+            (root / f".omi/tasks/{tid}.md").write_text(f"---\nid: {tid}\ntitle: T\nstatus: {status}\n---\n", encoding="utf-8")
+
+        def run(recs: list[dict], rows: list[list[str]]) -> str:
+            output = io.StringIO()
+            with patch("omi.worker.dispatch.records", return_value=recs), patch("omi.worker.docker.running_workers", return_value=rows), \
+                    contextlib.redirect_stdout(output):
+                omi.app.cli.status(root)
+            return output.getvalue()
+
+        out = run([], [])
+        assert "next: TASK-001 (resume) TASK-002 (resume) TASK-003\n" in out
+        assert "not handled" not in out
+        busy = {"tid": "TASK-001", "running": True, "reported": False}
+        assert "next: TASK-002 (resume) TASK-003\n" in run([busy], [])
+        assert "next: TASK-001 (resume) TASK-003\n" in run([], [["TASK-002", "r", "m", "e", "0"]])
+        done = {"tid": "TASK-002", "running": False, "reported": False}
+        assert "finished runs not handled: 1; run python -m omi watch\n" in run([done], [])
+
+
+def register_omi(project: Path) -> Path:
+    root = project.parent / "omi"
+    root.mkdir()
+    (root / "project.json").write_text('{"remote": "https://github.com/omi-teams/omi"}', encoding="utf-8")
+    (root / ".omi" / "tasks").mkdir(parents=True)
+    return root
+
+
+def test_improve_creation_and_workflows() -> None:
+    with detached_project() as (code, project, wt, task):
+        target = register_omi(project)
+        # Existing omi task numbers, including done tasks, determine the next id.
+        (target / ".omi/tasks/TASK-123.md").write_text("---\nid: TASK-123\nstatus: done\n---\n", encoding="utf-8")
+        home, remote, other = state_remote(project)
+        unrelated = project / "pending.txt"
+        unrelated.write_text("leave staged", encoding="utf-8")
+        git(home, "add", str(unrelated))
+        for index, (kind, workflow, typ) in enumerate((("bug", "omi-flow-bugfix", "bug"), ("security", "omi-flow-feature-sensitive", "security"),
+                                                      ("idea", "omi-flow-feature", "task")), 124):
+            summary = f"Fix {kind}: preserve # and 'quotes'"
+            with patch.dict(os.environ, {"OMI_AGENT": "omi-agent-reviewer"}):
+                args = ["improve", summary] + ([] if kind == "bug" else ["--kind", kind])
+                out = detached_cli(wt, *args)
+            tid = f"TASK-{index}"
+            assert tid in out.splitlines(), out
+            created = target / f".omi/tasks/{tid}.md"
+            assert b"\r" not in created.read_bytes(), "new improvement tasks must use LF line endings"
+            text = created.read_text(encoding="utf-8")
+            front = omi.common.core.parse(text)
+            assert front["id"] == tid and front["status"] == "planned" and front["workflow"] == workflow
+            assert front["type"] == typ
+            assert f"title: {summary}\n" in text
+            shape = {"bug": "Symptom: " + summary + "\nExpected: ", "security": "Impact: " + summary + "\nBoundary crossed: "}.get(kind, summary + "\n\nSource")
+            assert shape in text and "refs: []" in text
+            if kind == "security":
+                assert "Boundary crossed: to be filled by the engineer\nHow verified: to be filled by the engineer\nEvidence: reported by omi-agent-reviewer while working on TASK-097 (secrets redacted)\n" in text
+                assert "not yet stated" not in text
+            assert "Source project: sample\nSource task: TASK-097\nSource agent: omi-agent-reviewer" in text
+            assert omi.common.core.git(home, "show", "--pretty=format:", "--name-only", "HEAD") == f"projects/omi/.omi/tasks/{tid}.md"
+            assert omi.common.core.git(home, "rev-parse", "HEAD") == omi.common.core.git(remote, "rev-parse", "main")
+        assert omi.common.core.git(home, "diff", "--cached", "--name-only") == "projects/sample/pending.txt"
+
+
+def test_improve_duplicate() -> None:
+    with detached_project() as (code, project, wt, task):
+        target = register_omi(project)
+        state_remote(project)
+        assert "TASK-001" in detached_cli(wt, "improve", "Same # finding")
+        head = omi.common.core.git(project, "rev-parse", "HEAD")
+        assert detached_cli(wt, "improve", "Same # finding", "--kind", "idea").strip() == "TASK-001"
+        assert omi.common.core.git(project, "rev-parse", "HEAD") == head
+        first = target / ".omi/tasks/TASK-001.md"
+        first.write_text(first.read_text(encoding="utf-8").replace("status: planned", "status: done"), encoding="utf-8")
+        assert "TASK-002" in detached_cli(wt, "improve", "Same # finding")
+
+
+def test_improve_fallback_and_validation() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        summary = "Keep 'quoted' $(text) # intact"
+        out = io.StringIO()
+        with patch.object(state, "resolve", return_value=state.Project(root, root)), \
+                patch.object(state, "registry", return_value={}), \
+                patch.object(omi.common.core, "git", return_value=None), \
+                patch("subprocess.run", side_effect=AssertionError("unexpected subprocess/network")), \
+                patch.dict(os.environ, {"OMI_TASK": "TASK-149", "OMI_AGENT": "Coordinator"}), \
+                contextlib.redirect_stdout(out):
+            improve.improve([summary, "--from", "other project", "--kind", "idea"], root)
+            for args in (["bad\ntext"], ["ok", "--from", ""], ["ok", "--kind", "invalid"], ["ok", "--from"]):
+                try:
+                    improve.improve(args, root)
+                    assert False, args
+                except (state.StateError, SystemExit):
+                    pass
+        text = out.getvalue()
+        command = text[text.index("gh issue create"):].strip()
+        words = shlex.split(command)
+        assert words[:5] == ["gh", "issue", "create", "--repo", "omi-teams/omi"]
+        assert words[words.index("--title") + 1] == summary
+        body = words[words.index("--body") + 1]
+        assert "Source project: other project\nSource task: TASK-149\nSource agent: Coordinator" in body
+        assert "Kind: idea" in body and summary in text
+        assert not list(root.iterdir())
+
+
+def test_improve_status_count() -> None:
+    with detached_project() as (code, project, wt, task):
+        target = register_omi(project)
+        state_remote(project)
+        detached_cli(wt, "improve", "open from sample")
+        detached_cli(wt, "improve", "open from elsewhere", "--from", "elsewhere")
+        detached_cli(wt, "improve", "closed from sample")
+        closed = target / ".omi/tasks/TASK-003.md"
+        closed.write_text(closed.read_text(encoding="utf-8").replace("status: planned", "status: done"), encoding="utf-8")
+        (project / ".omi/version").write_text("0.0.1", encoding="utf-8")
+        out = detached_cli(wt, "status")
+        assert "omi improvements filed: 1 open" in out and "upgrade --apply" in out
+        # Status in a project without the shared omi registration still prints zero.
+        with patch.object(improve, "omi_project", return_value=None):
+            assert "omi improvements filed: 0 open" in detached_cli(wt, "status")
+
+
+def test_parse_block_list_and_bom() -> None:
+    m = omi.common.core.parse("---\nid: T\nscope:\n  - a/b.py\n  - c.py\nstatus: open\n---\nbody\n")
+    assert m["scope"] == "a/b.py, c.py" and m["status"] == "open", m
+    with tempfile.TemporaryDirectory() as d:
+        task = Path(d) / "T.md"
+        task.write_bytes("\ufeff---\nid: T\ntitle: x\nscope: a.py\nstatus: open\n---\n## Steps\n".encode("utf-8"))
+        m = omi.common.core.parse(task.read_text(encoding="utf-8"))
+        assert m["status"] == "open" and m["title"] == "x" and m["scope"] == "a.py", m
+        omi.project.tasks.append_note(task, "Notes", "hi")
+        assert not task.read_bytes().startswith(b"\xef\xbb\xbf") and b"title: x" in task.read_bytes()
+
+
+def test_block_list_scope_and_bom_writers() -> None:
+    core, tasks = omi.common.core, omi.project.tasks
+    bom = b"\xef\xbb\xbf"
+    orig = "---\nid: T\nscope:\n  - a.py  # x\n  - b.py\nstep: fix\n---\n## Checkpoint\nold\n"
+    assert core.parse(orig)["scope"] == "a.py, b.py"
+    with tempfile.TemporaryDirectory() as d:
+        task = Path(d) / "T.md"
+        task.write_bytes(bom + orig.encode("utf-8"))
+        before = core.read_task(task)  # the guard text omi run keeps
+        assert before == orig
+        task.write_bytes(bom + orig.replace("  - b.py\n", "  - z.py\n").replace("step: fix", "step: done").encode("utf-8"))
+        assert tasks.revert_front(task, before) == ["step", "scope"]
+        assert task.read_bytes() == orig.encode("utf-8")
+        # sync_scope: the development block list replaces a one-line scope in a BOM worktree file
+        task.write_bytes(bom + b"---\nid: T\nscope: old.py\nstep: fix\n---\nbody\n")
+        with patch("omi.state.resolve.resolve", return_value=type("P", (), {"detached": False})()), \
+                patch("omi.common.core.git", return_value=bom.decode() + orig):
+            tasks.sync_scope(Path(d), task, "T")
+        assert task.read_bytes() == b"---\nid: T\nscope:\n  - a.py  # x\n  - b.py\nstep: fix\n---\nbody\n"
+
+
+def test_failure_report() -> None:
+    # a failing test run through the test_omi hook: the last stderr line names test_x and its line
+    tests = Path(__file__).parent
+    with tempfile.TemporaryDirectory() as d:
+        script = Path(d) / "failing.py"
+        script.write_text(
+            f"import sys\n"
+            f"sys.path.insert(0, {str(tests)!r})\n"
+            f"import test_omi\n"
+            f"sys.excepthook = test_omi.report_failure\n"
+            f"def test_x():\n"
+            f"    assert False, 'boom'\n"
+            f"test_x()\n", encoding="utf-8")
+        done = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, encoding="utf-8")
+    assert done.returncode != 0
+    assert done.stderr.splitlines()[-1] == f"FAILED test_x {script}:6 AssertionError: boom", done.stderr
+
+
+def test_dispatch_next_args() -> None:
+    project = object()
+    with patch("omi.state.resolve.resolve", return_value=project), \
+            patch("omi.common.core.main_checkout", return_value=Path(".")), \
+            patch("omi.worker.dispatch.dispatch_next") as start:
+        omi.app.cli.dispatch(["dispatch", "next"])
+        start.assert_called_once_with(project, 1)
+        start.reset_mock()
+        omi.app.cli.dispatch(["dispatch", "next", "--max", "2"])
+        start.assert_called_once_with(project, 2)
+        for args in (["--max"], ["--max", "0"], ["--max", "-1"], ["--max", "x"], ["--other", "2"]):
+            start.reset_mock()
+            try:
+                omi.app.cli.dispatch(["dispatch", "next", *args])
+            except omi.state.resolve.StateError as exc:
+                assert "usage: omi dispatch next" in str(exc)
+            else:
+                raise AssertionError(f"accepted invalid arguments: {args}")
+            start.assert_not_called()
+
+
 def main():
+    test_dispatch_next_args()
+    test_block_list_scope_and_bom_writers()
+    test_parse_block_list_and_bom()
+    test_improve_creation_and_workflows()
+    test_improve_duplicate()
+    test_improve_fallback_and_validation()
+    test_improve_status_count()
+    test_status_phase_and_step_lines()
+    test_status_next_resumes_orphaned_and_flags_unhandled()
+    test_step_po_flag()
+    test_clean_args()
+    test_step_records_behind()
     test_cli_correctness()
     test_cli_characterization()
+    test_failure_report()
+    test_step_why_keeps_flag_words()
 
 
 if __name__ == "__main__":

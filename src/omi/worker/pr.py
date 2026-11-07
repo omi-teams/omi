@@ -1,10 +1,47 @@
 """Step results as comments on the task's pull request (`task/<ID>`); every failure is a warning, never an error."""
 
 import datetime
+import re
 import shutil
 import subprocess
 
 from ..common import core
+from ..project import tasks
+
+
+def _section(text: str, heading: str) -> str:
+    return text.partition('\n## ' + heading + '\n')[2].split('\n## ', 1)[0]
+
+
+def acceptance_body(tid: str, text: str, review_roles: tuple[str, ...]) -> str:
+    """Publish task metadata and review verdicts, never raw worker/hook reports."""
+    meta = core.parse(text)
+    goal = _section(text, 'Goal').strip().split('\n\n', 1)[0]
+    summary = goal or 'Complete the reviewed changes and acceptance workflow.'
+    files = core.split(meta.get('files'))
+    changes = '\n'.join('- ' + path for path in files) or 'Changed paths were not recorded in the task.'
+    usage = '\n'.join(line for line in _section(text, 'Usage').splitlines() if line.startswith('|'))
+    hosts = '\n'.join(line for line in _section(text, 'Checkpoint').splitlines() if line.startswith('Host:'))
+    steps = []
+    for line in _section(text, 'Steps').splitlines():
+        event = re.match(r'^- [a-z0-9-]+ (?:started|done|skipped|failed) \d{4}-\d\d-\d\d \d\d:\d\d', line)
+        if event:
+            steps.append(event[0])
+        elif line == 'Auto accept: review PASS':
+            steps.append(line)
+    verdicts, reviewer = [], ''
+    for line in _section(text, 'Reports').splitlines():
+        entry = re.match(r'^(\d{4}-\d\d-\d\d \d\d:\d\d) (\S+)', line)
+        if entry:
+            reviewer = f'{entry[1]} {entry[2]}' if entry[2] in review_roles else ''
+        verdict = re.fullmatch(r'>\s*VERDICT: (PASS|FAIL)\s*', line)
+        if reviewer and verdict:
+            verdicts.append(f'{reviewer} VERDICT: {verdict[1]}')
+    verification = '\n'.join([usage, hosts, *steps, *verdicts])
+    known = _section(text, 'Known issues').strip() or 'None recorded in the task.'
+    return tasks.clean_text(f'## Summary\n{tid}: {summary}\n\n## Changes\n{changes}\n\n'
+                            '## Not in this PR\nChanges outside the task scope, unrelated work and follow-up tasks.\n\n'
+                            f'## Verification\n{verification}\n\n## Known issues\n{known}\n')
 
 
 def header(step, agent, verdict, when=None):
@@ -25,7 +62,7 @@ def post(wt, tid, text):
     try:
         if run("view", f"task/{tid}", "--json", "state", "-q", ".state").stdout.strip() != "OPEN":
             return False
-        r = run("comment", f"task/{tid}", "--body-file", "-", input=text)
+        r = run("comment", f"task/{tid}", "--body-file", "-", input=tasks.clean_text(text))
     except OSError as e:
         print(f"WARNING: could not post the step result to the PR: {e}")
         return False

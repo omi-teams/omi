@@ -41,7 +41,7 @@ def skills_catalog(root):
         lines.append(f"- {sid} ({d.parent.name}): {when} [~{core.tokens(*skill_files(d))} tokens]")
     out = Path(root) / ".omi" / "skills" / "CATALOG.md"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     print(f"wrote {out} ({len(lines) - 3} skills)")
 
 
@@ -107,6 +107,21 @@ def task_skills(m):
     return core.split((m.get("skills") or "").strip().strip("[]"))
 
 
+TYPE_SKILLS = {"bug": "omi-skill-debug-root-cause", "security": "omi-skill-diff-security-review",
+               "incident": "omi-skill-incident", "change": "omi-skill-change-request"}  # task type -> catalog skill to suggest
+DEFAULT_SKILLS = ("omi-skill-lean-implementation", "omi-skill-verify-evidence")
+
+
+def warn_skills_empty(root, m):
+    """Print a warning (never fail) when the task declares no skills, suggesting catalog skills that fit its type."""
+    if task_skills(m):
+        return
+    cat = Path(root) / ".omi" / "skills" / "CATALOG.md"
+    listed = set(re.findall(r"^- (\S+) ", cat.read_text(encoding="utf-8"), re.M)) if cat.exists() else set()
+    fit = [s for s in (TYPE_SKILLS.get(m.get("type") or "task"), *DEFAULT_SKILLS) if s in listed]
+    print("WARN: skills empty" + (f" - consider {', '.join(fit)} from skills/CATALOG.md" if fit else ""))
+
+
 def check_skills(root, ids):
     """Files of the declared skills; exits on an unknown id, a skill missing from the catalog, or over budget."""
     root = Path(root)
@@ -134,7 +149,7 @@ def skill_prompt(root, files):
     if not files:
         return ""
     paths = "\n".join("/work/" + Path(f).relative_to(root).as_posix() for f in files)
-    return f"\nSkills (read only these, no other skill files):\n{paths}"
+    return f"\nSkills (read only these, no other skill files; open every one below before you start, your reads are counted):\n{paths}"
 
 
 RULE_LIMITS = {"tokens": 2000, "rule_tokens": 800}  # .omi/config.json "rule_limits" overrides (PO only)
@@ -173,7 +188,7 @@ def rules_catalog(root):
         lines.append(f"- {rid}: {' '.join(core.meta(f)['summary'].split())} (applies: {', '.join(globs)}) [~{n} tokens]")
     out = Path(root) / ".omi" / "rules" / "CATALOG.md"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     print(f"wrote {out} ({len(lines) - 3} rules)")
 
 
@@ -234,7 +249,7 @@ def plans_catalog(root):
         lines.append(f"- {pid} ({m['status']}): {' '.join(m['title'].split())}")
     out = Path(root) / ".omi" / "plans" / "CATALOG.md"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     print(f"wrote {out} ({len(plans)} plans)")
 
 
@@ -245,15 +260,16 @@ def check_task_plan(root, m):
 
 
 def load_references(root):
-    """Reference files and validation errors, keyed by file name."""
+    """Reference files and validation errors, keyed by file stem (`patterns/<stem>` for pattern files)."""
     found = {}
-    for f in sorted((Path(root) / ".omi" / "references").glob("*.md")):
+    base = Path(root) / ".omi" / "references"
+    for f in sorted([*base.glob("*.md"), *base.glob("patterns/*.md")]):
         if f.name == "CATALOG.md":
             continue
         m = core.meta(f)
         errs = ([f"id `{m.get('id')}` differs from file name"] if m.get("id") != f.stem else []) \
             + ([] if m.get("summary") else ["missing `summary`"])
-        found[f.stem] = (f, errs)
+        found[f.stem if f.parent == base else f"{f.parent.name}/{f.stem}"] = (f, errs)
     return found
 
 
@@ -267,7 +283,7 @@ def references_catalog(root):
         lines.append(f"- {rid}: {' '.join(core.meta(f)['summary'].split())}")
     out = Path(root) / ".omi" / "references" / "CATALOG.md"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     print(f"wrote {out} ({len(refs)} references)")
 
 
@@ -362,7 +378,7 @@ def agents_catalog(root):
                     lines.append(f"- effort {name}; fits: {note['fits']}; avoid: {note['avoid']}")
     out = Path(root) / ".omi" / "agents" / "CATALOG.md"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     print(f"wrote {out} ({count} roles)")
 
 

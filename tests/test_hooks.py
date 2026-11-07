@@ -79,6 +79,8 @@ def test_hooks():
         def __init__(s, out=b"", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
 
     def run(cmd, **kw):
+        if cmd[:2] == ["docker", "run"] and ("chmod" in cmd or "grep" in cmd):
+            return R(rc=1 if "grep" in cmd else 0)
         if "--git-common-dir" in cmd:
             return R(str(Path(cmd[2]) / "shared.git"))
         calls.append((cmd, kw))
@@ -144,7 +146,8 @@ def test_hooks():
             assert calls.index((argv, kw)) < calls.index(agents()[0]) and kw["input"] == b"echo hi\n"
             assert argv[argv.index("--network") + 1] == "none" and "--rm" in argv and f"{wt}:/work:ro" in argv
             assert "-w" in argv and argv[argv.index("-w") + 1] == "/work" and "omi-worker=1" in argv
-            assert [a for i, a in enumerate(argv) if argv[i - 1] == "-e"] == ["HOME=/home/node", *omi.worker.docker.CACHE_ENV]  # no token name
+            assert [a for i, a in enumerate(argv) if argv[i - 1] == "-e"] == ["PYTHONPATH=/opt/omi", "HOME=/home/node", *omi.worker.docker.CACHE_ENV]  # no token name
+            assert f"{Path(omi.__file__).parent}:/opt/omi/omi:ro" in argv
             assert omi.worker.creds.TOKEN_ENV not in kw["env"] and "tok" not in " ".join(argv)
             assert "hook pre-run passed" in task.read_text()
             # failing pre-run: agent never started, output in Reports
@@ -248,7 +251,8 @@ def test_hooks():
     with tempfile.TemporaryDirectory() as d:
         sh = shutil.which("sh")
         if sh:
-            r = subprocess.run([sh, str(omi.common.core.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh")], cwd=d, capture_output=True, text=True)
+            r = subprocess.run([sh, str(omi.common.core.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh")], cwd=d, capture_output=True, text=True,
+                               env={k: v for k, v in os.environ.items() if k not in ("OMI_PROJECT_STATE", "OMI_GIT_DIR")})  # a hook runs this suite with both set
             assert r.returncode == 0 and "no tests found" in r.stdout, r
             # tests exist but the runner is missing: exit 1 naming the tool (empty PATH; the script uses only sh builtins)
             bindir = Path(d) / "bin"
@@ -267,11 +271,26 @@ def test_hooks():
             (w / "tests" / "test_x.py").write_text("")
             r = subprocess.run([sh, str(omi.common.core.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh")], cwd=w, capture_output=True, text=True, env=env)
             assert "no tests found" not in r.stdout and "pytest not in the worker image" in r.stdout, r
+            # structure check: GIT_DIR comes from OMI_GIT_DIR for the omi command only, not for the project tests
+            fake = Path(d) / "fake"
+            (fake / "state" / ".omi").mkdir(parents=True)
+            (fake / "state" / ".omi" / "structure.md").write_text("", encoding="utf-8")
+            (fake / "omi").mkdir()
+            (fake / "omi" / "__init__.py").write_text("", encoding="utf-8")  # a regular package, so it wins over an installed omi
+            (fake / "omi" / "__main__.py").write_text("import os,sys;print('omi', os.environ.get('GIT_DIR'), os.environ.get('GIT_WORK_TREE'), sys.argv[1:])\n", encoding="utf-8")
+            (fake / "state" / ".omi" / "config.json").write_text('{"test": "echo test GIT_DIR=${GIT_DIR:-unset}"}', encoding="utf-8")
+            base = {k: v for k, v in os.environ.items() if k not in ("OMI_PROJECT_STATE", "OMI_GIT_DIR")}
+            for extra, want in (({}, "omi None None"), ({"OMI_GIT_DIR": "/gitdir/worktrees/T"}, "omi /gitdir/worktrees/T ")):
+                env = {**base, "PYTHONPATH": str(fake), "MSYS2_ENV_CONV_EXCL": "*", "OMI_PROJECT_STATE": str(fake / "state"), **extra}
+                r = subprocess.run([sh, str(omi.common.core.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh")], cwd=fake, capture_output=True, text=True, env=env)
+                assert want in r.stdout and "test GIT_DIR=unset" in r.stdout, r
+                if extra:  # Git-bash spells $PWD /tmp/..., so compare the dir name only
+                    assert re.search(r"omi /gitdir/worktrees/T \S*/fake \[", r.stdout), r
     text = (omi.common.core.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh").read_text()
     assert all(w in text for w in ("pytest", "go test", "npm test"))
-    for f in (Path("AGENTS.md"), omi.common.core.TEMPLATE / "AGENTS.md", Path(".claude/skills/omi-task/SKILL.md"),
+    for f in (omi.common.core.TEMPLATE / "AGENTS.md",
               omi.common.core.TEMPLATE / "dot-claude" / "skills" / "omi-task" / "SKILL.md"):
-        assert "hook" in (Path(__file__).parents[1] / f if not f.is_absolute() else f).read_text(encoding="utf-8"), f
+        assert "hook" in f.read_text(encoding="utf-8"), f
 
 
 def test_run_read_role():
@@ -283,6 +302,8 @@ def test_run_read_role():
         def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
 
     def run(cmd, **kw):
+        if cmd[:2] == ["docker", "run"] and ("chmod" in cmd or "grep" in cmd):
+            return R(rc=1 if "grep" in cmd else 0)
         if "--git-common-dir" in cmd:
             return R(str(Path(cmd[2]) / "shared.git"))
         calls.append((cmd, kw))
@@ -306,6 +327,8 @@ def test_run_read_role():
     with tempfile.TemporaryDirectory() as d:
         wt = Path(d).resolve()
         (wt / ".git").write_text("gitdir: /x")
+        shutil.copytree(omi.common.core.TEMPLATE / "dot-omi" / "skills", wt / ".omi" / "skills")
+        omi.project.catalogs.skills_catalog(wt)
         task = wt / ".omi" / "tasks" / "TASK-001.md"
         subprocess.run, shutil.which = run, lambda _: "docker"
         omi.common.core.main_checkout, omi.common.core.WINDOWS = (lambda _: wt), False
@@ -392,7 +415,7 @@ def test_run_read_role():
             omi.worker.run.run_role("omi-agent-engineer", wt, task)
             assert "omi-skill-zz" in prompt()
             assert go() == 0, out.getvalue()
-            assert "omi-skill-zz" not in prompt() and task.read_text().splitlines()[-1].endswith("| - | n/a |"), task.read_text()
+            assert "omi-skill-zz" not in prompt() and task.read_text().splitlines()[-1].endswith("| 0/2 | n/a |"), task.read_text()
         finally:
             sys.stdout = saved
             subprocess.run, shutil.which, omi.common.core.main_checkout, omi.common.core.WINDOWS, tok = real
@@ -445,6 +468,8 @@ def test_review_round_flow():
         def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
 
     def run(cmd, **kw):
+        if cmd[:2] == ["docker", "run"] and ("chmod" in cmd or "grep" in cmd):
+            return R(rc=1 if "grep" in cmd else 0)
         if "--git-common-dir" in cmd:
             return R(str(Path(cmd[2]) / "shared.git"))
         if cmd[:2] == ["docker", "run"]:
@@ -471,6 +496,8 @@ def test_review_round_flow():
     with tempfile.TemporaryDirectory() as d:
         wt = Path(d).resolve()
         (wt / ".git").write_text("gitdir: /x")
+        shutil.copytree(omi.common.core.TEMPLATE / "dot-omi" / "skills", wt / ".omi" / "skills")
+        omi.project.catalogs.skills_catalog(wt)
         task = wt / ".omi" / "tasks" / "TASK-001.md"
         task.parent.mkdir(parents=True)
         task.write_text("---\nid: TASK-001\nscope: src/**\n---\n## Checkpoint\n### Review round 1\n- src/a.py bad\n", encoding="utf-8")
@@ -487,7 +514,7 @@ def test_review_round_flow():
             assert seen["files"] == ["diff.patch"] and "Incremental" not in seen["prompt"]
             # usage but no result: the raw output is printed, never None
             run_raw = json.dumps({"usage": {"input_tokens": 1, "output_tokens": 2}})
-            subprocess.run = lambda cmd, **kw: R(run_raw) if cmd[:2] == ["docker", "run"] else run(cmd, **kw)
+            subprocess.run = lambda cmd, **kw: R(run_raw) if cmd[:2] == ["docker", "run"] and "grep" not in cmd and "chmod" not in cmd else run(cmd, **kw)
             sys.stdout = io.StringIO()
             omi.worker.run.run_role("omi-agent-engineer", wt, task)
             printed = sys.stdout.getvalue()
@@ -513,18 +540,34 @@ def test_review_round_flow():
 
 def test_host_only_criteria():
     root = Path(__file__).parents[1]
-    pairs = [(".omi/agents/omi-agent-reviewer.md", "src/omi/template/dot-omi/agents/omi-agent-reviewer.md"),
-             (".claude/skills/omi-task/SKILL.md", "src/omi/template/dot-claude/skills/omi-task/SKILL.md")]
-    for repo_copy, template_copy in pairs:
-        text = (root / repo_copy).read_text(encoding="utf-8")
-        assert text == (root / template_copy).read_text(encoding="utf-8")
-        if "reviewer" in repo_copy:
-            assert "`HOST <criterion>`" in text and "UNVERIFIED|HOST" in text and "is `UNVERIFIED`" in text
+    for template_copy in ("src/omi/template/dot-omi/agents/omi-agent-reviewer.md",
+                          "src/omi/template/dot-claude/skills/omi-task/SKILL.md"):
+        text = (root / template_copy).read_text(encoding="utf-8")
+        if "reviewer" in template_copy:
+            assert "`HOST <criterion>`" in text and "Host items go only on the single `HOST:` line" in text and "is `UNVERIFIED`" in text
         else:
             assert "Host: <command> -> <result>" in text and "no merge without one `Host:` line" in text
 
 
+def test_ci_structure_fetch():
+    ci = (Path(__file__).parents[1] / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    # PRs targeting development use a detached merge ref and still need the local branch.
+    assert re.search(r"- name: Fetch development for the structure check\n"
+                     r"        if: github\.ref != 'refs/heads/development'\n"
+                     r"        run: git fetch origin development:development", ci)
+
+
+def test_ci_structure_skip_notice():
+    ci = (Path(__file__).parents[1] / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    # A failed checkout with a key must fail the job, rather than claim a missing key.
+    assert re.search(r"- name: Structure check skipped\n"
+                     r"        if: env\.HAS_STATE_KEY != 'true'\n", ci)
+    assert "continue-on-error:" not in ci
+
+
 def main():
+    test_ci_structure_fetch()
+    test_ci_structure_skip_notice()
     test_host_only_criteria()
     test_windows_test_shell()
     test_hooks()

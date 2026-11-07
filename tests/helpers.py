@@ -1,5 +1,6 @@
 """Shared fakes and fixtures for the test files; importing it sets up the test environment."""
 import io
+import functools
 import json
 import contextlib
 import os
@@ -7,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from collections.abc import Iterator
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
@@ -14,16 +16,41 @@ import omi  # noqa: E402
 
 os.environ["CODEX_HOME"] = tempfile.mkdtemp()  # no host ChatGPT login unless a test writes one
 os.environ["CLAUDE_CONFIG_DIR"] = tempfile.mkdtemp()  # no host Claude Code login unless a test writes one
+if sys.platform != "win32" and "PLAYWRIGHT_BROWSERS_PATH" not in os.environ:  # keep the real browser cache
+    _cache = Path.home() / ("Library/Caches" if sys.platform == "darwin" else ".cache") / "ms-playwright"
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(_cache)
+os.environ["HOME"] = os.environ["USERPROFILE"] = tempfile.mkdtemp()  # no developer home files
+for _who in ("AUTHOR", "COMMITTER"):  # keep a git identity without ~/.gitconfig
+    os.environ[f"GIT_{_who}_NAME"], os.environ[f"GIT_{_who}_EMAIL"] = "t", "t@t"
 
 real_egress = omi.worker.docker.egress  # other tests run workers with docker mocked: no proxy
 
 
 @contextlib.contextmanager
-def no_egress(main, name, image, allow):
+def no_egress(main, name, image, allow, task=None):
     yield f"omi-net-{name}", f"{name}-proxy"
 
 
 omi.worker.docker.egress = no_egress
+
+
+@contextlib.contextmanager
+def quiet_fixtures() -> Iterator[None]:
+    """Silence fixture setup, preserving explicit stdout captures in CLI tests."""
+    output = sys.stdout
+
+    def quiet(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            if sys.stdout is not output:
+                return fn(*args, **kwargs)
+            with contextlib.redirect_stdout(io.StringIO()):
+                return fn(*args, **kwargs)
+        return wrapper
+
+    with patch.object(omi.setup.upgrade, "init", quiet(omi.setup.upgrade.init)), \
+            patch.object(omi.setup.upgrade, "upgrade_apply", quiet(omi.setup.upgrade.upgrade_apply)):
+        yield
 
 
 def git(cwd, *args):

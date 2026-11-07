@@ -1,15 +1,29 @@
 """Shared helpers: package paths, platform, git and worktrees, frontmatter, version, argv flags."""
 
 import importlib.metadata
+import os
 import re
 import subprocess
 import sys
+import time
 import tomllib
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 
 TEMPLATE = Path(__file__).parents[1] / "template"
 WINDOWS = sys.platform == "win32"
+
+
+def write_text(path, text):
+    """Write UTF-8 text with LF endings on every OS."""
+    Path(path).write_text(text, encoding="utf-8", newline="\n")
 
 
 def git(cwd, *args):
@@ -21,18 +35,31 @@ def split(value):
     return [x.strip() for x in (value or "").split(",") if x.strip()]
 
 
+def read_task(path):
+    """Task file text without a leading UTF-8 BOM."""
+    return Path(path).read_text(encoding="utf-8-sig")
+
+
 def meta(path):
-    return parse(path.read_text(encoding="utf-8"))
+    return parse(read_task(path))
 
 
 def parse(text):
     """Frontmatter of a task file as a dict, plus the raw text under '_text'."""
+    text = text.removeprefix("\ufeff")
     m = {"_text": text}
     if text.startswith("---"):
+        key = None
         for line in text.split("---", 2)[1].splitlines():
-            key, sep, value = line.partition(":")
+            item = line.strip()
+            if key and item.startswith("- "):  # YAML block list -> comma list
+                item = item[2:].split("#")[0].strip()
+                m[key] = f"{m[key]}, {item}" if m[key] else item
+                continue
+            k, sep, value = line.partition(":")
             if sep:
-                m[key.strip()] = value.split("#")[0].strip()
+                key = k.strip()
+                m[key] = value.split("#")[0].strip()
     return m
 
 
@@ -47,7 +74,10 @@ def version():
         proj = tomllib.loads(pp.read_text(encoding="utf-8")).get("project", {})
         if proj.get("name") == "omi-squad":
             return proj["version"]
-    return importlib.metadata.version("omi-squad")
+    try:
+        return importlib.metadata.version("omi-squad")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"  # read-only package mount in a hook container: no pyproject, no dist metadata
 
 
 def semver(v):
@@ -72,3 +102,34 @@ def main_checkout(wt):
 
 def flag(rest, name):
     return rest[rest.index(name) + 1] if name in rest[:-1] else None
+
+
+@contextmanager
+def file_lock(path: Path, timeout: float) -> Iterator[None]:
+    """Hold an exclusive OS lock on `path` (created if missing); TimeoutError when it stays held for `timeout` seconds."""
+    # OS locks release on process exit; keep the file so waiters share one inode.
+    with Path(path).open("a+", encoding="utf-8", newline="\n") as handle:
+        if os.name == "nt" and Path(path).stat().st_size == 0:
+            handle.write("\0")
+            handle.flush()
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                if os.name == "nt":
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError as exc:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(str(exc)) from exc
+                time.sleep(0.05)
+        try:
+            yield
+        finally:
+            if os.name == "nt":
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)

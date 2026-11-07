@@ -6,9 +6,11 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
-from helpers import omi, detached_cli, detached_project, git
+from helpers import omi, detached_cli, detached_project, git, state_remote
 
 
 def test_detached_resolution():
@@ -76,6 +78,8 @@ def test_detached_commands_and_steps():
         for step in ("plan", "build", "review", "accept"):
             detached_cli(wt, "step", task.stem, "next")
             assert omi.common.core.meta(task)["step"] == step
+            if step == "review":
+                omi.project.tasks.append_note(task, "Usage", "| role | verdict |\n| omi-agent-reviewer | PASS abc1234 |")
             if step == "accept":
                 omi.project.tasks.append_note(task, "Steps", "PO approval accept: approved in test")
             detached_cli(code, "step", task.stem, "done")
@@ -86,6 +90,169 @@ def test_detached_commands_and_steps():
         assert omi.common.core.git(code, "status", "--porcelain") == ""
         assert omi.common.core.git(wt, "status", "--porcelain") == ""
         assert not (code / ".omi").exists() and not (wt / ".omi").exists()
+
+
+def test_detached_host_test_and_note_commit_state():
+    with detached_project() as (code, project, wt, task):
+        home = project.parents[1]
+        git(home, "add", ".")
+        git(home, "commit", "-qm", "base")
+        cfg = project / ".omi" / "config.json"
+        data = json.loads(cfg.read_text(encoding="utf-8"))
+        data["host_test"] = "python3 -c 'print(1)'"
+        cfg.write_text(json.dumps(data), encoding="utf-8")
+        git(home, "commit", "-qam", "host_test")
+        detached_cli(wt, "host-test", task.stem)
+        assert "| host-test |" in task.read_text(encoding="utf-8")
+        assert omi.common.core.git(home, "status", "--porcelain") == ""
+        detached_cli(wt, "note", task.stem, "--step", "build", "--verdict", "PASS", "checked")
+        assert "checked" in task.read_text(encoding="utf-8")
+        assert omi.common.core.git(home, "status", "--porcelain") == ""
+
+
+def test_detached_commit_twice_and_failure_message():
+    with detached_project() as (code, project, wt, task):
+        home = project.parents[1]
+        found = omi.state.resolve.resolve(wt)
+        rel = task.relative_to(home).as_posix()
+        task.write_text(task.read_text(encoding="utf-8") + "x\n", encoding="utf-8")
+        omi.state.sync.commit(found, [rel], "first")
+        omi.state.sync.commit(found, [rel], "second")
+        assert omi.common.core.git(home, "status", "--porcelain", "--", rel) == ""
+        real = omi.state.sync.git
+        def failing(root, *args):
+            if args[0] == "commit":
+                return subprocess.CompletedProcess(args, 1, "OUT-TEXT", "ERR-TEXT")
+            return real(root, *args)
+        task.write_text(task.read_text(encoding="utf-8") + "y\n", encoding="utf-8")
+        with patch("omi.state.sync.git", failing):
+            try:
+                omi.state.sync.commit(found, [rel], "third")
+                raise AssertionError("expected StateError")
+            except omi.state.resolve.StateError as exc:
+                assert "OUT-TEXT" in str(exc) and "ERR-TEXT" in str(exc)
+
+
+def test_state_git_uses_c_locale():
+    """Keep rejection diagnostics English even when the caller uses another locale."""
+    inherited = {"LC_ALL": "fr_FR.UTF-8", "LANG": "fr_FR.UTF-8", "OMI_STATE_LOCALE_TEST": "preserved"}
+    result = subprocess.CompletedProcess([], 0, "", "")
+    with patch.dict(os.environ, inherited), patch("omi.state.sync.subprocess.run", return_value=result) as run:
+        assert omi.state.sync.git(Path("state"), "push") is result
+        child_env = run.call_args.kwargs["env"]
+        assert child_env == {**os.environ, "LC_ALL": "C"}
+        assert all(os.environ[key] == value for key, value in inherited.items())
+
+
+def test_state_push_remote_advanced():
+    """Preserve real rejection stderr and rebase a competing remote commit."""
+    with detached_project() as (code, project, wt, task):
+        home, remote, other = state_remote(project)
+        (other / "peer.txt").write_text("peer", encoding="utf-8")
+        git(other, "add", ".")
+        git(other, "commit", "-qm", "peer update")
+        git(other, "push", "-q")
+        task.write_text(task.read_text(encoding="utf-8") + "local update\n", encoding="utf-8")
+        found = omi.state.resolve.resolve(wt)
+        omi.state.sync.commit(found, [task.relative_to(home).as_posix()], "local update")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            assert omi.state.sync.push(found), output.getvalue()
+        assert "[rejected]" in output.getvalue(), output.getvalue()
+        assert "STATE NOT PUSHED" not in output.getvalue()
+        assert (home / "peer.txt").read_text(encoding="utf-8") == "peer"
+        assert omi.common.core.git(home, "rev-parse", "HEAD") == omi.common.core.git(remote, "rev-parse", "refs/heads/main")
+
+
+def test_state_push_transport_retry():
+    for mode in ("transient", "exception", "exhausted", "warning", "accepted"):
+        with detached_project() as (code, project, wt, task):
+            state_remote(project)
+            task.write_text(task.read_text(encoding="utf-8") + "transport update\n", encoding="utf-8")
+            found = omi.state.resolve.resolve(wt)
+            omi.state.sync.commit(found, [task.relative_to(project.parents[1]).as_posix()], "transport update")
+            real, calls = omi.state.sync.git, []
+            def transport(root, *args):
+                if args[0] in ("push", "pull"):
+                    calls.append(args[0])
+                if args[0] == "push":
+                    if mode == "exception" and len(calls) == 1:
+                        raise omi.state.resolve.StateError("transport timeout")
+                    if mode == "exhausted" or (mode == "transient" and len(calls) == 1):
+                        return subprocess.CompletedProcess(args, 1, "", "credential helper transport failure")
+                    if mode == "accepted" and len(calls) == 1:
+                        result = real(root, *args)
+                        assert result.returncode == 0
+                        return subprocess.CompletedProcess(args, 1, "", "transport acknowledgement lost")
+                    if mode == "warning":
+                        return subprocess.CompletedProcess(args, 0, "", "credential helper warning")
+                return real(root, *args)
+            output = io.StringIO()
+            with patch("omi.state.sync.git", transport), contextlib.redirect_stdout(output):
+                assert omi.state.sync.push(omi.state.resolve.resolve(wt)) == (mode != "exhausted")
+            assert "pull" not in calls
+            assert len(calls) == (1 if mode == "warning" else 3 if mode == "exhausted" else 2)
+            assert output.getvalue().count("STATE NOT PUSHED") == int(mode == "exhausted")
+            if mode != "warning":
+                error = ("transport timeout" if mode == "exception" else "transport acknowledgement lost"
+                         if mode == "accepted" else "credential helper transport failure")
+                assert error in output.getvalue()
+
+
+def test_state_commits_serialized():
+    """A second process waits for the first index writer, then commits its own path."""
+    with detached_project() as (code, project, wt, task):
+        home = project.parents[1]
+        git(home, "add", ".")
+        git(home, "commit", "-qm", "base")
+        first, second = home / "first.txt", home / "second.txt"
+        first.write_text("first", encoding="utf-8")
+        second.write_text("second", encoding="utf-8")
+        ready, release = home.parent / "ready", home.parent / "release"
+        script = """
+import sys, time
+from pathlib import Path
+from omi.state import sync, resolve
+root, project, ready, release = map(Path, sys.argv[1:])
+real = sync.git
+def paused(root, *args):
+    if args[0] == 'add':
+        ready.touch()
+        while not release.exists():
+            time.sleep(0.01)
+    return real(root, *args)
+sync.git = paused
+sync.commit(resolve.Project(project, root, True), ['first.txt'], 'first')
+"""
+        proc = subprocess.Popen([sys.executable, "-c", script, str(home), str(project), str(ready), str(release)],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8")
+        try:
+            deadline = time.monotonic() + 10
+            while not ready.exists() and proc.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert ready.exists(), "first writer did not start"
+            entered = []
+            real = omi.state.sync.git
+            def observe(root, *args):
+                if args[0] == "add":
+                    entered.append(True)
+                return real(root, *args)
+            with ThreadPoolExecutor() as pool, patch("omi.state.sync.git", observe):
+                future = pool.submit(omi.state.sync.commit, omi.state.resolve.resolve(wt), ["second.txt"], "second")
+                try:
+                    time.sleep(0.15)
+                    assert not entered, "second writer entered the index while first writer held the lock"
+                finally:
+                    release.touch()
+                future.result(timeout=10)
+            out, err = proc.communicate(timeout=10)
+            assert proc.returncode == 0, (out, err)
+            assert omi.common.core.git(home, "status", "--porcelain") == ""
+        finally:
+            release.touch()
+            if proc.poll() is None:
+                proc.kill()
+            proc.communicate()
 
 
 def test_detached_project_commands():
@@ -112,7 +279,8 @@ def test_detached_project_commands():
         with patch.object(subprocess, "run", side_effect=execute):
             detached_cli(wt, "clean")
             detached_cli(wt, "status")
-        assert any("label=omi-repo=sample" in argv for argv in calls if argv[:2] == ["docker", "ps"])
+        assert any(f"label=omi-repo={omi.worker.docker.repo_key(project)}" in argv for argv in calls if argv[:2] == ["docker", "ps"])
+        assert omi.worker.docker.repo_label(project) == "sample"
         assert not any("label=omi-repo=state" in argv for argv in calls)
         task2 = task.with_name("TASK-098.md")
         task2.write_text("---\nid: TASK-098\nstatus: planned\nscope: other.py\n---\n", encoding="utf-8")
@@ -137,6 +305,16 @@ def test_detached_scope_and_guard():
         assert guard(wt / "app.py") == 0
         assert guard(wt / "outside.py") == 2
         assert guard(task) == 2
+        assert guard(code / ".claude/settings.json") == 2
+        assert guard(wt / ".claude/settings.json") == 2
+        with tempfile.TemporaryDirectory() as other:
+            git(other, "init", "-q", "-b", "task/TASK-1")
+            for target in (Path(other) / "app.py", Path(other) / ".claude/settings.json"):
+                assert omi.project.scope.guard(io.StringIO(json.dumps({
+                    "cwd": str(wt), "tool_input": {"file_path": str(target)}}))) == 2
+        with tempfile.TemporaryDirectory() as home:
+            assert omi.project.scope.guard(io.StringIO(json.dumps({
+                "cwd": str(wt), "tool_input": {"file_path": str(Path(home) / ".claude/settings.json")}}))) == 2
         # A counterfeit task in the code worktree cannot widen detached scope.
         fake = wt / ".omi" / "tasks" / task.name
         fake.parent.mkdir(parents=True)
@@ -144,6 +322,9 @@ def test_detached_scope_and_guard():
         assert omi.project.scope.task_scope(wt, task.stem) == ["app.py"]
         assert omi.project.scope.out_of_scope(wt, task.stem) == [".omi/tasks/TASK-097.md"]
         assert guard(fake) == 2
+        task.write_text(task.read_text(encoding="utf-8").replace(
+            "scope: app.py", "scope: app.py, .claude/settings.json"), encoding="utf-8")
+        assert guard(wt / ".claude/settings.json") == 0
 
 
 def test_detached_run_and_hooks():
@@ -188,6 +369,11 @@ def test_detached_run_and_hooks():
             argv, kwargs = next((a, k) for a, k in reversed(calls) if a[:2] == ["docker", "run"])
             assert f"{project}:/state:ro" in argv and f"{wt}:/work:ro" in argv
             assert "OMI_PROJECT_STATE=/state" in argv
+            gitdir = Path(wt.joinpath(".git").read_text(encoding="utf-8").split(":", 1)[1].strip())
+            assert f"{gitdir.parents[1]}:/gitdir:ro" in argv and f"OMI_GIT_DIR=/gitdir/worktrees/{gitdir.name}" in argv
+            assert "GIT_DIR=/gitdir" not in argv and "GIT_CONFIG_KEY_0=safe.directory" in argv
+            key = omi.worker.docker.repo_key(project)  # hook containers carry the hashed key; the name keeps the plain label
+            assert argv[argv.index(f"omi-repo={key}") - 1] == "--label" and argv[argv.index("--name") + 1].startswith("sample-")
             assert kwargs["input"] == (project / ".omi" / "hooks" / "post-run.sh").read_bytes().replace(b"\r\n", b"\n")
             report = task.read_text(encoding="utf-8")
             assert "DONE detached" in report and "hook post-run passed" in report and "## Usage" in report
@@ -226,6 +412,22 @@ def test_detached_default_hook_config():
             assert result.returncode == 9, ("in-repo hook ignored local config", result.stdout, result.stderr)
 
 
+def test_project_state_env():
+    """Inside a hook container OMI_PROJECT_STATE makes the checkout detached at that path, without a registry."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        with patch.dict(os.environ, {"OMI_PROJECT_STATE": str(root / "state"), "OMI_STATE": str(root / "none")}):
+            with patch.object(omi.state.resolve, "HOOK_CODE", root.resolve()):
+                project = omi.state.resolve.resolve(root)
+            assert project == omi.state.resolve.Project(root / "state", root.resolve(), True)
+            assert not omi.state.resolve.resolve(root).detached  # other checkouts, e.g. test repos run by a hook, keep their own state
+        (root / "wt").mkdir()
+        assert omi.worker.hooks.git_env(root / "wt") is None
+        (root / "wt" / ".git").write_text("gitdir: /host/repo/.git/worktrees/T-1\n", encoding="utf-8")
+        mount, env = omi.worker.hooks.git_env(root / "wt")
+        assert Path(mount) == Path("/host/repo/.git") and "OMI_GIT_DIR=/gitdir/worktrees/T-1" in env
+
+
 def test_user_session_start():
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
@@ -244,10 +446,17 @@ def test_user_session_start():
 
 
 def main():
+    test_state_git_uses_c_locale()
+    test_state_push_remote_advanced()
+    test_state_push_transport_retry()
+    test_state_commits_serialized()
+    test_project_state_env()
     test_user_session_start()
     test_detached_resolution()
     test_detached_commands_and_steps()
+    test_detached_commit_twice_and_failure_message()
     test_detached_project_commands()
+    test_detached_host_test_and_note_commit_state()
     test_detached_scope_and_guard()
     test_detached_run_and_hooks()
     test_detached_default_hook_config()
