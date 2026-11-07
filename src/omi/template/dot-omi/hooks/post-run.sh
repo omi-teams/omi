@@ -3,6 +3,10 @@
 need() { command -v "$1" >/dev/null 2>&1 || { echo "post-run: $1 not in the worker image; add it to docker/Dockerfile"; exit 1; }; }
 has_test_script() { while IFS= read -r l || [ -n "$l" ]; do case $l in *'"test"'*) return 0;; esac; done < package.json; return 1; }
 cfg_test() { cfg="${OMI_PROJECT_STATE:-.}/.omi/config.json"; [ -f "$cfg" ] && python3 -c 'import json,sys;print(json.load(open(sys.argv[1],encoding="utf-8")).get("test") or "")' "$cfg" 2>/dev/null; }
+if [ -f "${OMI_PROJECT_STATE:-.}/.omi/structure.md" ]; then
+  # hook container: git needs the main repo's worktree dir (OMI_GIT_DIR); GIT_DIR is set in a subshell, not for the project tests
+  ( [ -z "$OMI_GIT_DIR" ] || export GIT_DIR="$OMI_GIT_DIR" GIT_WORK_TREE="$PWD"; python3 -m omi structure check --changed ) || { echo "post-run: structure check failed"; exit 1; }
+fi
 t=$(cfg_test)
 [ -n "$t" ] && exec sh -c "$t"
 found=

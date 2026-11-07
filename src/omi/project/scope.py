@@ -5,10 +5,12 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
 
 from ..common import core
+from . import structure
 from ..state import resolve as state
 
 
@@ -25,6 +27,14 @@ def git_hint(paths):
 
 
 def guard(stdin=None):
+    try:
+        return _guard(stdin)
+    except state.StateError as exc:
+        print(f"OMI: omi state registry is invalid ({exc}); fix ~/.omi/state before editing.", file=sys.stderr)
+        return 2
+
+
+def _guard(stdin=None):
     data = json.loads((stdin or sys.stdin.buffer).read())
     tool_input = data.get("tool_input", {})
     raw = tool_input.get("file_path") or tool_input.get("notebook_path")
@@ -39,6 +49,21 @@ def guard(stdin=None):
     engineer = data.get("agent_type") == "omi-agent-engineer"  # subagents share the session cwd; only the payload tells
     top = core.git(d, "rev-parse", "--show-toplevel")
     root = Path(top).resolve() if top else None
+    session_top = core.git(data.get("cwd", "."), "rev-parse", "--show-toplevel")
+    session_root = Path(session_top).resolve() if session_top else None
+    omi_session = False
+    for repo in dict.fromkeys(p for p in (root, session_root) if p is not None):
+        in_repo = (repo / ".omi").is_dir()
+        try:
+            project = state.resolve(repo)
+        except state.StateError as exc:
+            if in_repo or engineer:
+                raise  # fail closed: guard() blocks with the registry message
+            print(f"OMI: warning: cannot read omi state for {repo} ({exc}); guard skipped.", file=sys.stderr)
+            continue
+        omi_session = omi_session or in_repo or project.detached or (project.code / ".omi").is_dir()
+    if not engineer and not omi_session:
+        return 0
     branch = (core.git(d, "rev-parse", "--abbrev-ref", "HEAD") or "") if top else ""
     try:
         rel = PurePosixPath(path.resolve().relative_to(root).as_posix())
@@ -80,10 +105,8 @@ def guard(stdin=None):
     return 2
 
 
-def out_of_scope(wt, tid, committed=False):
-    """Changed paths in wt that the authoritative task scope does not allow; committed: also the branch's commits."""
-    project = state.resolve(wt)
-    globs = task_scope(wt, tid)
+def changed_paths(wt, committed=False):
+    """Changed paths in wt (and untracked ones); committed: also the branch's commits."""
     r = subprocess.run(["git", "-C", str(wt), "status", "--porcelain", "-z", "-uall", "--no-renames"],
                        capture_output=True, encoding="utf-8", errors="replace")
     entries = [e for e in r.stdout.split("\0") if e]
@@ -93,6 +116,14 @@ def out_of_scope(wt, tid, committed=False):
         d = subprocess.run(["git", "-C", str(wt), "diff", "--name-only", "-z", "--no-renames", "development...HEAD"],
                            capture_output=True, encoding="utf-8", errors="replace")
         paths += [p for p in d.stdout.split("\0") if p and p not in paths]
+    return paths, untracked
+
+
+def out_of_scope(wt, tid, committed=False):
+    """Changed paths in wt that the authoritative task scope does not allow; committed: also the branch's commits."""
+    project = state.resolve(wt)
+    globs = task_scope(wt, tid)
+    paths, untracked = changed_paths(wt, committed)
     def bad(p):
         if not project.detached and p == f".omi/tasks/{tid}.md":
             return False
@@ -104,3 +135,60 @@ def out_of_scope(wt, tid, committed=False):
             return False
         return not any(PurePosixPath(p).full_match(g) for g in globs)
     return [p for p in paths if bad(p)]
+
+
+def file_plan(text):
+    """Paths of the `- edit|create <path> (<layer>)` lines under `## File plan`; None when the task has no such section."""
+    m = re.search(r"^## File plan[ \t]*\n(.*?)(?=^## |\Z)", text, re.M | re.S)
+    if not m:
+        return None
+    return {x.group(1) for x in re.finditer(r"^\s*- (?:edit|create) (\S+)(?: \(.*\))?\s*$", m.group(1), re.M)}
+
+
+def plan_violations(wt, tid):
+    """`OUT OF PLAN:` / `UNMAPPED:` lines for changed files; plan and map come from state/development, never the worktree."""
+    project = state.resolve(wt)
+    plan = file_plan(state.task_text(project, wt, tid) or "")
+    if plan is None:
+        return []
+    with tempfile.TemporaryDirectory() as tmp:
+        if project.detached:
+            text = core.read_task(project.state / structure.MAP) if (project.state / structure.MAP).exists() else None
+        else:
+            text = core.git(wt, "show", f"development:{structure.MAP}")
+        try:
+            if text is None:
+                raise structure.StructureError(f"{structure.MAP}: not found on development/state")
+            (Path(tmp) / ".omi").mkdir()
+            (Path(tmp) / structure.MAP).write_text(text, encoding="utf-8", newline="\n")
+            rules = structure.load(tmp)
+        except structure.StructureError as exc:
+            return [f"UNMAPPED: {exc}"]
+    out = []
+    for p in changed_paths(wt)[0]:
+        if p == f".omi/tasks/{tid}.md" or p.startswith(".omi-cache/"):
+            continue
+        if p not in plan:
+            out.append(f"OUT OF PLAN: {p}")
+        if not structure.match(rules, p):
+            out.append(f"UNMAPPED: {p}")
+    return out
+
+
+def require_scope(tid: str, text: str) -> None:
+    """Refuse a write operation without a declared task scope."""
+    if not core.split(core.parse(text).get("scope")):
+        sys.exit(f"{tid} has no scope; set scope before starting a write role. Nothing changed.")
+
+
+def glob_prefix(glob: str) -> str:
+    return re.split(r"[*?\[]", glob, 1)[0]
+
+
+def globs_overlap(a: str, b: str) -> bool:
+    """# ponytail: compares only the literal prefix before the first wildcard; may report a false overlap, never misses one."""
+    for x, y in ((a, b), (b, a)):
+        px, py = glob_prefix(x), glob_prefix(y)
+        if px == py or (px.startswith(py) and (py != y or py.endswith("/") or px[len(py)] == "/")):
+            return True
+    return False

@@ -4,7 +4,7 @@ summary: Respond to something broken after a release or gate: contain, diagnose 
 steps:
 - id: contain | role: omi-agent-devops | skills: omi-skill-incident | input: incident report, release and gate state | output: incident record with impact, start time and containment (freeze merges, pause workers) | gate: none | stop: damage stopped growing and the record exists
 - id: diagnose | role: omi-agent-engineer | skills: omi-skill-debug-root-cause | input: incident record, logs, failing run | output: root cause with evidence and the choice hotfix or rollback | gate: none | stop: root cause named with evidence, or stop and ask the PO
-- id: hotfix | role: omi-agent-engineer | skills: omi-skill-lean-implementation | input: root cause, task file, worktree | output: either the minimal fix with a regression test (tests passing) or the revert diff / previous rc redeploy plan if rollback was chosen | gate: review | stop: VERDICT PASS from a fresh reviewer
+- id: hotfix | role: omi-agent-engineer | skills: omi-skill-lean-implementation, omi-skill-verify-evidence, omi-skill-simplify-review | input: root cause, task file, worktree | output: either the minimal fix with a regression test (tests passing) or the revert diff / previous rc redeploy plan if rollback was chosen | gate: review | stop: VERDICT PASS from a fresh reviewer
 - id: merge-prod | role: omi-agent-devops | skills: omi-skill-rollback, omi-skill-release-checklist | input: reviewed hotfix or the bad promotion merge or rc tag | output: PO approval line in ## Steps, then the merge, revert or redeploy commands or runbook prepared for the PO to run (devops never merges, tags or pushes to staging/main) | gate: po | stop: PO approved and service is healthy again
 - id: postmortem | role: coordinator | skills: omi-skill-incident | input: incident record, root cause, actions taken | output: postmortem note with timeline, cause, fix and follow-up tasks, logged in decisions.md | gate: none | stop: note written and follow-ups are task files
 ---
@@ -27,7 +27,7 @@ steps:
 - A fix that needs files outside `scope`: report `NEEDS SCOPE`.
 
 ## Review-fail rule
-Each FAIL goes back to hotfix with the findings. After 2 FAILs, prefer rollback over a third attempt and ask the PO (pick-list: rollback, rescope, change approach).
+Each FAIL goes back to hotfix with the findings. Enforced in code: after `max_fix_rounds` (2) failed rounds `omi step <ID> back` and `omi run` refuse with `ROUND LIMIT` until the Coordinator decides (rescope, replan, or one more round with `--why "<reason>"`, recorded as `Coordinator round override N: <reason>`). Prefer rollback over another attempt (rollback, rescope, change approach). From round 2 a FAIL with `ROOT: same` prints `REPLAN: same root cause` and `back` needs `--why "<reason>"`.
 
 ## PO gates
 `merge-prod` needs `PO approval merge-prod: <PO's words>` under `## Steps`; `omi step` refuses otherwise. The production merge, revert or redeploy is never done without it.

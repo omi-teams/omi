@@ -8,9 +8,9 @@ from pathlib import Path
 
 from ..board import server
 from ..setup import attach, install, upgrade
-from ..project import catalogs, github, scope, tasks, workflows
+from ..project import catalogs, github, improve, scope, structure, tasks, tree, workflows
 from ..common import core
-from ..worker import creds, docker, hooks, run
+from ..worker import advance, creds, dispatch as worker_dispatch, docker, hooks, run
 from ..state import resolve as state, sync as state_sync
 
 
@@ -22,22 +22,30 @@ USAGE = """usage: omi <command>
   upgrade [--check | --to vX.Y.Z]   install a newer omi and update the project's unmodified template files (modified ones get <path>.omi-new)
   version      print the omi version and how to check for a newer one (also --version)
   status       show tasks, checkpoints and the next suggested task
+  improve "<one line>" [--kind bug|security|idea] [--from <project>]   file an omi improvement
   sync         pull, commit leftover detached state changes and push
   board [--port N] [--no-open]   serve the read-only task board on 127.0.0.1 (default port 8765)
   guard        Claude Code PreToolUse hook: block writes outside task scope
   github       set up branches and rulesets: squad merges to development, only the PO to staging/main
-  clean [--all]   remove this repo's worker containers and old worker images (--all: the current image too)
+  clean [<ID>] [--all] [--force]   remove this repo's worker containers, engineer session volumes and old worker images (--all: the current image too); <ID>: only that task's containers and volumes; refuses while a worker runs unless --force
   skills [check <task-file>]   write .omi/skills/CATALOG.md; or check a task's skills against the budget
   skills --check   validate every skill against the contract (parts, size, source, no widened permissions)
   token set [--tool claude|codex]   store the `claude setup-token` value (or the OpenAI API key) in Windows Credential Manager
+  structure check [--changed|--baseline]   (structure init prints a proposed map from the tracked tree, never overwrites one) report files the .omi/structure.md map does not cover and imports against its layer or module rules; exit 1 on any not in .omi/structure-baseline.json (--baseline records them; --changed checks only files changed vs development, ignoring the baseline)
   plans        validate .omi/plans and write .omi/plans/CATALOG.md
   references   validate .omi/references and write .omi/references/CATALOG.md (task refs load as paths)
   rules        validate .omi/rules and write .omi/rules/CATALOG.md (rules auto-load by task scope)
   agents       write .omi/agents/CATALOG.md (one line per role)
   workflows [--check]   write .omi/workflows/CATALOG.md (one line per workflow); --check validates every workflow
-  step <TASK-ID> next|done|back|skip|approve|reopen --why <reason>   record the task's workflow step (gates cannot be skipped)
-  run <role> <TASK-ID> [--model M] [--effort E] [--tool claude|codex]   run a role in Docker (read roles: ro worktree, after the deterministic checks)
+  host-test <TASK-ID>   run `host_test` (.omi/config.json) on the host in the task's worktree; failure prints HOST TEST FAILED and counts as a fix round
+  step <TASK-ID> next|done|back|skip|approve|reopen --why <reason>   record the task's workflow step (gates cannot be skipped; back --to <step> --why: return to an earlier agent step, e.g. architect; back and done take --why "<Coordinator reason>" (one round past max_fix_rounds) or --po "<PO's words>"; done --po overrides a review FAIL)
+  note <TASK-ID> --step <step> --verdict <verdict> "<text>"   record a Coordinator decision under the task's ## Reports
+  run <role> <TASK-ID> [--model M] [--effort E] [--tool claude|codex] [--fresh] [--why "<Coordinator reason>"|--po "<PO's words>"]   run a role in Docker (--fresh: no engineer session resume; read roles: ro worktree, after the deterministic checks)
   hook pre-run|post-run|pre-merge <TASK-ID>   run .omi/hooks/<event> (from the main checkout) in Docker against the task worktree; exits with its code
+  dispatch next [--max N]   start ready parallel-safe planned tasks (default: 1)
+  dispatch <role> <TASK-ID>   start `omi run` detached with a run record; refuses when scope or depends conflict with a running task
+  advance <TASK-ID> [--message "<msg>"] [--reject <n>[,<n>] --why "<reason>"]   scope-check a DONE write run, commit, rebase, draft PR, host-test and dispatch its reviewer; after a review FAIL: record the findings, step back, PR to draft, rerun the engineer (--reject leaves findings out); after review PASS: accept, pre-merge hook, PR ready, green CI, squash merge, pull, clean and post-merge test
+  watch [--wait] [--all]   list running workers and every finished run not yet shown, with its next action (NEXT: deterministic, DECIDE: Coordinator); --wait blocks until a run finishes; --all: whole history
   parallel <TASK-ID> <TASK-ID> [...]   check that tasks can run in parallel (depends, status, scope overlap)
   worker <wt> <task-file> [--model M] [--effort E]   run the engineer in the Docker worker
   worker <wt> --prove   run docker/prove.sh in the worker (boundary check, no token)"""
@@ -61,6 +69,12 @@ def status(cwd="."):
         old = True
     if old:
         print(f"run `python -m omi upgrade --apply` to bring the project files to omi {core.version()}")
+    if not old:
+        upgrade.stale_template_hint(root, detached=project.detached)
+    if install.stale_user_integration():
+        print("installed omi user skills or Codex block differ from the current template; run `python -m omi install-user`")
+    source = project.state.name if project.detached else project.code.name
+    print(f"omi improvements filed: {improve.open_count(source)} open")
     dockerfile = root / "docker" / "Dockerfile"
     if dockerfile.exists() and dockerfile.read_bytes().replace(b"\r\n", b"\n") != (core.TEMPLATE / "docker" / "Dockerfile").read_bytes().replace(b"\r\n", b"\n"):
         print(f"docker/Dockerfile differs from the omi {core.version()} template; review it (omi init never overwrites it)")
@@ -74,12 +88,19 @@ def status(cwd="."):
         missing_test = False
     if missing_test:
         print('no `test` command in .omi/config.json; set one, e.g. "test": "python3 -m pytest -q"')
-    ts = tasks.tasks(project)
+    ts = tasks.rolled_up(tasks.tasks(project))
+    kids = tree.children_map(ts)
+    finished = []
     for pid, m in catalogs.load_plans(root, strict=False).items():
-        if m["status"] == "active":
-            members = [t for t in ts.values() if t.get("plan") == pid]
-            done_count = sum(t.get("status") == "done" for t in members)
+        members = [t for t in ts.values() if t.get("plan") == pid]
+        done_count = sum(t.get("status") == "done" for t in members)
+        if tasks.plan_status(m["status"], [t.get("status") for t in members]) == "done":
+            if m["status"] != "done":  # stored-done plans stay hidden, as before
+                finished.append(pid)
+        else:
             print(f"{pid} {m['title']}: done {done_count}/{len(members)}")
+    if finished:
+        print(f"done plans: {', '.join(finished)}")
     if not ts:
         print("no tasks yet - run omi-idea")
         docker.print_workers(project)
@@ -88,16 +109,16 @@ def status(cwd="."):
     print(f"done: {len(done)}/{len(ts)}")
     for st in STATUSES:
         for k, m in ts.items():
-            if m.get("status", "planned") == st:
+            if m.get("status", "planned") == st and k not in kids:
                 try:
                     steps = workflows.get_workflow(root, m.get("workflow") or workflows.DEFAULT_WORKFLOW)
                 except SystemExit:
                     steps = []
                 ph = tasks.phase(m, steps)
-                print(f"[{ph['label']}] {k} {m.get('title', '')}" + (f" (step: {m['step']})" if st == "in-progress" and m.get("step") else ""))
+                print(f"[{ph['label']}] {k} {m.get('title', '')}")
                 if ph["step"] and steps:
                     rnd = f" · vòng {ph['review_round']}" if ph["review_round"] else ""
-                    print(f"  bước {ph['step_index']}/{ph['step_count']} {ph['step']}{rnd} · {m.get('tool', '-')} {m.get('model', '-')}/{m.get('effort', '-')}")
+                    print(f"  bước {ph['step_index'] or '?'}/{ph['step_count']} {ph['step']}{rnd} · {m.get('tool', '-')} {m.get('model', '-')}/{m.get('effort', '-')}")
                     print("  " + tasks.step_strip(m, steps))
                 if st == "in-progress":
                     print(f"  resume: omi-task {k}")
@@ -109,19 +130,38 @@ def status(cwd="."):
                         print(f"  {line}")
                 if tasks.usage_totals(m["_text"]):
                     print("  " + tasks.usage_totals(m["_text"]))
+    if kids:
+        print("tree:")
+        show = lambda k, depth: (print(f"{'  ' * depth}{k} [{ts[k].get('type') or 'task'}] {ts[k]['status']} {ts[k].get('title', '')}"
+                                       + (f" ({sum(ts[c]['status'] == 'done' for c in kids[k])}/{len(kids[k])} done)" if k in kids else "")),
+                                 [show(c, depth + 1) for c in kids.get(k, [])])
+        for k, m in ts.items():
+            if m.get("parent") not in ts:
+                show(k, 0)
+    try:
+        recs = worker_dispatch.records(project.code)
+    except state.StateError:
+        recs = []
+    busy = {r["tid"] for r in recs if r["running"]}
+    busy |= {row[0] for row in docker.running_workers(project.state if project.detached else project.code)}
+    resume = [f"{k} (resume)" for k, m in ts.items() if m.get("status") == "in-progress" and k not in kids and k not in busy]
     nxt = next((k for k, m in ts.items()
-                if m.get("status", "planned") == "planned" and set(core.split(m.get("depends"))) <= done), None)
-    print(f"next: {nxt or 'none ready'}")
+                if m.get("status", "planned") == "planned" and k not in kids and set(core.split(m.get("depends"))) <= done), None)
+    print(f"next: {' '.join(resume + ([nxt] if nxt else [])) or 'none ready'}")
+    unhandled = sum(not r["running"] and not r["reported"] for r in recs)
+    if unhandled:
+        print(f"finished runs not handled: {unhandled}; run python -m omi watch")
     docker.print_workers(project)
 
 
 def main(argv: list[str] | None = None) -> None:
     try:
-        state.registry()
         args = sys.argv[1:] if argv is None else argv
         cmd = args[0] if args else "help"
+        if cmd != "guard":  # guard handles StateError itself and must exit 2 (blocking), not 1
+            state.registry()
         mutates = cmd in {"init", "upgrade", "skills", "rules", "plans", "references", "agents",
-                          "workflows", "step", "run", "hook", "worker"}
+                          "workflows", "step", "note", "host-test", "run", "hook", "worker"} or (cmd == "dispatch" and args[1:2] == ["next"])
         target = args[1] if cmd == "init" and len(args) > 1 else "."
         project = state.resolve(target) if mutates else None
         if project and project.detached:
@@ -132,7 +172,8 @@ def main(argv: list[str] | None = None) -> None:
         finally:
             if before is not None:
                 after = state_sync.snapshot(project)
-                paths = sorted(p for p in before.keys() | after.keys() if before.get(p) != after.get(p))
+                paths = sorted(p for p in before.keys() | after.keys()
+                               if not p.endswith(".omi-new") and before.get(p) != after.get(p))
                 if paths:
                     state_sync.commit(project, paths, cmd + " state")
                     state_sync.push(project)
@@ -172,6 +213,8 @@ def dispatch(argv: list[str] | None = None) -> None:
         sys.exit(upgrade.upgrade_cmd(rest, root, detached=project.detached))
     elif cmd == "template-shas" and len(rest) == 2:
         upgrade.template_shas_cmd(*rest)
+    elif cmd == "improve":
+        improve.improve(rest)
     elif cmd == "sync":
         project = state.resolve()
         if rest:
@@ -185,9 +228,6 @@ def dispatch(argv: list[str] | None = None) -> None:
         port = core.flag(rest, "--port")
         if not set(rest) <= {"--port", "--no-open", port} or ("--port" in rest and not ((port or "").isascii() and (port or "").isdigit())):
             raise state.StateError("usage: omi board [--port N] [--no-open]")
-        project = state.resolve()
-        if project.detached:
-            state_sync.pull(project)
         try:
             httpd = server.make_server(int(port) if port else 8765)
         except (OSError, OverflowError) as exc:
@@ -207,7 +247,8 @@ def dispatch(argv: list[str] | None = None) -> None:
         with contextlib.chdir(project.code if project.detached else Path.cwd()):
             github.github("--po" in rest)
     elif cmd == "clean":
-        docker.clean(all_images="--all" in rest)
+        ids = [a for a in rest if not a.startswith("--")]
+        docker.clean(all_images="--all" in rest, task=ids[0] if ids else None, force="--force" in rest)
     elif cmd == "skills":
         if rest[:1] == ["--check"]:
             catalogs.check_all_skills(root)
@@ -236,11 +277,57 @@ def dispatch(argv: list[str] | None = None) -> None:
         catalogs.agents_catalog(root)
     elif cmd == "workflows":
         workflows.check_all_workflows(root) if rest[:1] == ["--check"] else workflows.workflows_catalog(root)
+    elif cmd == "structure" and rest[:1] == ["check"] and set(rest[1:]) <= {"--changed", "--baseline"} and not {"--changed", "--baseline"} <= set(rest):
+        project = state.resolve()
+        try:
+            sys.exit(structure.check(project.code, project.state, "--changed" in rest, "--baseline" in rest))
+        except structure.StructureError as exc:
+            sys.exit(f"OMI: {exc}")
+    elif cmd == "structure" and rest == ["init"]:
+        project = state.resolve()
+        try:
+            sys.exit(structure.init(project.code, project.state))
+        except structure.StructureError as exc:
+            sys.exit(f"OMI: {exc}")
     elif cmd == "step" and len(rest) >= 2:
-        why = " ".join(rest[rest.index("--why") + 1:]) if "--why" in rest else None
-        sys.exit(tasks.step(state.resolve(core.main_checkout(".") or Path(".").resolve()), rest[0], rest[1], why))
+        cut = rest.index("--why") if "--why" in rest else len(rest)
+        head = rest[:cut]
+        to, po = core.flag(head, "--to"), core.flag(head, "--po")
+        why = " ".join(rest[cut + 1:]) if cut < len(rest) else None
+        if "--to" in head and (rest[1] != "back" or not to or to.startswith("--")):
+            sys.exit(f"usage: omi step {rest[0]} back --to <step> --why <reason>. Nothing changed.")
+        sys.exit(tasks.step(state.resolve(core.main_checkout(".") or Path(".").resolve()), rest[0], rest[1], why, to=to, po=po))
+    elif cmd == "note" and rest:
+        step_id, verdict = core.flag(rest, "--step"), core.flag(rest, "--verdict")
+        words = [w for i, w in enumerate(rest[1:]) if w not in ("--step", "--verdict") and rest[i] not in ("--step", "--verdict")]
+        tasks.note(state.resolve(core.main_checkout(".") or Path(".").resolve()), rest[0], step_id, verdict, " ".join(words))
     elif cmd == "run" and len(rest) >= 2 and not rest[1].startswith("--"):
+        project = state.resolve(core.main_checkout(".") or Path(".").resolve())
+        tasks.check_runnable(project, rest[1])
+        if catalogs.get_role(project.state, rest[0])["access"] == "write":
+            tasks.run_gate(project, rest[1], core.flag(rest, "--po"), core.flag(rest, "--why"))
         sys.exit(run.run_cmd(rest[0], rest[1], rest))
+    elif cmd == "dispatch" and rest[:1] == ["next"]:
+        if len(rest) not in (1, 3) or (len(rest) == 3 and (rest[1] != "--max" or not rest[2].isascii()
+                                                                     or not rest[2].isdigit() or int(rest[2]) < 1)):
+            raise state.StateError("usage: omi dispatch next [--max N] (N must be positive)")
+        worker_dispatch.dispatch_next(state.resolve(core.main_checkout(".") or Path(".").resolve()),
+                                      int(rest[2]) if len(rest) == 3 else 1)
+    elif cmd == "dispatch" and len(rest) == 2 and not rest[1].startswith("--"):
+        project = state.resolve(core.main_checkout(".") or Path(".").resolve())
+        tasks.check_runnable(project, rest[1])
+        catalogs.get_role(project.state, rest[0])
+        worker_dispatch.launch(project, rest[1], rest[0])
+    elif cmd == "advance" and len(rest) % 2 == 1 and set(rest[1::2]) <= {"--message", "--reject", "--why"}:
+        reject = core.flag(rest, "--reject")
+        if reject is not None and not all(n.isdigit() for n in reject.split(",")):
+            sys.exit('usage: omi advance <TASK-ID> [--message "<msg>"] [--reject <n>[,<n>] --why "<reason>"]')
+        advance.advance(state.resolve(core.main_checkout(".") or Path(".").resolve()), rest[0], core.flag(rest, "--message"),
+                        [int(n) for n in reject.split(",")] if reject else None, core.flag(rest, "--why"))
+    elif cmd == "watch" and set(rest) <= {"--wait", "--all"}:
+        worker_dispatch.watch(state.resolve(core.main_checkout(".") or Path(".").resolve()), "--wait" in rest, "--all" in rest)
+    elif cmd == "host-test" and len(rest) == 1:
+        sys.exit(run.host_test(state.resolve(core.main_checkout(".") or Path(".").resolve()), rest[0]))
     elif cmd == "hook" and len(rest) == 2:
         sys.exit(hooks.hook_cmd(*rest))
     elif cmd == "guard":

@@ -18,9 +18,9 @@ import time
 import types
 from pathlib import Path
 
-from ..project import catalogs, scope, tasks, workflows
+from ..project import catalogs, runs, scope, tasks, workflows
 from ..common import core
-from . import creds, docker, hooks, pr, tools
+from . import creds, docker, hooks, pr, session, tools
 from ..state import resolve as state
 
 
@@ -34,6 +34,25 @@ def skills_read(root, ids, opened):
         if any(o == r or o.endswith("/" + r) for r in rels for o in map(posixpath.normpath, filter(None, opened))):
             done.append(sid)
     return done
+
+
+SCOPE_LINE = re.compile(r"^Run scope: (.*)$\n?", re.M)  # the task scope at the session's last run, under `## Checkpoint`
+
+
+def widened_scope(text, now):
+    """Scope entries in `now` that the session's previous run did not have; all of `now` for a legacy session without a record."""
+    m = SCOPE_LINE.search(text or "")
+    return [g for g in now if g not in core.split(m[1])] if m else list(now)
+
+
+def record_scope(task, now):
+    task.write_text(SCOPE_LINE.sub("", core.read_task(task)), encoding="utf-8", newline="\n")
+    tasks.append_note(task, "Checkpoint", "Run scope: " + ", ".join(now))
+
+
+def container_paths(text, detached):
+    """Prompt text with `/work/` catalog paths pointing at the read-only `/state` mount of a detached project."""
+    return text.replace("/work/", "/state/") if detached else text
 
 
 def skills_cell(ids, done):
@@ -62,7 +81,7 @@ def ensure_cache_excluded(wt: Path) -> None:
     existing = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
     if ".omi-cache/" not in existing.splitlines():
         exclude.parent.mkdir(parents=True, exist_ok=True)
-        with exclude.open("a", encoding="utf-8") as f:
+        with exclude.open("a", encoding="utf-8", newline="\n") as f:
             f.write(("\n" if existing and not existing.endswith("\n") else "") + ".omi-cache/\n")
 
 
@@ -80,15 +99,20 @@ def host_bash():
     return bash
 
 
+def shell_command(cmd):
+    """`cmd` through a shell, like in the containers, so `VAR=1 cmd` works."""
+    if core.WINDOWS:
+        bash = host_bash()
+        return [bash, "-c", cmd] if bash else f'cmd /d /s /c "{cmd}"'
+    return ["bash", "-c", cmd] if shutil.which("bash") else ["sh", "-c", cmd]
+
+
 def test_command(wt, main):
     """`test` from .omi/config.json, else tests/test_omi.py if present, else pytest if importable, else each tests/test_*.py as a script."""
     cfg = Path(main) / ".omi" / "config.json"
     cmd = (json.loads(cfg.read_text(encoding="utf-8")) if cfg.exists() else {}).get("test")
-    if cmd:  # through a shell, like in the containers, so `VAR=1 cmd` works
-        if core.WINDOWS:
-            bash = host_bash()
-            return [bash, "-c", cmd] if bash else f'cmd /d /s /c "{cmd}"'
-        return ["bash", "-c", cmd] if shutil.which("bash") else ["sh", "-c", cmd]
+    if cmd:
+        return shell_command(cmd)
     if (Path(wt) / "tests" / "test_omi.py").exists():
         argv = ["python", "tests/test_omi.py"]
     elif importlib.util.find_spec("pytest"):
@@ -140,6 +164,37 @@ def deterministic_checks(wt, main, tid):
     return problems
 
 
+def host_test(project, tid):
+    """`omi host-test <ID>`: run `host_test` on the host in the task's worktree and record a `host-test` row in `## Usage`.
+    Returns the exit code: 0 on pass or when `host_test` is empty."""
+    cmd = tasks.host_test_command(project.state)
+    if not cmd:
+        print("host_test is empty in .omi/config.json: skipped")
+        return 0
+    wt = core.task_worktrees(project.code).get(tid)
+    if not wt:
+        sys.exit(f"no worktree for {tid}: create it first (git worktree add). Nothing changed.")
+    dirty = core.git(wt, "status", "--porcelain", "--", ".", f":(exclude).omi/tasks/{tid}.md")  # the task file gets this run's row
+    if dirty is None:
+        sys.exit(f"cannot read the git status of {tid}'s worktree. Nothing changed.")
+    if dirty:
+        sys.exit(f"{tid} worktree has uncommitted changes: commit first, so the result covers HEAD. Nothing changed.")
+    t0 = time.monotonic()
+    try:
+        r = subprocess.run(shell_command(cmd), cwd=wt, capture_output=True, encoding="utf-8", errors="replace")
+        code, out = r.returncode, r.stdout + r.stderr
+    except OSError as e:
+        code, out = 1, f"host test failed to start: {e}"
+    sha = core.git(wt, "rev-parse", "--short=7", "HEAD") or "unknown"
+    tasks.record_usage(state.task_file(project, tid), "host-test", "-", None, (None, None, None), time.monotonic() - t0,
+                       "-", f"{'FAIL' if code else 'PASS'} {sha}")
+    if code:
+        print("HOST TEST FAILED\n" + "\n".join(out.strip().splitlines()[-20:]))
+        return 1
+    print(f"HOST TEST PASSED {sha}")
+    return 0
+
+
 def parse_step_settings(value: str, step_ids: list[str] | None = None) -> dict[str, dict[str, str]]:
     """Parse per-step tool/model/effort overrides, allowing empty parts."""
     settings = {}
@@ -157,7 +212,12 @@ def parse_step_settings(value: str, step_ids: list[str] | None = None) -> dict[s
     return settings
 
 
-def run_role(role, wt, task_file, model=None, effort=None, tool=None):
+def report_note(task: Path, role: str, tool: str, report: str) -> None:
+    """Append an agent report to ## Reports in full: the next step reads it from there."""
+    tasks.append_note(task, "Reports", f"{datetime.datetime.now():%Y-%m-%d %H:%M} {role} ({tool}):\n" + "\n".join("> " + l for l in report.splitlines()))
+
+
+def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=False):
     wt = Path(wt).resolve()
     main = core.main_checkout(wt)
     if not main or not (wt / ".git").is_file():
@@ -173,6 +233,9 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
     tm = core.meta(task) if task.exists() else {}
     catalogs.check_task_plan(catalog, tm)
     am = catalogs.get_role(main, role)
+    if role in tasks.REVIEW_ROLES:
+        tasks.host_test_gate(project.state, task.stem, core.read_task(task) if task.exists() else "",
+                             core.git(wt, "rev-parse", "--short=7", "HEAD"))
     catalogs.get_role(main, tm.get("role") or "omi-agent-engineer")  # unknown task role fails too
     steps = workflows.get_workflow(catalog, tm.get("workflow") or workflows.DEFAULT_WORKFLOW) \
         if tm.get("step") or tm.get("step_settings") else []
@@ -192,14 +255,17 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
                      f"or use your ChatGPT login ({secret[2]}). Nothing changed.")
         sys.exit(f"no token: run `omi token set` (Windows), set {creds.TOKEN_ENV}, or log in to Claude Code on the host"
                  f"{f' ({secret[2]})' if secret[2] else ''}. Nothing changed.")
+    now_scope = scope.task_scope(wt, task.stem)
+    added = widened_scope(core.read_task(task) if task.exists() else "", now_scope)  # read before sync_scope rewrites the copy
     tasks.sync_scope(wt, task, task.stem)  # before `before`, so revert_front keeps the synced scope
-    before = task.read_text(encoding="utf-8") if task.exists() else ""
+    before = core.read_task(task) if task.exists() else ""
     if cur and cur["role"] != role:
         print(f"WARNING: step {cur['id']} of {task.stem} is for {cur['role']}, not {role}; "
               f"if that step is finished run `omi step {task.stem} done` / `next` first")
     step_ids = catalogs.task_skills(cur) if cur and cur["role"] == role else []  # the current step's own skills
     own_ids = catalogs.task_skills(tm) if am["access"] == "write" else []  # task skills are for the implementer
-    ids = list(dict.fromkeys([*catalogs.task_skills(am), *own_ids, *step_ids]))
+    sources = runs.skill_sources(catalogs.task_skills(am), own_ids, step_ids)
+    ids = list(sources)
     declared = catalogs.check_skills(catalog, ids)  # role defaults count against the budget
     rule_files = catalogs.task_rules(catalog, scope.task_scope(wt, task.stem))
     ref_files = catalogs.task_references(catalog, tm)
@@ -211,11 +277,10 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
     ensure_cache_excluded(wt)
     read = am["access"] == "read"
     mounts = [f"{project.state}:/state"] if project.detached else []
-    if read:
-        problems = deterministic_checks(wt, main, task.stem)
-        if problems:
-            print(f"{role} not started; fix these first:\n" + "\n".join(problems))
-            return 4
+    problems = deterministic_checks(wt, main, task.stem) if read else []
+    if problems and role in (*tasks.REVIEW_ROLES, "omi-agent-qa-tester"):  # other read roles (architect) are consulted when checks fail
+        print(f"{role} not started; fix these first:\n" + "\n".join(problems))
+        return 4
     image = docker.ensure_image(main)
     res = None if read else hooks.run_hook(wt, main, "pre-run", task.stem, image)  # hooks guard write roles only
     if res:
@@ -226,34 +291,47 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
     prompt_skills = catalogs.skill_prompt(catalog, declared) + catalogs.rule_prompt(catalog, rule_files) + catalogs.reference_prompt(catalog, ref_files)
     if project.detached:
         task_rel = "/state/" + task_rel
-        prompt_skills = prompt_skills.replace("/work/", "/state/")
+        prompt_skills = container_paths(prompt_skills, True)
         prompt_skills += ("\nDetached state: /state is read-only. Do not edit the task or catalogs. "
                           "Include checkpoint updates in your final report; the Coordinator records them.")
+    resume_skills = container_paths(catalogs.skill_prompt(catalog, declared), project.detached)
     prompt_skills += "\nTests: " + test_prompt_line(wt, main)
+    if problems:
+        prompt_skills += "\nThe pre-review checks currently fail:\n" + "\n".join(problems)
     text = am["_text"]
     if project.detached:
         text += ("\nFor this detached run, replace instructions to edit the task or its Checkpoint "
                  "with reporting those updates in your final response. /state is read-only.")
     tmp = tempfile.TemporaryDirectory() if read else None
 
-    def attempt(t, secret, note=""):
-        """One container run with tool t; returns (process, report text, usage numbers, usage-row skills, seconds)."""
+    repo = docker.repo_key(main)
+
+    def attempt(t, secret, note="", resume=None, hook_tail=None):
+        """One container run with tool t (resume: continue that session id); returns (process, report text, skills read)."""
         env = dict(os.environ)
         env.pop(creds.TOKEN_ENV, None)
         env_name, value, _ = secret
         env[env_name] = value
         mdl, eff = models[t], efforts[t]
-        cmd = (tools.engineer_cmd if t == "claude" else tools.codex_cmd)(text, task_rel, mdl, eff, prompt_skills + note)
+        cmd = (tools.engineer_cmd if t == "claude" else tools.codex_cmd)(text, task_rel, mdl, eff, prompt_skills + note, resume, hook_tail)
+        if resume and declared:  # the resume prompt is short: point again at the step's skills so reading them is counted
+            cmd[2 if t == "claude" else -1] += resume_skills + "\nRe-read them now, they are not in your context after a resume."
+        if resume and added:  # the resumed session still remembers the old scope
+            cmd[2 if t == "claude" else -1] += ("\nSCOPE SYNCED: the task scope was widened since your last run; these paths are now in scope: "
+                                              + ", ".join(added) + ". Do not report NEEDS SCOPE for them.")
+        if not read:  # the CLI's transcripts go to the per-task cache so a fix round can resume them
+            cmd = session.wrap(t, cmd)
         chatgpt = env_name == creds.CODEX_AUTH_ENV
         if chatgpt:
             cmd = ["sh", "-c", creds.CODEX_AUTH_BOOT, "sh", *cmd]
+        sess = [] if read else session.mount_args(repo, task.stem, t, image, fresh=resume is None)  # a fresh session gets a new volume
         t0 = time.monotonic()
 
         def run_once(name):
-            with docker.egress(main, name, image, docker.allow_for(main, t, chatgpt=chatgpt)) as (net, proxy):
-                with subprocess.Popen(docker.worker_argv(wt, image, cmd, name, docker.repo_label(main),
+            with docker.egress(main, name, image, docker.allow_for(main, t, chatgpt=chatgpt), task.stem) as (net, proxy):
+                with subprocess.Popen(docker.worker_argv(wt, image, cmd, name, repo,
                                                   {**docker.worker_labels(role, task.stem, mdl, eff), **docker.compose_labels(name, "agent")}, ro=read,
-                                                  mounts=mounts, env_names=(env_name,), network=net, proxy=proxy,
+                                                  mounts=mounts, extra=sess, env_names=(env_name,), network=net, proxy=proxy,
                                                   **docker.worker_sizes(main)),
                                       env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                       encoding="utf-8", errors="replace") as p:
@@ -275,24 +353,42 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
                 raise docker.NameTaken(name)
             return r
 
-        for salt in ("", secrets.token_hex(1)):  # a name in use: one retry with a random 2-char suffix
-            try:
-                r = run_once(docker.container_name(docker.repo_label(main), role, task.stem, t, mdl, eff, salt=salt))
-                break
-            except docker.NameTaken:
-                continue
-        else:
-            sys.exit(f"container name in use again for {role} ({t}). Nothing changed.")
+        try:
+            for salt in ("", secrets.token_hex(1)):  # a name in use: one retry with a random 2-char suffix
+                try:
+                    r = run_once(docker.container_name(docker.repo_label(main), role, task.stem, t, mdl, eff, salt=salt))
+                    break
+                except docker.NameTaken:
+                    continue
+            else:
+                sys.exit(f"container name in use again for {role} ({t}). Nothing changed.")
+        finally:  # Ctrl-C, a container error and the exit above included: no token may stay in the session volume
+            dropped = not read and session.scrub(repo, task.stem, t, image, value)
+            if dropped and task.exists():  # token in a transcript: forget the session, next run is fresh
+                task.write_text(session.LINE.sub("", core.read_task(task)), encoding="utf-8", newline="\n")
         result, *nums = tools.parse_usage(t, r.stdout)
+        if read:
+            result = tools.full_report(t, r.stdout, result)
         done = skills_read(catalog, ids, tools.opened_files(t, r.stdout))
+        seen = done  # every skill this session has read, for the Session line
+        if resume and task.exists():  # skills the resumed session read earlier count too
+            seen = list(dict.fromkeys([*session.skills_recorded(core.read_task(task), t, role), *done]))
+            done = [sid for sid in ids if sid in seen]
         verdict = (tools.verdict_of(result) or "n/a") if read else "-"
         head = core.git(wt, "rev-parse", "--short=7", "HEAD") if read and verdict != "n/a" else None
         if head:
             verdict += " " + head
-        if tools.quota_hit(t, r.stdout, r.returncode):
+        if verdict.startswith("FAIL") and (rt := tasks.root_of(result)):
+            verdict += f" root:{rt}"
+        if tools.quota_hit(t, r.stdout, r.returncode, r.stderr):
             verdict = f"QUOTA->{'codex' if t == 'claude' else 'claude'}"
+        if not read and not dropped and (sid := session.session_id(t, r.stdout)) and task.exists():
+            task.write_text(session.with_session(core.read_task(task), t, sid, role, seen), encoding="utf-8", newline="\n")
+            record_scope(task, now_scope)
         tasks.record_usage(task, role, models[t] + (" (codex)" if t == "codex" else ""), efforts[t], nums,
                      time.monotonic() - t0, skills_cell(ids, done), verdict)
+        runs.record_run(task, role, t, models[t], efforts[t], cur["id"] if cur else None, sources, done,
+                        [Path(f).stem for f in rule_files], runs.ref_ids(catalog, ref_files))
         return r, result, done
 
     def stop_quota(why):
@@ -306,22 +402,29 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
         if read:
             base = core.git(wt, "merge-base", "development", "HEAD") or "development"
             full = tree_diff(wt, base)
-            rounds, sha, named = tasks.prior_review(task.read_text(encoding="utf-8") if task.exists() else "")
+            rounds, sha, named = tasks.prior_review(core.read_task(task) if task.exists() else "")
             patch, note = full, "\nDiff: /review/diff.patch (read-only; git does not work in this container)"
             if sha and rounds < 2:
                 inc = tree_diff(wt, sha, None if project.detached else task_rel)
                 changed = set(re.findall(r"^diff --git a/.* b/(.*)$", inc, re.M))
                 if changed and changed <= named:
                     patch = inc
-                    (Path(tmp.name) / "full.patch").write_text(full, encoding="utf-8")
+                    (Path(tmp.name) / "full.patch").write_text(full, encoding="utf-8", newline="\n")
                     note = ("\nDiff: /review/diff.patch (fixes since the last reviewed commit; read-only; git does not work in this container)"
                             "\nIncremental round: previous findings are under `## Checkpoint`; full diff at /review/full.patch only if needed")
-            (Path(tmp.name) / "diff.patch").write_text(patch, encoding="utf-8")
+            (Path(tmp.name) / "diff.patch").write_text(patch, encoding="utf-8", newline="\n")
             mounts.append(f"{tmp.name}:/review")
             prompt_skills += note
         print(f"tool: {tool} ({models[tool]})")
-        r, result, done = attempt(tool, secret)
-        if tools.quota_hit(tool, r.stdout, r.returncode):
+        sid = None if read or fresh else session.recorded(before, tool, role)  # another tool or role starts fresh
+        if sid and not session.available(repo, task.stem, tool, sid):
+            print(f"RESUME FAILED: session {sid} has no session volume; starting a fresh session")
+            sid = None
+        r, result, done = attempt(tool, secret, resume=sid)
+        if sid and r.returncode and result is None and not tools.quota_hit(tool, r.stdout, r.returncode, r.stderr):
+            print(f"RESUME FAILED: session {sid} could not be resumed; starting a fresh session")
+            r, result, done = attempt(tool, secret)
+        if tools.quota_hit(tool, r.stdout, r.returncode, r.stderr):
             other_secret, problem = (creds.claude_auth() if other == "claude" else creds.tool_secret(other)), None
             try:
                 efforts[other] = tools.resolve_effort(want, other)
@@ -343,8 +446,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
             r, result, done = attempt(other, other_secret,
                                       f"\nNote: a previous run with {tool} stopped on its usage limit; "
                                       "a partial diff already exists in /work. Inspect it and continue, do not start over.")
-            tool = other
-            if tools.quota_hit(other, r.stdout, r.returncode):
+            tool, secret = other, other_secret
+            if tools.quota_hit(other, r.stdout, r.returncode, r.stderr):
                 return stop_quota("claude and codex both hit their usage limit")
         rc = r.returncode
         print(result if result is not None else (r.stdout or ""))
@@ -352,13 +455,19 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
         if rc:  # not a usage limit (handled above): show why the CLI failed
             report += "".join(f"\nERROR: {' '.join(t.split())}" for t in tools.error_texts(tool, r.stdout) if t.strip()) + f"\nexit code {rc}"
             print(report.partition(result or "(no report)")[2].strip())
-        tasks.append_note(task, "Reports", f"{datetime.datetime.now():%Y-%m-%d %H:%M} {role} ({tool}):\n" + "\n".join("> " + l for l in tasks.clip_report(report)))
+        report_note(task, role, tool, report)
         verdict = (tools.verdict_of(result) or "n/a") if read else (m.group(1) if (m := re.match(r"\W*(DONE|BLOCKED|NEEDS SCOPE)\b", report)) else f"exit {rc}")
         pr.post_report(wt, task.stem, cur["id"] if cur else "-", role, tool, models[tool], efforts[tool], verdict, report)
         for sid in ids:
             if sid not in done:
                 print(f"SKILL NOT READ: {sid}")
         res = hooks.run_hook(wt, main, "post-run", task.stem, image) if not rc and not read else None
+        if res and res[0] and (sid := session.recorded(core.read_task(task), tool, role)) \
+                and session.available(repo, task.stem, tool, sid):  # one retry: the engineer fixes what the hook found
+            print("post-run hook failed; resuming the engineer once to fix it")
+            if (fix := attempt(tool, secret, resume=sid, hook_tail="\n".join(res[1].strip().splitlines()[-20:])))[0].returncode:
+                print(f"hook-fix attempt exited with code {fix[0].returncode}")
+            res = hooks.run_hook(wt, main, "post-run", task.stem, image)
         if res:
             pr.post_hook(wt, task.stem, "post-run", res)
             if hooks.hook_note(task, "post-run", res):
@@ -378,7 +487,10 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None):
         print(f"OUT OF SCOPE: {p}")
     if scope.git_hint(bad):
         print(scope.git_hint(bad))
-    return rc or (3 if bad else 0) or (6 if hook_failed else 0)
+    plan_bad = scope.plan_violations(wt, task.stem)
+    for line in plan_bad:
+        print(line)
+    return rc or (3 if bad or plan_bad else 0) or (6 if hook_failed else 0)
 
 
 def worker(wt, task_file=None, model=None, effort=None, prove=False):
@@ -404,7 +516,7 @@ def worker(wt, task_file=None, model=None, effort=None, prove=False):
         name = docker.container_name(docker.repo_label(main), "omi-agent-engineer", "prove", tm_tool, model, effort, salt=salt)
         try:
             with docker.egress(main, name, image, allow) as (net, proxy):
-                r = subprocess.run(docker.worker_argv(wt, image, ["sh", "-s"], name, docker.repo_label(main),
+                r = subprocess.run(docker.worker_argv(wt, image, ["sh", "-s"], name, docker.repo_key(main),
                                                {**docker.worker_labels("prove", None, None, None), **docker.compose_labels(name, "agent")},
                                                network=net, proxy=proxy,
                                                mounts=[f"{project.state}:/state"] if project.detached else (),
@@ -429,4 +541,4 @@ def run_cmd(role, tid, rest):
     if not wt:
         sys.exit(f"no worktree for {tid}: create it first (git worktree add). Nothing changed.")
     return run_role(role, wt, state.task_file(project, tid), core.flag(rest, "--model"), core.flag(rest, "--effort"),
-                    core.flag(rest, "--tool"))
+                    core.flag(rest, "--tool"), "--fresh" in rest)

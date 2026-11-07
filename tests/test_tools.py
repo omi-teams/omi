@@ -13,8 +13,7 @@ from helpers import omi
 
 def test_tool_choice_and_quota_switch():
     import contextlib
-    for template in (Path(__file__).parents[1] / ".omi" / "tasks" / "_template.md",
-                     omi.common.core.TEMPLATE / "dot-omi" / "tasks" / "_template.md"):
+    for template in (omi.common.core.TEMPLATE / "dot-omi" / "tasks" / "_template.md",):
         lines = template.read_text(encoding="utf-8").splitlines()
         for field in ("tool:", "model:"):
             assert "write role or the task's own role" in next(line for line in lines if line.startswith(field))
@@ -36,6 +35,8 @@ def test_tool_choice_and_quota_switch():
         wt = Path(d).resolve()
         (wt / ".git").write_text("gitdir: /x")
         (wt / ".omi").mkdir()
+        shutil.copytree(omi.common.core.TEMPLATE / "dot-omi" / "skills", wt / ".omi" / "skills")
+        omi.project.catalogs.skills_catalog(wt)
         (wt / ".omi" / "config.json").write_text('{"codex_models": {"sonnet": "gpt-x"}}')
         task = wt / ".omi" / "tasks" / "TASK-001.md"
         task.parent.mkdir()
@@ -47,6 +48,8 @@ def test_tool_choice_and_quota_switch():
                 self.stdout, self.stderr, self.returncode = out, err, rc
 
         def run(cmd, **kw):
+            if cmd[:2] == ["docker", "run"] and ("chmod" in cmd or "grep" in cmd):
+                return R(rc=1 if "grep" in cmd else 0)
             if "--git-common-dir" in cmd:
                 return R(str(Path(cmd[2]) / "shared.git"))
             if cmd[:2] == ["docker", "run"]:
@@ -273,6 +276,18 @@ def test_tool_choice_and_quota_switch():
             finally:
                 omi.worker.run.deterministic_checks = det
                 task.write_text("---\nid: TASK-001\nscope: src/**\n---\n## Checkpoint\n", encoding="utf-8")
+            # Failing checks refuse review roles but not the architect, whose prompt notes them.
+            det, omi.worker.run.deterministic_checks = omi.worker.run.deterministic_checks, lambda *a: ["tests failed"]
+            try:
+                outs[:] = [R(ok_claude)]
+                calls.clear()
+                rc = omi.worker.run.run_role("omi-agent-architect", wt, task)
+                assert rc == 0 and any("tests failed" in a for a in calls[0]), (rc, calls)
+                calls.clear()
+                assert omi.worker.run.run_role("omi-agent-reviewer", wt, task) == 4 and not calls
+                assert omi.worker.run.run_role("omi-agent-qa-tester", wt, task) == 4 and not calls
+            finally:
+                omi.worker.run.deterministic_checks = det
             front(tool="codex", model="opus")
             # model/effort are Coordinator-owned frontmatter
             hook[:] = [lambda: task.write_text(task.read_text().replace("model: opus", "model: haiku"), encoding="utf-8")]
@@ -372,13 +387,11 @@ def test_tool_choice_and_quota_switch():
             printed = sys.stdout.getvalue()
         finally:
             sys.stdout = saved
-        assert "(step: build)" in printed and "resume: omi-task TASK-001" in printed, printed
+        assert "[Đang làm] TASK-001 t\n" in printed and "resume: omi-task TASK-001" in printed, printed
 
 
 def test_model_catalog_and_task_start():
-    root = Path(__file__).parents[1]
     for base, config_rel, catalog_rel in (
-        (root, ".omi/config.json", ".omi/agents/CATALOG.md"),
         (omi.common.core.TEMPLATE, "dot-omi/config.json", "dot-omi/agents/CATALOG.md"),
     ):
         cfg = json.loads((base / config_rel).read_text(encoding="utf-8"))
@@ -393,12 +406,6 @@ def test_model_catalog_and_task_start():
                 assert f"- {alias}: {model}; fits: {note['fits']}; avoid: {note['avoid']}" in catalog
             for effort, note in cfg["model_notes"][tool]["efforts"].items():
                 assert f"- effort {effort}; fits: {note['fits']}; avoid: {note['avoid']}" in catalog
-    for path in (root / "AGENTS.md", omi.common.core.TEMPLATE / "AGENTS.md",
-                 root / ".claude/skills/omi-task/SKILL.md", omi.common.core.TEMPLATE / "dot-claude/skills/omi-task/SKILL.md"):
-        text = path.read_text(encoding="utf-8").split("## Task-start tool choice", 1)[1]
-        for phrase in ("every task-start pick-list", "Start with Claude Code", "Start with Codex",
-                       "exactly one option Recommended", "task-specific reason", "PO chooses", "model>/<effort>"):
-            assert phrase in text, (path, phrase)
     with tempfile.TemporaryDirectory() as d:
         target = Path(d)
         omi.setup.upgrade.init(target)
@@ -467,9 +474,88 @@ def test_model_catalog_and_task_start():
         assert omi.worker.tools.resolve_effort("ultra", "codex") == "ultra"
 
 
+
+def task_start_sections() -> list[str]:
+    return [path.read_text(encoding="utf-8").split("## Task-start tool choice\n", 1)[1].split("\n## ", 1)[0]
+            for path in (omi.common.core.TEMPLATE / "AGENTS.md",
+                         omi.common.core.TEMPLATE / "dot-claude/skills/omi-task/SKILL.md")]
+
+
+def test_task_start_proposal():
+    for text in task_start_sections():
+        for phrase in ("picks tool, concrete model and effort itself", "quota rules", "## Models",
+                       "`models` and `codex_models`", "Spread tasks evenly across Claude Code and Codex",
+                       "Record `tool`, model alias and explicit `effort`", "state them in the report",
+                       "no PO question", "Never use `codex-default` or an omitted effort"):
+            assert phrase in text, phrase
+        for old in ("Approve:", "Alternative:", "The PO approves", "pick-list"):
+            assert old not in text, old
+
+
+def test_po_decides_short_list():
+    text = (omi.common.core.TEMPLATE / "AGENTS.md").read_text(encoding="utf-8")
+    po = text.split("## The PO decides\n", 1)[1].split("\n## ", 1)[0]
+    for phrase in ("operating cost", "fix-round limit", "tool/model/effort", "the next task", "small review nits",
+                   "`omi-agent-architect`", "only for the PO decisions above"):
+        assert phrase in po, phrase
+    only = next(x for x in po.splitlines() if x.startswith("Only:")).split(". ")[0]
+    for removed in ("high security risk", "product scope changes", "UAT", "staging", "main"):
+        assert removed not in only, removed
+    skill = (omi.common.core.TEMPLATE / "dot-claude/skills/omi-task/SKILL.md").read_text(encoding="utf-8")
+    step8 = skill.split("\n8. ", 1)[1].split("\n## ", 1)[0]
+    assert "continue with the next planned task" in step8 and "`QUOTA:`" in step8 and "no planned task" in step8
+    assert "propose the `next` task" not in skill
+
+
+def test_found_bug_rule():
+    text = (omi.common.core.TEMPLATE / "AGENTS.md").read_text(encoding="utf-8")
+    rule = text.split("## Bugs and vulnerabilities\n", 1)[1].split("\n## ", 1)[0]
+    for phrase in ("`FOUND: <one line>`", "without a PO question", "`omi-flow-feature-sensitive`", "after the current task",
+                   "before any other step", "omi status"):
+        assert phrase in rule, phrase
+    skill = (omi.common.core.TEMPLATE / "dot-claude/skills/omi-task/SKILL.md").read_text(encoding="utf-8")
+    assert "`FOUND: <one line>`" in skill and "`Session: <tool> <id> <role>`" in skill
+    for content in (rule, skill):
+        for phrase in ('omi improve "<one line>" --kind bug --from <project>', "--kind security", "--kind idea",
+                       "before any other step", "Project bugs stay in the project", "OMI_TASK", "OMI_AGENT"):
+            assert phrase in content, phrase
+
+
+def test_task_start_copies_match():
+    sections = task_start_sections()
+    assert all(text == sections[0] for text in sections)
+    for path in (omi.common.core.TEMPLATE / "AGENTS.md",
+                 omi.common.core.TEMPLATE / "dot-claude/skills/omi-idea/SKILL.md"):
+        text = path.read_text(encoding="utf-8")
+        assert "approved proposal or alternative" not in text
+        assert "from the PO's pick" not in text
+
+
+def test_reviewer_skill_reads_counted():
+    """A read-only reviewer's prompt lists readable /state skill paths and says to open them; its reads in claude and codex output count."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        for sid in ("omi-skill-a", "omi-skill-b"):
+            (root / ".omi" / "skills" / "g" / sid).mkdir(parents=True)
+            (root / ".omi" / "skills" / "g" / sid / "SKILL.md").write_text("x", encoding="utf-8")
+        files = [root / ".omi" / "skills" / "g" / s / "SKILL.md" for s in ("omi-skill-a", "omi-skill-b")]
+        prompt = omi.worker.run.container_paths(omi.project.catalogs.skill_prompt(root, files), True)
+        assert "open every one below before you start" in prompt and "/state/.omi/skills/g/omi-skill-a/SKILL.md" in prompt
+        ids = ["omi-skill-a", "omi-skill-b"]
+        read = {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Read", "input": {"file_path": "/state/.omi/skills/g/omi-skill-a/SKILL.md"}}]}}
+        cx = {"type": "item.completed", "item": {"type": "command_execution", "command": "cat /state/.omi/skills/g/omi-skill-b/SKILL.md"}}
+        assert omi.worker.run.skills_read(root, ids, omi.worker.tools.opened_files("claude", json.dumps(read))) == ["omi-skill-a"]
+        assert omi.worker.run.skills_read(root, ids, omi.worker.tools.opened_files("codex", json.dumps(cx))) == ["omi-skill-b"]
+
+
 def main():
+    test_task_start_proposal()
+    test_po_decides_short_list()
+    test_task_start_copies_match()
     test_model_catalog_and_task_start()
     test_tool_choice_and_quota_switch()
+    test_found_bug_rule()
+    test_reviewer_skill_reads_counted()
 
 
 if __name__ == "__main__":

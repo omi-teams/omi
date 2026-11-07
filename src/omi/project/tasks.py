@@ -1,15 +1,17 @@
 """Task files: step log and `omi step`, frontmatter, notes, usage table, parallel check, drift."""
 
 import datetime
+import json
 import re
 import sys
 from pathlib import Path
 
-from . import catalogs, workflows
+from . import catalogs, scope, structure, tree, verdicts, workflows
 from ..common import core
 from ..state import resolve as state
 
 
+glob_prefix, globs_overlap = scope.glob_prefix, scope.globs_overlap
 STEP_LOG = re.compile(r"^- (\S+) (started|done|skipped|failed) ", re.M)
 
 
@@ -19,11 +21,106 @@ def step_states(text):
     return dict(STEP_LOG.findall(rest.split("\n## ", 1)[0])) if sep else {}
 
 
-def po_approved(text, sid):
-    """The Coordinator records the PO's words as a line `PO approval <step>: <text>` inside `## Steps`."""
+def po_approved(text, sid, kind="approval"):
+    """The Coordinator records the PO's words as a line `PO approval <step>: <text>` inside `## Steps`; `kind="review override"` finds a `done --po` review override."""
     _, sep, rest = text.partition("\n## Steps\n")
-    current = re.split(r"^- workflow reopened .*", rest.split("\n## ", 1)[0], flags=re.M)[-1]
-    return bool(sep) and re.search(rf"^(?:- )?PO approval {re.escape(sid)}: *\S", current, re.M) is not None
+    current = re.split(r"^- workflow (?:reopened|back to) .*", rest.split("\n## ", 1)[0], flags=re.M)[-1]
+    return bool(sep) and re.search(rf"^(?:- )?PO {kind} {re.escape(sid)}: *\S", current, re.M) is not None
+
+
+REVIEW_ROLES = ("omi-agent-reviewer", "omi-agent-security-reviewer")
+MAX_FIX_ROUNDS = 2  # .omi/config.json "max_fix_rounds" overrides (the Coordinator may allow one more round)
+
+
+def usage_rows(text):
+    """Cells of each non-header row of `## Usage`, QUOTA rows excluded."""
+    return [[c.strip() for c in l.strip().strip("|").split("|")] for l in text.partition("\n## Usage")[2].split("\n## ", 1)[0].splitlines()
+            if l.startswith("|") and not l.startswith("|---") and not l.startswith("| role") and "| QUOTA->" not in l]
+
+
+def failed_rounds(text):
+    """Review and security FAIL rows of `## Usage`, plus host-test FAIL rows counted once per commit sha."""
+    return len({(r[0], r[-1] if r[0] == "host-test" else i) for i, r in enumerate(usage_rows(text)) if r[0] in (*REVIEW_ROLES, "host-test") and r[-1].startswith("FAIL")})
+
+
+def root_of(report):
+    """`same`, `new` or `n/a` from the last `ROOT:` line of a reviewer report, or None."""
+    found = re.findall(r"^\W*ROOT:\W*(same|new|n/a)", report or "", re.M | re.I)
+    return found[-1].lower() if found else None
+
+
+def same_root(text, role):
+    """Whether the role's latest verdict is a FAIL recorded with `root:same`."""
+    last = [r[-1] for r in usage_rows(text) if r[0] == role and r[-1][:4] in ("PASS", "FAIL")]
+    return bool(last) and last[-1].startswith("FAIL") and "root:same" in last[-1].split()
+
+
+def host_test_command(root):
+    """`host_test` from .omi/config.json, empty when unset."""
+    try:
+        return json.loads((Path(root) / ".omi" / "config.json").read_text(encoding="utf-8")).get("host_test") or ""
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
+def host_test_gate(root, tid, text, head):
+    """Exit unless the last `host-test` row passed on commit `head`; no-op while `host_test` is empty."""
+    if not host_test_command(root):
+        return
+    rows = [r[-1] for r in usage_rows(text) if r[0] == "host-test"]
+    last = rows[-1] if rows else ""
+    if last == f"PASS {head}":
+        return
+    if last == f"FAIL {head}":
+        sys.exit(f"HOST TEST FAILED for {head}: fix it and run `python -m omi host-test {tid}` again before review. Nothing changed.")
+    sys.exit(f"HOST TEST MISSING for {head}: run `python -m omi host-test {tid}` on the host first. Nothing changed.")
+
+
+def round_gate(root, tid, text, po, why=None):
+    """Exit with `ROUND LIMIT` when the failed rounds are used up, unless `po` or `why` (Coordinator reason) allows one more; returns the text with the override line."""
+    try:
+        limit = int(json.loads((Path(root) / ".omi" / "config.json").read_text(encoding="utf-8")).get("max_fix_rounds", MAX_FIX_ROUNDS))
+    except (OSError, ValueError, AttributeError):
+        limit = MAX_FIX_ROUNDS
+    steps = text.partition("\n## Steps\n")[2].split("\n## ", 1)[0]
+    failed = failed_rounds(text)
+    if failed < max(limit, 1) + len(re.findall(r"^(?:- )?(?:PO|Coordinator) round override \d+: *\S", steps, re.M)):
+        return text
+    for who, words in (("PO", po), ("Coordinator", why)):
+        if (words or "").strip():
+            return add_step_log(text, f"{who} round override {failed + 1}: {' '.join(words.split())}")
+    sys.exit(f"ROUND LIMIT: {tid} failed {failed} review rounds; the Coordinator decides: rescope, replan, or one more round with --why \"<reason>\"")
+
+
+def run_gate(root, tid, po, why=None):
+    """Require scope and check the round limit before `omi run <write role>`."""
+    project = state.resolve(root)
+    if (task := state.task_file(project, tid)).exists():
+        text = core.read_task(task)
+        scope.require_scope(tid, text)
+        new = round_gate(project.state, tid, text, po, why)
+        if new != text:
+            task.write_text(new, encoding="utf-8", newline="\n")
+
+
+def plan_status(stored: str, statuses: list[str]) -> str:
+    """Shown plan status: `done` when it has tasks and all are done, else the stored one."""
+    return "done" if statuses and all(st == "done" for st in statuses) else stored
+
+
+def rolled_up(found):
+    """Exit on an invalid hierarchy; else the tasks with the derived status in place of the stored one."""
+    errors = tree.tree_errors(found)
+    if errors:
+        sys.exit("invalid task hierarchy:\n" + "\n".join(errors))
+    return {tid: m | {"status": st} for (tid, m), st in zip(found.items(), tree.derived_status(found).values())}
+
+
+def check_runnable(project, tid):
+    """Exit when the task has children (it is only a rolled-up container) or the hierarchy is invalid."""
+    found = rolled_up(tasks(project))
+    if tid in tree.children_map(found):
+        sys.exit(f"{tid} has child tasks ({', '.join(tree.children_map(found)[tid])}); run one of them. Nothing changed.")
 
 
 def unticked(text):
@@ -33,9 +130,11 @@ def unticked(text):
 
 
 def set_front(text, key, value):
+    """Set a frontmatter field; an empty value removes it."""
     _, front, body = text.split("---", 2)
     lines = [ln for ln in front.split("\n") if ln.partition(":")[0].strip() != key]
-    lines.insert(len(lines) - 1, f"{key}: {value}")
+    if value:
+        lines.insert(len(lines) - 1, f"{key}: {value}")
     return f"---{chr(10).join(lines)}---{body}"
 
 
@@ -44,7 +143,20 @@ FRONT_OWNED = ("step", "status", "workflow", "scope", "role", "skills", "refs", 
 
 def front_of(text):
     """The raw frontmatter block (between the `---` lines) of a task file, or None."""
+    text = text.removeprefix("\ufeff")
     return text.split("---", 2)[1] if text.startswith("---") and text.count("---") >= 2 else None
+
+
+def key_blocks(lines, key):
+    """[(index, [key line + its following `- ` list lines])] for every `key:` in frontmatter lines."""
+    found = []
+    for i, ln in enumerate(lines):
+        if ln.partition(":")[0].strip() == key:
+            j = i + 1
+            while j < len(lines) and lines[j].strip().startswith("- "):
+                j += 1
+            found.append((i, lines[i:j]))
+    return found
 
 
 def revert_front(task, before):
@@ -53,23 +165,24 @@ def revert_front(task, before):
     old = front_of(before)
     if old is None:
         return []
-    text = task.read_text(encoding="utf-8") if task.exists() else None
+    text = core.read_task(task) if task.exists() else None
     cur = front_of(text) if text is not None else None
     if cur is None:
-        task.write_text(before if text is None else f"---{old}---\n{text}", encoding="utf-8")
+        task.write_text(before if text is None else f"---{old}---\n{text}", encoding="utf-8", newline="\n")
         return ["frontmatter"]
     olines, lines, changed = old.split("\n"), cur.split("\n"), []
     for key in FRONT_OWNED:
-        mine = lambda ln: ln.partition(":")[0].strip() == key
-        want = [(i, ln) for i, ln in enumerate(olines) if mine(ln)]
-        if [ln for ln in lines if mine(ln)] == [ln for _, ln in want]:
+        want = key_blocks(olines, key)
+        if [b for _, b in key_blocks(lines, key)] == [b for _, b in want]:
             continue
         changed.append(key)
-        lines = [ln for ln in lines if not mine(ln)]
-        for i, ln in want:
-            lines.insert(min(i, len(lines) - 1), ln)
+        for i, b in reversed(key_blocks(lines, key)):
+            del lines[i:i + len(b)]
+        for i, b in want:
+            at = min(i, len(lines) - 1)
+            lines[at:at] = b
     if changed:
-        task.write_text(f"---{chr(10).join(lines)}---{text.split('---', 2)[2]}", encoding="utf-8")
+        task.write_text(f"---{chr(10).join(lines)}---{text.split('---', 2)[2]}", encoding="utf-8", newline="\n")
     return changed
 
 
@@ -109,27 +222,30 @@ def sync_scope(wt, task, tid):
     dev = core.git(wt, "show", f"development:.omi/tasks/{tid}.md")
     if not dev or not task.exists():
         return
-    line = next((ln for ln in (front_of(dev) or "").split("\n") if ln.partition(":")[0].strip() == "scope"), None)
-    text = task.read_text(encoding="utf-8")
-    if line is None or core.split(core.parse(dev).get("scope")) == core.split(core.parse(text).get("scope")):
+    block = next((b for _, b in key_blocks((front_of(dev) or "").split("\n"), "scope")), None)
+    text = core.read_task(task)
+    if block is None or core.split(core.parse(dev).get("scope")) == core.split(core.parse(text).get("scope")):
         return
     head, front, rest = text.split("---", 2)
     lines = front.split("\n")
-    for i, ln in enumerate(lines):
-        if ln.partition(":")[0].strip() == "scope":
-            lines[i] = line
-            break
+    old = key_blocks(lines, "scope")
+    if old:
+        i, b = old[0]
+        lines[i:i + len(b)] = block
     else:
-        lines.insert(len(lines) - 1, line)
-    task.write_text(f"{head}---{chr(10).join(lines)}---{rest}", encoding="utf-8")
+        lines[len(lines) - 1:len(lines) - 1] = block
+    task.write_text(f"{head}---{chr(10).join(lines)}---{rest}", encoding="utf-8", newline="\n")
     print(f"SCOPE SYNCED: {core.parse(dev).get('scope')}")
 
 
-def step(root, tid, action, why=None, now=None):
+def step(root, tid, action, why=None, now=None, to=None, po=None):
     """Record a workflow step in the task file: `next` starts the following step, `done` closes the current one,
-    `skip` closes it with a reason, `back` fails a started review gate and restarts the nearest earlier write step.
+    `skip` closes it with a reason, `back` fails a started review gate and restarts the nearest earlier write step;
+    `back` with `to` restarts that earlier agent step (e.g. architect) from any current step, with a reason.
     `approve` records PO words; `reopen` restarts the last write step of a completed workflow.
-    Gate steps cannot be skipped; a `po` gate needs the PO approval line."""
+    Either `back` stops at the round limit unless `why` (Coordinator reason) or `po` allows one more round; from round 2 a review FAIL
+    with `ROOT: same` sends plain `back` to the architect step (none: `po` is required). `done --po` overrides a review FAIL;
+    gates cannot be skipped and a `po` gate needs the PO approval line."""
     if not re.fullmatch(r"[A-Za-z0-9_-]+", tid):
         sys.exit(f"invalid task id `{tid}`: use letters, digits, `-` and `_`. Nothing changed.")
     project = state.resolve(root)
@@ -150,6 +266,20 @@ def step(root, tid, action, why=None, now=None):
         sys.exit(f"{tid}: at step {cur} but {', '.join(open_steps)} not done or skipped; steps cannot be jumped over. "
                  "Nothing changed.")
     stamp = (now or datetime.datetime.now()).strftime("%Y-%m-%d %H:%M")
+    replan = ""
+    if action == "back" and cur:
+        arch = next((s["id"] for s in steps[:at] if s["role"] == "omi-agent-architect"), None)
+        if to is None and events.get(cur) not in ("done", "skipped") and steps[at]["gate"] == "review" and failed_rounds(text) >= 2 \
+                and same_root(text, steps[at]["role"]):
+            replan, to = "REPLAN: same root cause", arch
+            if to is None:
+                who, words = ("PO", po) if (po or "").strip() else ("Coordinator", why)
+                (words or "").strip() or sys.exit(f"{replan}; workflow {wid} has no architect step: the Coordinator passes --why \"<reason>\". Nothing changed.")
+                text = add_step_log(text, f"{who} replan override {cur}: {' '.join(words.split())}")
+            else:
+                why = why or "same root cause"  # a re-plan is the alternative to another build round: no round gate here
+        if not (replan and to):
+            text = round_gate(root, tid, text, po, why)
     if action == "reopen":
         if any(events.get(s) == "started" for s in ids):
             sys.exit(f"{tid}: a step is running; cannot reopen. Nothing changed.")
@@ -167,13 +297,27 @@ def step(root, tid, action, why=None, now=None):
         text = set_front(set_front(text, "step", prev["id"]), "status", "in-progress")
         text = add_step_log(text, f"- {prev['id']} started {stamp}")
         msg = f"{tid}: workflow reopened; back to {prev['id']} ({prev['role']})"
+    elif action == "back" and to is not None:
+        if not cur:
+            sys.exit(f"{tid}: no step started; run `omi step {tid} next`. Nothing changed.")
+        if to not in ids[:at] or steps[ids.index(to)]["role"] == workflows.COORDINATOR:
+            sys.exit(f"{tid}: `{to}` is not an agent step before {cur} in workflow {wid}. Nothing changed.")
+        if not (why or "").strip():
+            sys.exit(f"usage: omi step {tid} back --to <step> --why <reason>. Nothing changed.")
+        prev = steps[ids.index(to)]
+        text = add_step_log(text, f"- workflow back to {to} {stamp}: {' '.join(why.split())}")
+        for sid in ids[ids.index(to) + 1:at + 1]:
+            text = add_step_log(text, f"- {sid} failed {stamp}")
+        text = set_front(set_front(text, "step", to), "status", "in-progress")
+        text = add_step_log(text, f"- {to} started {stamp}")
+        msg = f"{tid}: step {cur} failed; back to {to} ({prev['role']}), then `omi step {tid} done` and `next`"
     elif action == "next":
         if cur and events.get(cur) not in ("done", "skipped"):
             sys.exit(f"{tid}: step {cur} is not done; run `omi step {tid} done` or `skip --why`. Nothing changed.")
         if cur and steps[at]["gate"] == "po" and not po_approved(text, cur):
             sys.exit(f"{tid}: step {cur} is a po gate; add the line `PO approval {cur}: <PO's words>` under `## Steps` first. "
                      "Nothing changed.")
-        if cur and steps[at]["gate"] == "po" and unticked(text):
+        if cur and steps[at]["gate"] == "po" and at == len(ids) - 1 and unticked(text):
             sys.exit(f"{tid}: step {cur} is a po gate; tick the reviewed acceptance criteria first:\n"
                      + "\n".join(unticked(text)) + "\nNothing changed.")
         if at + 1 == len(ids):
@@ -182,10 +326,16 @@ def step(root, tid, action, why=None, now=None):
         new = steps[at + 1]
         if new["role"] != workflows.COORDINATOR:
             catalogs.get_role(root, m.get("role") or "omi-agent-engineer")  # unknown task role fails too
+            if catalogs.get_role(root, new["role"])["access"] == "write":
+                scope.require_scope(tid, text)
         catalogs.check_skills(root, workflows.step_skill_ids(root, new, m))
+        tree.warn_type_workflow(m)
+        if not cur:
+            catalogs.warn_skills_empty(root, m)
         if cur == "plan":
             warn_sensitive(m)
-        text = add_step_log(set_front(text, "step", new["id"]), f"- {new['id']} started {stamp}")
+        mark = f" (verdicts: {len(verdicts.rows(text, new['role']))})" if new["gate"] == "review" else ""
+        text = add_step_log(set_front(text, "step", new["id"]), f"- {new['id']} started {stamp}{mark}")
         msg = (f"{tid}: step {new['id']} ({new['role']}, gate {new['gate']}): input {new['input']}; "
                f"output {new['output']}; stop when {new['stop']}")
     elif not cur:
@@ -210,20 +360,30 @@ def step(root, tid, action, why=None, now=None):
         text = add_step_log(text, f"- {prev['id']} started {stamp}")
         msg = f"{tid}: step {cur} failed; back to {prev['id']} ({prev['role']}), then `omi step {tid} done` and `next`"
     elif action == "done":
+        if err := structure.pattern_error(text):
+            sys.exit(f"{tid}: {err} Nothing changed.")
         if (re.findall(r"^\d{4}-\d\d-\d\d \d\d:\d\d hook post-run (FAILED|passed)", text, re.M) or [""])[-1] == "FAILED":
             sys.exit(f"{tid}: the last post-run hook failed; fix it and rerun `omi run` first. Nothing changed.")
         if steps[at]["gate"] == "po" and not po_approved(text, cur):
             sys.exit(f"{tid}: step {cur} is a po gate; add the line `PO approval {cur}: <PO's words>` under `## Steps` first. "
                      "Nothing changed.")
-        if steps[at]["gate"] == "po" and unticked(text):
+        if steps[at]["gate"] == "po" and at == len(ids) - 1 and unticked(text):
             sys.exit(f"{tid}: step {cur} is a po gate; tick the reviewed acceptance criteria first:\n"
                      + "\n".join(unticked(text)) + "\nNothing changed.")
         if steps[at]["gate"] == "review":
-            rows = [[c.strip() for c in l.strip().strip("|").split("|")] for l in text.partition("\n## Usage")[2].split("\n## ", 1)[0].splitlines()
-                    if l.startswith("|") and not l.startswith("|---") and not l.startswith("| role")]
-            last = [r[-1].split()[0] for r in rows if r[0] == steps[at]["role"] and r[-1][:4] in ("PASS", "FAIL")]
-            if last and last[-1] == "FAIL":
-                sys.exit(f"{tid}: the last {steps[at]['role']} verdict is FAIL; run `omi step {tid} back`. Nothing changed.")
+            verdict = verdicts.last(text, steps[at]["role"], cur)
+            if verdict != "PASS":
+                if not (po or "").strip():
+                    sys.exit(f"{tid}: the last {steps[at]['role']} verdict is {verdict or 'missing'}; run `omi step {tid} back` "
+                             "or `done --po <PO words>` for an explicit override. Nothing changed.")
+                text = add_step_log(text, f"PO review override {cur}: {' '.join(po.split())}")
+        if steps[at]["gate"] == "auto":
+            gates = [s for s in steps[:at] if s["gate"] == "review"]
+            if not po_approved(text, cur):  # an explicit PO approval line also passes
+                bad = next((g for g in gates if verdicts.last(text, g["role"]) != "PASS" and not po_approved(text, g["id"], "review override")), None)
+                if not gates or bad:
+                    sys.exit(f"{tid}: step {cur} is an auto gate; it needs a {(bad or {'role': 'review'})['role']} verdict PASS. Nothing changed.")
+                text = add_step_log(text, "Auto accept: review PASS")
         text, msg = add_step_log(text, f"- {cur} done {stamp}"), f"{tid}: step {cur} done"
     elif action == "skip":
         if not (why or "").strip():
@@ -234,8 +394,18 @@ def step(root, tid, action, why=None, now=None):
         msg = f"{tid}: step {cur} skipped"
     else:
         sys.exit("usage: omi step <TASK-ID> next|done|back|skip|approve|reopen --why <reason>")
-    task.write_text(text, encoding="utf-8")
+    behind = core.git(project.code, "rev-list", "--count", f"task/{tid}..development") if core.git(
+        project.code, "rev-parse", "--verify", "-q", f"refs/heads/task/{tid}") else None
+    if behind is not None and behind.isdigit():  # read by the board's branch-lag alert
+        text = set_front(text, "behind", behind)
+        # read by the board's changed-files list; `files:` is a comma list, so paths containing a comma are left out
+        diff = core.git(project.code, "-c", "core.quotepath=off", "diff", "--name-only", f"development...task/{tid}")
+        names = [f for f in (diff or "").splitlines() if "," not in f]
+        text = set_front(text, "files", ", ".join(names))  # an empty diff drops a stale list
+    task.write_text(text, encoding="utf-8", newline="\n")
     print(msg)
+    if replan:
+        print(replan)
     if not project.detached and task == Path(root) / ".omi" / "tasks" / f"{tid}.md":  # the task branch's copy is committed with the branch
         commit_task_file(Path(root), task, f"chore({tid}): step {core.parse(text).get('step')} {action}")
     return 0
@@ -251,19 +421,6 @@ def tasks(root):
     return dict(sorted(found.items()))
 
 
-def glob_prefix(glob):
-    return re.split(r"[*?\[]", glob, 1)[0]
-
-
-def globs_overlap(a, b):
-    """# ponytail: compares only the literal prefix before the first wildcard; may report a false overlap, never misses one."""
-    for x, y in ((a, b), (b, a)):
-        px, py = glob_prefix(x), glob_prefix(y)
-        if px == py or (px.startswith(py) and (py != y or py.endswith("/") or px[len(py)] == "/")):
-            return True
-    return False
-
-
 def parallel(root, ids):
     """Conflicts that forbid running these tasks in parallel (empty list: ok)."""
     found = tasks(root)
@@ -274,6 +431,8 @@ def parallel(root, ids):
             out.append(f"{tid}: no task file")
         elif found[tid].get("status") not in ("planned", "in-progress"):
             out.append(f"{tid}: status {found[tid].get('status')} (need planned or in-progress)")
+        if tid in found and not core.split(found[tid].get("scope")):
+            out.append(f"{tid} has no scope")
 
     def deps(tid, seen=()):
         for d in core.split(found.get(tid, {}).get("depends")):
@@ -321,11 +480,17 @@ def clip_report(text, limit=2000):
     return head + mid + ["[... truncated ...]"] + tail
 
 
+def clean_text(text):
+    """Drop C0 control characters and DEL except tab and newline, so task files and PR comments stay text."""
+    return re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", text)
+
+
 def append_note(task, heading, line):
     """Append text to the task file's `## <heading>` section (created before `## Usage`, else at the end)."""
     if not task.exists():
         return
-    text, h = task.read_text(encoding="utf-8"), f"\n## {heading}"
+    line = clean_text(line)
+    text, h = core.read_task(task), f"\n## {heading}"
     if h in text:
         head, _, rest = text.partition(h)
         body, sep, tail = rest.partition("\n## ")
@@ -335,7 +500,18 @@ def append_note(task, heading, line):
         text = f"{head.rstrip()}\n\n## {heading}\n{line}\n\n## Usage{rest}"
     else:
         text = f"{text.rstrip()}\n\n## {heading}\n{line}\n"
-    task.write_text(text, encoding="utf-8")
+    task.write_text(text, encoding="utf-8", newline="\n")
+
+
+def note(root, tid, step_id, verdict, text):
+    """`omi note`: record a Coordinator decision under the task's `## Reports` (same shape as an agent report)."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", tid) or not (step_id and verdict and text.strip()):
+        sys.exit("usage: omi note <TASK-ID> --step <step> --verdict <verdict> \"<text>\". Nothing changed.")
+    task = state.task_file(state.resolve(root), tid)
+    if not task.exists():
+        sys.exit(f"no task file {task}. Nothing changed.")
+    line = f"{datetime.datetime.now():%Y-%m-%d %H:%M} Coordinator ({step_id}) {verdict}:"
+    append_note(task, "Reports", line + "\n" + "\n".join("> " + l for l in text.strip().splitlines()))
 
 
 USAGE_HEAD = "| role | model | effort | input | output | cache | duration | skills read | verdict |"
@@ -347,7 +523,7 @@ def record_usage(task, role, model, effort, nums, seconds, skills="-", verdict="
         return
     cell = lambda v: "n/a" if v is None else str(v)
     row = f"| {role} | {model} | {effort or 'n/a'} | {cell(nums[0])} | {cell(nums[1])} | {cell(nums[2])} | {round(seconds)}s | {skills} | {verdict} |"
-    text = task.read_text(encoding="utf-8")
+    text = core.read_task(task)
     if "\n## Usage" in text:
         head, _, rest = text.partition("\n## Usage")
         body, sep, tail = rest.partition("\n## ")
@@ -364,7 +540,7 @@ def record_usage(task, role, model, effort, nums, seconds, skills="-", verdict="
         text = f"{head}\n## Usage{body.rstrip()}\n{row}\n" + (f"\n## {tail}" if sep else "")
     else:
         text = f"{text.rstrip()}\n\n## Usage\n{USAGE_HEAD}\n|---|---|---|---|---|---|---|---|---|\n{row}\n"
-    task.write_text(text, encoding="utf-8")
+    task.write_text(text, encoding="utf-8", newline="\n")
 
 
 def usage_totals(text):
@@ -384,7 +560,7 @@ def prior_review(text):
     """(earlier reviewer rounds, sha7 of the last one if it failed, repo paths named after the last `Review round`)."""
     rows = [[c.strip() for c in l.strip().strip("|").split("|")] for l in text.partition("\n## Usage")[2].splitlines()
             if l.startswith("| omi-agent-reviewer |") and "| QUOTA->" not in l]
-    last = re.fullmatch(r"FAIL ([0-9a-f]{7})", rows[-1][-1]) if rows else None
+    last = re.fullmatch(r"FAIL ([0-9a-f]{7})(?: root:\S+)?", rows[-1][-1]) if rows else None
     after = re.split(r"^.*Review round.*$", text.partition("\n## Usage")[0], flags=re.M)[-1] if "Review round" in text else ""
     after = after.split("\n## ", 1)[0]
     return len(rows), last and last.group(1), set(re.findall(r"[\w.-]+(?:/[\w.-]+)+|[\w-]+\.(?:py|md|json|toml|ya?ml|sh|txt|js|ts|cfg|ini)\b", after))

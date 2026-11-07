@@ -7,9 +7,9 @@
 Phiên bản (SemVer 0.x) chỉ ghi ở `pyproject.toml`; `omi init` ghi nó vào `.omi/version`, `omi status` báo khi dự án cũ hơn omi đang cài.
 
 ```sh
-python -m pip install --user "git+https://github.com/omi-teams/omi@v0.5.0"     # cài từ tag
+python -m pip install --user "git+https://github.com/omi-teams/omi@v0.6.0"     # cài từ tag
 python -m omi upgrade [--check|--to vX.Y.Z]   # nâng cấp omi rồi cập nhật file khung chưa bị sửa (file đã sửa: giữ nguyên, bản mới ở <file>.omi-new); trong Claude Code: /omi-upgrade
-omi --version             # omi 0.5.0
+omi --version             # omi 0.6.0
 # Mỗi Python trên máy có một omi (hook và AGENTS.md gọi `python -m omi`); người phát triển omi dùng `pip install -e .` thay cho lệnh trên.
 mkdir my-app && cd my-app
 omi init                  # cài khung squad, không ghi đè file sẵn có
@@ -52,6 +52,10 @@ Mỗi dự án có plan, kanban task và chi tiết task (Steps, Reports, Usage)
 Dữ liệu đọc lại từ file state ở mỗi request, nên sửa file không cần restart.
 Mọi nội dung hiển thị bằng `textContent`, đường dẫn thoát thư mục trả 404, CSP `default-src 'self'`.
 `OMI_STATE=<thư mục>` chọn state khác. Kết quả pilot và gap: [docs/pilot-board.md](docs/pilot-board.md).
+
+## Cấu trúc code (`omi structure`)
+
+`.omi/structure.md` ghi lớp, module và trách nhiệm của từng nhóm file; `omi structure init | check [--changed|--baseline]` đề xuất bản đồ và kiểm import theo hướng phụ thuộc. Cách viết bản đồ, baseline và file plan trong task: [docs/guides/structure.md](docs/guides/structure.md).
 
 ## Lấy và lưu key
 

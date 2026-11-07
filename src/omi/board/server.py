@@ -11,7 +11,7 @@ from . import data
 WEB = Path(__file__).parent / "web"
 TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
          ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon"}
-API = re.compile(r"/api/projects(?:/([^/]+)(?:/tasks/([^/]+))?)?")
+API = re.compile(r"/api/projects(?:/([^/]+)(?:/tasks/([^/]+)|/(cost|graph))?)?")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -26,11 +26,12 @@ class Handler(BaseHTTPRequestHandler):
         if self.foreign_host():
             return self.send(403, "text/plain; charset=utf-8", b"forbidden")
         path = unquote(urlsplit(self.path).path)
+        version = re.fullmatch(r"/api/(?:projects/([^/]+)/)?version", path)
         match = API.fullmatch(path)
-        if match:
-            name, id = match.groups()
+        if match or version:
+            name, id, extra = match.groups() if match else (None, None, None)
             try:
-                body = data.projects() if name is None else data.project(name) if id is None else data.task(name, id)
+                body = data.version(version[1]) if version else data.projects() if name is None else (data.cost if extra == "cost" else data.graph)(name) if extra else data.project(name) if id is None else data.task(name, id)
             except (OSError, UnicodeError) as exc:
                 code = 404 if isinstance(exc, FileNotFoundError) else 500
                 return self.send(code, "text/plain; charset=utf-8", b"not found" if code == 404 else b"error")

@@ -10,6 +10,9 @@ from urllib.parse import urlsplit
 from ..common import core
 
 
+HOOK_CODE = Path("/work")  # where a hook container mounts the code worktree
+
+
 @dataclass(frozen=True)
 class Project:
     state: Path
@@ -64,6 +67,8 @@ def resolve(cwd: str | Path | Project = ".") -> Project:
     if isinstance(cwd, Project):
         return cwd
     top = Path(core.git(cwd, "rev-parse", "--show-toplevel") or cwd).resolve()
+    if os.environ.get("OMI_PROJECT_STATE") and top == HOOK_CODE:  # hook container: state mounted, no host registry; test repos elsewhere keep their own state
+        return Project(Path(os.environ["OMI_PROJECT_STATE"]), top, True)
     code = core.main_checkout(top) or top
     remote = core.git(code, "remote", "get-url", "origin")
     projects = registry()
@@ -88,7 +93,7 @@ def task_text(project: Project, wt: str | Path, tid: str) -> str | None:
     """Authoritative scope input, never the agent-writable worktree task."""
     if project.detached:
         task = project.state / ".omi" / "tasks" / f"{tid}.md"
-        return task.read_text(encoding="utf-8") if task.exists() else None
+        return core.read_task(task) if task.exists() else None
     return core.git(wt, "show", f"development:.omi/tasks/{tid}.md")
 
 

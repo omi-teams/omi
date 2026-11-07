@@ -1,256 +1,282 @@
 "use strict";
-// State content is always plain text; no Markdown or HTML is evaluated.
-const view = document.getElementById("view");
-const nav = document.getElementById("nav");
-const auto = document.getElementById("auto");
-const countdown = document.getElementById("countdown");
-const status = document.getElementById("status");
-const err = document.getElementById("err");
-const KEY = "omi-board-auto";
-const GLYPH = {planned: "○", "in-progress": "▶", review: "◐", blocked: "✖", done: "✓"};
-const STATUS = {planned: "Kế hoạch", "in-progress": "Đang làm", review: "Review", blocked: "Bị chặn", done: "Xong"};
-const REASON = {blocked: "Bị chặn", next_task: "Việc kế tiếp", next: "Bước tiếp theo", po_gate: "Chờ PO duyệt bước"};
-let timer = null;
-let nextRefresh = 0;
-let current = "";
-let seen = null;
-let request = 0;
-
-function el(tag, text, attrs, kids) {
-  const node = document.createElement(tag);
-  if (text !== undefined && text !== null) node.textContent = text;
-  for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v);
-  for (const kid of kids || []) node.append(kid);
-  return node;
-}
-const box = (cls, kids) => el("div", null, {class: cls}, kids);
-const num = (n) => Number(n || 0).toLocaleString("vi-VN");
-const link = (text, href, cls) => el("a", text, {href, class: cls || ""});
-const enc = encodeURIComponent;
-const projectHref = (p) => `#/p/${enc(p)}`;
-const taskHref = (p, id) => `${projectHref(p)}/t/${enc(id)}`;
-const chip = (text, cls) => el("span", text, {class: `chip ${cls || ""}`});
-const empty = (text) => el("p", text || "Trống", {class: "empty"});
-const heading = (text) => el("h1", text, {id: "title", tabindex: "-1"});
-const pre = (text) => el("pre", text || "—");
-function section(text, kids, note, cls) {
-  return el("section", null, {class: cls || "panel"}, [
-    box("ph", [el("h2", text), ...(note ? [el("span", note, {class: "muted small"})] : [])]), ...kids]);
-}
-function progress(done, total) {
-  return el("progress", null, {class: "track", max: String(total || 1), value: String(done || 0),
-    "aria-label": `${done || 0}/${total || 0} task đã xong`});
-}
-function planRow(p) {
-  return box(`plan ${p.status === "done" ? "completed" : ""}`, [el("span", p.id, {class: "mono strong"}), el("span", p.title || "—"),
-    progress(p.done, p.total), el("span", `${p.done}/${p.total}`, {class: "r small"})]);
-}
-function table(head, rows, caption) {
-  return el("div", null, {class: "scroll", tabindex: "0", "aria-label": caption}, [
-    el("table", null, {}, [el("caption", caption),
-      el("thead", null, {}, [el("tr", null, {}, head.map((h, i) => el("th", h, {scope: "col", class: i ? "r" : ""})))]),
-      el("tbody", null, {}, rows.map((r) => el("tr", null, {class: r[0] === "Tổng" ? "total" : ""},
-        r.map((c, i) => el("td", c, {class: i ? "r" : "mono"})))))] )]);
-}
-function setNav(parts) {
-  nav.replaceChildren();
-  if (!parts.length) return;
-  nav.append(link("Dự án", "#/"));
-  for (const [text, href] of parts) nav.append(el("span", "/", {"aria-hidden": "true"}),
-    href ? link(text, href) : el("span", text, {"aria-current": "page"}));
-}
-function home(items) {
-  const cards = items.map((p) => {
-    const card = link(null, projectHref(p.name), "pc");
-    card.append(box("row", [box("stack", [el("span", p.name, {class: "pn"}),
-      el("span", p.path || "—", {class: "mono muted", title: "Thư mục trạng thái dự án"})]),
-      chip(p.po_waiting_count ? `${num(p.po_waiting_count)} chờ PO` : "Không chờ PO", p.po_waiting_count ? "warn" : "")]),
-    ...(p.plans.length ? p.plans.map((plan) => box("stack", [
-      box("row small", [el("span", `${plan.id} ${plan.title || ""}`), el("span", `${plan.done}/${plan.total}`, {class: "muted"})]),
-      progress(plan.done, plan.total)])) : [empty("Chưa có kế hoạch")]),
-    box("counts", Object.keys(STATUS).map((s) => box("", [el("b", num(p.task_counts[s])), el("span", STATUS[s])]))),
-    box("chips", [branchChip(p.branch), syncChip(p.sync || {})]));
-    return card;
-  });
-  return [box("heading", [heading("Dự án"), el("span", `${num(items.length)} dự án · ${num(items.reduce((n, p) => n + p.po_waiting_count, 0))} việc chờ PO`, {class: "muted small"})]),
-    box("projects", cards.length ? cards : [empty("Chưa có dự án.")])];
-}
-function branchChip(branch) {
-  return el("span", branch || "Nhánh: Chưa rõ", {class: "chip", title: "Nhánh kho trạng thái"});
-}
-function syncChip(s) {
-  return chip(s.dirty === false ? "✓ Sạch" : s.dirty === true ? "Có thay đổi chưa commit" : "Đồng bộ: Chưa rõ",
-    s.dirty === false ? "good" : "");
-}
-function syncView(s, branch) {
-  const known = (v) => v === null || v === undefined ? "—" : num(v);
-  return el("div", null, {class: "sync", "aria-label": "Đồng bộ git"}, [
-    branchChip(branch), chip(`Trước ${known(s.ahead)} · Sau ${known(s.behind)}`), syncChip(s),
-    chip(`Commit cuối ${s.last_commit ? s.last_commit.split(" ")[0].slice(0, 7) : "—"}`, "last-commit")]);
-}
-function dashboard(name, d) {
-  const tasks = Object.values(d.kanban).flat();
-  const waiting = d.po_waiting.map((w) => {
-    const t = tasks.find((t) => t.id === w.id);
-    return box("poi", [link(w.id, taskHref(name, w.id), "mono strong"), el("span", t?.frontmatter.title || "", {class: "strong"}),
-      chip(`${REASON[w.reason] || w.reason}${w.text ? " · " + w.text : ""}`, "warn"), link("Xem task →", taskHref(name, w.id), "push small")]);
-  });
-  const count = d.task_counts;
-  const stats = [[d.po_waiting_count, "Chờ PO"], [count["in-progress"], "Đang làm"], [count.planned, "Kế hoạch"], [count.done, "Task đã xong"]];
-  const label = (s) => el("span", null, {}, [el("span", "", {class: `dot ${s}`, "aria-hidden": "true"}),
-    el("span", ` ${GLYPH[s] || "○"} ${STATUS[s] || s}`)]);
-  const mergeEmpty = !d.kanban.review?.length && !d.kanban.blocked?.length;
-  const columns = Object.entries(d.kanban).map(([s, items]) => {
-    const cards = items.map((t) => {
-      const f = t.frontmatter;
-      const card = link(null, taskHref(name, t.id), `card ${s}`);
-      card.append(el("span", t.id, {class: "mono muted"}), el("span", f.title || "—", {class: "t"}));
-      const chips = [f.step, [f.model, f.effort].filter(Boolean).join(" · ")].filter(Boolean);
-      if (chips.length) card.append(box("chips", chips.map((c) => chip(c))));
-      return card;
-    });
-    const more = cards.length > 2 ? el("details", null, {class: "more"}, [
-      el("summary", `+ ${num(cards.length - 2)} task khác`, {class: "small", "aria-label": `Hiện thêm ${num(cards.length - 2)} task · ${STATUS[s] || s}`}),
-      ...cards.slice(2)]) : null;
-    return box(`col col-${s}${mergeEmpty && (s === "review" || s === "blocked") ? " empty-pair" : ""}`, [
-      box("colh", [label(s), el("span", num(items.length), {class: "muted"})]),
-      ...(cards.length ? cards.slice(0, 2) : [empty()]), ...(more ? [more] : [])]);
-  });
-  if (mergeEmpty) columns.push(box("col merged-empty", [box("colh", [
-    box("chips", [label("review"), el("span", "·"), label("blocked")]), el("span", "0", {class: "muted"})])]));
-  const board = box("kanban", columns);
-  const activity = d.activity.slice(0, 30).map((a) => box("fi", [el("span", a.time ? a.time.slice(11, 16) : "—", {class: "muted small"}),
-    el("span", null, {}, [link(a.id, taskHref(name, a.id), "mono"), el("span", ` ${a.text}`)])]));
-  const decisions = d.decisions.slice(0, 20).map((x) => {
-    const text = x.replace(/^- /, "");
-    const date = text.match(/^\d{4}-\d{2}-\d{2}/);
-    return box("fi", [el("span", date ? `${date[0].slice(8, 10)}/${date[0].slice(5, 7)}` : "—", {class: "muted small"}),
-      el("span", date ? text.slice(10).replace(/^[: ]+/, "") : text)]);
-  });
-  const u = d.usage;
-  return [box("heading", [box("stack", [heading(name),
-    el("span", d.path || "—", {class: "project-path muted small mono", title: "Thư mục trạng thái dự án"})]), syncView(d.sync, d.branch)]),
-    section(`Chờ PO (${num(d.po_waiting_count)})`, waiting.length ? waiting : [empty("Không có việc chờ PO.")], "Những việc cần anh/chị quyết", "po"),
-    box("stats", stats.map(([n, label], i) => box("stat", [el("div", num(n), {class: "n"}, i === 3 ? [el("span", ` / ${num(Object.values(count).reduce((a, b) => a + b, 0))}`, {class: "denom"})] : []), el("div", label, {class: "l"})]))),
-    section("Kế hoạch", [box("", d.plans.length ? d.plans.map(planRow) : [empty("Chưa có kế hoạch.")])], `${num(d.plans.length)} kế hoạch · ${num(d.plans.filter((p) => p.status === "active").length)} đang chạy`),
-    section("Kanban", [board]),
-    box("grid2", [section("Hoạt động", [box("feed", activity.length ? activity : [empty("Chưa có hoạt động.")])]),
-      section("Quyết định", [box("feed", decisions.length ? decisions : [empty("Chưa có quyết định.")])])]),
-    section("Sử dụng", [el("p", `${num(u.totals.runs)} lượt · ${num(u.totals.output)} output`, {class: "usage-summary muted small"}),
-      table(["Model", "Lượt", "Input", "Output", "Cache"],
-      [...Object.entries(u.models), ["Tổng", u.totals]].map(([m, r]) => [m, num(r.runs), num(r.input), num(r.output), num(r.cache)]),
-      "Bảng sử dụng token")], `Vòng review: ${num(u.totals.review_rounds)}`, "panel usage")];
-}
-function workflow(d) {
-  const f = d.frontmatter;
-  const steps = d.workflow_steps;
-  const currentStep = d.current_step || f.step;
-  const at = Array.isArray(steps) ? steps.findIndex((s) => (typeof s === "string" ? s : s.id) === currentStep) : -1;
-  const list = Array.isArray(steps) && steps.length ? el("ol", null, {class: "steps"}, steps.map((s, i) => {
-    const id = typeof s === "string" ? s : s.id;
-    const current = id === currentStep;
-    const done = at >= 0 && i < at;
-    return el("li", null, current ? {"aria-current": "step"} : {}, [
-      el("span", done ? "✓" : String(i + 1), {class: `sn ${current ? "current" : done ? "done" : ""}`}),
-      el("span", `${id}${s.gate === "po" ? " · PO" : ""}`)]);
-  })) : box("chips", [chip(currentStep || "Chưa có bước", "active")]);
-  return section(`Quy trình${f.workflow ? " · " + f.workflow : ""}`, [list], at >= 0 ? `Bước ${at + 1}/${steps.length}` : null);
-}
-function taskPage(name, id, d) {
-  const f = d.frontmatter;
-  const criteria = el("ul", null, {class: "crit"}, d.criteria.map((c) => el("li", null, {}, [
-    el("span", c.checked ? "✓" : "", {class: `ck ${c.checked ? "checked" : ""}`, "aria-label": c.checked ? "Xong" : "Chưa"}), el("span", c.text)])));
-  const reports = d.reports.split(/\n(?=\d{4}-\d\d-\d\d[^\n]*:)/).filter(Boolean).map((r, i) => {
-    const [summary, ...body] = r.split("\n");
-    return el("details", null, i === 0 ? {open: ""} : {}, [el("summary", summary), pre(body.join("\n").replace(/^> ?/gm, ""))]);
-  });
-  const meta = el("dl");
-  const labels = {plan: "Kế hoạch", depends: "Phụ thuộc", role: "Role", tool: "Tool", model: "Model", effort: "Effort", scope: "Scope", skills: "Skills"};
-  for (const [k, label] of Object.entries(labels)) {
-    const dd = el("dd", null, {class: "mono"});
-    if (k === "depends" && f[k]) {
-      const ids = Array.isArray(f[k]) ? f[k] : String(f[k]).split(/[,\s]+/).filter(Boolean);
-      for (const dep of ids) dd.append(link(dep, taskHref(name, dep)), el("span", " "));
-    } else dd.textContent = Array.isArray(f[k]) ? f[k].join(", ") : String(f[k] || "—");
-    meta.append(el("dt", label), dd);
-  }
-  return [box("stack", [link(`← Về dự án ${name}`, projectHref(name), "small"), box("row", [
-    box("chips", [el("span", id, {class: "mono muted"}), heading(f.title || id), chip(`${GLYPH[f.status] || "○"} ${STATUS[f.status] || f.status || "—"}`, "active")])])]),
-    workflow(d), box("layout", [box("main", [
-      section("Mục tiêu", [el("p", d.goal || "—", {class: "goal"})]),
-      section("Tiêu chí nghiệm thu", [criteria], `${d.criteria.filter((c) => c.checked).length}/${d.criteria.length} xong`),
-      section("Checkpoint", [pre(d.checkpoint)]), section("Các bước", [pre(d.steps)]),
-      section("Báo cáo", reports.length ? reports : [empty("Chưa có báo cáo.")])]),
-    box("side", [section("Thông tin", [meta]), section("Sử dụng", [table(["Role", "Output", "Thời gian"],
-      d.usage.rows.map((r) => [r.role, /^\d+$/.test(r.output) ? num(r.output) : r.output, r.duration]), "Bảng sử dụng của task")],
-      `${num(d.usage.runs)} lượt · ${num(d.usage.review_rounds)} vòng review`)])])];
-}
-function updated() {
+function updated(source) {
+  failed = false;
+  if (err.contains?.(document.activeElement)) document.getElementById("refresh").focus();
   err.replaceChildren();
+  document.getElementById("source").textContent = `${source.repo.replace(/^[a-z]+:\/\//i, "")} @ ${source.sha.slice(0, 7)}`;
+  if (source.stale) err.append(el("span", `Dữ liệu cũ - không kết nối được GitHub (lúc ${source.fetched_at ? new Date(source.fetched_at).toLocaleTimeString("vi-VN", {hour12: false}) : "chưa rõ"})`));
   status.replaceChildren(el("span", "Cập nhật lần cuối ", {class: "update-label"}),
     el("span", new Date().toLocaleTimeString("vi-VN", {hour12: false})));
 }
-async function route() {
-  clearInterval(timer);
+function showError(e) {
+  if (failed) return;
+  failed = true;
+  const retry = el("button", "Thử lại", {type: "button", class: "btn"});
+  retry.addEventListener("click", () => route(retry));
+  err.replaceChildren(el("span", `${seen === null ? "Không tải được dữ liệu. Thử làm mới." : "Không làm mới được. Đang hiển thị dữ liệu lần tải trước."} (${e.name === "AbortError" ? "quá thời gian chờ" : e.message}). `), retry);
+}
+async function route(button = null) {
   const hash = location.hash === "#main" ? current || "#/" : location.hash || "#/";
+  const routePath = hash.split("?")[0];
+  if (!button && loadedDashboard && routePath === projectHref(loadedDashboard.name) && current.split("?")[0] === routePath && hash !== current) {
+    current = hash; updateFilters(); updateSidebar(); focusBoardSection(); return;
+  }
+  const previous = current;
   const changed = hash !== current;
   current = hash;
-  if (changed) seen = null;
+  if (changed) {
+    clearTimeout(resultTimer);
+    seen = null; openReports = null; revision = null;
+    if (hash.split("?")[0].split("/t/")[0] !== previous.split("?")[0].split("/t/")[0]) disclosures = new Map();
+
+  }
+  loading = true;
+  view.setAttribute("aria-busy", "true");
+  const label = button ? [...button.childNodes || button.children] : [];
+  if (button) { button.disabled = true; button.textContent = "Đang tải…"; }
   const ticket = ++request;
   const abort = new AbortController();
   const limit = setTimeout(() => abort.abort(), 10000);
   try {
-    const m = hash.match(/^#\/p\/([^/]+)(?:\/t\/([^/]+))?$/);
+    const m = routePath.match(/^#\/p\/([^/]+)(?:\/t\/([^/]+)|\/(cost)|\/(catalog)|\/(graph)(?:\/([^/]+))?)?$/);
     const name = m ? decodeURIComponent(m[1]) : null;
     const id = m?.[2] ? decodeURIComponent(m[2]) : null;
-    const path = name ? `/api/projects/${enc(name)}${id ? "/tasks/" + enc(id) : ""}` : "/api/projects";
+    const costs = !!m?.[3];
+    const catalog = !!m?.[4];
+    const graph = !!m?.[5];
+    const isInbox = routePath === "#/inbox";
+    updateSidebar(name);
+    if (changed) {
+      filterUI = null;
+      view.replaceChildren(heading(isInbox ? "Hộp thư PO" : costs ? "Chi phí và quota" : graph ? "Đồ thị phụ thuộc" : id || name || "Dự án"),
+      ...(name && !id && !costs && !catalog && !graph ? filterWorkspace(name, [], true) : id ? [timelineLoading()] : [el("div", null, {class: "skeleton", "aria-hidden": "true"}), el("p", "Đang tải…")]));
+    }
+    const path = name ? `/api/projects/${enc(name)}${id ? "/tasks/" + enc(id) : costs ? "/cost" : graph ? "/graph" : ""}` : "/api/projects";
     const response = await fetch(path, {cache: "no-store", signal: abort.signal});
     if (!response.ok) throw new Error(String(response.status));
     const text = await response.text();
     if (ticket !== request) return;
-    if (text === seen) { updated(); return; }
     const data = JSON.parse(text);
+    // /api/projects aggregates every project's inbox from one immutable snapshot.
+    let board = data;
+    let boardText = text;
+    if (name) {
+      const response = await fetch("/api/projects", {cache: "no-store", signal: abort.signal});
+      if (!response.ok) throw new Error(String(response.status));
+      boardText = await response.text(); board = JSON.parse(boardText);
+      if (ticket !== request) return;
+    }
+    updateSidebar(name || board.projects?.[0]?.name);
+    const items = board.inbox || [];
+    let contentKey = JSON.stringify([text, boardText]);
+    // The detail endpoint carries the task's own workflow; the project view
+    // carries hierarchy and the status derived from its children.
+    if (id) {
+      const response = await fetch(`/api/projects/${enc(name)}`, {cache: "no-store", signal: abort.signal});
+      if (!response.ok) throw new Error(String(response.status));
+      const projectText = await response.text();
+      const project = JSON.parse(projectText);
+      contentKey = JSON.stringify([text, boardText, projectText]);
+      const item = Object.values(project.kanban).flat().find(t => t.id === id);
+      if (item) Object.assign(data, {status: item.status, children: item.children, parent: item.parent, type: item.type});
+      if (project.pull_requests) data.pull_requests = project.pull_requests;
+      if (ticket !== request) return;
+    }
+    if (!name && !isInbox) {
+      const projectTexts = await Promise.all(data.projects.map(async p => {
+        const response = await fetch(`/api/projects/${enc(p.name)}`, {cache: "no-store", signal: abort.signal});
+        if (!response.ok) throw new Error(String(response.status));
+        const projectText = await response.text();
+        p.task_counts = leafCounts(JSON.parse(projectText));
+        return projectText;
+      }));
+      contentKey = JSON.stringify([text, ...projectTexts]);
+      if (ticket !== request) return;
+    }
+    if (contentKey === seen) { refreshInboxAges(); revision = board.source.sha; updated(data.source); return; }
     // Render off the page, and only cache a response after its view succeeds.
-    const nodes = name ? id ? taskPage(name, id, data) : dashboard(name, data) : home(data);
+    const previousUI = filterUI;
+    let nodes;
+    try { nodes = isInbox ? inboxPage(items) : name ? catalog ? catalogPage(name, data) : costs ? costPage(name, data) : graph ? graphPage(name, data, graphScope(data, m[6] && decodeURIComponent(m[6]))) : id ? taskPage(name, id, data) : dashboard(name, data) : home(data.projects); }
+    catch (e) { filterUI = previousUI; throw e; }
+    loadedDashboard = name && !costs && !catalog && !graph && !id ? {name, data} : null;
+    if (loadedDashboard) {
+      const canonical = boardSectionHref(projectHref(name) + filterQuery(filterUI.state));
+      if (viewHash() !== canonical) { window.history.replaceState(null, "", canonical); current = canonical; }
+    }
+    const scrolled = window.scrollY;
+    const focused = document.activeElement;
+    const focusInView = !changed && view.contains(focused);
     view.replaceChildren(...nodes);
-    setNav(name ? id ? [[name, projectHref(name)], [id]] : [[name]] : []);
-    document.title = `${id || name || "Dự án"} — omi board`;
-    seen = text;
-    updated();
-    if (changed || document.activeElement === document.body) document.getElementById("title").focus();
+    if (loadedDashboard) carryFilters(name, filterUI.state);
+    if (graph) fitGraph();
+    if (isInbox) {
+      renderNotificationSettings();
+      const listTitle = view.querySelectorAll("h2")[1];
+      listTitle.setAttribute("id", "inbox-title"); listTitle.setAttribute("tabindex", "-1");
+      listTitle.setAttribute("aria-label", `Đang chờ quyết định: ${items.length} việc`);
+      view.querySelectorAll("section")[1].querySelectorAll("span")[0]?.setAttribute("role", "status");
+    }
+    if (focusInView) {
+      const control = focused.getAttribute("data-control");
+      const replacement = [...view.querySelectorAll("a, summary, button, input, select")].find(n => control ? n.getAttribute("data-control") === control :
+        n.tagName === focused.tagName && n.getAttribute("href") === focused.getAttribute("href") &&
+        n.textContent === focused.textContent);
+      (replacement || (isInbox ? document.getElementById("inbox-title") : view)).focus({preventScroll: true});
+    } else if (!changed && focused !== document.body && focused.isConnected === false) {
+      view.focus({preventScroll: true});
+    } else if (!changed && focused.isConnected && document.activeElement !== focused) {
+      focused.focus({preventScroll: true});
+    }
+    if (!changed) window.scrollTo(0, scrolled);
+    if (changed) setNav(isInbox ? [["Hộp thư PO"]] : name ? id || costs || catalog || graph ? [[name, id ? filteredProjectHref(name) : projectHref(name)], [id || (catalog ? "Catalog" : graph ? "Đồ thị phụ thuộc" : "Chi phí")]] : [[name]] : []);
+    acceptInbox(items);
+    seen = contentKey;
+    revision = board.source.sha;
+    updated(data.source);
+    if (changed) { document.getElementById("title").focus(); focusBoardSection(); }
   } catch (e) {
     if (ticket !== request) return;
-    const retry = el("button", "Thử lại", {type: "button", class: "btn"});
-    retry.addEventListener("click", route);
-    err.replaceChildren(el("span", `Không tải được dữ liệu (${e.name === "AbortError" ? "quá thời gian chờ" : e.message}). `), retry);
+    if (seen === null && !filterUI) view.replaceChildren(document.getElementById("title"));
+    if (seen === null && filterUI) {
+      filterUI.results.replaceChildren();
+      filterUI.count.textContent = "Bộ lọc khả dụng sau khi tải dữ liệu.";
+    }
+    showError(e);
   } finally {
     clearTimeout(limit);
-    if (ticket === request) schedule();
+    if (button) { button.disabled = false; button.replaceChildren(...label); }
+    if (ticket === request) {
+      loading = false;
+      view.setAttribute("aria-busy", "false");
+    }
   }
 }
-function updateCountdown() {
-  countdown.textContent = !auto.checked ? "Đã tắt" : document.hidden ? "Tạm dừng" :
-    `Làm mới sau ${Math.max(0, Math.ceil((nextRefresh - Date.now()) / 1000))} giây`;
+async function pollVersion() {
+  if (document.hidden || loading || polling) return;
+  polling = true;
+  const hash = current;
+  const ticket = request;
+  const abort = new AbortController();
+  const limit = setTimeout(() => abort.abort(), 10000);
+  try {
+    const path = "/api/version";
+    const response = await fetch(path, {cache: "no-store", signal: abort.signal});
+    if (!response.ok) throw new Error(String(response.status));
+    const data = JSON.parse(await response.text());
+    if (hash !== current || ticket !== request || document.hidden) return;
+    if (data.sha !== revision || failed) await route();
+    refreshInboxAges();
+  } catch (e) {
+    if (hash === current && ticket === request && !document.hidden) showError(e);
+  } finally {
+    clearTimeout(limit);
+    polling = false;
+  }
 }
 function schedule() {
   clearInterval(timer);
-  nextRefresh = Date.now() + 30000;
-  updateCountdown();
-  timer = auto.checked && !document.hidden ? setInterval(() => {
-    updateCountdown();
-    if (!document.hidden && Date.now() >= nextRefresh) route();
-  }, 1000) : null;
+  timer = document.hidden ? null : setInterval(pollVersion, 3000);
 }
-try { auto.checked = localStorage.getItem(KEY) !== "off"; } catch (e) { /* Keep the default if storage is blocked. */ }
-auto.addEventListener("change", () => {
-  try { localStorage.setItem(KEY, auto.checked ? "on" : "off"); } catch (e) { /* Storage may be blocked. */ }
-  schedule();
-});
-document.getElementById("refresh").addEventListener("click", route);
+const refresh = document.getElementById("refresh");
+refresh.addEventListener("click", () => route(refresh));
 document.addEventListener("visibilitychange", () => {
   schedule();
-  if (!document.hidden && auto.checked) route();
+  if (!document.hidden) pollVersion();
 });
-window.addEventListener("hashchange", route);
+function navigate() {
+  // History traversal emits both events; restore once and never refetch for the second.
+  if (location.hash !== "#main" && location.hash !== current) return route();
+}
+window.addEventListener("hashchange", navigate);
+window.addEventListener("popstate", navigate);
+document.addEventListener("keydown", event => {
+  const target = event.target;
+  if (event.key !== "/" || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey ||
+      target?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName?.toUpperCase())) return;
+  const search = document.getElementById("board-search");
+  if (search && !search.disabled && loadedDashboard && current.split("?")[0] === projectHref(loadedDashboard.name)) {
+    event.preventDefault(); search.focus();
+  }
+});
+let sidebarProject = null;
+initSidebar();
 schedule();
-route();
+route(refresh);
+
+function selectedBoardSection() {
+  const match = viewHash().match(/[?&]section=(tree|kanban|notifications)(?:&|$)/);
+  return match ? match[1] : "";
+}
+function boardSectionHref(href) {
+  const section = selectedBoardSection();
+  return section ? href + (href.includes("?") ? "&" : "?") + "section=" + section : href;
+}
+function focusBoardSection() {
+  const section = selectedBoardSection();
+  const target = document.getElementById(section === "notifications" ? "notification-settings" : "board-" + section);
+  if (section && target) {
+    target.setAttribute("tabindex", "-1"); target.focus(); target.scrollIntoView({block: "start"});
+  }
+}
+function updateSidebar(name) {
+  const list = document.getElementById("sidebar-links");
+  if (!list) return;
+  if (name) sidebarProject = name;
+  const key = JSON.stringify([sidebarProject, viewHash()]);
+  if (list.getAttribute("data-view") === key) return;
+  list.setAttribute("data-view", key);
+  const project = sidebarProject ? projectHref(sidebarProject) : "#/";
+  const items = [["Tổng quan dự án", project],
+    ...(sidebarProject ? [["Cây công việc", project + "?section=tree"], ["Kanban", project + "?section=kanban"]] : []),
+    ["Hộp thư PO", "#/inbox"],
+    ...(sidebarProject ? [["Catalog", project + "/catalog"], ["Chi phí", project + "/cost"], ["Đồ thị phụ thuộc", project + "/graph"]] : []),
+    ["Thông báo", "#/inbox?section=notifications"]];
+  list.replaceChildren(...items.map(([label, href]) => el("li", null, {}, [
+    el("a", label, {href, ...(viewHash() === href ? {"aria-current": "page"} : {})})])));
+}
+function initSidebar() {
+  const toggle = document.getElementById("sidebar-toggle");
+  if (!toggle) return;
+  const sidebar = document.getElementById("board-sidebar");
+  const backdrop = document.getElementById("sidebar-backdrop");
+  const main = document.getElementById("main");
+  const phone = window.matchMedia("(max-width: 767px)");
+  let preferred = null;
+  try { preferred = window.localStorage.getItem("omi-board-sidebar"); } catch (_) { /* Storage may be disabled. */ }
+  function setOpen(open, remember = false) {
+    if (!open && sidebar.contains(document.activeElement)) toggle.focus();
+    sidebar.hidden = !open;
+    toggle.setAttribute("aria-expanded", String(open));
+    document.body.classList.toggle("sidebar-open", open);
+    backdrop.hidden = !(open && phone.matches);
+    main.inert = open && phone.matches;
+    if (remember && !phone.matches) {
+      preferred = open ? "open" : "closed";
+      try { window.localStorage.setItem("omi-board-sidebar", preferred); } catch (_) { /* Keep this tab usable. */ }
+    }
+  }
+  toggle.addEventListener("click", () => setOpen(sidebar.hidden, true));
+  backdrop.addEventListener("click", () => setOpen(false, true));
+  sidebar.addEventListener("click", event => {
+    if (!event.target.closest("a")) return;
+    if (phone.matches) setOpen(false);
+    // Clicking the current section should still move focus to its content.
+    if (event.target.closest("a").getAttribute("href") === viewHash()) focusBoardSection();
+  });
+  document.addEventListener("keydown", event => {
+    if (sidebar.hidden) return;
+    if (event.key === "Escape" && (phone.matches || sidebar.contains(document.activeElement) || document.activeElement === toggle)) {
+      event.preventDefault(); setOpen(false, true); toggle.focus();
+    }
+    if (event.key === "Tab" && phone.matches) {
+      const controls = [toggle, ...sidebar.querySelectorAll("a")];
+      const index = controls.indexOf(document.activeElement);
+      event.preventDefault(); controls[(index + (event.shiftKey ? -1 : 1) + controls.length) % controls.length].focus();
+    }
+  });
+  phone.addEventListener("change", () => setOpen(!phone.matches && preferred !== "closed"));
+  // Phones always start collapsed; the stored choice controls desktop reloads.
+  setOpen(!phone.matches && preferred !== "closed");
+  updateSidebar();
+}

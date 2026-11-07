@@ -183,6 +183,8 @@ def test_usage():
     run_out = [claude]
 
     def run(cmd, **kw):
+        if cmd[:2] == ["docker", "run"] and ("chmod" in cmd or "grep" in cmd):
+            return R(rc=1 if "grep" in cmd else 0)
         if "--git-common-dir" in cmd:
             return R(str(Path(cmd[2]) / "shared.git"))
         if cmd[:2] == ["docker", "run"]:
@@ -315,8 +317,10 @@ def test_codex_chatgpt_login():
         # allowlist: chatgpt.com only in ChatGPT mode
         with tempfile.TemporaryDirectory() as d:
             assert "chatgpt.com" not in omi.worker.docker.allow_for(Path(d), "codex")
-            assert omi.worker.docker.allow_for(Path(d), "codex", chatgpt=True)[-2:] == ["api.openai.com", "chatgpt.com"]
+            assert omi.worker.docker.allow_for(Path(d), "codex", chatgpt=True)[-3:] == ["api.openai.com", "chatgpt.com", "auth.openai.com"]
             assert "chatgpt.com" not in omi.worker.docker.allow_for(Path(d), "claude", chatgpt=True)
+            assert "auth.openai.com" not in omi.worker.docker.allow_for(Path(d), "claude", chatgpt=True)
+            assert "auth.openai.com" not in omi.worker.docker.allow_for(Path(d), "codex")
     finally:
         omi.common.core.WINDOWS = real
         auth.unlink(missing_ok=True)
@@ -328,7 +332,7 @@ def test_codex_chatgpt_run():
     allowed = []
 
     @contextlib.contextmanager
-    def egress(main, name, image, allow):
+    def egress(main, name, image, allow, task=None):
         allowed.append(allow)
         yield "test-net", "test-proxy"
 
@@ -336,6 +340,8 @@ def test_codex_chatgpt_run():
         def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
 
     def run(cmd, **kw):
+        if cmd[:2] == ["docker", "run"] and ("chmod" in cmd or "grep" in cmd):
+            return R(rc=1 if "grep" in cmd else 0)
         if "--git-common-dir" in cmd:
             return R(str(Path(cmd[2]) / "shared.git"))
         calls.append((cmd, kw))
@@ -392,7 +398,7 @@ def test_codex_chatgpt_run():
             tmpfs = [argv[n + 1] for n, arg in enumerate(argv) if arg == "--tmpfs"]
             assert any(m.startswith("/home/node:rw,noexec,nosuid,") for m in tmpfs)
             assert "HOME=/home/node" in env_args and "--read-only" in argv
-            assert allowed == [[*omi.worker.docker.DEFAULT_ALLOW, "api.openai.com", "chatgpt.com"]]
+            assert allowed == [[*omi.worker.docker.DEFAULT_ALLOW, "api.openai.com", "chatgpt.com", "auth.openai.com"]]
             assert not any(secret in repr(calls) for secret in ("CLAUDE-SECRET", "REAL-REFRESH"))
             for path in wt.rglob("*"):
                 if path.is_file():
@@ -458,6 +464,8 @@ def test_subprocess_text_encoding():
         def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
 
     def run(cmd, **kw):
+        if cmd[:2] == ["docker", "run"] and ("chmod" in cmd or "grep" in cmd):
+            return R(rc=1 if "grep" in cmd else 0)
         if "--git-common-dir" in cmd:
             return R(str(Path(cmd[2]) / "shared.git"))
         if cmd[:2] == ["docker", "info"]:
@@ -475,6 +483,8 @@ def test_subprocess_text_encoding():
     with tempfile.TemporaryDirectory() as d:
         wt = Path(d).resolve()
         (wt / ".git").write_text("gitdir: /x")
+        shutil.copytree(omi.common.core.TEMPLATE / "dot-omi" / "skills", wt / ".omi" / "skills")
+        omi.project.catalogs.skills_catalog(wt)
         task = wt / ".omi" / "tasks" / "TASK-001.md"
         task.parent.mkdir(parents=True)
         task.write_text("---\nid: TASK-001\nscope: src/**\n---\n## Goal\n- [ ] x\n", encoding="utf-8")

@@ -1,3 +1,4 @@
+import contextlib
 import io
 import re
 import shutil
@@ -9,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 from helpers import omi, assert_download_cache_env, git, real_egress
 
 
@@ -116,6 +118,34 @@ def test_download_cache_scope():
         subprocess.run, omi.project.scope.task_scope = real
 
 
+def test_file_plan_refusal():
+    real = subprocess.run
+    plan = "---\nscope: src/**, tests/**\n---\n## File plan\n- edit src/a.py (shared)\n- create src/new/b.py (shared)\n\n## Steps\n"
+    mp = "---\nid: structure\n---\n- src/a.py, src/new/** | shared | code | imports: -\n- tests/** | test | tests | imports: -\n"
+    shown = {"development:.omi/tasks/TASK-9.md": plan, "development:.omi/structure.md": mp}
+    status = " M src/a.py\0?? src/new/b.py\0?? src/c.py\0?? tests/t.py\0 M .omi/tasks/TASK-9.md\0"
+    def run(argv, **kw):
+        if "rev-parse" in argv or "remote" in argv:
+            return subprocess.CompletedProcess(argv, 1, "")
+        if "show" in argv:
+            out = shown.get(argv[-1])
+            return subprocess.CompletedProcess(argv, 0 if out is not None else 1, out or "")
+        return subprocess.CompletedProcess(argv, 0, status)
+    subprocess.run = run
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            wt = Path(d)
+            (wt / ".omi" / "tasks").mkdir(parents=True)  # agent-writable copies must be ignored
+            (wt / ".omi" / "tasks" / "TASK-9.md").write_text(plan + "- edit src/c.py (shared)\n- edit tests/t.py (test)\n", encoding="utf-8")
+            (wt / ".omi" / "structure.md").write_text("---\nid: structure\n---\n- ** | shared | all | imports: -\n", encoding="utf-8")
+            assert omi.project.scope.plan_violations(wt, "TASK-9") == [
+                "OUT OF PLAN: src/c.py", "UNMAPPED: src/c.py", "OUT OF PLAN: tests/t.py"]
+            shown["development:.omi/tasks/TASK-9.md"] = "---\nscope: src/**\n---\n"  # no file plan: scope-only
+            assert omi.project.scope.plan_violations(wt, "TASK-9") == []
+    finally:
+        subprocess.run = real
+
+
 def test_worker():
     real = subprocess.run, shutil.which, omi.common.core.main_checkout, omi.common.core.WINDOWS, os.environ.get(omi.worker.creds.TOKEN_ENV)
     calls = []
@@ -170,7 +200,7 @@ def test_worker():
             assert "OUT OF SCOPE: .gitattributes" in out.getvalue() and "src/a.py" not in out.getvalue()
             assert "OUT OF SCOPE: .github/x.yml" in out.getvalue()
             assert omi.project.scope.GIT_HINT in out.getvalue()
-            argv, kw = next(c for c in calls if c[0][:2] == ["docker", "run"])
+            argv, kw = next(c for c in calls if c[0][:2] == ["docker", "run"] and "--name" in c[0])
             assert not any("tok-SECRET" in a for a in argv), "token in argv"
             assert argv[argv.index("-e") + 1] == omi.worker.creds.TOKEN_ENV and kw["env"][omi.worker.creds.TOKEN_ENV] == "tok-SECRET"
             assert kw["stdin"] is subprocess.DEVNULL
@@ -190,7 +220,7 @@ def test_worker():
                 assert f"{k}={v}" in lab, lab
             assert any(l.startswith("omi-started=") for l in lab) and "omi-worker=1" in lab
             go(effort="high")
-            argv = next(c[0] for c in calls if c[0][:2] == ["docker", "run"])
+            argv = next(c[0] for c in calls if c[0][:2] == ["docker", "run"] and "--name" in c[0])
             assert argv[argv.index("--effort") + 1] == "high"
             # alias map from .omi/config.json; unknown alias fails before docker
             (wt / ".omi").mkdir(exist_ok=True)
@@ -204,7 +234,7 @@ def test_worker():
                 raise AssertionError("unknown alias accepted")
             go_model = lambda m: (calls.clear(), omi.worker.run.worker(wt, task, model=m, effort="low"))
             go_model("fast")
-            argv = next(c[0] for c in calls if c[0][:2] == ["docker", "run"])
+            argv = next(c[0] for c in calls if c[0][:2] == ["docker", "run"] and "--name" in c[0])
             assert argv[argv.index("--model") + 1] == "claude-haiku-5-5" and "-claude-haiku-5.5-low-" in argv[argv.index("--name") + 1]
             (wt / ".omi" / "config.json").unlink()
             # build log: silent on success, shown (stderr) on failure
@@ -255,6 +285,577 @@ def test_worker():
                 os.environ[omi.worker.creds.TOKEN_ENV] = tok
 
 
+def test_run_role_plan_violation_alone_exits_3():
+    real = subprocess.run, shutil.which, omi.common.core.main_checkout, omi.common.core.WINDOWS, os.environ.get(omi.worker.creds.TOKEN_ENV), omi.project.scope.plan_violations
+
+    class R:
+        def __init__(s, out="", rc=0, err=""): s.stdout, s.returncode, s.stderr = out, rc, err
+
+    def run(cmd, **kw):
+        if "--git-common-dir" in cmd:
+            return R(str(Path(cmd[2]) / "shared.git"))
+        if "--show-toplevel" in cmd:
+            return R(str(cmd[2]))
+        if "remote" in cmd:
+            return R(rc=1)
+        if "show" in cmd:
+            return R("---\nscope: src/**\n---\n")
+        if "status" in cmd:
+            return R(" M src/a.py\0")  # scope clean: only src/a.py changed, inside the task scope
+        return R()
+
+    with tempfile.TemporaryDirectory() as d:
+        wt = Path(d).resolve()
+        (wt / ".git").write_text("gitdir: /x")
+        task = wt / ".omi" / "tasks" / "TASK-001.md"
+        task.parent.mkdir(parents=True)
+        task.write_text("---\nid: TASK-001\nscope: src/**\nrole: omi-agent-engineer\n---\n## Checkpoint\nDone:\n\n## Usage\n", encoding="utf-8")
+        subprocess.run, shutil.which = run, lambda _: "docker"
+        omi.common.core.main_checkout, omi.common.core.WINDOWS = (lambda _: wt), False
+        omi.project.scope.plan_violations = lambda w, tid: ["OUT OF PLAN: src/a.py"]
+        os.environ[omi.worker.creds.TOKEN_ENV] = "tok"
+        out = io.StringIO()
+        sys.stdout, saved = out, sys.stdout
+        try:
+            assert omi.project.scope.out_of_scope(wt, "TASK-001") == []
+            try:
+                rc = omi.worker.run.run_role("omi-agent-engineer", wt, task, effort="low")
+            except SystemExit as e:
+                rc = str(e)
+            assert rc == 3, rc
+            assert "OUT OF PLAN: src/a.py" in out.getvalue() and "OUT OF SCOPE" not in out.getvalue(), out.getvalue()
+        finally:
+            sys.stdout = saved
+            subprocess.run, shutil.which, omi.common.core.main_checkout, omi.common.core.WINDOWS, tok, omi.project.scope.plan_violations = real
+            os.environ.pop(omi.worker.creds.TOKEN_ENV, None)
+            if tok is not None:
+                os.environ[omi.worker.creds.TOKEN_ENV] = tok
+
+
+def test_codex_capacity_fallback():
+    capacity = "ERROR: Selected model is at capacity"
+    ok = json.dumps({"type": "result", "result": "DONE claude", "usage": {}})
+    quota = json.dumps({"type": "result", "is_error": True, "result": "usage limit reached"})
+    with tempfile.TemporaryDirectory() as d:
+        wt = Path(d).resolve()
+        (wt / ".git").write_text("gitdir: /x", encoding="utf-8")
+        task = wt / ".omi" / "tasks" / "TASK-216.md"
+        task.parent.mkdir(parents=True)
+        (wt / ".omi" / "config.json").write_text('{"codex_models": {"sonnet": "gpt-x"}}', encoding="utf-8")
+        initial = "---\nid: TASK-216\nscope: src/**\n---\n## Checkpoint\nDone:\n"
+        calls, outputs = [], []
+        buf = io.StringIO()
+
+        def run(cmd, **kw):
+            if cmd[:2] == ["docker", "run"] and not any(x in cmd for x in ("chmod", "grep")):
+                calls.append(cmd)
+                return outputs.pop(0)
+            if "--git-common-dir" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, str(wt / "shared.git"), "")
+            if "--show-toplevel" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, str(wt), "")
+            if "show" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, "---\nscope: src/**\n---\n", "")
+            return subprocess.CompletedProcess(cmd, 1 if "grep" in cmd else 0, "", "")
+
+        def go(out, err="", rc=1, fallback=ok):
+            task.write_text(initial, encoding="utf-8")
+            calls.clear()
+            buf.seek(0)
+            buf.truncate(0)
+            outputs[:] = [subprocess.CompletedProcess([], rc, out, err),
+                          subprocess.CompletedProcess([], 1 if fallback == quota else 0, fallback, "")]
+            result = omi.worker.run.run_role("omi-agent-engineer", wt, task, tool="codex", effort="medium")
+            return result, task.read_text(encoding="utf-8")
+
+        with patch("subprocess.run", run), patch("shutil.which", return_value="docker"), \
+                patch("omi.common.core.main_checkout", return_value=wt), patch("omi.common.core.WINDOWS", False), \
+                patch("omi.worker.docker.ensure_image", return_value="img"), \
+                patch.dict(os.environ, {omi.worker.creds.TOKEN_ENV: "tok", omi.worker.creds.CODEX_ENV: "key"}), \
+                contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+            for out, err in ((capacity, ""), ("", capacity),
+                             (json.dumps({"type": "error", "message": capacity}), ""),
+                             (json.dumps({"type": "turn.failed", "error": {"message": capacity}}), "")):
+                rc, text = go(out, err)
+                assert rc == 0 and len(calls) == 2, (rc, len(calls), buf.getvalue())
+                assert "claude" in calls[1] and "partial diff" in " ".join(calls[1])
+                checkpoint = text.partition("## Checkpoint")[2].partition("\n## ")[0]
+                assert "QUOTA:" in checkpoint and "continued with claude" in checkpoint
+                assert "| QUOTA->claude |" in text and "| claude-sonnet-5-5 |" in text
+            rc, text = go(capacity, fallback=quota)
+            assert rc == 5 and len(calls) == 2 and "QUOTA: claude and codex" in buf.getvalue()
+            assert "QUOTA:" in text.partition("## Checkpoint")[2]
+            command_output = json.dumps({"type": "item.completed", "item": {
+                "type": "command_execution", "aggregated_output": capacity}})
+            for out, err, code in (("ERROR: model crashed", "", 1), ("", "ERROR: model crashed", 1),
+                                   (command_output, "", 1), (capacity, "", 0)):
+                rc, text = go(out, err, code)
+                assert rc == code and len(calls) == 1
+                assert "QUOTA:" not in text and "QUOTA->" not in text
+
+
+def test_session_role_record():
+    sess = omi.worker.session
+    engineer, designer = "omi-agent-engineer", "omi-agent-designer-ui"
+    for tool in ("claude", "codex"):
+        for role in (engineer, designer):
+            text = sess.with_session("## Checkpoint\nDone:\n\n## Usage\nrow\n", tool, "S1", role)
+            assert f"Session: {tool} S1 {role}\n" in text
+            assert sess.recorded(text, tool, role) == "S1"
+            assert sess.recorded(text, tool, designer if role == engineer else engineer) is None
+            assert sess.recorded(text, "codex" if tool == "claude" else "claude", role) is None
+            replaced = sess.with_session(text, tool, "S2", engineer)
+            assert replaced.count("Session:") == 1 and designer not in replaced
+            assert "## Usage\nrow\n" in replaced
+        legacy = f"## Checkpoint\nSession: {tool} S1\nDone:\n"
+        assert sess.recorded(legacy, tool, engineer) == "S1"
+        assert sess.recorded(legacy, tool, designer) is None
+        assert sess.recorded(f"Session: {tool} S1", tool, engineer) == "S1"
+
+
+def test_record_runs():
+    runs = omi.project.runs
+    assert runs.skill_sources(["a", "b"], ["b", "c"], ["c", "d"]) == {"a": "role", "b": "role", "c": "task", "d": "step"}
+    refs = Path("/p/.omi/references")
+    assert runs.ref_ids("/p", [refs / "pg.md", refs / "patterns" / "adapter.md"]) == ["pg", "patterns/adapter"]
+    with tempfile.TemporaryDirectory() as d:
+        task = Path(d) / "TASK-001.md"
+        task.write_text("---\nid: TASK-001\n---\n## Goal\nx\n\n## Usage\n| role |\n", encoding="utf-8")
+        runs.record_run(task, "omi-agent-engineer", "claude", "sonnet", "medium", "build",
+                        runs.skill_sources(["a"], ["b"], ["c"]), ["a", "b"], ["python"], ["ref1"])
+        runs.record_run(task, "omi-agent-engineer", "codex", "gpt", None, "build", {"a": "role", "b": "task"}, ["a"], ["python"], [])
+        runs.record_run(task, "omi-agent-reviewer", "claude", "opus", "high", "review", {"r": "role"}, [], [], [])
+        text = task.read_text(encoding="utf-8")
+        assert text.index("## Runs") < text.index("## Usage") and text.count("## Runs") == 1
+        got = runs.parse_runs(text.partition("## Runs\n")[2].partition("\n\n")[0])
+    assert [(r["role"], r["tool"], r["effort"], r["step"]) for r in got] == [
+        ("omi-agent-engineer", "claude", "medium", "build"), ("omi-agent-engineer", "codex", "n/a", "build"),
+        ("omi-agent-reviewer", "claude", "high", "review")]
+    assert got[0]["skills"] == [{"id": "a", "source": "role"}, {"id": "b", "source": "task"}, {"id": "c", "source": "step"}]
+    assert got[0]["read"] == ["a", "b"] and got[0]["rules"] == ["python"] and got[0]["references"] == ["ref1"]
+    assert got[1]["references"] == [] and got[2]["read"] == [] and got[2]["rules"] == []
+
+
+def test_session_resume():
+    sess, tools = omi.worker.session, omi.worker.tools
+    out = '{"type":"system","session_id":"S1"}\n{"type":"result","session_id":"S2","result":"DONE","usage":{}}\n'
+    assert sess.session_id("claude", out) == "S2" and sess.session_id("codex", '{"type":"thread.started","thread_id":"T1"}') == "T1"
+    assert sess.session_id("claude", "junk") is None and sess.session_id("codex", out) is None
+    text = sess.with_session("---\na: b\n---\n## Checkpoint\nDone:\n\n## Usage\nrow\n", "claude", "S1")
+    assert text == "---\na: b\n---\n\n## Checkpoint\nDone:\nSession: claude S1 omi-agent-engineer\n\n## Usage\nrow\n".replace("---\n\n", "---\n"), text
+    again = sess.with_session(text, "codex", "T9")
+    assert again.count("Session:") == 1 and sess.recorded(again, "codex") == "T9" and sess.recorded(again, "claude") is None
+    c = tools.engineer_cmd("---\n---\nbody", "t.md", "m", "low", "", "S1", "boom")
+    assert c[c.index("--resume") + 1] == "S1" and "boom" in c[2] and "body" not in c[2]
+    x = tools.codex_cmd("---\n---\nbody", "t.md", "m", "low", "", "T1")
+    assert x[:4] == ["codex", "exec", "resume", "T1"] and "Checkpoint" in x[-1] and "body" not in x[-1]
+    assert "resume" not in tools.codex_cmd("---\n---\nbody", "t.md", "m", "low") and "--resume" not in tools.engineer_cmd("---\n---\nbody", "t.md")
+
+    calls, runs, scans, vols, killed = [], [], [], set(), []
+    state = {"stdout": out, "hook": [1, 0], "scan": [], "rm_rc": 0}
+
+    class R:
+        def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
+
+    def run(cmd, **kw):
+        if "--git-common-dir" in cmd:
+            return R(str(Path(cmd[2]) / "shared.git"))
+        if "show" in cmd:
+            return R(f"---\nscope: {state.get('scope', 'src/**')}\n---\n")
+        if "status" in cmd:
+            return R(" M src/a.py\0")
+        if cmd[:2] == ["docker", "volume"]:
+            runs.append(cmd)
+            if cmd[2] == "inspect":
+                return R(rc=0 if cmd[3] in vols else 1)
+            if cmd[2] == "create":
+                vols.add(cmd[-1])
+            if cmd[2] == "rm":
+                if state["rm_rc"]:
+                    return R(rc=state["rm_rc"])
+                vols.discard(cmd[3])
+            if cmd[2] == "ls":
+                return R("\n".join(sorted(vols)))
+            return R()
+        if cmd[:3] == ["docker", "rm", "-f"]:  # kills the scan container by name
+            killed.append(cmd)
+            return R()
+        if cmd[:2] == ["docker", "run"] and "grep" in cmd:  # the token scan
+            runs.append(cmd)
+            scans.append((cmd, kw.get("input")))
+            if state.get("scan_raise"):
+                raise state["scan_raise"]
+            return R(rc=state["scan"].pop(0) if state["scan"] else 1)
+        if cmd[:2] == ["docker", "run"] and "chmod" in cmd:  # opens a new volume to the container user
+            runs.append(cmd)
+            return R()
+        if cmd[:2] == ["docker", "run"]:  # the post-run hook
+            return R(b"hook says no\n", state["hook"].pop(0)) if state["hook"] else R(b"", 0)
+        return R()
+
+    class P:
+        def __init__(s, cmd, **kw):
+            calls.append(cmd)
+            s.stdout, s.stderr, s.returncode = io.StringIO(state["stdout"]), io.StringIO(""), 0
+        def __enter__(s): return s
+        def __exit__(s, *a): pass
+        def wait(s): pass
+
+    real = subprocess.run, subprocess.Popen, shutil.which, omi.common.core.main_checkout, omi.common.core.WINDOWS, omi.worker.docker.ensure_image
+    old_tok = os.environ.get(omi.worker.creds.TOKEN_ENV)
+    os.environ[omi.worker.creds.TOKEN_ENV] = "tok"
+    with tempfile.TemporaryDirectory() as d:
+        wt = Path(d).resolve()
+        (wt / ".git").write_text("gitdir: /x")
+        shutil.copytree(omi.common.core.TEMPLATE / "dot-omi" / "skills", wt / ".omi" / "skills")
+        omi.project.catalogs.skills_catalog(wt)
+        task = wt / ".omi" / "tasks" / "TASK-001.md"
+        task.parent.mkdir(parents=True)
+        task.write_text("---\nid: TASK-001\nscope: src/**\nrole: omi-agent-engineer\n---\n## Checkpoint\nDone:\n\n## Usage\n", encoding="utf-8")
+        subprocess.run, subprocess.Popen, shutil.which = run, P, lambda _: "docker"
+        omi.common.core.main_checkout, omi.common.core.WINDOWS, omi.worker.docker.ensure_image = (lambda _: wt), False, lambda m: "img"
+        repo, saved, buf = omi.worker.docker.repo_key(wt), sys.stdout, io.StringIO()
+        vol = sess.volume(repo, "TASK-001", "claude")
+        sys.stdout = buf
+
+        def go(role="omi-agent-engineer", **kw):
+            calls.clear(); runs.clear(); scans.clear()
+            buf.truncate(0); buf.seek(0)
+            omi.worker.run.run_role(role, wt, task, effort="low", **kw)
+            return calls[0] if calls else None
+
+        def recreated():
+            return [c[:3] for c in runs if c[2] in ("rm", "create")] == [["docker", "volume", "rm"], ["docker", "volume", "create"]]
+
+        try:
+            assert vol == f"omi-sess-{repo}-TASK-001-claude" and re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]+", vol)
+            assert re.fullmatch(re.escape(omi.worker.docker.repo_label(wt)) + r"-[0-9a-f]{8}", repo), repo
+            argv = go()
+            assert "--resume" not in argv and argv[argv.index("--mount") + 1] == f"type=volume,src={vol},dst=/sessions"
+            assert not any("type=bind" in a for a in argv) and vol in vols
+            create = next(c for c in runs if c[2] == "create")
+            assert all(f"{k}" in create for k in ("omi-worker=1", f"omi-repo={repo}", "omi-task=TASK-001", "omi-session=1")), create
+            chmod = next(c for c in runs if "chmod" in c)
+            assert chmod[chmod.index("--user") + 1] == "0" and chmod[chmod.index("--cap-drop") + 1] == "ALL" and "--read-only" in chmod
+            assert chmod[chmod.index("--network") + 1] == "none" and f"type=volume,src={vol},dst=/s" in chmod and "--privileged" not in chmod
+            assert "Session: claude S2 omi-agent-engineer" in task.read_text(encoding="utf-8")
+            # the scan: node, no network, volume ro, the token on stdin only
+            (scan, given), = scans
+            assert scan[scan.index("--user") + 1] == "node" and scan[scan.index("--network") + 1] == "none" and "--read-only" in scan
+            assert f"type=volume,src={vol},dst=/s,readonly" in scan and scan[-5:] == ["grep", "-rqF", "-f", "-", "/s"]
+            assert scan[scan.index("--name") + 1] == f"{vol}-scan" and f"omi-repo={repo}" in scan and "omi-worker=1" not in scan and not killed
+            assert given.splitlines() == ["tok"], given
+            assert not any("tok" in a.split("=")[-1] for c in [*calls, *runs] for a in c if a != "omi-task=TASK-001"), "token in argv"
+            assert sess.recorded("Session: claude --x", "claude") is None and sess.recorded("Session: claude *", "claude") is None
+            assert not sess.available(repo, "TASK-001", "claude", "--x") and sess.available(repo, "TASK-001", "claude", "S2")
+            # a later run resumes the session in the kept volume
+            argv = go()
+            assert argv[argv.index("--resume") + 1] == "S2" and "RESUME FAILED" not in buf.getvalue() and not recreated()
+            assert "new findings" in argv[argv.index("-p") + 1] and "--append-system-prompt" in argv
+            # Switching write roles starts fresh and records the role that now owns the session.
+            designer = "omi-agent-designer-ui"
+            argv = go(designer, model="sonnet", tool="claude")
+            assert "--resume" not in argv and recreated() and "RESUME FAILED" not in buf.getvalue()
+            assert sess.recorded(task.read_text(encoding="utf-8"), "claude", designer) == "S2"
+            argv = go(designer, model="sonnet", tool="claude")
+            assert argv[argv.index("--resume") + 1] == "S2" and not recreated()
+            assert "--resume" not in go() and recreated()
+            assert sess.recorded(task.read_text(encoding="utf-8"), "claude", "omi-agent-engineer") == "S2"
+            # Legacy records belong only to the engineer, including when followed by checkpoint text.
+            legacy = task.read_text(encoding="utf-8").replace("Session: claude S2 omi-agent-engineer", "Session: claude S2")
+            task.write_text(legacy, encoding="utf-8")
+            argv = go()
+            assert argv[argv.index("--resume") + 1] == "S2" and not recreated()
+            task.write_text(legacy, encoding="utf-8")
+            assert "--resume" not in go(designer, model="sonnet", tool="claude") and recreated()
+            assert "--resume" not in go() and recreated()
+            # --fresh: a new session in a new volume
+            assert "--resume" not in go(fresh=True) and recreated()
+            # recorded but the volume is gone: one RESUME FAILED line, fresh run
+            vols.clear()
+            argv = go()
+            assert "--resume" not in argv and buf.getvalue().count("RESUME FAILED:") == 1 and vol in vols
+            # an expired session (the CLI fails without a result) falls back to a fresh run
+            state["stdout"] = ""
+            real_p = P.__init__
+            def failing(s, cmd, **kw):
+                real_p(s, cmd, **kw); s.returncode = 1 if "--resume" in cmd else 0
+            P.__init__ = failing
+            go()
+            assert [("--resume" in c) for c in calls] == [True, False] and buf.getvalue().count("RESUME FAILED:") == 1 and recreated()
+            P.__init__ = real_p
+            state["stdout"] = out
+            # read roles never resume, mount nor scan a session volume
+            argv = go("omi-agent-reviewer")
+            assert "--resume" not in argv and "--mount" not in argv and not runs
+            lines = [l for l in task.read_text(encoding="utf-8").partition("\n## Runs\n")[2].partition("\n\n")[0].splitlines()]
+            assert lines[-1].startswith("- omi-agent-reviewer | claude ") and any(l.startswith(f"- {designer} | claude ") for l in lines), lines
+            # the other tool as the last one: fresh, silent, a new volume
+            task.write_text(sess.with_session(task.read_text(encoding="utf-8"), "codex", "T1"), encoding="utf-8")
+            argv = go()
+            assert "--resume" not in argv and "RESUME FAILED" not in buf.getvalue() and recreated()
+            # a failing post-run hook: one resumed retry with the hook output, then the hook reruns
+            hooks = wt / ".omi" / "hooks"
+            hooks.mkdir()
+            (hooks / "post-run.sh").write_text("exit 1\n")
+            task.write_text(sess.with_session(task.read_text(encoding="utf-8"), "claude", "S2"), encoding="utf-8")
+            state["hook"] = [1, 0]
+            go()
+            assert len(calls) == 2 and "--resume" in calls[1] and "hook says no" in calls[1][calls[1].index("-p") + 1], calls
+            assert "hook post-run passed" in buf.getvalue() and "exited with code" not in buf.getvalue() and len(scans) == 2
+            # the resumed fix attempt itself fails: one line, the hook failure is reported as before
+            state["hook"] = [1, 1]
+            real_p = P.__init__
+            def failing(s, cmd, **kw):
+                real_p(s, cmd, **kw); s.returncode = 1 if len(calls) == 2 else 0  # only the hook-fix attempt
+            P.__init__ = failing
+            go()
+            P.__init__ = real_p
+            assert "hook-fix attempt exited with code 1" in buf.getvalue() and "hook post-run FAILED" in buf.getvalue()
+            state["hook"] = [1, 1, 1]
+            go()
+            assert len(calls) == 2 and "hook post-run FAILED" in buf.getvalue() and state["hook"] == [1], "single retry"
+            usage = [l for l in task.read_text(encoding="utf-8").splitlines() if l.startswith("| omi-agent-engineer")]
+            assert len(usage) >= 8, usage  # the retries are recorded like any run
+            (hooks / "post-run.sh").unlink()
+            state["hook"] = []
+            # a resumed fix round points at the task's skills again and counts the skills the session read earlier
+            skill = wt / ".omi" / "skills" / "g" / "omi-skill-x"
+            skill.mkdir(parents=True)
+            (skill / "SKILL.md").write_text("---\nid: omi-skill-x\n---\nbody\n", encoding="utf-8")
+            other = skill.parent / "omi-skill-y"
+            other.mkdir()
+            (other / "SKILL.md").write_text("---\nid: omi-skill-y\n---\nbody\n", encoding="utf-8")
+            (skill.parent.parent / "CATALOG.md").write_text("- omi-skill-x g\n- omi-skill-y g\n", encoding="utf-8")
+            plain = task.read_text(encoding="utf-8")
+            with_skill = plain.replace("scope:", "skills: [omi-skill-x]\nscope:", 1)
+            path = "/work/.omi/skills/g/omi-skill-x/SKILL.md"
+            read_ev = json.dumps({"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Read", "input": {"file_path": path}}]}})
+            sid_ev = lambda i: json.dumps({"type": "system", "session_id": i}) + "\n"
+            last_cell = lambda: [l for l in task.read_text(encoding="utf-8").splitlines() if l.startswith("| omi-agent-engineer")][-1].split(" | ")[7]
+            saved_out = state["stdout"]
+            try:
+                task.write_text(with_skill, encoding="utf-8")
+                state["stdout"] = sid_ev("S3") + read_ev + "\n"
+                go(fresh=True)  # the first run reads the skill; the Session line keeps that
+                assert "--resume" not in calls[0] and last_cell() == "1/1 omi-skill-x" and "skills=omi-skill-x" in task.read_text(encoding="utf-8")
+                state["stdout"] = sid_ev("S3")  # the fix round reads nothing itself
+                go()
+                prompt = calls[0][calls[0].index("-p") + 1]
+                assert "--resume" in calls[0] and path in prompt and "Re-read" in prompt, prompt
+                assert last_cell() == "1/1 omi-skill-x" and "SKILL NOT READ" not in buf.getvalue() and "skills=omi-skill-x" in task.read_text(encoding="utf-8")
+                # X -> Y -> X in one session: the history is cumulative, X stays read
+                read_y = read_ev.replace("omi-skill-x", "omi-skill-y")
+                task.write_text(task.read_text(encoding="utf-8").replace("skills: [omi-skill-x]", "skills: [omi-skill-y]"), encoding="utf-8")
+                state["stdout"] = sid_ev("S3") + read_y + "\n"
+                go()
+                assert last_cell() == "1/1 omi-skill-y" and "skills=omi-skill-x,omi-skill-y" in task.read_text(encoding="utf-8")
+                task.write_text(task.read_text(encoding="utf-8").replace("skills: [omi-skill-y]", "skills: [omi-skill-x]"), encoding="utf-8")
+                state["stdout"] = sid_ev("S3")
+                go()
+                assert last_cell() == "1/1 omi-skill-x" and "skills=omi-skill-x,omi-skill-y" in task.read_text(encoding="utf-8")
+                # the post-run hook retry resumes with the skills too
+                (hooks / "post-run.sh").write_text("exit 1\n")
+                state["hook"] = [1, 0]
+                go()
+                assert len(calls) == 2 and path in calls[1][calls[1].index("-p") + 1] and last_cell() == "1/1 omi-skill-x"
+                (hooks / "post-run.sh").unlink()
+                state["hook"] = []
+                # codex: the prompt is the last argument
+                task.write_text(sess.with_session(with_skill, "codex", "T3", skills=["omi-skill-x"]), encoding="utf-8")
+                state["stdout"] = json.dumps({"type": "thread.started", "thread_id": "T3"}) + "\n"
+                os.environ[omi.worker.creds.CODEX_ENV] = "key"
+                vols.add(sess.volume(repo, "TASK-001", "codex"))
+                try:
+                    go(tool="codex", model="gpt-5")
+                finally:
+                    del os.environ[omi.worker.creds.CODEX_ENV]
+                    vols.discard(sess.volume(repo, "TASK-001", "codex"))
+                assert "resume" in calls[0] and path in calls[0][-1] and last_cell() == "1/1 omi-skill-x", calls[0]
+                # detached: the paths point at the read-only /state mount
+                task.write_text(sess.with_session(with_skill, "claude", "S3", skills=["omi-skill-x"]), encoding="utf-8")
+                state["stdout"] = sid_ev("S3")
+                real_resolve = omi.state.resolve.resolve
+                omi.state.resolve.resolve = lambda cwd=".": omi.state.resolve.Project(wt, wt, True)
+                try:
+                    go()
+                finally:
+                    omi.state.resolve.resolve = real_resolve
+                prompt = calls[0][calls[0].index("-p") + 1]
+                assert "--resume" in calls[0] and "/state/.omi/skills/g/omi-skill-x/SKILL.md" in prompt and "/work/.omi/skills" not in prompt, prompt
+            finally:
+                state["stdout"] = saved_out
+            task.write_text(plain, encoding="utf-8")
+            # a scope widened since the session's last run is named in the resume prompt
+            saved_out = state["stdout"]
+            try:
+                state["stdout"] = sid_ev("S4")
+                go(fresh=True)
+                assert "Run scope: src/**" in task.read_text(encoding="utf-8")
+                go()
+                assert "SCOPE SYNCED" not in calls[0][calls[0].index("-p") + 1]  # unchanged scope: nothing to say
+                state["scope"] = "src/**, tests/test_worker.py"
+                go()
+                prompt = calls[0][calls[0].index("-p") + 1]
+                assert "--resume" in calls[0] and "SCOPE SYNCED" in prompt and "tests/test_worker.py" in prompt and "src/**" not in prompt, prompt
+                assert "Run scope: src/**, tests/test_worker.py" in task.read_text(encoding="utf-8")
+                go()
+                assert "SCOPE SYNCED" not in calls[0][calls[0].index("-p") + 1]  # said once
+                # a legacy session (no `Run scope:` line) gets the whole current scope restated
+                task.write_text(re.sub(r"^Run scope:.*\n", "", task.read_text(encoding="utf-8"), flags=re.M), encoding="utf-8")
+                go()
+                prompt = calls[0][calls[0].index("-p") + 1]
+                assert "--resume" in calls[0] and "SCOPE SYNCED" in prompt and "src/**, tests/test_worker.py" in prompt, prompt
+            finally:
+                state["stdout"] = saved_out
+                state.pop("scope", None)
+            task.write_text(plain, encoding="utf-8")
+            shutil.rmtree(wt / ".omi" / "skills")
+            # scan rc 0 (token), 2 (unreadable entry) and 125 (docker error) drop the volume and the Session line; 1 keeps both
+            for rc, why in ((0, "token found in transcript"), (2, "cannot scan the session volume"), (125, "cannot scan the session volume")):
+                task.write_text(sess.with_session(task.read_text(encoding="utf-8"), "claude", "S2"), encoding="utf-8")
+                state["scan"] = [rc]
+                assert "--resume" in go() and buf.getvalue().count(f"SESSION DROPPED: {why}") == 1, (rc, buf.getvalue())
+                assert vol not in vols and "Session:" not in task.read_text(encoding="utf-8"), rc
+                assert "--resume" not in go() and "RESUME FAILED" not in buf.getvalue() and vol in vols
+            assert "SESSION DROPPED" not in buf.getvalue() and "Session: claude S2" in task.read_text(encoding="utf-8")
+            # a scan that cannot start, times out or is interrupted (Ctrl-C) fails closed too: its container is killed by name
+            for exc in (OSError("no docker"), subprocess.TimeoutExpired("docker", 1), KeyboardInterrupt()):
+                state["scan_raise"] = exc
+                killed.clear()
+                try:
+                    assert sess.scrub(repo, "TASK-001", "claude", "img", "tok") and not isinstance(exc, KeyboardInterrupt)
+                except KeyboardInterrupt:
+                    pass
+                assert vol not in vols and killed == [["docker", "rm", "-f", f"{vol}-scan"]], (exc, killed)
+                vols.add(vol)
+            state.pop("scan_raise")
+            # docker refuses the rm: the leftover volume is named
+            state["scan"], state["rm_rc"] = [0], 1
+            killed.clear()
+            buf.truncate(0); buf.seek(0)
+            assert sess.scrub(repo, "TASK-001", "claude", "img", "tok") and f"SESSION CACHE NOT REMOVED: {vol}" in buf.getvalue()
+            # ... and the next fresh run (--fresh, or the fallback after RESUME FAILED) aborts instead of reusing it
+            assert vol in vols and not killed
+            try:
+                go(fresh=True)
+            except SystemExit as exc:
+                assert f"cannot remove the old session volume {vol}" in str(exc), exc
+            else:
+                raise AssertionError("a fresh run reused the old session volume")
+            assert not calls and not any(c[2] == "create" for c in runs if c[:2] == ["docker", "volume"])
+            state["rm_rc"] = 0
+            # needles: no secret, no scan; a JSON value also in its escaped form; a codex ChatGPT login adds each token alone
+            scans.clear()
+            assert not sess.scrub(repo, "TASK-001", "codex", "img", "") and not scans
+            sess.scrub(repo, "TASK-001", "codex", "img", '{"access_token":"a"}')
+            assert scans[-1][1].splitlines() == ['{"access_token":"a"}', '{\\"access_token\\":\\"a\\"}']
+            blob = json.dumps({"auth_mode": "chatgpt", "tokens": {"access_token": "eyJ.acc.sig", "id_token": "eyJ.id.sig",
+                                                                   "account_id": "acct", "refresh_token": "omi-no-refresh"}}, indent=1)
+            sess.scrub(repo, "TASK-001", "codex", "img", blob)
+            lines = scans[-1][1].splitlines()
+            assert "eyJ.acc.sig" in lines and "eyJ.id.sig" in lines and "acct" not in lines and "omi-no-refresh" not in lines
+            assert "" not in lines and json.dumps(blob)[1:-1] in lines and not any(l in ("{", "}") for l in lines), lines
+            assert sess.volume(repo, "TASK-001", "codex") in scans[-1][0][scans[-1][0].index("--mount") + 1]
+            # an interrupted run (Ctrl-C, container error) still scans the volume
+            task.write_text(sess.with_session(task.read_text(encoding="utf-8"), "claude", "S2"), encoding="utf-8")
+            state["scan"] = [0]
+            def interrupted(s, cmd, **kw):
+                raise KeyboardInterrupt
+            P.__init__ = interrupted
+            try:
+                go()
+                assert False, "no interrupt"
+            except KeyboardInterrupt:
+                pass
+            finally:
+                P.__init__ = real_p
+            assert len(scans) == 1 and vol not in vols and "SESSION DROPPED: token found in transcript" in buf.getvalue()
+            # omi clean removes this repo's session volumes
+            vols.update({vol, sess.volume(repo, "TASK-002", "codex")})
+            runs.clear()
+            assert sess.clear(repo) == 2 and not vols
+            ls = next(c for c in runs if c[2] == "ls")
+            assert "label=omi-session=1" in ls and f"label=omi-repo={repo}" in ls
+        finally:
+            sys.stdout = saved
+            subprocess.run, subprocess.Popen, shutil.which, omi.common.core.main_checkout, omi.common.core.WINDOWS, omi.worker.docker.ensure_image = real
+            os.environ.pop(omi.worker.creds.TOKEN_ENV, None)
+            if old_tok is not None:
+                os.environ[omi.worker.creds.TOKEN_ENV] = old_tok
+
+
+def test_clean_per_task_and_running_guard():
+    real, realmc = subprocess.run, omi.common.core.main_checkout
+    calls = []
+
+    class R:
+        def __init__(s, out="", rc=0): s.stdout, s.returncode, s.stderr = out, rc, ""
+
+    with tempfile.TemporaryDirectory() as d:
+        main = Path(d) / "repo"
+        main.mkdir()
+        key = omi.worker.docker.repo_key(main)
+        running = {"on": True}
+
+        def run(cmd, **kw):
+            calls.append(cmd)
+            if cmd[:2] == ["docker", "ps"]:
+                if "-a" not in cmd:  # running_workers
+                    return R("TASK-121\treviewer\tm\te\t2026-11-03T09:00:00\n" if running["on"] else "")
+                return R("t136\n" if "label=omi-task=TASK-136" in cmd else "t136\nt121\n")
+            if cmd[:3] == ["docker", "network", "ls"]:
+                return R("n136\n" if "label=omi-task=TASK-136" in cmd else "n136\nn121\n")
+            if cmd[:3] == ["docker", "volume", "ls"]:
+                return R("v136\n" if "label=omi-task=TASK-136" in cmd else "v136\nv121\n")
+            return R()
+
+        subprocess.run, omi.common.core.main_checkout = run, lambda _: main
+        try:
+            omi.worker.docker.clean(task="TASK-136")  # runs fine while TASK-121 is running
+            assert ["docker", "rm", "-f", "t136"] in calls and ["docker", "volume", "rm", "v136"] in calls
+            assert ["docker", "volume", "rm", "v121"] not in calls
+            ps = next(c for c in calls if c[:3] == ["docker", "ps", "-a"])
+            assert f"label=omi-repo={key}" in ps and "label=omi-task=TASK-136" in ps
+            nls = next(c for c in calls if c[:3] == ["docker", "network", "ls"])
+            assert f"label=omi-repo={key}" in nls and "label=omi-task=TASK-136" in nls
+            assert ["docker", "network", "rm", "n136"] in calls and ["docker", "network", "rm", "n121"] not in calls
+            assert not any(c[:2] in (["docker", "rmi"], ["docker", "images"]) for c in calls)
+            for kw in ({}, {"all_images": True}):
+                calls.clear()
+                try:
+                    omi.worker.docker.clean(**kw)
+                    assert False, "no refusal"
+                except SystemExit as e:
+                    assert str(e.code) == "RUNNING: TASK-121 reviewer; use omi clean <ID>, or --force"
+                assert not any(c[:2] in (["docker", "rm"], ["docker", "volume"]) for c in calls)
+            calls.clear()
+            omi.worker.docker.clean(force=True)
+            assert ["docker", "rm", "-f", "t136", "t121"] in calls
+            running_rows = omi.worker.docker.running_workers(main)  # the proxy (omi-role=proxy, no model/effort) is not a worker
+            assert running_rows == [["TASK-121", "reviewer", "m", "e", "2026-11-03T09:00:00"]]
+            calls.clear()
+            fail = run
+            def run_fail(cmd, **kw):
+                return R("", 1) if cmd[:2] == ["docker", "ps"] and "-a" not in cmd else fail(cmd, **kw)
+            subprocess.run = run_fail  # docker ps fails: the guard cannot tell, so it refuses
+            try:
+                omi.worker.docker.clean()
+                assert False, "no refusal"
+            except SystemExit as e:
+                assert str(e.code) == "cannot list running workers; use omi clean <ID>, or --force"
+            assert not any(c[:2] == ["docker", "rm"] for c in calls)
+            omi.worker.docker.clean(force=True)
+            assert ["docker", "rm", "-f", "t136", "t121"] in calls
+            subprocess.run = run
+            running["on"] = False  # stopped containers do not block
+            calls.clear()
+            omi.worker.docker.clean()
+            assert ["docker", "rm", "-f", "t136", "t121"] in calls
+        finally:
+            subprocess.run, omi.common.core.main_checkout = real, realmc
+
+
 def test_prove_exit_and_hosts():
     ok = "PASS claude CLI reaches\nPASS codex CLI reaches\nPASS write\n"
     assert omi.worker.docker.prove_rc(ok, 0) == 0 and omi.worker.docker.prove_rc(ok, 5) == 5
@@ -280,6 +881,16 @@ def test_clip_report():
     out = omi.project.tasks.clip_report("\n".join(big))
     assert out[0] == "DONE" and out[-1] == "feat: commit msg" and "[... truncated ...]" in out
     assert sum(map(len, out)) < 2200 and out[1] == "line 0"
+
+
+def test_report_note_keeps_full_report():
+    with tempfile.TemporaryDirectory() as d:
+        task = Path(d) / "TASK-001.md"
+        task.write_text("---\nid: TASK-001\n---\n## Reports\n")
+        lines = ["DONE"] + ["line %d" % i for i in range(1000)]
+        omi.worker.run.report_note(task, "omi-agent-engineer", "claude", "\n".join(lines))
+        text = task.read_text()
+        assert "[... truncated ...]" not in text and all("> " + l in text.splitlines() for l in lines)
 
 
 def test_container_names():
@@ -474,7 +1085,7 @@ def test_network_allowlist():
     try:
         # worst real name: a long codex model ID at xhigh effort
         long = omi.worker.docker.container_name("my-repo", "omi-agent-engineer", "TASK-052", "codex", "gpt-5.1-codex-mini-high-preview-2026-10-26", "xhigh")
-        with real_egress(Path("/My Repo"), long, "img", ["api.anthropic.com"]) as (net, proxy):
+        with real_egress(Path("/My Repo"), long, "img", ["api.anthropic.com"], "TASK-9") as (net, proxy):
             assert (net, proxy) == (f"omi-net-{long}", "omi-proxy") and len(f"{long}-proxy") > 63
             host = omi.worker.docker.worker_argv(Path("/w"), "img", ["x"], long, network=net, proxy=proxy)
             assert "HTTPS_PROXY=http://omi-proxy:3128" in host
@@ -485,9 +1096,10 @@ def test_network_allowlist():
     assert [c[1:3] for c in inside][:1] == [["network", "create"]] and inside[0][3] == "--internal"
     create = next(c for c in inside if c[1] == "create")
     assert create[-3:] == ["python3", "/proxy.py", "api.anthropic.com"] and "--read-only" in create and "--cap-drop" in create
-    assert not any("TOKEN" in a or ":/work" in a for a in create) and "omi-repo=my-repo" in create
+    assert not any("TOKEN" in a or ":/work" in a for a in create) and f"omi-repo={omi.worker.docker.repo_key(Path('/My Repo'))}" in create
     assert f"com.docker.compose.project={omi.worker.docker.compose_labels(long, 'proxy')['com.docker.compose.project']}" in create
     assert "com.docker.compose.service=proxy" in create
+    assert "omi-role=proxy" in create and "omi-task=TASK-9" in create and "omi-task=TASK-9" in inside[0]
     assert [c[1] for c in inside if c[1] in ("create", "start")] == ["create", "start"]
     assert next(c for c in inside if c[1:3] == ["network", "connect"])[3:5] == ["--alias", "omi-proxy"]
     assert any(c[1:3] == ["network", "connect"] for c in inside)
@@ -563,19 +1175,27 @@ def test_clean_and_old_images():
         main = Path(d) / "My Repo"
         main.mkdir()
         cur = omi.worker.docker.image_tag(main)[1]
-        repo = omi.worker.docker.image_repo(main)
-        assert repo == "omi-worker-my-repo"
+        repo, key = omi.worker.docker.image_repo(main), omi.worker.docker.repo_key(main)
+        assert repo == "omi-worker-my-repo" and re.fullmatch(r"my-repo-[0-9a-f]{8}", key)
+        # another repo with the same folder name: same image and container names, its own key, so its own labels and volumes
+        twin = Path(d) / "elsewhere" / "My Repo"
+        assert omi.worker.docker.repo_label(twin) == "my-repo" and omi.worker.docker.repo_key(twin) != key
+        assert omi.worker.session.volume(omi.worker.docker.repo_key(twin), "TASK-001", "claude") != omi.worker.session.volume(key, "TASK-001", "claude")
+        mine = f"label=omi-repo={key}"
+        inspect = {"rc": 1, "label": ""}
 
         def run(cmd, **kw):
             calls.append(cmd)
             if cmd[:2] == ["docker", "ps"]:
-                return R("c1\nc2\n" if "label=omi-repo=my-repo" in cmd else "other\n")
+                return R("c1\nc2\n" if mine in cmd else "other\n")
             if cmd[:2] == ["docker", "images"]:
-                return R(f"{cur}\n{repo}:old1\n{repo}:old2\n" + ("" if "label=omi-repo=my-repo" in cmd else "omi-worker-other:x\n"))
+                return R(f"{cur}\n{repo}:old1\n{repo}:old2\n" + ("" if mine in cmd else "omi-worker-other:x\n"))
             if cmd[:3] == ["docker", "image", "inspect"]:
-                return R(rc=1)
+                return R(inspect["label"] + "\n", inspect["rc"])
             if cmd[:3] == ["docker", "network", "ls"]:
-                return R("n1\n" if "label=omi-repo=my-repo" in cmd else "other\n")
+                return R("n1\n" if mine in cmd else "other\n")
+            if cmd[:3] == ["docker", "volume", "ls"]:
+                return R("omi-sess-my-repo-TASK-001-claude\n" if mine in cmd and "label=omi-session=1" in cmd else "other\n")
             return R()
 
         subprocess.run, omi.common.core.main_checkout = run, lambda _: main
@@ -583,16 +1203,27 @@ def test_clean_and_old_images():
             omi.worker.docker.clean()
             assert ["docker", "rm", "-f", "c1", "c2"] in calls and not any("other" in c for c in calls if c[:2] == ["docker", "rm"])
             assert ["docker", "network", "rm", "n1"] in calls
+            vrm = calls.index(["docker", "volume", "rm", "omi-sess-my-repo-TASK-001-claude"])
+            assert calls.index(["docker", "rm", "-f", "c1", "c2"]) < vrm and ["docker", "volume", "rm", "other"] not in calls
             assert ["docker", "rmi", f"{repo}:old1"] in calls and ["docker", "rmi", f"{repo}:old2"] in calls
             assert ["docker", "rmi", cur] not in calls and ["docker", "rmi", "omi-worker-other:x"] not in calls
             ps = next(c for c in calls if c[:2] == ["docker", "ps"])
-            assert "label=omi-worker=1" in ps and "label=omi-repo=my-repo" in ps and not any(a.startswith("name=") for a in ps)
+            assert "label=omi-worker=1" in ps and mine in ps and not any(a.startswith("name=") for a in ps)
+            assert all(mine in c for c in calls if "--filter" in c and any(a.startswith("label=omi-repo=") for a in c))
             calls.clear()
             omi.worker.docker.clean(all_images=True)
             assert ["docker", "rmi", cur] in calls and ["docker", "rmi", "omi-worker-other:x"] not in calls
             calls.clear()
             assert omi.worker.docker.ensure_image(main) == cur
             assert ["docker", "rmi", f"{repo}:old1"] in calls and ["docker", "rmi", cur] not in calls
+            build = next(c for c in calls if c[:2] == ["docker", "build"])
+            assert build[build.index(f"omi-repo={key}") - 1] == "--label"
+            # the current image with the old plain label (or the twin's key) is rebuilt once; with this repo's key it is reused
+            for label, builds in (("my-repo", True), (omi.worker.docker.repo_key(twin), True), (key, False)):
+                inspect.update(rc=0, label=label)
+                calls.clear()
+                assert omi.worker.docker.ensure_image(main) == cur
+                assert any(c[:2] == ["docker", "build"] for c in calls) == builds, label
         finally:
             subprocess.run, omi.common.core.main_checkout = real, realmc
 
@@ -634,19 +1265,71 @@ def test_pr_comment():
         subprocess.run, shutil.which, omi.common.core.git = real
 
 
+def test_verdict_of_forms():
+    v = omi.worker.tools.verdict_of
+    assert v("VERDICT: FAIL\n**VERDICT: PASS**") == "PASS"
+    assert v("done\nRESULT: FAIL") == "FAIL"
+    assert v("```\nRESULT: PASS\n```") == "PASS"
+    assert v("the verdict is unchanged: FAIL") is None
+
+
+def test_full_report_keeps_earlier_block():
+    block = "VERDICT: FAIL\n- a.py:1 bug -> fix\nROOT: new"
+    final = "VERDICT: PASS. The verdict and all other findings are unchanged from the report above."
+    claude = "\n".join(json.dumps(e) for e in (
+        {"type": "assistant", "message": {"content": [{"type": "text", "text": block}]}},
+        {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {}}]}},
+        {"type": "assistant", "message": {"content": [{"type": "text", "text": final}]}},
+        {"type": "result", "result": final, "usage": {}}))
+    codex = "\n".join(json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": x}}) for x in (block, final))
+    for tool, out in (("claude", claude), ("codex", codex)):
+        assert omi.worker.tools.full_report(tool, out, final) == f"{block}\n\n{final}"
+        assert omi.worker.tools.verdict_of(omi.worker.tools.full_report(tool, out, final)) == "PASS"
+        assert omi.worker.tools.full_report(tool, out, block) == block
+    complete = "VERDICT: PASS\nROOT: n/a"
+    assert omi.worker.tools.full_report("codex", codex, complete) == complete
+    assert omi.worker.tools.full_report("codex", "", final) == final
+
+
+def test_claude_report_skips_subagent_messages():
+    block = "VERDICT: FAIL\n- a.py:1 bug -> fix\nROOT: new"
+    final = "VERDICT: PASS. Review finished."
+    for parent in ({}, {"parent_tool_use_id": None}):
+        out = "\n".join(json.dumps(e) for e in (
+            {"type": "assistant", "parent_tool_use_id": "tool-agent-1",
+             "message": {"content": [{"type": "text", "text": block}]}},
+            {"type": "assistant", **parent,
+             "message": {"content": [{"type": "text", "text": final}]}},
+            {"type": "result", "result": final, "usage": {}}))
+        assert omi.worker.tools.assistant_texts("claude", out) == [final]
+        assert omi.worker.tools.full_report("claude", out, final) == final
+
+
 def main():
+    test_codex_capacity_fallback()
+    test_verdict_of_forms()
+    test_full_report_keeps_earlier_block()
+    test_claude_report_skips_subagent_messages()
     test_pr_comment()
     test_worker_cache_tmpfs_and_full_volumes()
     test_download_cache_gitignore()
     test_download_cache_scope()
     test_download_cache_shared_exclude()
+    test_file_plan_refusal()
     test_worker()
+    test_run_role_plan_violation_alone_exits_3()
+    test_session_role_record()
+    test_session_resume()
+    test_record_runs()
     test_container_names()
     test_clip_report()
+    test_report_note_keeps_full_report()
     test_network_allowlist()
     test_prove_exit_and_hosts()
     test_clean_and_old_images()
+    test_clean_per_task_and_running_guard()
 
 
 if __name__ == "__main__":
     main()
+

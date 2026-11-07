@@ -37,10 +37,10 @@ def resolve_effort(effort: str | None, tool: str) -> str:
     return effort
 
 
-# usage/quota stop messages of each CLI, matched only in its own final error events (not in tool output)
+# Usage/quota/capacity stops, matched only in CLI errors (not in tool output).
 QUOTA_PATTERNS = {
     "claude": r"usage limit reached|hit your (usage )?limit|\d+-hour limit reached|weekly limit reached|credit balance is too low",
-    "codex": r"hit your usage limit|usage_limit_reached|insufficient_quota|exceeded your current quota|quota exceeded",
+    "codex": r"hit your usage limit|usage_limit_reached|insufficient_quota|exceeded your current quota|quota exceeded|selected model is at capacity",
 }
 
 
@@ -62,14 +62,29 @@ def error_texts(tool, out):
     return texts
 
 
-def quota_hit(tool, out, rc):
-    return bool(rc) and any(re.search(QUOTA_PATTERNS[tool], t, re.I) for t in error_texts(tool, out))
+def quota_hit(tool: str, out: str, rc: int, err: str = "") -> bool:
+    texts = error_texts(tool, out)
+    if tool == "codex":
+        # Codex can emit this CLI error as plain text, including on stderr.
+        texts += re.findall(r"^ERROR: (Selected model is at capacity)\s*$", (out or "") + "\n" + err, re.I | re.M)
+    return bool(rc) and any(re.search(QUOTA_PATTERNS[tool], t, re.I) for t in texts)
 
 
-def engineer_cmd(agent_text, task_rel, model=None, effort=None, skills=""):
+def resume_prompt(task_rel, hook_tail=None):
+    """Short prompt for a resumed engineer session: the new findings (or the failing post-run hook output) only."""
+    head = f"Task file: {task_rel if task_rel.startswith("/") else "/work/" + task_rel}\nWorktree: /work\n"
+    if hook_tail:
+        return head + f"The post-run hook failed. Fix it, rerun the tests and report as before. Hook output (tail):\n{hook_tail}"
+    return head + ("Fix round: continue your previous session. Read the new findings under `## Checkpoint` in the task file, "
+                   "fix only those, rerun the tests and report as before.")
+
+
+def engineer_cmd(agent_text, task_rel, model=None, effort=None, skills="", resume=None, hook_tail=None):
     m = core.parse(agent_text)
     body = agent_text.split("---", 2)[2].strip() if agent_text.startswith("---") else agent_text
-    return ["claude", "-p", f"Task file: {task_rel if task_rel.startswith("/") else "/work/" + task_rel}\nWorktree: /work{skills}",
+    prompt = resume_prompt(task_rel, hook_tail) if resume else \
+        f"Task file: {task_rel if task_rel.startswith("/") else "/work/" + task_rel}\nWorktree: /work{skills}"
+    return ["claude", "-p", prompt, *(["--resume", resume] if resume else []),
             "--append-system-prompt", body,
             "--model", model or m.get("model", "sonnet"), "--effort", effort or m.get("effort", "medium"),
             # the container is the boundary, not prompts; project hooks (omi guard) cannot run in it
@@ -80,13 +95,15 @@ CODEX_LIMITS = ("Known codex worker limit: deleting files with `rm` may be refus
                 "or `python3 -c \"import os; os.remove(...)\"`.")
 
 
-def codex_cmd(agent_text, task_rel, model, effort, skills=""):
+def codex_cmd(agent_text, task_rel, model, effort, skills="", resume=None, hook_tail=None):
     body = agent_text.split("---", 2)[2].strip() if agent_text.startswith("---") else agent_text
     # the container is the boundary; codex's own sandbox cannot nest in it
     # project_doc_max_bytes=0: codex must not load the Coordinator's AGENTS.md; the role prompt is all it sees
-    return ["codex", "exec", "-c", "project_doc_max_bytes=0", "-m", model,
+    prompt = resume_prompt(task_rel, hook_tail) if resume else \
+        f"{body}\n\nTask file: {task_rel if task_rel.startswith("/") else "/work/" + task_rel}\nWorktree: /work{skills}\n{CODEX_LIMITS}"
+    return ["codex", "exec", *(["resume", resume] if resume else []), "-c", "project_doc_max_bytes=0", "-m", model,
             "-c", f"model_reasoning_effort={effort}",
-            "--dangerously-bypass-approvals-and-sandbox", "--json", f"{body}\n\nTask file: {task_rel if task_rel.startswith("/") else "/work/" + task_rel}\nWorktree: /work{skills}\n{CODEX_LIMITS}"]
+            "--dangerously-bypass-approvals-and-sandbox", "--json", prompt]
 
 
 READERS = ("cat", "sed", "head", "tail", "less", "nl", "rg", "grep")
@@ -225,6 +242,36 @@ def parse_usage(tool, out):
 
 
 def verdict_of(report):
-    """The last `VERDICT: PASS|FAIL` line of a report, or None."""
-    found = re.findall(r"^\W*VERDICT:\W*(PASS|FAIL)", report or "", re.M)
+    """The last `VERDICT|RESULT: PASS|FAIL` line of a report, or None."""
+    found = re.findall(r"^\W*(?:VERDICT|RESULT):\W*(PASS|FAIL)", report or "", re.M)
     return found[-1] if found else None
+
+
+def assistant_texts(tool, out):
+    """Text of each main-agent message in the CLI's event stream, in order (claude `assistant` text blocks without `parent_tool_use_id`, codex `agent_message` items)."""
+    texts = []
+    for line in (out or "").splitlines():
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(e, dict):
+            continue
+        if tool == "claude" and e.get("parent_tool_use_id"):
+            continue
+        if tool == "claude" and e.get("type") == "assistant" and isinstance(e.get("message"), dict):
+            texts += [c["text"] for c in e["message"].get("content") or [] if isinstance(c, dict) and c.get("type") == "text"]
+        elif tool == "codex" and isinstance(e.get("item"), dict) and e["item"].get("type") == "agent_message":
+            texts.append(str(e["item"].get("text") or ""))
+    return texts
+
+
+def full_report(tool, out, result):
+    """A read role's report: the final message, preceded by the last earlier message with a complete block
+    (VERDICT line and closing ROOT line) when the final one is not complete (e.g. "unchanged from the report above")."""
+    def complete(text):
+        return verdict_of(text) is not None and re.search(r"^\W*ROOT:", text, re.M) is not None
+    if not result or complete(result):
+        return result
+    earlier = next((t for t in reversed(assistant_texts(tool, out)) if t != result and complete(t)), None)
+    return f"{earlier}\n\n{result}" if earlier else result

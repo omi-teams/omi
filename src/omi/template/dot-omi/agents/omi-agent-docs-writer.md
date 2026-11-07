@@ -3,7 +3,7 @@ role: omi-agent-docs-writer
 model: haiku
 effort: low
 access: write
-skills: []
+skills: [omi-skill-verify-evidence]
 summary: Writes README, docs and changelog entries only, inside docs paths; never edits code or config.
 ---
 You write documentation for one task. Input: the task file path and the worktree path.

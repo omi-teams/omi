@@ -11,7 +11,7 @@ from ..common import core
 WORKFLOW_TOKENS = 2000  # per workflow file (bytes/4)
 DEFAULT_WORKFLOW = "omi-flow-feature"
 STEP_KEYS = ("id", "role", "skills", "input", "output", "gate", "stop")
-GATES = ("none", "review", "po")
+GATES = ("none", "review", "auto", "po")
 COORDINATOR = "coordinator"  # a step the Coordinator does itself (plan, PO acceptance); no role file
 
 
@@ -104,7 +104,7 @@ def workflows_catalog(root):
         lines.append(f"- {f.stem}: {' '.join(m.get('summary', '').split()) or '(no summary)'} [{order}] [~{core.tokens(f)} tokens]")
     out = Path(root) / ".omi" / "workflows" / "CATALOG.md"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     print(f"wrote {out} ({len(lines) - 3} workflows)")
 
 

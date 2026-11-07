@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Thiết kế TASK-125, chờ PO duyệt.">
+<title>Dự án — omi board mockup</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%230f6e6e'/%3E%3Ccircle cx='12' cy='12' r='5' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E">
+<style>*{box-sizing:border-box}:root{--bg:#f6f6f4;--surface:#ffffff;--fg:#1f2421;--muted:#5f6661;--line:#d3d2cd;--control:#747d77;--accent:#0f6e6e;--track:#e4e8e5;color-scheme:light}@media(prefers-color-scheme:dark){:root{--bg:#191e1c;--surface:#232a26;--fg:#e3e9e5;--muted:#a9b6ad;--line:#58665d;--control:#95a59a;--accent:#78c9c2;--track:#3b4840;color-scheme:dark}}
+body{margin:0;min-height:100dvh;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif;font-variant-numeric:tabular-nums}h1,h2,h3{line-height:1.25;text-wrap:balance;font-weight:600}h1{font-size:28px;letter-spacing:-.025em;margin:8px 0}h2{font-size:19px;margin:0 0 16px}h3{font-size:15px;margin:0 0 8px}p{margin:8px 0;max-width:65ch}a{color:var(--accent);text-underline-offset:3px}a:hover{text-decoration-thickness:2px}button,summary,a{transition:transform 220ms cubic-bezier(.32,.72,0,1),opacity 220ms cubic-bezier(.32,.72,0,1)}button{font:inherit;background:var(--surface);color:var(--fg);border:1px solid var(--control);border-radius:6px;min-height:44px;padding:8px 14px}button:enabled:hover{color:var(--accent)}button:enabled:active{transform:scale(.98)}button:disabled{cursor:wait;color:var(--muted)}:focus-visible,.focus-example{outline:3px solid var(--accent);outline-offset:3px}header{background:var(--surface);border-bottom:1px solid var(--line)}.bar{max-width:1280px;margin:auto;padding:16px 24px;display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px}.brand{font-size:18px;font-weight:600;color:var(--fg);text-decoration:none}.brand b{color:var(--accent)}nav{display:flex;flex-wrap:wrap;gap:12px}.meta{margin-left:auto;font-size:13px;color:var(--muted)}main{max-width:1280px;margin:auto;padding:28px 24px 64px;display:grid;gap:24px;overflow-wrap:anywhere}.skip{position:absolute;top:-100px;left:16px}.skip:focus{top:12px;background:var(--surface);padding:12px;z-index:2}.eyebrow,.muted{color:var(--muted)}.eyebrow{font-size:12px;letter-spacing:.06em}.mono,code{font-family:ui-monospace,'Cascadia Mono',Consolas,monospace;font-size:13px}.heading,.row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}.chips{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.chip{display:inline-block;font-size:12px;font-weight:600;padding:3px 9px;border-radius:5px;vertical-align:middle}.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;min-width:0}.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.stats strong{display:block;font-size:26px;font-weight:600}.stats span{color:var(--muted);font-size:13px}.grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:24px;align-items:start}.stack{display:grid;gap:20px;min-width:0}.tree details{margin-top:8px}.tree summary{min-height:44px;cursor:pointer;padding:8px;border-radius:6px}.tree summary:hover{background:var(--bg)}.tree .children{margin-left:20px;padding-left:12px;border-left:1px solid var(--control)}.tree .leaf{padding:10px 8px;display:grid;gap:6px}.tree a{display:inline-block;min-height:24px}.progress{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;margin:8px 0;font-size:13px}progress{width:100%;height:8px;accent-color:var(--accent)}.board{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.column{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;min-width:0}.card{display:grid;gap:10px;background:var(--surface);border:1px solid var(--control);border-radius:7px;padding:12px;margin-top:12px}.card a{font-weight:600;min-height:24px}.small{font-size:13px}.collapsed{margin-top:16px;padding:8px 0}.collapsed summary{cursor:pointer;min-height:44px;padding:8px 0}.workflow{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:20px}.workflow li{position:relative;padding:12px;border:1px solid var(--control);border-radius:8px;overflow-wrap:anywhere;min-width:0}.workflow .arrow{position:absolute;right:-19px;top:16px;color:var(--muted)}.workflow strong{display:block;font-size:13px}.workflow small{display:block;color:var(--muted);margin-top:6px}.workflow .current{border:2px solid var(--accent);background:var(--bg)}.workflow .complete{background:var(--bg)}.usage{margin:0}.usage>div{padding:12px 0;border-bottom:1px solid var(--line)}dt{font-weight:600}dd{margin:4px 0;overflow-wrap:anywhere}.criteria{padding-left:22px}.criteria li{padding:6px 0}.notice{padding:14px 16px;border-left:4px solid var(--accent);background:var(--surface)}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.6 ui-monospace,monospace;background:var(--bg);padding:12px;border-radius:6px}.skeleton{height:16px;width:80%;background:var(--track);border-radius:4px;margin:14px 0}.skeleton.short{width:50%}.palette{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.palette>div{padding:12px;border:1px solid var(--line);border-radius:8px}.swatch{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}.forced-dark{background:#191e1c;color:#e3e9e5;border-radius:6px;padding:10px}.focus-example{display:inline-block;min-height:44px;padding:10px}.mock-note{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:16px}.phone{max-width:390px;margin:auto;border-inline:1px solid var(--line)}.phone main{padding:20px 16px 40px}.phone .bar{padding:12px 16px}.phone .meta{margin-left:0;width:100%}.phone .stats{grid-template-columns:repeat(2,minmax(0,1fr))}.phone .board,.phone .grid,.phone .palette{grid-template-columns:1fr}.phone .workflow{grid-template-columns:1fr;gap:24px}.phone .workflow .arrow{transform:rotate(90deg);right:auto;left:20px;top:auto;bottom:-24px}.phone .tree .children{margin-left:8px;padding-left:8px}.phone h1{font-size:24px}.phone .panel{padding:16px}@media(max-width:767px){main{padding:20px 16px 40px}.bar{padding:12px 16px}.meta{margin-left:0;width:100%}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.board,.grid,.palette{grid-template-columns:1fr}.workflow{grid-template-columns:1fr;gap:24px}.workflow .arrow{transform:rotate(90deg);right:auto;left:20px;top:auto;bottom:-24px}.tree .children{margin-left:8px;padding-left:8px}h1{font-size:24px}.panel{padding:16px}}@media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important}button:active{transform:none}}
+:root{--planned-fg:#4c5752;--planned-bg:#edf0ee}.planned{color:var(--planned-fg);background:var(--planned-bg)}@media(prefers-color-scheme:dark){:root{--planned-fg:#c2cec7;--planned-bg:#303a34}}:root{--planning-fg:#77521b;--planning-bg:#fff2d9}.planning{color:var(--planning-fg);background:var(--planning-bg)}@media(prefers-color-scheme:dark){:root{--planning-fg:#efd094;--planning-bg:#44351f}}:root{--design-fg:#6e4574;--design-bg:#f7eafa}.design{color:var(--design-fg);background:var(--design-bg)}@media(prefers-color-scheme:dark){:root{--design-fg:#e4bae9;--design-bg:#412b46}}:root{--working-fg:#0f6267;--working-bg:#e2f3f2}.working{color:var(--working-fg);background:var(--working-bg)}@media(prefers-color-scheme:dark){:root{--working-fg:#91d8d5;--working-bg:#193e40}}:root{--review-fg:#77471e;--review-bg:#fff0df}.review{color:var(--review-fg);background:var(--review-bg)}@media(prefers-color-scheme:dark){:root{--review-fg:#f2c495;--review-bg:#46311e}}:root{--qa-fg:#3b598b;--qa-bg:#eaf0ff}.qa{color:var(--qa-fg);background:var(--qa-bg)}@media(prefers-color-scheme:dark){:root{--qa-fg:#b6cdf4;--qa-bg:#273850}}:root{--po-fg:#765510;--po-bg:#fff4ce}.po{color:var(--po-fg);background:var(--po-bg)}@media(prefers-color-scheme:dark){:root{--po-fg:#f1d68a;--po-bg:#42371c}}:root{--blocked-fg:#9b343b;--blocked-bg:#ffebed}.blocked{color:var(--blocked-fg);background:var(--blocked-bg)}@media(prefers-color-scheme:dark){:root{--blocked-fg:#f6b5b9;--blocked-bg:#49292d}}:root{--done-fg:#34633d;--done-bg:#e8f3e6}.done{color:var(--done-fg);background:var(--done-bg)}@media(prefers-color-scheme:dark){:root{--done-fg:#b7dbb1;--done-bg:#2a402b}}:root{--milestone-fg:#77421d;--milestone-bg:#fff0df}.milestone{color:var(--milestone-fg);background:var(--milestone-bg)}@media(prefers-color-scheme:dark){:root{--milestone-fg:#efc39e;--milestone-bg:#46311e}}:root{--epic-fg:#684d7c;--epic-bg:#f1eafa}.epic{color:var(--epic-fg);background:var(--epic-bg)}@media(prefers-color-scheme:dark){:root{--epic-fg:#d8bde9;--epic-bg:#3c2e48}}:root{--fr-fg:#285e83;--fr-bg:#e8f2ff}.fr{color:var(--fr-fg);background:var(--fr-bg)}@media(prefers-color-scheme:dark){:root{--fr-fg:#b3d6f1;--fr-bg:#263b50}}:root{--nfr-fg:#7c4a63;--nfr-bg:#fcebf3}.nfr{color:var(--nfr-fg);background:var(--nfr-bg)}@media(prefers-color-scheme:dark){:root{--nfr-fg:#edbfd6;--nfr-bg:#472e3e}}:root{--task-fg:#3c6250;--task-bg:#e6f3ec}.task{color:var(--task-fg);background:var(--task-bg)}@media(prefers-color-scheme:dark){:root{--task-fg:#b3d8c4;--task-bg:#293f33}}</style>
+</head>
+<body class="">
+<a class="skip" href="#main">Bỏ qua đến nội dung</a>
+<header>
+<div class="bar">
+<a class="brand" href="projects.html">
+<b>◉</b> omi board</a>
+<nav aria-label="Điều hướng">
+<a href="dashboard.html">omi</a>
+<a href="spec.html">Đặc tả &amp; trạng thái</a>
+</nav>
+<span class="meta">origin/main · 11:22 · Dữ liệu minh họa</span>
+</div>
+</header>
+<main id="main" tabindex="-1">
+<div>
+<span class="eyebrow">OMI BOARD</span>
+<h1>Dự án</h1>
+<p class="muted">1 dự án · 0 việc chờ PO</p>
+</div>
+<section class="panel">
+<h2>omi</h2>
+<p class="mono muted">origin/main</p>
+<p>PLAN-007 · Board v2</p>
+<div class="progress">
+<progress value="2" max="4" aria-label="2/4 task lá đã xong">
+</progress>
+<span>2/4 xong</span>
+</div>
+<div class="chips">
+<span class="chip design">Thiết kế · 1</span>
+<span class="chip blocked">Bị chặn · 1</span>
+<span class="chip done">Xong · 2</span>
+</div>
+<p>
+<a href="dashboard.html">Mở dự án omi →</a>
+</p>
+</section>
+<footer class="mock-note">Mockup TASK-125 · Chờ PO duyệt trước build. Nội dung mẫu; nút làm mới không gọi API.</footer>
+</main>
+</body>
+</html>

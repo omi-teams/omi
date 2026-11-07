@@ -1,0 +1,32 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mockup TASK-130 — một cảnh báo</title><style>
+:root{--bg:#f6f6f4;--fg:#1f2421;--surface:#fff;--line:#e4e3df;--divider:#f0efeb;--muted:#5f6661;--accent:#0f6e6e;--accent-hover:#0a5252;--border:#d3d2cd;--warn-fg:#8a4b06;--warn-bg:#fff4e5;--warn-line:#e8c79a;--chip:#efeeea;--chip-text:#3e4541;--po:#e8f2f1;--po-border:#bcd9d6;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root{--bg:#191e1c;--fg:#e3e9e5;--surface:#232a26;--line:#3b443e;--divider:#303c34;--muted:#a9b6ad;--accent:#78c9c2;--accent-hover:#a1e1db;--border:#58665d;--warn-fg:#f4c68c;--warn-bg:#48351f;--warn-line:#7a5a2e;--chip:#354139;--chip-text:#d3dfd6;--po:#203c37;--po-border:#41665c}}
+*{box-sizing:border-box}
+body{margin:0;min-height:100dvh;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;font-variant-numeric:tabular-nums}
+a{color:var(--accent);text-decoration:none}a:hover{color:var(--accent-hover);text-decoration:underline}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.mono{font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;font-size:12.5px}
+.top{background:var(--surface);border-bottom:1px solid var(--line)}
+.bar{max-width:1200px;margin:0 auto;padding:10px 24px;display:flex;align-items:center;gap:24px;font-weight:650}
+.wrap{max-width:1200px;margin:0 auto;padding:28px 24px 48px;display:flex;flex-direction:column;gap:20px}
+h1{font-size:26px;line-height:1.2;margin:0;letter-spacing:-.01em;text-wrap:balance}
+h2{font-size:15px;margin:0;font-weight:650}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px;display:flex;flex-direction:column;gap:14px}
+.muted{color:var(--muted)}.small{font-size:13px}
+.ph{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;background:var(--chip);color:var(--chip-text);font-size:12.5px;font-weight:550;white-space:nowrap}
+.chip.warn{background:var(--warn-bg);color:var(--warn-fg)}
+.health{background:var(--warn-bg);border:1px solid var(--warn-line);border-radius:10px;padding:16px 20px;display:flex;flex-direction:column;gap:10px}
+.health h2{color:var(--warn-fg)}
+.health ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.alert{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 14px;align-items:start;background:var(--surface);border:1px solid var(--warn-line);border-left:4px solid var(--warn-fg);border-radius:8px;padding:10px 14px;overflow-wrap:anywhere}
+.alert .who{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}
+.alert .why{grid-column:1/-1;margin:0}
+.alert .do{grid-column:1/-1;margin:0;color:var(--muted);font-size:14px}
+.alert .do b{color:var(--fg);font-weight:600}
+.alert .go{align-self:center;white-space:nowrap;display:inline-flex;align-items:center;min-height:24px}
+.po{background:var(--po);border:1px solid var(--po-border);border-radius:10px;padding:16px 20px;display:flex;flex-direction:column;gap:10px}
+.empty{font-size:13px;color:var(--muted);margin:0}
+.note{max-width:1200px;margin:0 auto;padding:12px 24px;font-size:13px;color:var(--muted)}
+@media (max-width:767px){.bar{padding:8px 16px}.wrap{padding:20px 16px 40px;gap:16px}h1{font-size:24px}.health{padding:14px}.alert{grid-template-columns:minmax(0,1fr)}.alert .go{min-height:44px}.po{padding:14px}}
+</style></head><body><a class="skip" href="#main" style="position:absolute;left:-9999px">Bỏ qua đến nội dung</a><header class="top"><div class="bar"><span>omi board</span><a href="#/inbox">Hộp thư PO 0</a></div></header><main id="main" class="wrap"><div><h1>omi</h1><span class="muted small mono">origin/main</span></div><section class="health" aria-labelledby="health-h"><div class="ph"><h2 id="health-h">Cảnh báo sức khỏe (1)</h2><span class="muted small">Việc có dấu hiệu bị kẹt</span></div><ul><li class="alert"><div class="who"><a class="mono" href="#/p/omi/t/TASK-118"><strong>TASK-118</strong></a><span><strong>Bộ lọc theo nhãn</strong></span><span class="chip warn"><span aria-hidden="true">⚠</span> Không hoạt động</span></div><a class="go small" href="#/p/omi/t/TASK-118">Xem task →</a><p class="why">Đang làm nhưng 5 ngày chưa có Steps hay commit mới (ngưỡng: 3 ngày).</p><p class="do"><b>Việc nên làm:</b> Hỏi agent phụ trách, hoặc chuyển task về chưa bắt đầu.</p></li></ul></section><section class="po"><div class="ph"><h2>Chờ PO (0)</h2></div><p class="empty">Không có việc chờ PO.</p></section><section class="panel"><div class="ph"><h2>Kế hoạch</h2></div><p class="empty">(phần còn lại của dashboard giữ nguyên)</p></section></main><p class="note">Mockup: một cảnh báo</p></body></html>

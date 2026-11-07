@@ -1,3 +1,5 @@
+import hashlib
+import os
 import io
 import json
 import contextlib
@@ -30,7 +32,7 @@ def test_install_user():
         assert len(config["hooks"]["SessionStart"]) == 2
         assert settings.with_name("settings.json.omi-bak").read_bytes() == original
         text = agents.read_text(encoding="utf-8")
-        assert text.count("<!-- omi -->") == 1 and omi.setup.install.coordinator_rules().rstrip() in text
+        assert text.count("<!-- omi -->") == 1 and "python -m omi session-start" in text and "Approve" not in text
         for source in (omi.common.core.TEMPLATE / "dot-claude/skills").rglob("*"):
             if source.is_file():
                 assert (home / ".claude/skills" / source.relative_to(omi.common.core.TEMPLATE / "dot-claude/skills")).read_bytes() == source.read_bytes()
@@ -51,6 +53,8 @@ def test_install_user_removal_preserves_edits():
         config = json.loads(settings.read_text(encoding="utf-8"))
         config["new"] = True
         config["hooks"]["SessionStart"].append({"hooks": []})
+        user_guard = {"matcher": "Write", "hooks": [{"type": "command", "command": "echo user"}]}
+        config["hooks"]["PreToolUse"].append(user_guard)
         settings.write_text(json.dumps(config), encoding="utf-8")
         agents = home / ".codex/AGENTS.md"
         agents.write_text(agents.read_text(encoding="utf-8") + "\nUser addition", encoding="utf-8")
@@ -65,7 +69,8 @@ def test_install_user_removal_preserves_edits():
         with contextlib.redirect_stdout(io.StringIO()):
             omi.setup.install.install_user(remove=True)
         assert skill.read_text(encoding="utf-8") == "edited"
-        assert json.loads(settings.read_text(encoding="utf-8")) == {"new": True, "hooks": {"SessionStart": [{"hooks": []}]}}
+        assert json.loads(settings.read_text(encoding="utf-8")) == {
+            "new": True, "hooks": {"SessionStart": [{"hooks": []}], "PreToolUse": [user_guard]}}
         assert agents.read_text(encoding="utf-8") == "\nUser addition"
     with tempfile.TemporaryDirectory() as d, patch("pathlib.Path.home", return_value=Path(d)):
         with contextlib.redirect_stdout(io.StringIO()):
@@ -89,7 +94,7 @@ def test_install_user_existing_integration():
         agents.write_text(before, encoding="utf-8")
         with contextlib.redirect_stdout(io.StringIO()):
             omi.setup.install.install_user()
-            with patch("omi.setup.install.coordinator_rules", return_value="Updated rules"):
+            with patch("omi.setup.install.codex_instructions", return_value="Updated rules"):
                 omi.setup.install.install_user()
             assert agents.read_text(encoding="utf-8") == "Before\n<!-- omi -->\nUpdated rules\n<!-- /omi -->\nAfter"
             omi.setup.install.install_user(remove=True)
@@ -102,7 +107,8 @@ def test_install_user_invalid_input():
         home = Path(d)
         settings = home / ".claude/settings.json"
         settings.parent.mkdir()
-        for bad in ("{", "[]", '{"hooks":[]}', '{"hooks":{"SessionStart":{}}}'):
+        for bad in ("{", "[]", '{"hooks":[]}', '{"hooks":{"SessionStart":{}}}',
+                    '{"hooks":{"PreToolUse":{}}}'):
             settings.write_text(bad, encoding="utf-8")
             try:
                 omi.setup.install.install_user()
@@ -137,6 +143,8 @@ def test_install_user_recorded_interpreter():
                 manifest = json.loads((home / ".omi/install-user.json").read_text(encoding="utf-8"))
                 hook = manifest["hook"]
                 assert hook["hooks"][0]["command"] == quoted + " -m omi session-start"
+                assert manifest["guard_hook"] == {"matcher": "Edit|Write|MultiEdit|NotebookEdit",
+                    "hooks": [{"type": "command", "command": quoted + " -m omi guard"}]}
                 snapshot = {p.relative_to(home): p.read_bytes() for p in home.rglob("*") if p.is_file()}
                 with patch("omi.setup.install.sys.executable", "/another/python"):
                     omi.setup.install.install_user()
@@ -153,13 +161,20 @@ def test_install_user_legacy_manifest():
             manifest = home / ".omi/install-user.json"
             record = json.loads(manifest.read_text(encoding="utf-8"))
             del record["hook"]
+            for key in ("guard_hook", "guard_added", "pretool_created"):
+                del record[key]
             manifest.write_text(json.dumps(record), encoding="utf-8")
             settings = home / ".claude/settings.json"
             settings.write_text(json.dumps({"hooks": {"SessionStart": [omi.setup.install.LEGACY_HOOK]}}), encoding="utf-8")
+            before_upgrade = settings.read_bytes()
             omi.setup.install.install_user()
             assert json.loads(settings.read_text(encoding="utf-8"))["hooks"]["SessionStart"] == [omi.setup.install.LEGACY_HOOK]
+            assert json.loads(settings.read_text(encoding="utf-8"))["hooks"]["PreToolUse"] == [omi.setup.install.GUARD_HOOK]
             omi.setup.install.install_user(remove=True)
-        assert not list(home.iterdir())
+        # The upgrade backup differs from the original manifest snapshot; keep it.
+        backup = settings.with_name("settings.json.omi-bak")
+        assert backup.read_bytes() == before_upgrade
+        assert [p for p in home.rglob("*") if p.is_file()] == [backup]
 
 
 def test_install_user_write_failure():
@@ -208,6 +223,8 @@ def test_install_user_invalid_manifest_cli():
                 "settings_before": ["!!!notbase64", 42, "W10=", "e30=\n", "////"],
                 "directories": [[None], [42], ["../escape"]],
                 "hook": [[], {"hooks": [None]}, {"hooks": [{"type": "command", "command": 1}]}],
+                "guard_hook": [[], {"hooks": []}, {**omi.setup.install.GUARD_HOOK, "matcher": "Write"}],
+                "guard_added": [1], "pretool_created": [None],
                 "skills": [{".claude/skills/x": {"sha256": "bad", "before": None}}],
                 "hook_added": [1]}.items():
             cases.extend((None, field, value) for value in bad_values)
@@ -219,6 +236,10 @@ def test_install_user_invalid_manifest_cli():
         record = json.loads(valid)
         del record["skills"][skill]["before"]
         cases.append((record, None, None))
+        for key in ("guard_hook", "guard_added", "pretool_created"):
+            record = json.loads(valid)
+            del record[key]
+            cases.append((record, None, None))
         for record, field, value in cases:
             if record is None:
                 record = json.loads(valid)
@@ -241,7 +262,237 @@ def test_install_user_invalid_manifest_cli():
                 assert snapshot == {p.relative_to(home): p.read_bytes() for p in home.rglob("*") if p.is_file()}
 
 
+def test_install_user_guard_fresh():
+    with tempfile.TemporaryDirectory() as d, patch("pathlib.Path.home", return_value=Path(d)):
+        home = Path(d)
+        output = io.StringIO()
+        output.reconfigure = lambda **kw: None
+        with contextlib.redirect_stdout(output):
+            omi.main(["install-user"])
+            settings = home / ".claude/settings.json"
+            config = json.loads(settings.read_text(encoding="utf-8"))
+            assert config["hooks"]["PreToolUse"] == [omi.setup.install.GUARD_HOOK]
+            record = json.loads((home / ".omi/install-user.json").read_text(encoding="utf-8"))
+            assert record["guard_hook"] == omi.setup.install.GUARD_HOOK
+            assert record["guard_added"] is True and record["pretool_created"] is True
+            snapshot = {p.relative_to(home): p.read_bytes() for p in home.rglob("*") if p.is_file()}
+            omi.main(["install-user"])
+            assert snapshot == {p.relative_to(home): p.read_bytes() for p in home.rglob("*") if p.is_file()}
+            omi.main(["install-user", "--remove"])
+        assert not list(home.iterdir())
+
+
+def test_install_user_guard_existing_hooks():
+    guard = omi.setup.install.GUARD_HOOK
+    user_hook = {"matcher": "Read|Write", "hooks": [{"type": "command", "command": "echo user"}]}
+    for entries in ([], [user_hook], [user_hook, guard]):
+        with tempfile.TemporaryDirectory() as d, patch("pathlib.Path.home", return_value=Path(d)):
+            home = Path(d)
+            settings = home / ".claude/settings.json"
+            settings.parent.mkdir()
+            original = json.dumps({"hooks": {"SessionStart": [omi.setup.install.HOOK],
+                                            "PreToolUse": entries, "Stop": []}}).encode("utf-8") + b"\r\n"
+            settings.write_bytes(original)
+            backup = settings.with_name("settings.json.omi-bak")
+            with contextlib.redirect_stdout(io.StringIO()):
+                omi.setup.install.install_user()
+                omi.setup.install.install_user()
+                record = json.loads((home / ".omi/install-user.json").read_text(encoding="utf-8"))
+                assert record["guard_added"] is (guard not in entries)
+                assert record["pretool_created"] is False
+                config = json.loads(settings.read_text(encoding="utf-8"))
+                assert config["hooks"]["PreToolUse"] == (entries if guard in entries else [*entries, guard])
+                assert config["hooks"]["Stop"] == []
+                assert backup.exists() is (guard not in entries)
+                if backup.exists():
+                    assert backup.read_bytes() == original
+                omi.setup.install.install_user(remove=True)
+            assert settings.read_bytes() == original
+            assert not backup.exists()
+
+
+def test_install_user_guard_malformed_pretool():
+    for bad in ({}, None, "Write", 1):
+        with tempfile.TemporaryDirectory() as d, patch("pathlib.Path.home", return_value=Path(d)):
+            home = Path(d)
+            with contextlib.redirect_stdout(io.StringIO()):
+                omi.setup.install.install_user()
+            settings = home / ".claude/settings.json"
+            config = json.loads(settings.read_text(encoding="utf-8"))
+            config["hooks"]["PreToolUse"] = bad
+            settings.write_text(json.dumps(config), encoding="utf-8")
+            snapshot = {p.relative_to(home): p.read_bytes() for p in home.rglob("*") if p.is_file()}
+            for remove in (False, True):
+                try:
+                    omi.setup.install.install_user(remove=remove)
+                except omi.state.resolve.StateError as exc:
+                    assert str(exc) == f"{settings}: expected hooks object and PreToolUse list"
+                else:
+                    raise AssertionError(f"accepted malformed PreToolUse: {bad}")
+                assert snapshot == {p.relative_to(home): p.read_bytes() for p in home.rglob("*") if p.is_file()}
+
+
+def test_install_user_accepts_template_equal_skill_and_status_warns():
+    with tempfile.TemporaryDirectory() as d, patch("pathlib.Path.home", return_value=Path(d)):
+        home = Path(d)
+        install = omi.setup.install
+        assert install.stale_user_integration() == []
+        with contextlib.redirect_stdout(io.StringIO()):
+            install.install_user()
+        assert install.stale_user_integration() == []
+        skill = home / ".claude/skills/omi-task/SKILL.md"
+        template = skill.read_bytes()
+        skill.write_bytes(b"old template")
+        agents = home / ".codex/AGENTS.md"
+        agents.write_text("My rules\n" + agents.read_text(encoding="utf-8").replace("session-start", "old"), encoding="utf-8")
+        stale = install.stale_user_integration()
+        assert ".claude/skills/omi-task/SKILL.md" in stale and ".codex/AGENTS.md" in stale
+        # a copy equal to the current template is not "modified": reinstall updates the record
+        skill.write_bytes(template)
+        with contextlib.redirect_stdout(io.StringIO()):
+            install.install_user()
+        record = json.loads((home / ".omi/install-user.json").read_text(encoding="utf-8"))
+        assert record["skills"][str(Path(".claude/skills/omi-task/SKILL.md"))]["sha256"] == omi.setup.install.hashlib.sha256(template).hexdigest()
+        assert install.stale_user_integration() == []
+        assert agents.read_text(encoding="utf-8").startswith("My rules\n")
+        with contextlib.redirect_stdout(io.StringIO()):
+            install.install_user(remove=True)
+        assert agents.read_text(encoding="utf-8") == "My rules\n"
+
+
+def test_install_user_updates_released_template():
+    with tempfile.TemporaryDirectory() as d, patch("pathlib.Path.home", return_value=Path(d)):
+        home = Path(d)
+        rel = ".claude/skills/omi-task/SKILL.md"
+        with contextlib.redirect_stdout(io.StringIO()):
+            omi.setup.install.install_user()
+            skill = home / rel
+            current = skill.read_bytes()
+            old = b"older shipped skill"
+            skill.write_bytes(old)
+            released = {rel: {omi.setup.upgrade.norm_sha(old)}}
+            with patch("omi.setup.upgrade.released_shas", return_value=released):
+                omi.setup.install.install_user()
+            assert skill.read_bytes() == current
+            skill.write_bytes(b"hand edited")
+            with patch("omi.setup.upgrade.released_shas", return_value=released):
+                try:
+                    omi.setup.install.install_user()
+                except omi.state.resolve.StateError as exc:
+                    assert "modified installed skill" in str(exc)
+                else:
+                    raise AssertionError("overwrote edited skill")
+            assert skill.read_bytes() == b"hand edited"
+
+
+def test_install_user_record_matches_files_after_failed_upgrade():
+    with tempfile.TemporaryDirectory() as d, patch("pathlib.Path.home", return_value=Path(d)):
+        home = Path(d)
+        payloads = omi.setup.install._skill_payloads()
+        rels = list(payloads)
+        v1 = {rel: b"v1 " + rel.encode() for rel in rels}
+        v2 = {rel: b"v2 " + rel.encode() for rel in rels}
+        with contextlib.redirect_stdout(io.StringIO()):
+            with patch("omi.setup.install._skill_payloads", return_value=v1):
+                omi.setup.install.install_user()
+            write = omi.setup.install._write
+            skills = [home / rel for rel in rels]
+            state = {"n": 0}
+
+            def failing_write(path, data):
+                if path in skills:
+                    state["n"] += 1
+                    if state["n"] == 2:
+                        raise OSError("injected write failure")
+                write(path, data)
+
+            with patch("omi.setup.install._skill_payloads", return_value=v2), \
+                    patch("omi.setup.install._write", side_effect=failing_write):
+                try:
+                    omi.setup.install.install_user()
+                except OSError:
+                    pass
+                else:
+                    raise AssertionError("write failure was not injected")
+            record = json.loads((home / ".omi/install-user.json").read_text(encoding="utf-8"))
+            for rel in rels:
+                assert record["skills"][rel]["sha256"] == hashlib.sha256((home / rel).read_bytes()).hexdigest()
+            with patch("omi.setup.install._skill_payloads", return_value=v2):
+                omi.setup.install.install_user()
+            assert all((home / rel).read_bytes() == v2[rel] for rel in rels)
+
+
+def test_install_user_accepts_unreleased_task160_skill():
+    rel = ".claude/skills/omi-task/SKILL.md"
+    sha = "fc63de3755ac4cf4002c1e98bd6c712967e32df1f83cb7fd8686e43c0c248709"
+    assert sha in omi.setup.install.UNRELEASED_SKILL_SHAS[rel]
+    with tempfile.TemporaryDirectory() as d, patch("pathlib.Path.home", return_value=Path(d)):
+        home = Path(d)
+        old = b"stand-in for the TASK-160 bytes"  # The original bytes are not in this checkout.
+        with contextlib.redirect_stdout(io.StringIO()):
+            omi.setup.install.install_user()
+            current = (home / rel).read_bytes()
+            (home / rel).write_bytes(old)
+            record = json.loads((home / ".omi/install-user.json").read_text(encoding="utf-8"))
+            key = next(k for k in record["skills"] if Path(k).as_posix() == rel)  # OS separators on Windows.
+            record["skills"][key]["sha256"] = "0" * 64  # The drifted record of the report.
+            (home / ".omi/install-user.json").write_text(json.dumps(record), encoding="utf-8")
+            known = {rel: {omi.setup.upgrade.norm_sha(old)}}
+            with patch("omi.setup.install.UNRELEASED_SKILL_SHAS", known):
+                omi.setup.install.install_user()
+        assert (home / rel).read_bytes() == current
+
+
+def test_install_user_interrupted_skill_write_is_recoverable():
+    for window in ("before-replace", "before-manifest-update"):
+        with tempfile.TemporaryDirectory() as d, patch("pathlib.Path.home", return_value=Path(d)):
+            home = Path(d)
+            rels = list(omi.setup.install._skill_payloads())
+            v1 = {rel: b"v1 " + rel.encode() for rel in rels}
+            v2 = {rel: b"v2 " + rel.encode() for rel in rels}
+            with contextlib.redirect_stdout(io.StringIO()):
+                with patch("omi.setup.install._skill_payloads", return_value=v1):
+                    omi.setup.install.install_user()
+                manifest = home / ".omi/install-user.json"
+                first = home / rels[0]
+                replace, write = os.replace, omi.setup.install._write
+                seen = {"skill": False}
+
+                def failing_replace(src, dst):
+                    if Path(dst) == first:
+                        raise OSError("injected replace failure")
+                    replace(src, dst)
+
+                def failing_write(path, data):
+                    if seen["skill"] and path == manifest:
+                        raise OSError("injected manifest failure")
+                    write(path, data)
+                    seen["skill"] = seen["skill"] or path == first
+
+                patches = [patch("omi.setup.install._skill_payloads", return_value=v2)]
+                patches.append(patch("os.replace", side_effect=failing_replace) if window == "before-replace"
+                               else patch("omi.setup.install._write", side_effect=failing_write))
+                with patches[0], patches[1]:
+                    try:
+                        omi.setup.install.install_user()
+                    except OSError:
+                        pass
+                    else:
+                        raise AssertionError("failure was not injected")
+                assert not list(home.rglob("*.omi-tmp")), "temp file left behind"
+                assert (first.read_bytes() == v1[rels[0]]) == (window == "before-replace")
+                with patch("omi.setup.install._skill_payloads", return_value=v2):
+                    omi.setup.install.install_user()
+                assert all((home / rel).read_bytes() == v2[rel] for rel in rels)
+                record = json.loads(manifest.read_text(encoding="utf-8"))
+                assert all(item["sha256"] == hashlib.sha256(v2[rel]).hexdigest() and "pending" not in item
+                           for rel, item in record["skills"].items())
+
+
 def main():
+    test_install_user_guard_fresh()
+    test_install_user_guard_existing_hooks()
+    test_install_user_guard_malformed_pretool()
     test_install_user_recorded_interpreter()
     test_install_user_legacy_manifest()
     test_install_user_write_failure()
@@ -250,6 +501,15 @@ def main():
     test_install_user_removal_preserves_edits()
     test_install_user_invalid_input()
     test_install_user_existing_integration()
+    test_install_user_accepts_template_equal_skill_and_status_warns()
+    test_install_user_updates_released_template()
+    test_install_user_accepts_unreleased_task160_skill()
+    test_install_user_record_matches_files_after_failed_upgrade()
+    test_install_user_interrupted_skill_write_is_recoverable()
+
+
+if __name__ == "__main__":
+    main()
 
 
 if __name__ == "__main__":

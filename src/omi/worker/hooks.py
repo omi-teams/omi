@@ -14,7 +14,22 @@ from ..project import tasks
 
 
 HOOK_EVENTS = ("pre-run", "post-run", "pre-merge")
+OMI_MOUNT = "/opt/omi"  # host dir holding the stdlib-only omi package, mounted ro so hooks can run `python3 -m omi`
 HOOK_RUNNERS = {".sh": ["sh", "-s"], ".py": ["python3", "-"]}
+
+
+def git_env(wt):
+    """Mount and env that make git work in a container when the worktree's .git file points to a host path:
+    (main .git dir to mount ro at /gitdir, env pairs), or None for a normal checkout.
+    OMI_GIT_DIR, not GIT_DIR: the hook script exports GIT_DIR=$OMI_GIT_DIR GIT_WORK_TREE=/work only around the git-using command,
+    since a global GIT_DIR would break the temp repos its test suite creates."""
+    dotgit = Path(wt) / ".git"
+    text = dotgit.read_text(encoding="utf-8").strip() if dotgit.is_file() else ""
+    gitdir = Path(text.removeprefix("gitdir:").strip()) if text.startswith("gitdir:") else None
+    if not gitdir or gitdir.parent.name != "worktrees":
+        return None
+    return str(gitdir.parents[1]), (f"OMI_GIT_DIR=/gitdir/worktrees/{gitdir.name}",
+                                    "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=safe.directory", "GIT_CONFIG_VALUE_0=*")
 
 
 def run_hook(wt, main, event, tid, image):
@@ -31,9 +46,11 @@ def run_hook(wt, main, event, tid, image):
     env = dict(os.environ)
     env.pop(creds.TOKEN_ENV, None)
     name = docker.container_name(docker.repo_label(main), f"hook-{event}", tid)
-    argv = docker.worker_argv(wt, image, HOOK_RUNNERS[script.suffix], name, docker.repo_label(main), docker.worker_labels(f"hook-{event}", tid, None, None),
-                       ro=True, env_names=("OMI_PROJECT_STATE=/state",) if project.detached else (), offline=True,
-                       mounts=[f"{project.state}:/state"] if project.detached else (),
+    git_mount, git_vars = git_env(wt) or (None, ())
+    argv = docker.worker_argv(wt, image, HOOK_RUNNERS[script.suffix], name, docker.repo_key(main), docker.worker_labels(f"hook-{event}", tid, None, None),
+                       ro=True, env_names=(f"PYTHONPATH={OMI_MOUNT}", *(("OMI_PROJECT_STATE=/state",) if project.detached else ()), *git_vars), offline=True,
+                       mounts=[f"{Path(__file__).parents[1]}:{OMI_MOUNT}/omi", *([f"{project.state}:/state"] if project.detached else []),
+                               *([f"{git_mount}:/gitdir"] if git_mount else [])],
                        **docker.worker_sizes(main))
     cfg = Path(main) / ".omi" / "config.json"
     limit = (json.loads(cfg.read_text(encoding="utf-8")) if cfg.exists() else {}).get("hook_timeout", 600)

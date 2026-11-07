@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Thiết kế TASK-125, chờ PO duyệt.">
+<title>Đặc tả và trạng thái — omi board mockup</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%230f6e6e'/%3E%3Ccircle cx='12' cy='12' r='5' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E">
+<style>*{box-sizing:border-box}:root{--bg:#f6f6f4;--surface:#ffffff;--fg:#1f2421;--muted:#5f6661;--line:#d3d2cd;--control:#747d77;--accent:#0f6e6e;--track:#e4e8e5;color-scheme:light}@media(prefers-color-scheme:dark){:root{--bg:#191e1c;--surface:#232a26;--fg:#e3e9e5;--muted:#a9b6ad;--line:#58665d;--control:#95a59a;--accent:#78c9c2;--track:#3b4840;color-scheme:dark}}
+body{margin:0;min-height:100dvh;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif;font-variant-numeric:tabular-nums}h1,h2,h3{line-height:1.25;text-wrap:balance;font-weight:600}h1{font-size:28px;letter-spacing:-.025em;margin:8px 0}h2{font-size:19px;margin:0 0 16px}h3{font-size:15px;margin:0 0 8px}p{margin:8px 0;max-width:65ch}a{color:var(--accent);text-underline-offset:3px}a:hover{text-decoration-thickness:2px}button,summary,a{transition:transform 220ms cubic-bezier(.32,.72,0,1),opacity 220ms cubic-bezier(.32,.72,0,1)}button{font:inherit;background:var(--surface);color:var(--fg);border:1px solid var(--control);border-radius:6px;min-height:44px;padding:8px 14px}button:enabled:hover{color:var(--accent)}button:enabled:active{transform:scale(.98)}button:disabled{cursor:wait;color:var(--muted)}:focus-visible,.focus-example{outline:3px solid var(--accent);outline-offset:3px}header{background:var(--surface);border-bottom:1px solid var(--line)}.bar{max-width:1280px;margin:auto;padding:16px 24px;display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px}.brand{font-size:18px;font-weight:600;color:var(--fg);text-decoration:none}.brand b{color:var(--accent)}nav{display:flex;flex-wrap:wrap;gap:12px}.meta{margin-left:auto;font-size:13px;color:var(--muted)}main{max-width:1280px;margin:auto;padding:28px 24px 64px;display:grid;gap:24px;overflow-wrap:anywhere}.skip{position:absolute;top:-100px;left:16px}.skip:focus{top:12px;background:var(--surface);padding:12px;z-index:2}.eyebrow,.muted{color:var(--muted)}.eyebrow{font-size:12px;letter-spacing:.06em}.mono,code{font-family:ui-monospace,'Cascadia Mono',Consolas,monospace;font-size:13px}.heading,.row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px}.chips{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.chip{display:inline-block;font-size:12px;font-weight:600;padding:3px 9px;border-radius:5px;vertical-align:middle}.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;min-width:0}.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.stats strong{display:block;font-size:26px;font-weight:600}.stats span{color:var(--muted);font-size:13px}.grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:24px;align-items:start}.stack{display:grid;gap:20px;min-width:0}.tree details{margin-top:8px}.tree summary{min-height:44px;cursor:pointer;padding:8px;border-radius:6px}.tree summary:hover{background:var(--bg)}.tree .children{margin-left:20px;padding-left:12px;border-left:1px solid var(--control)}.tree .leaf{padding:10px 8px;display:grid;gap:6px}.tree a{display:inline-block;min-height:24px}.progress{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;margin:8px 0;font-size:13px}progress{width:100%;height:8px;accent-color:var(--accent)}.board{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.column{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;min-width:0}.card{display:grid;gap:10px;background:var(--surface);border:1px solid var(--control);border-radius:7px;padding:12px;margin-top:12px}.card a{font-weight:600;min-height:24px}.small{font-size:13px}.collapsed{margin-top:16px;padding:8px 0}.collapsed summary{cursor:pointer;min-height:44px;padding:8px 0}.workflow{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:20px}.workflow li{position:relative;padding:12px;border:1px solid var(--control);border-radius:8px;overflow-wrap:anywhere;min-width:0}.workflow .arrow{position:absolute;right:-19px;top:16px;color:var(--muted)}.workflow strong{display:block;font-size:13px}.workflow small{display:block;color:var(--muted);margin-top:6px}.workflow .current{border:2px solid var(--accent);background:var(--bg)}.workflow .complete{background:var(--bg)}.usage{margin:0}.usage>div{padding:12px 0;border-bottom:1px solid var(--line)}dt{font-weight:600}dd{margin:4px 0;overflow-wrap:anywhere}.criteria{padding-left:22px}.criteria li{padding:6px 0}.notice{padding:14px 16px;border-left:4px solid var(--accent);background:var(--surface)}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.6 ui-monospace,monospace;background:var(--bg);padding:12px;border-radius:6px}.skeleton{height:16px;width:80%;background:var(--track);border-radius:4px;margin:14px 0}.skeleton.short{width:50%}.palette{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.palette>div{padding:12px;border:1px solid var(--line);border-radius:8px}.swatch{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}.forced-dark{background:#191e1c;color:#e3e9e5;border-radius:6px;padding:10px}.focus-example{display:inline-block;min-height:44px;padding:10px}.mock-note{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:16px}.phone{max-width:390px;margin:auto;border-inline:1px solid var(--line)}.phone main{padding:20px 16px 40px}.phone .bar{padding:12px 16px}.phone .meta{margin-left:0;width:100%}.phone .stats{grid-template-columns:repeat(2,minmax(0,1fr))}.phone .board,.phone .grid,.phone .palette{grid-template-columns:1fr}.phone .workflow{grid-template-columns:1fr;gap:24px}.phone .workflow .arrow{transform:rotate(90deg);right:auto;left:20px;top:auto;bottom:-24px}.phone .tree .children{margin-left:8px;padding-left:8px}.phone h1{font-size:24px}.phone .panel{padding:16px}@media(max-width:767px){main{padding:20px 16px 40px}.bar{padding:12px 16px}.meta{margin-left:0;width:100%}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.board,.grid,.palette{grid-template-columns:1fr}.workflow{grid-template-columns:1fr;gap:24px}.workflow .arrow{transform:rotate(90deg);right:auto;left:20px;top:auto;bottom:-24px}.tree .children{margin-left:8px;padding-left:8px}h1{font-size:24px}.panel{padding:16px}}@media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important}button:active{transform:none}}
+:root{--planned-fg:#4c5752;--planned-bg:#edf0ee}.planned{color:var(--planned-fg);background:var(--planned-bg)}@media(prefers-color-scheme:dark){:root{--planned-fg:#c2cec7;--planned-bg:#303a34}}:root{--planning-fg:#77521b;--planning-bg:#fff2d9}.planning{color:var(--planning-fg);background:var(--planning-bg)}@media(prefers-color-scheme:dark){:root{--planning-fg:#efd094;--planning-bg:#44351f}}:root{--design-fg:#6e4574;--design-bg:#f7eafa}.design{color:var(--design-fg);background:var(--design-bg)}@media(prefers-color-scheme:dark){:root{--design-fg:#e4bae9;--design-bg:#412b46}}:root{--working-fg:#0f6267;--working-bg:#e2f3f2}.working{color:var(--working-fg);background:var(--working-bg)}@media(prefers-color-scheme:dark){:root{--working-fg:#91d8d5;--working-bg:#193e40}}:root{--review-fg:#77471e;--review-bg:#fff0df}.review{color:var(--review-fg);background:var(--review-bg)}@media(prefers-color-scheme:dark){:root{--review-fg:#f2c495;--review-bg:#46311e}}:root{--qa-fg:#3b598b;--qa-bg:#eaf0ff}.qa{color:var(--qa-fg);background:var(--qa-bg)}@media(prefers-color-scheme:dark){:root{--qa-fg:#b6cdf4;--qa-bg:#273850}}:root{--po-fg:#765510;--po-bg:#fff4ce}.po{color:var(--po-fg);background:var(--po-bg)}@media(prefers-color-scheme:dark){:root{--po-fg:#f1d68a;--po-bg:#42371c}}:root{--blocked-fg:#9b343b;--blocked-bg:#ffebed}.blocked{color:var(--blocked-fg);background:var(--blocked-bg)}@media(prefers-color-scheme:dark){:root{--blocked-fg:#f6b5b9;--blocked-bg:#49292d}}:root{--done-fg:#34633d;--done-bg:#e8f3e6}.done{color:var(--done-fg);background:var(--done-bg)}@media(prefers-color-scheme:dark){:root{--done-fg:#b7dbb1;--done-bg:#2a402b}}:root{--milestone-fg:#77421d;--milestone-bg:#fff0df}.milestone{color:var(--milestone-fg);background:var(--milestone-bg)}@media(prefers-color-scheme:dark){:root{--milestone-fg:#efc39e;--milestone-bg:#46311e}}:root{--epic-fg:#684d7c;--epic-bg:#f1eafa}.epic{color:var(--epic-fg);background:var(--epic-bg)}@media(prefers-color-scheme:dark){:root{--epic-fg:#d8bde9;--epic-bg:#3c2e48}}:root{--fr-fg:#285e83;--fr-bg:#e8f2ff}.fr{color:var(--fr-fg);background:var(--fr-bg)}@media(prefers-color-scheme:dark){:root{--fr-fg:#b3d6f1;--fr-bg:#263b50}}:root{--nfr-fg:#7c4a63;--nfr-bg:#fcebf3}.nfr{color:var(--nfr-fg);background:var(--nfr-bg)}@media(prefers-color-scheme:dark){:root{--nfr-fg:#edbfd6;--nfr-bg:#472e3e}}:root{--task-fg:#3c6250;--task-bg:#e6f3ec}.task{color:var(--task-fg);background:var(--task-bg)}@media(prefers-color-scheme:dark){:root{--task-fg:#b3d8c4;--task-bg:#293f33}}</style>
+</head>
+<body class="">
+<a class="skip" href="#main">Bỏ qua đến nội dung</a>
+<header>
+<div class="bar">
+<a class="brand" href="projects.html">
+<b>◉</b> omi board</a>
+<nav aria-label="Điều hướng">
+<a href="dashboard.html">omi</a>
+<a href="spec.html">Đặc tả &amp; trạng thái</a>
+</nav>
+<span class="meta">origin/main · 11:22 · Dữ liệu minh họa</span>
+</div>
+</header>
+<main id="main" tabindex="-1">
+<div>
+<span class="eyebrow">TASK-125 / DESIGN CONTRACT</span>
+<h1>Đặc tả UI &amp; trạng thái</h1>
+<p>Chờ PO duyệt. Đặc tả đề xuất để Coordinator ghi vào task; không thay đổi app hay /state.</p>
+<nav aria-label="Mockup">
+<a href="projects.html">Dự án</a>
+<a href="dashboard.html">Dashboard desktop</a>
+<a href="task.html">Task desktop</a>
+<a href="dashboard-phone.html">Dashboard 390 px</a>
+<a href="task-phone.html">Task 390 px</a>
+</nav>
+</div>
+<section class="panel">
+<h2>UI spec · Layout, typography &amp; tokens</h2>
+<p>Keep existing omi branding, Vietnamese UI and vanilla HTML/CSS/JS stack. No new dependencies, external assets, fonts or network. Examples are labeled fixture data, never changes to task content.</p>
+<p>Desktop reference: 1280 px. Main max-width 1280 px, 24 px gutters and section gaps. App navigation marks the current page with aria-current=page; the spec link in these files is only a mockup review aid. Project list → project dashboard → task detail. Task detail has main content plus 300 px metadata sidebar. Below 768 px: single column, 16 px gutters, metadata follows task content. Phone references cap at 390 px and shrink to 320 px; workflow must read at 360 px. No clipped labels, fixed content heights or page horizontal scrolling.</p>
+<p>System display/body: system-ui, -apple-system, Segoe UI, sans-serif; ui-monospace for IDs/data. H1 28/35 px desktop, 24/30 px phone; H2 19/24 px; body 15/22.5 px; metadata 13/19.5 px; chips 12/18 px. Headings 600, supporting emphasis 500, tabular numerals, body width 65ch.</p>
+<p>Spacing scale: 4, 8, 12, 16, 20, 24, 32, 48, 64 px. Radius: panels 12, columns 8, cards 7, controls 6, badges 5 px. Flat surfaces, no shadows. Background/surface/text/muted/border/control/accent/track light and dark tokens are the inline CSS custom properties in each mockup. Theme follows OS preference; no theme control is added.</p>
+<p>Phase/type foreground and background pairs appear below. Stored statuses map planned → planned, in-progress → working, review → review, blocked → blocked, done → done. Each type has a distinct pair. Teal is the action accent; semantic colors are categorical. Every badge includes text; workflow uses ✓, numbers and “Hiện tại”.</p>
+</section>
+<section class="panel">
+<h2>UI spec · Hierarchy, phase &amp; data</h2>
+<p>Use TASK-124 type, parent, children and top-level derived status; never replace derived parent status with frontmatter status. Roots include standalone task leaves and sort by ID; children retain API order. Native details/summary expand parents; default milestone, epic and active FR/NFR open, completed/blocked branches closed as illustrated. Retain disclosure state through polling within a project. Parent summary toggles; leaf links navigate.</p>
+<p>Parent type badge, derived chip labeled “tổng hợp”, native progress and visible done/total count direct children using derived status. Counts and progress stay visible inside the summary even when collapsed. Nested completion counts once per direct child. All done → Xong; any blocked → Bị chặn; all planned → Chưa bắt đầu; otherwise Đang làm. No ARIA tree or custom arrow-key behavior.</p>
+<p>Kanban, project summary counts and completion statistics show task leaves to avoid counting parents twice; tree shows all items. Derive leaf statistics from existing project kanban tasks, since API task_counts includes parents. Project-list counts may be computed from existing per-project GET responses; do not request new API fields. Parent plans retain API plan counts and must label the counted unit accurately; fixture PLAN-007 contains four task leaves.</p>
+<p>Group leaves by API phase.key and use phase.label in this order: Chưa bắt đầu, Lên kế hoạch, Thiết kế, Đang làm, Đang review, Đang QA, Chờ PO, Bị chặn, Xong. Desktop three columns wrap in phase order; phone one column. Nonempty columns show all cards; empty phases live in one native disclosure listing each phase and zero. Expanded disclosure shows “Chưa có task.” for every empty phase.</p>
+<p>Cards show ID, title link, type badge, phase chip, “bước N/M · step-id” and “Vòng review: R”. Null step index → “bước ?/M”; null review_round → “Vòng review: —”. Unknown count → “bước ?/?”. R comes only from API review_round. Parent detail uses derived status as primary chip and labels its separate workflow “Quy trình riêng”; no guessed aggregate phase.</p>
+<p>Workflow renders every API workflow_steps node in order; gate=po always labeled “PO duyệt”. Node names are step IDs. Desktop directed row; below 768 px a vertical list with downward arrows. For longer workflows, use vertical layout whenever labels cannot fit; never truncate labels. Arrows are decorative. Current node uses aria-current=step and “Hiện tại”; preceding nodes ✓ Xong, later nodes numbered Chưa bắt đầu. Status done overrides index: every node, including the final accept, ✓ Xong, no current node. Unknown step: no current/completion guesses, “Không xác định bước hiện tại.” Empty definition: “Chưa có định nghĩa quy trình.”</p>
+<p>Task retains goal, acceptance criteria, Checkpoint, steps, reports and metadata. Reports: native disclosure, latest open. Usage: labeled definition list at every width, each role/output/duration stacked with totals visible; no scroll container. Wrap long IDs, scopes and model names. Keep source, PO waiting, plans, activity and decisions. PO entries link to task details; board stays read-only. Dynamic content must use textContent only.</p>
+</section>
+<section class="panel">
+<h2>UI spec · States, behavior &amp; accessibility</h2>
+<p>Initial loading: title and static skeleton, “Đang tải…” role=status, main aria-busy=true. Refresh keeps existing content, disables only refresh and changes its label to “Đang tải…”. Success reenables and announces update time. Error retains old data when present; initial error displays no invented data, inline role=alert message + Thử lại. Retry uses existing refresh behavior. Stale source shows last fetched time. Polling retains disclosure/focus/scroll and does not announce the full dashboard; route changes focus H1.</p>
+<p>One H1, ordered headings, nav/main/aside landmarks, Vietnamese lang and unique page title, skip link. Links navigate, buttons act. Native summary works with Enter/Space; Tab order follows reading order, no positive tabindex or traps. 3 px accent focus ring, 3 px offset; no sticky header obscures focus. Controls/summary ≥44 px; inline links ≥24 px. Text contrast ≥4.5:1, control boundaries/focus ≥3:1. Visible count plus specific accessible progress name. All information has labels beyond color. No forms added.</p>
+<p>No automatic motion. Interactive transform/opacity transitions 220 ms cubic-bezier(.32,.72,0,1); press scale .98. Reduced-motion disables transitions and press transform. Permit 200% zoom and pinch zoom, reflow to 320 px. Empty states use exact copy illustrated below. Native disabled controls retain labels, navigation stays available.</p>
+<p>Buttons are illustrative and inert in mockups; native disclosures, skip links and local links work. Source inspection and calculated contrast only; browser focus, zoom, keyboard and viewport testing are deferred to QA after PO approval.</p>
+</section>
+<section class="panel">
+<h2>Loading &amp; disabled</h2>
+<div role="status">Đang tải…</div>
+<div aria-busy="true" aria-label="Nội dung đang tải">
+<div class="skeleton" aria-hidden="true">
+</div>
+<div class="skeleton short" aria-hidden="true">
+</div>
+</div>
+<button disabled>Đang tải…</button>
+</section>
+<section class="panel">
+<h2>Empty states</h2>
+<p>Chưa có dự án.</p>
+<p>Chưa có task. Các task sẽ xuất hiện sau lần cập nhật dữ liệu kế tiếp.</p>
+<p>Chưa có kế hoạch.</p>
+<p>Chưa có hoạt động.</p>
+<p>Chưa có quyết định.</p>
+<p>Chưa có báo cáo.</p>
+<p>Chưa có dữ liệu sử dụng.</p>
+<p>Không có việc chờ PO.</p>
+</section>
+<section class="panel">
+<h2>Error, stale &amp; focus</h2>
+<div class="notice" role="alert">
+<p>Không tải được dữ liệu. Kiểm tra kết nối rồi thử lại.</p>
+<button>Thử lại</button>
+</div>
+<p role="status">Dữ liệu cũ — không kết nối được GitHub. Cập nhật gần nhất: 11:22.</p>
+<p>
+<a class="focus-example" href="dashboard.html">Focus mẫu: về dự án omi</a>
+</p>
+</section>
+<section class="panel">
+<h2>Review, QA, PO &amp; blocked variants</h2>
+<div class="chips">
+<span class="chip review">Đang review</span>
+<span class="chip qa">Đang QA</span>
+<span class="chip po">Chờ PO</span>
+<span class="chip blocked">Bị chặn</span>
+</div>
+<p>bước 5/7 · review · Vòng review: 2</p>
+<p>bước 6/7 · qa · Vòng review: 1</p>
+<p>bước 3/7 · approve-mockup · Vòng review: —</p>
+<p>Chờ PO duyệt mockup trước khi build.</p>
+<p>Bị chặn · bước ?/7 · Không xác định bước hiện tại.</p>
+</section>
+<section class="panel">
+<h2>Done workflow · every node complete</h2>
+<ol class="workflow">
+<li class="complete">
+<strong>plan</strong>
+<small>✓ Xong</small>
+<span class="arrow" aria-hidden="true">→</span>
+</li>
+<li class="complete">
+<strong>design</strong>
+<small>✓ Xong</small>
+<span class="arrow" aria-hidden="true">→</span>
+</li>
+<li class="complete">
+<strong>approve-mockup</strong>
+<small>✓ Xong · PO duyệt</small>
+<span class="arrow" aria-hidden="true">→</span>
+</li>
+<li class="complete">
+<strong>build</strong>
+<small>✓ Xong</small>
+<span class="arrow" aria-hidden="true">→</span>
+</li>
+<li class="complete">
+<strong>review</strong>
+<small>✓ Xong</small>
+<span class="arrow" aria-hidden="true">→</span>
+</li>
+<li class="complete">
+<strong>qa</strong>
+<small>✓ Xong</small>
+<span class="arrow" aria-hidden="true">→</span>
+</li>
+<li class="complete">
+<strong>accept</strong>
+<small>✓ Xong</small>
+</li>
+</ol>
+</section>
+<section class="panel">
+<h2>Unknown &amp; absent workflow</h2>
+<p>bước ?/7 · Không xác định bước hiện tại.</p>
+<p>bước ?/? · Chưa có định nghĩa quy trình.</p>
+</section>
+<section class="panel">
+<h2>Color tokens · light / dark</h2>
+<div class="palette">
+<div>
+<h3>Chưa bắt đầu <code>--planned</code>
+</h3>
+<div class="swatch">
+<span style="color:#4c5752;background:#edf0ee;padding:6px">Aa · Chưa bắt đầu</span>
+<code>#4c5752 / #edf0ee</code>
+</div>
+<div class="forced-dark">
+<span style="color:#c2cec7;background:#303a34;padding:6px;display:inline-block">Aa · Chưa bắt đầu</span>
+<p>
+<code>#c2cec7 / #303a34</code>
+</p>
+</div>
+</div>
+<div>
+<h3>Lên kế hoạch <code>--planning</code>
+</h3>
+<div class="swatch">
+<span style="color:#77521b;background:#fff2d9;padding:6px">Aa · Lên kế hoạch</span>
+<code>#77521b / #fff2d9</code>
+</div>
+<div class="forced-dark">
+<span style="color:#efd094;background:#44351f;padding:6px;display:inline-block">Aa · Lên kế hoạch</span>
+<p>
+<code>#efd094 / #44351f</code>
+</p>
+</div>
+</div>
+<div>
+<h3>Thiết kế <code>--design</code>
+</h3>
+<div class="swatch">
+<span style="color:#6e4574;background:#f7eafa;padding:6px">Aa · Thiết kế</span>
+<code>#6e4574 / #f7eafa</code>
+</div>
+<div class="forced-dark">
+<span style="color:#e4bae9;background:#412b46;padding:6px;display:inline-block">Aa · Thiết kế</span>
+<p>
+<code>#e4bae9 / #412b46</code>
+</p>
+</div>
+</div>
+<div>
+<h3>Đang làm <code>--working</code>
+</h3>
+<div class="swatch">
+<span style="color:#0f6267;background:#e2f3f2;padding:6px">Aa · Đang làm</span>
+<code>#0f6267 / #e2f3f2</code>
+</div>
+<div class="forced-dark">
+<span style="color:#91d8d5;background:#193e40;padding:6px;display:inline-block">Aa · Đang làm</span>
+<p>
+<code>#91d8d5 / #193e40</code>
+</p>
+</div>
+</div>
+<div>
+<h3>Đang review <code>--review</code>
+</h3>
+<div class="swatch">
+<span style="color:#77471e;background:#fff0df;padding:6px">Aa · Đang review</span>
+<code>#77471e / #fff0df</code>
+</div>
+<div class="forced-dark">
+<span style="color:#f2c495;background:#46311e;padding:6px;display:inline-block">Aa · Đang review</span>
+<p>
+<code>#f2c495 / #46311e</code>
+</p>
+</div>
+</div>
+<div>
+<h3>Đang QA <code>--qa</code>
+</h3>
+<div class="swatch">
+<span style="color:#3b598b;background:#eaf0ff;padding:6px">Aa · Đang QA</span>
+<code>#3b598b / #eaf0ff</code>
+</div>
+<div class="forced-dark">
+<span style="color:#b6cdf4;background:#273850;padding:6px;display:inline-block">Aa · Đang QA</span>
+<p>
+<code>#b6cdf4 / #273850</code>
+</p>
+</div>
+</div>
+<div>
+<h3>Chờ PO <code>--po</code>
+</h3>
+<div class="swatch">
+<span style="color:#765510;background:#fff4ce;padding:6px">Aa · Chờ PO</span>
+<code>#765510 / #fff4ce</code>
+</div>
+<div class="forced-dark">
+<span style="color:#f1d68a;background:#42371c;padding:6px;display:inline-block">Aa · Chờ PO</span>
+<p>
+<code>#f1d68a / #42371c</code>
+</p>
+</div>
+</div>
+<div>
+<h3>Bị chặn <code>--blocked</code>
+</h3>
+<div class="swatch">
+<span style="color:#9b343b;background:#ffebed;padding:6px">Aa · Bị chặn</span>
+<code>#9b343b / #ffebed</code>
+</div>
+<div class="forced-dark">
+<span style="color:#f6b5b9;background:#49292d;padding:6px;display:inline-block">Aa · Bị chặn</span>
+<p>
+<code>#f6b5b9 / #49292d</code>
+</p>
+</div>
+</div>
+<div>
+<h3>Xong <code>--done</code>
+</h3>
+<div class="swatch">
+<span style="color:#34633d;background:#e8f3e6;padding:6px">Aa · Xong</span>
+<code>#34633d / #e8f3e6</code>
+</div>
+<div class="forced-dark">
+<span style="color:#b7dbb1;background:#2a402b;padding:6px;display:inline-block">Aa · Xong</span>
+<p>
+<code>#b7dbb1 / #2a402b</code>
+</p>
+</div>
+</div>
+<div>
+<h3>Milestone <code>--milestone</code>
+</h3>
+<div class="swatch">
+<span style="color:#77421d;background:#fff0df;padding:6px">Aa · Milestone</span>
+<code>#77421d / #fff0df</code>
+</div>
+<div class="forced-dark">
+<span style="color:#efc39e;background:#46311e;padding:6px;display:inline-block">Aa · Milestone</span>
+<p>
+<code>#efc39e / #46311e</code>
+</p>
+</div>
+</div>
+<div>
+<h3>Epic <code>--epic</code>
+</h3>
+<div class="swatch">
+<span style="color:#684d7c;background:#f1eafa;padding:6px">Aa · Epic</span>
+<code>#684d7c / #f1eafa</code>
+</div>
+<div class="forced-dark">
+<span style="color:#d8bde9;background:#3c2e48;padding:6px;display:inline-block">Aa · Epic</span>
+<p>
+<code>#d8bde9 / #3c2e48</code>
+</p>
+</div>
+</div>
+<div>
+<h3>FR <code>--fr</code>
+</h3>
+<div class="swatch">
+<span style="color:#285e83;background:#e8f2ff;padding:6px">Aa · FR</span>
+<code>#285e83 / #e8f2ff</code>
+</div>
+<div class="forced-dark">
+<span style="color:#b3d6f1;background:#263b50;padding:6px;display:inline-block">Aa · FR</span>
+<p>
+<code>#b3d6f1 / #263b50</code>
+</p>
+</div>
+</div>
+<div>
+<h3>NFR <code>--nfr</code>
+</h3>
+<div class="swatch">
+<span style="color:#7c4a63;background:#fcebf3;padding:6px">Aa · NFR</span>
+<code>#7c4a63 / #fcebf3</code>
+</div>
+<div class="forced-dark">
+<span style="color:#edbfd6;background:#472e3e;padding:6px;display:inline-block">Aa · NFR</span>
+<p>
+<code>#edbfd6 / #472e3e</code>
+</p>
+</div>
+</div>
+<div>
+<h3>Task <code>--task</code>
+</h3>
+<div class="swatch">
+<span style="color:#3c6250;background:#e6f3ec;padding:6px">Aa · Task</span>
+<code>#3c6250 / #e6f3ec</code>
+</div>
+<div class="forced-dark">
+<span style="color:#b3d8c4;background:#293f33;padding:6px;display:inline-block">Aa · Task</span>
+<p>
+<code>#b3d8c4 / #293f33</code>
+</p>
+</div>
+</div>
+</div>
+</section>
+<section class="panel">
+<h2>Coordinator task updates &amp; approval</h2>
+<p>Add this UI spec to TASK-125 by reference to this file. Add acceptance criterion: <strong>pages match the PO-approved mockup in `.omi/tasks/TASK-125-mockup/`</strong>.</p>
+<p>Checkpoint — Done: UI spec, three screens, two phone mockups and state/token sheet. Tests: python3 tests/test_omi.py passed (exit 0); wheel packaging check skipped because pip is missing. Mockup structure/local-link checks passed; semantic token contrast minimum 6.02:1, checked control/focus contrast ≥3:1. Not done: PO approval, build, browser validation of these mockups. Next: Coordinator presents all six HTML files to PO and records approve-mockup before build; changed approved mockups require fresh PO approval.</p>
+<p>PO: approve mockups including leaf-only Kanban/statistics and direct-child progress, or specify changes. No self-approval.</p>
+</section>
+<footer class="mock-note">Mockup TASK-125 · Chờ PO duyệt trước build. Nội dung mẫu; nút làm mới không gọi API.</footer>
+</main>
+</body>
+</html>
