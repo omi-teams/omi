@@ -143,9 +143,12 @@ def test_unimported_test_file() -> None:
         check_test_modules(root, modules)
 
 
-def test_release_0_5_0():
-    assert omi.common.core.version() == "0.5.0"
-    assert upgrade.template_shas() == json.loads(upgrade.SHAS.read_text(encoding="utf-8"))["0.5.0"]
+def test_release_0_6_0():
+    readme = Path("README.md").read_text(encoding="utf-8")
+    assert "git+https://github.com/omi-teams/omi@v0.6.0" in readme
+    assert "omi --version             # omi 0.6.0" in readme
+    assert omi.common.core.version() == "0.6.0"
+    assert upgrade.template_shas() == json.loads(upgrade.SHAS.read_text(encoding="utf-8"))["0.6.0"]
 
 
 def test_phase():
@@ -191,7 +194,7 @@ if __name__ == "__main__":
     test_skip_summary()
     test_unimported_test_file()
     test_phase()
-    test_release_0_5_0()
+    test_release_0_6_0()
     test_upgrade.main()
     test_init.main()
     test_github.main()
