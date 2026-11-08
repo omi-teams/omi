@@ -811,7 +811,110 @@ def test_architect_claude_only():
             assert "codex" not in " ".join(calls[0]).lower().replace("no fallback to codex", "")
 
 
+def test_promote_tags() -> None:
+    from datetime import date
+    from unittest.mock import patch
+
+    text = (omi.common.core.TEMPLATE / "dot-omi/workflows/omi-flow-promote.md").read_text(encoding="utf-8")
+    code = re.search(r"```python\n(.*?)```", text, re.S)
+    assert code, "tag step needs a runnable procedure"
+    today = "v" + date.today().strftime("%Y.%m.%d")
+    for existing, expected, conflict in (
+        ({}, [today, "v0.6.0"], False),
+        ({today: "main", "v0.6.0": "main"}, [], False),
+        ({today: "old", "v0.6.0": "main"}, [today + ".2"], False),
+        ({today: "old", today + ".2": "main"}, ["v0.6.0"], False),
+        ({"v0.6.0": "old"}, [], True),
+    ):
+        pushed = []
+
+        def run(argv, **kwargs):
+            args = argv[1:]
+            stdout = ""
+            if args == ["rev-parse", "origin/main"]:
+                stdout = "main"
+            elif args == ["show", "origin/main:pyproject.toml"]:
+                stdout = '[project]\nversion = "0.6.0"\n'
+            elif args[:3] == ["ls-remote", "--tags", "origin"]:
+                tag = args[3].removeprefix("refs/tags/")
+                assert args[4] == f"refs/tags/{tag}^{{}}"
+                if tag in existing:
+                    # The peeled commit, not the annotated tag object's SHA, determines a match.
+                    stdout = f"tag-object\trefs/tags/{tag}\n{existing[tag]}\trefs/tags/{tag}^{{}}\n"
+            elif args[:2] == ["push", "origin"]:
+                assert args[2].startswith("main:refs/tags/")
+                pushed.append(args[2].removeprefix("main:refs/tags/"))
+            else:
+                raise AssertionError(argv)
+            return subprocess.CompletedProcess(argv, 0, stdout)
+
+        with patch("subprocess.run", side_effect=run), contextlib.redirect_stdout(io.StringIO()):
+            try:
+                exec(code.group(1), {})
+            except SystemExit as exc:
+                assert conflict and "v0.6.0" in str(exc), exc
+            else:
+                assert not conflict, "version collision must stop before creating tags"
+        assert pushed == expected, (existing, pushed)
+
+
+def test_promote_tags_retry() -> None:
+    from datetime import date
+    from unittest.mock import patch
+
+    text = (omi.common.core.TEMPLATE / "dot-omi/workflows/omi-flow-promote.md").read_text(encoding="utf-8")
+    code = re.search(r"```python\n(.*?)```", text, re.S).group(1)
+    today = "v" + date.today().strftime("%Y.%m.%d")
+    # Exercise both a local-only tag and tags left behind by a failed push.
+    for local in ({}, {today: "main", "v0.6.0": "main"}):
+        remote, attempts = {}, []
+        fail = True
+
+        def run(argv, **kwargs):
+            nonlocal fail
+            args = argv[1:]
+            stdout = ""
+            if args == ["rev-parse", "origin/main"]:
+                stdout = "main"
+            elif args == ["show", "origin/main:pyproject.toml"]:
+                stdout = '[project]\nversion = "0.6.0"\n'
+            elif args[:2] == ["rev-parse", "--verify"]:
+                tag = args[-1].removeprefix("refs/tags/").removesuffix("^{commit}")
+                return subprocess.CompletedProcess(argv, 0 if tag in local else 1, local.get(tag, ""))
+            elif args[:3] == ["ls-remote", "--tags", "origin"]:
+                tag = args[3].removeprefix("refs/tags/")
+                assert args[4] == f"refs/tags/{tag}^{{}}"
+                if tag in remote:
+                    stdout = f"{remote[tag]}\trefs/tags/{tag}\n"
+            elif args[0] == "tag":
+                local[args[1]] = args[2]
+            elif args[:2] == ["push", "origin"]:
+                tag = args[2].split(":")[-1].removeprefix("refs/tags/")
+                attempts.append(tag)
+                if fail and tag == "v0.6.0":
+                    fail = False
+                    raise subprocess.CalledProcessError(1, argv, stderr="push rejected")
+                remote[tag] = "main"
+            else:
+                raise AssertionError(argv)
+            return subprocess.CompletedProcess(argv, 0, stdout)
+
+        with patch("subprocess.run", side_effect=run), contextlib.redirect_stdout(io.StringIO()) as output:
+            try:
+                exec(code, {})
+            except subprocess.CalledProcessError:
+                pass
+            else:
+                raise AssertionError("local tags must not suppress an unpublished tag's push")
+            assert not output.getvalue(), "failed push must not report success"
+            exec(code, {})
+        assert remote == {today: "main", "v0.6.0": "main"}, remote
+        assert attempts == [today, "v0.6.0", "v0.6.0"], attempts
+
+
 def main():
+    test_promote_tags_retry()
+    test_promote_tags()
     test_status_skill_resumes_orphans()
     test_dispatch_watch_advance_templates()
     test_scope_questions_not_sent_to_po()
