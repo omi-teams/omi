@@ -811,7 +811,54 @@ def test_architect_claude_only():
             assert "codex" not in " ".join(calls[0]).lower().replace("no fallback to codex", "")
 
 
+def test_promote_tags() -> None:
+    from datetime import date
+    from unittest.mock import patch
+
+    text = (omi.common.core.TEMPLATE / "dot-omi/workflows/omi-flow-promote.md").read_text(encoding="utf-8")
+    code = re.search(r"```python\n(.*?)```", text, re.S)
+    assert code, "tag step needs a runnable procedure"
+    today = "v" + date.today().strftime("%Y.%m.%d")
+    for existing, expected, conflict in (
+        ({}, [today, "v0.6.0"], False),
+        ({today: "main", "v0.6.0": "main"}, [], False),
+        ({today: "old", "v0.6.0": "main"}, [today + ".2"], False),
+        ({today: "old", today + ".2": "main"}, ["v0.6.0"], False),
+        ({"v0.6.0": "old"}, [], True),
+    ):
+        created, pushed = [], []
+
+        def run(argv, **kwargs):
+            args = argv[1:]
+            stdout = ""
+            if args == ["rev-parse", "origin/main"]:
+                stdout = "main"
+            elif args == ["show", "origin/main:pyproject.toml"]:
+                stdout = '[project]\nversion = "0.6.0"\n'
+            elif args[:2] == ["rev-parse", "--verify"]:
+                tag = args[-1].removeprefix("refs/tags/").removesuffix("^{commit}")
+                return subprocess.CompletedProcess(argv, 0 if tag in existing else 1, existing.get(tag, ""))
+            elif args[0] == "tag":
+                assert args[2] == "main"
+                created.append(args[1])
+            elif args[:2] == ["push", "origin"]:
+                pushed.append(args[2].removeprefix("refs/tags/"))
+            else:
+                raise AssertionError(argv)
+            return subprocess.CompletedProcess(argv, 0, stdout)
+
+        with patch("subprocess.run", side_effect=run), contextlib.redirect_stdout(io.StringIO()):
+            try:
+                exec(code.group(1), {})
+            except SystemExit as exc:
+                assert conflict and "v0.6.0" in str(exc), exc
+            else:
+                assert not conflict, "version collision must stop before creating tags"
+        assert created == pushed == expected, (existing, created, pushed)
+
+
 def main():
+    test_promote_tags()
     test_status_skill_resumes_orphans()
     test_dispatch_watch_advance_templates()
     test_scope_questions_not_sent_to_po()

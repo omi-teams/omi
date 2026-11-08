@@ -31,7 +31,7 @@ Companion to the `omi-release` skill (that skill is the procedure; this is the p
 4. Required checks: the ruleset must list the real check-run names of the latest CI run (pilot problem 6: a required `test` never matched `test (ubuntu-latest)` and the PO had to bypass). If `omi github` says no CI run exists yet, the rule has no required checks; say so in the PR.
 5. The PR body (Vietnamese) holds: commit list, task IDs, per-task test checklist from acceptance criteria, rollback line, `<rc>`, and "Create a merge commit".
 6. Never merge staging or main yourself and never squash or rebase promotion PRs: the PO merges, with a merge commit, or later ranges and the revert-merge rollback break.
-7. Tag after the PO merge: `origin/main` tree equals `origin/staging` (`git diff --quiet`); `v<YYYY.MM.DD>`, then `.2`, `.3` if taken. Never move, force-push or delete a tag; the tag ruleset on `rc-*` and `v*` (TASK-010) allows only the admin.
+7. Tag after the PO merge: `origin/main` tree equals `origin/staging` (`git diff --quiet`); `v<YYYY.MM.DD>` and `v<pyproject version>` from `[project].version` in `origin/main:pyproject.toml`, both on origin/main. Skip tags already on the same commit (peel annotated tags); use `.2`, `.3` for date tags on other commits. If the version tag points elsewhere, stop before creating tags and request a version bump. Follow the runnable tag procedure in `omi-flow-promote`. Never move, force-push or delete a tag; the tag ruleset on `rc-*` and `v*` (TASK-010) allows only the admin.
 8. CI runs twice per PR on task branches (push + pull_request, pilot problem 7): a double run is known, not a failure.
 
 ## Outputs and evidence
