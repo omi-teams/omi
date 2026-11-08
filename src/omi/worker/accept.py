@@ -25,15 +25,15 @@ def marked_criteria(text: str, report: str, worktree: Path | None = None) -> str
     marked = {re.sub(r'^\s*(?:[-*] )?(?:\[[ xX]\] )?✓\s*', '', line).strip()
               for line in report.splitlines() if re.match(r'^\s*(?:[-*] )?(?:\[[ xX]\] )?✓\s*', line)}
     rows = re.findall(r'^- \[[ xX]\] (.+)$', criteria, re.M)
-    ac_lines = re.findall(r'^AC:.*$', report, re.M)
+    ac_lines = re.findall(r'^[ \t]*(?:[-*] )?AC: ?.*$', report, re.M)
     statuses = []
     for line in ac_lines:
-        body = line.removeprefix('AC: ')
+        body = re.sub(r'^[ \t]*(?:[-*] )?AC: ?', '', line)
         criterion = max((row for row in rows if body.startswith(row)), key=len, default='')
         statuses.append(re.search(r'[ \t]+(✓|✗|UNVERIFIED|QA)(?:[ \t]|$)', body[len(criterion):]))
     ordered = len(ac_lines) == len(rows) and all(status and status[1] == '✓' for status in statuses)
     missing = [row for row in rows if not ordered and row not in marked and not re.search(
-        rf'^(?:AC: )?{re.escape(row)}[ \t]+✓(?:[ \t]|$)', report, re.M)]
+        rf'^[ \t]*(?:[-*] )?(?:AC: )?{re.escape(row)}[ \t]+✓(?:[ \t]|$)', report, re.M)]
     if not rows or missing:
         raise state.StateError('criteria not marked ✓: ' + '; '.join(missing or ['no acceptance criteria']))
     check_hosts(text, report, worktree)
