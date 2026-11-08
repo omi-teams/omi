@@ -258,14 +258,16 @@ def wrap(rundir: Path) -> None:
         os.replace(rundir / "rc.tmp", rundir / "rc")
 
 
+def reports(text: str, role: str) -> list[tuple[datetime.datetime, str]]:
+    """Every `## Reports` entry of `role`, oldest first, as (minute, body without the `>` quoting)."""
+    body = text.partition("\n## Reports\n")[2].split("\n## ", 1)[0]
+    return [(datetime.datetime.strptime(m[1], "%Y-%m-%d %H:%M"), "\n".join(l.removeprefix(">").strip() for l in m[2].splitlines()))
+            for m in re.finditer(rf"^(\d{{4}}-\d\d-\d\d \d\d:\d\d) {re.escape(role)} \(.*?\):\n((?:>.*\n?)*)", body, re.M)]
+
+
 def last_report(text: str, role: str, since: datetime.datetime) -> str:
     """Body of the newest `## Reports` entry of `role` written since `since` (minute precision), or ''."""
-    body = text.partition("\n## Reports\n")[2].split("\n## ", 1)[0]
-    found = ""
-    for m in re.finditer(rf"^(\d{{4}}-\d\d-\d\d \d\d:\d\d) {re.escape(role)} \(.*?\):\n((?:>.*\n?)*)", body, re.M):
-        if datetime.datetime.strptime(m[1], "%Y-%m-%d %H:%M") >= since.replace(second=0):
-            found = "\n".join(l.removeprefix(">").strip() for l in m[2].splitlines())
-    return found
+    return next((r for at, r in reversed(reports(text, role)) if at >= since.replace(second=0)), "")
 
 
 def verdict(report: str) -> str:

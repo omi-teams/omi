@@ -876,6 +876,18 @@ def test_parallel():
         assert "status done" in omi.project.tasks.parallel(root, ["TASK-001", "TASK-004"])[0]
         assert not omi.project.tasks.globs_overlap("src/ab/**", "src/a/**") and omi.project.tasks.globs_overlap("src/a*", "src/ab/x")
         assert omi.project.tasks.parallel(root, ["TASK-001", "TASK-002", "TASK-001"]) == ["TASK-001: duplicate id"]
+        # TASK-251: three tasks on different modules that all list tests/** and the generated files run together
+        for n, mod in (("011", "run"), ("012", "scope"), ("013", "board/data")):
+            task(n, "planned", f"src/omi/{mod}.py, tests/**, src/omi/template_shas.json, src/omi/template/dot-omi/workflows/CATALOG.md")
+        trio = ["TASK-011", "TASK-012", "TASK-013"]
+        assert len(omi.project.tasks.parallel(root, trio)) == 9, "without config every shared path overlaps"
+        (root / ".omi" / "config.json").write_text(json.dumps({
+            "generated": ["src/omi/template_shas.json", "src/omi/template/dot-omi/*/CATALOG.md"], "parallel_shared": ["tests/**"]}))
+        assert omi.project.tasks.parallel(root, trio) == []
+        task("014", "planned", "src/omi/run.py, docs/x.md")
+        assert omi.project.tasks.parallel(root, ["TASK-011", "TASK-014"]) == [
+            "TASK-011 and TASK-014 scopes overlap: src/omi/run.py vs src/omi/run.py"], "a real module clash still blocks"
+        (root / ".omi" / "config.json").unlink()
         real, realmc = omi.common.core.task_worktrees, omi.common.core.main_checkout
         omi.common.core.main_checkout = lambda _: root
         class Out(io.StringIO):
@@ -1199,7 +1211,36 @@ def test_pattern_line_shape():
             assert done(ok) == 0 and "build done" in task.read_text(encoding="utf-8")
 
 
+def test_file_plan_lines():
+    """TASK-251: a note after the path is read; unreadable `- edit|create` lines stop the architect step at once, all listed."""
+    scope = omi.project.scope
+    plan = ("## File plan\n- edit src/a.py (domain)\n- edit src/b.py (domain): add the rule\n- create `src/c.py` (adapter): new\n"
+            "- edit src/{d,e}.go (x)\n- edit src/f.py src/g.py\n- create src/h.py\n\n## Next\n- edit not/a/plan.py\n")
+    assert scope.file_plan(plan) == {"src/a.py", "src/b.py", "src/c.py", "src/h.py"}
+    assert scope.plan_line_errors(plan) == ["- edit src/{d,e}.go (x)", "- edit src/f.py src/g.py"]
+    assert scope.module_tests(["src/omi/worker/run.py", "src/x/**", "tests/test_y.py", "web/app.ts"]) == ["tests/test_run.py"]
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        with patch("sys.stdout", io.StringIO()):
+            omi.setup.upgrade.init(root)
+        task = root / ".omi" / "tasks" / "TASK-112.md"
+        with patch("omi.project.tasks.commit_task_file"), patch("omi.common.core.task_worktrees", return_value={}), \
+                patch("sys.stdout", io.StringIO()):
+            def done(body):
+                task.write_text("---\nid: TASK-112\nworkflow: omi-flow-feature-sensitive\nstatus: in-progress\nstep: architect\n---\n"
+                                f"{body}\n## Steps\n- plan done 2026-10-31 10:00\n- architect started 2026-10-31 10:01\n", encoding="utf-8")
+                return omi.project.tasks.step(root, "TASK-112", "done")
+            try:
+                done(plan)
+            except SystemExit as exc:
+                assert "- edit src/{d,e}.go (x)" in str(exc) and "- edit src/f.py src/g.py" in str(exc) and "Nothing changed" in str(exc)
+            else:
+                raise AssertionError("unreadable File plan lines accepted at the architect step")
+            assert done("## File plan\n- edit src/a.py (domain): ok\n") == 0 and "architect done" in task.read_text(encoding="utf-8")
+
+
 def main():
+    test_file_plan_lines()
     test_pattern_line_shape()
     test_hierarchy()
     test_tree_table()

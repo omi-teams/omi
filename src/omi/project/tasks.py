@@ -57,10 +57,7 @@ def same_root(text, role):
 
 def host_test_command(root):
     """`host_test` from .omi/config.json, empty when unset."""
-    try:
-        return json.loads((Path(root) / ".omi" / "config.json").read_text(encoding="utf-8")).get("host_test") or ""
-    except (OSError, ValueError, AttributeError):
-        return ""
+    return scope.config(root, "host_test", "") or ""
 
 
 def host_test_gate(root, tid, text, head):
@@ -362,6 +359,8 @@ def step(root, tid, action, why=None, now=None, to=None, po=None):
     elif action == "done":
         if err := structure.pattern_error(text):
             sys.exit(f"{tid}: {err} Nothing changed.")
+        if steps[at]["role"] == "omi-agent-architect" and (bad := scope.plan_line_errors(text)):
+            sys.exit(scope.plan_error(tid, bad))
         if (re.findall(r"^\d{4}-\d\d-\d\d \d\d:\d\d hook post-run (FAILED|passed)", text, re.M) or [""])[-1] == "FAILED":
             sys.exit(f"{tid}: the last post-run hook failed; fix it and rerun `omi run` first. Nothing changed.")
         if steps[at]["gate"] == "po" and not po_approved(text, cur):
@@ -439,11 +438,12 @@ def parallel(root, ids):
             if d not in seen:
                 yield d
                 yield from deps(d, (*seen, d))
+    common = scope.shared(state.resolve(root))
+    own = lambda t: scope.owned(found.get(t, {}).get("scope"), common)
     for i, a in enumerate(ids):
         out += [f"{a} depends on {b}" for b in ids if b != a and b in set(deps(a))]
         for b in ids[i + 1:]:
-            out += [f"{a} and {b} scopes overlap: {x} vs {y}" for x in core.split(found.get(a, {}).get("scope"))
-                    for y in core.split(found.get(b, {}).get("scope")) if globs_overlap(x, y)]
+            out += [f"{a} and {b} scopes overlap: {x} vs {y}" for x in own(a) for y in own(b) if globs_overlap(x, y)]
     return out
 
 

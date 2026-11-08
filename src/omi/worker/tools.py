@@ -70,19 +70,32 @@ def quota_hit(tool: str, out: str, rc: int, err: str = "") -> bool:
     return bool(rc) and any(re.search(QUOTA_PATTERNS[tool], t, re.I) for t in texts)
 
 
-def resume_prompt(task_rel, hook_tail=None):
-    """Short prompt for a resumed engineer session: the new findings (or the failing post-run hook output) only."""
+REPORT_LINES = ("End the report with the literal line `Suggested commit: <type>(<area>): <summary>` at the start of a line "
+                "(no bullet), and in a bugfix reproduce run also `Reproduced: <test> failed before the fix`.")
+
+
+def report_values(report, key):
+    """Values of every `<key>: <value>` line, tolerating a `- `/`* ` bullet, indentation and `**`/`` ` `` around the key or the value."""
+    found = re.findall(rf"^[ \t]*(?:[-*][ \t]+)?[*_`]*{re.escape(key)}:[*_`]*[ \t]*(.*?)[ \t]*$", report or "", re.M)
+    return [v for v in (re.sub(r"^`([^`]*)`$", r"\1", x.strip("* \t")) for x in found) if v.strip("_`")]
+
+
+def resume_prompt(task_rel, hook_tail=None, missing=None):
+    """Short prompt for a resumed engineer session: the new findings, the failing post-run hook output, or the missing report lines."""
     head = f"Task file: {task_rel if task_rel.startswith("/") else "/work/" + task_rel}\nWorktree: /work\n"
+    if missing:
+        return head + ("Your last report is missing required lines: " + "; ".join(missing)
+                       + ". Change no code. Repeat your report with those lines added. " + REPORT_LINES)
     if hook_tail:
-        return head + f"The post-run hook failed. Fix it, rerun the tests and report as before. Hook output (tail):\n{hook_tail}"
+        return head + f"The post-run hook failed. Fix it, rerun the tests and report as before. {REPORT_LINES} Hook output (tail):\n{hook_tail}"
     return head + ("Fix round: continue your previous session. Read the new findings under `## Checkpoint` in the task file, "
-                   "fix only those, rerun the tests and report as before.")
+                   "fix only those, rerun the tests and report as before. " + REPORT_LINES)
 
 
-def engineer_cmd(agent_text, task_rel, model=None, effort=None, skills="", resume=None, hook_tail=None):
+def engineer_cmd(agent_text, task_rel, model=None, effort=None, skills="", resume=None, hook_tail=None, missing=None):
     m = core.parse(agent_text)
     body = agent_text.split("---", 2)[2].strip() if agent_text.startswith("---") else agent_text
-    prompt = resume_prompt(task_rel, hook_tail) if resume else \
+    prompt = resume_prompt(task_rel, hook_tail, missing) if resume else \
         f"Task file: {task_rel if task_rel.startswith("/") else "/work/" + task_rel}\nWorktree: /work{skills}"
     return ["claude", "-p", prompt, *(["--resume", resume] if resume else []),
             "--append-system-prompt", body,
@@ -95,11 +108,11 @@ CODEX_LIMITS = ("Known codex worker limit: deleting files with `rm` may be refus
                 "or `python3 -c \"import os; os.remove(...)\"`.")
 
 
-def codex_cmd(agent_text, task_rel, model, effort, skills="", resume=None, hook_tail=None):
+def codex_cmd(agent_text, task_rel, model, effort, skills="", resume=None, hook_tail=None, missing=None):
     body = agent_text.split("---", 2)[2].strip() if agent_text.startswith("---") else agent_text
     # the container is the boundary; codex's own sandbox cannot nest in it
     # project_doc_max_bytes=0: codex must not load the Coordinator's AGENTS.md; the role prompt is all it sees
-    prompt = resume_prompt(task_rel, hook_tail) if resume else \
+    prompt = resume_prompt(task_rel, hook_tail, missing) if resume else \
         f"{body}\n\nTask file: {task_rel if task_rel.startswith("/") else "/work/" + task_rel}\nWorktree: /work{skills}\n{CODEX_LIMITS}"
     return ["codex", "exec", *(["resume", resume] if resume else []), "-c", "project_doc_max_bytes=0", "-m", model,
             "-c", f"model_reasoning_effort={effort}",

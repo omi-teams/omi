@@ -3,16 +3,17 @@
 import datetime
 import json
 import re
+import shlex
 import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from ..common import core
 from ..project import catalogs, scope, tasks, workflows
 from ..state import resolve as state
-from . import accept, dispatch
+from . import accept, dispatch, tools
 
 
 def diagnostic_tail(output: str) -> str:
@@ -34,11 +35,12 @@ def command(cwd: Path, argv: list[str], allowed: tuple[int, ...] = (0,)) -> str:
     return result.stdout.strip()
 
 
-def commit_message(report: str, override: str | None) -> str:
-    """Validate the untrusted report's one-line conventional commit subject."""
-    found = re.findall(r"^Suggested commit:[ \t]*(.*)$", report, re.M)
+def commit_message(report: str, override: str | None, earlier: list[str] = ()) -> str:
+    """Validate the untrusted report's one-line conventional commit subject; without one, reuse the newest from `earlier` reports."""
+    found = list(dict.fromkeys(tools.report_values(report, "Suggested commit")))
+    if not found:  # a short fix-round report often drops the line; an earlier DONE report of the task still has it
+        found = next((v[-1:] for r in earlier if (v := tools.report_values(r, "Suggested commit"))), [])
     message = override if override is not None else (found[0] if len(found) == 1 else "")
-    message = re.sub(r"^`([^`]*)`$", r"\1", message) if override is None else message
     if (not message or any(ord(c) < 32 or 127 <= ord(c) <= 159 or c in "\u2028\u2029" for c in message)
             or not re.fullmatch(r"(?:feat|fix|docs|chore|refactor|test|ci|build|perf|style|revert)(?:\([^()\s]+\))?!?: [^\s].*", message)):
         raise state.StateError('missing or invalid Suggested commit; supply --message "<msg>" (one conventional commit line)')
@@ -99,7 +101,7 @@ def eligible(ctx: Context) -> tuple[dict, str, dict, dict]:
         raise state.StateError("newest finished run must exit 0 with verdict DONE")
     if catalogs.get_role(ctx.project.state, rec["role"])["access"] != "write":
         raise state.StateError("newest finished run is not a write role")
-    ctx.subject = commit_message(report, ctx.message)
+    ctx.subject = commit_message(report, ctx.message, [r for _, r in reversed(dispatch.reports(text, rec["role"]))])
     wt = core.task_worktrees(ctx.project.code).get(ctx.tid)
     if not wt:
         raise state.StateError("task worktree is missing")
@@ -119,7 +121,7 @@ def eligible(ctx: Context) -> tuple[dict, str, dict, dict]:
     # A reproduce DONE whose report has `Reproduced:` also covers the same role's fix step that follows it.
     ctx.fix = None
     if (steps[at]["id"] == "reproduce" and at + 2 < len(steps) and steps[at + 1]["id"] == "fix"
-            and steps[at + 1]["role"] == rec["role"] and re.search(r"^Reproduced:[ \t]*\S", report, re.M)):
+            and steps[at + 1]["role"] == rec["role"] and tools.report_values(report, "Reproduced")):
         ctx.fix = steps[at + 1]
     last = at + 1 + (ctx.fix is not None)
     if last >= len(steps) or steps[last]["role"] not in tasks.REVIEW_ROLES:
@@ -185,9 +187,33 @@ def rebase(ctx: Context) -> None:
     try:
         git(ctx, "rebase", "development")
     except state.StateError as exc:
-        git(ctx, "rebase", "--abort")
-        raise state.StateError(f"rebase failed; aborted: {exc}") from exc
+        try:
+            resolve_generated(ctx)
+        except state.StateError as why:
+            git(ctx, "rebase", "--abort")
+            raise state.StateError(f"rebase failed; aborted: {exc}" + (f"\n{why}" if str(why) else "")) from exc
     ctx.progress["head"] = git(ctx, "rev-parse", "HEAD")
+
+
+def resolve_generated(ctx: Context) -> None:
+    """Finish a rebase whose only conflicts are `generated` files: take development's copy, run `regenerate`, continue."""
+    gen, cmd = scope.generated(ctx.project), scope.config(ctx.project, "regenerate", "")
+    if not gen:  # nothing configured: abort exactly as before
+        raise state.StateError("")
+    for _ in range(100):  # one round per replayed commit that conflicts
+        conflicted = git(ctx, "diff", "--name-only", "--diff-filter=U").splitlines()
+        other = [p for p in conflicted if not any(PurePosixPath(p).full_match(g) for g in gen)]
+        if not conflicted or other or not cmd:  # no conflict: the rebase failed for another reason
+            raise state.StateError("" if not conflicted or other else "only generated files conflict, but .omi/config.json has no `regenerate` command")
+        git(ctx, "checkout", "--ours", "--", *conflicted)  # in a rebase, ours is development
+        command(ctx.wt, shlex.split(cmd))
+        git(ctx, "add", "--", *conflicted)
+        try:
+            git(ctx, "-c", "core.editor=true", "rebase", "--continue")
+            return
+        except state.StateError:
+            continue  # the next replayed commit conflicts too
+    raise state.StateError("rebase did not finish after resolving generated files")
 
 
 def select_remote(ctx: Context) -> None:

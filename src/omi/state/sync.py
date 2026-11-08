@@ -110,6 +110,12 @@ def _commit(project: state.Project, paths: list[str], what: str) -> None:
         result = git(root, "add", "-A", "--", *present)
         if result.returncode:
             raise state.StateError("state commit failed: " + result.stderr.strip())
+    # A path deleted and already committed by another writer is not a pathspec git knows any more: leave it out.
+    tracked = {*git(root, "ls-files", "-z", "--", *paths).stdout.split("\0"),  # index, and HEAD for a staged deletion
+               *git(root, "ls-tree", "-r", "-z", "--name-only", "HEAD", "--", *paths).stdout.split("\0")}
+    paths = [p for p in paths if p in present or p in tracked]
+    if not paths:
+        return
     result = git(root, "commit", "--only", "-m", f"chore({project.state.name}): {what}", "--", *paths)
     if result.returncode:
         # Another run may have committed the same change: nothing left for these paths is success.

@@ -230,6 +230,18 @@ def test_commit_messages() -> None:
     else:
         raise AssertionError('free-form commit line accepted')
     assert advance.commit_message('Suggested commit: `fix(a): b`', None) == 'fix(a): b'
+    # TASK-251: a bullet, bold or backticks around the line still count; a short fix-round report reuses the earlier line
+    for report in ['DONE\n- Suggested commit: fix(a): b', 'DONE\n* **Suggested commit:** `fix(a): b`', 'DONE\n  Suggested commit: fix(a): b']:
+        assert advance.commit_message(report, None) == 'fix(a): b', report
+    earlier = ['DONE\nfixed\nSuggested commit: fix(a): newest', 'DONE\nSuggested commit: fix(a): older']
+    assert advance.commit_message('DONE\nfixed the finding', None, earlier) == 'fix(a): newest'
+    assert advance.commit_message('DONE\nSuggested commit: feat(b): own', None, earlier) == 'feat(b): own'
+    try:
+        advance.commit_message('DONE\nfixed the finding', None, ['DONE\nno line here'])
+    except state.StateError as exc:
+        assert '--message' in str(exc)
+    else:
+        raise AssertionError('missing Suggested commit everywhere was accepted')
     with handoff() as h:
         error, _ = h.invoke('fix(worker)!: handle `$(literal)` safely')
         assert not error and ['git', 'commit', '-m', 'fix(worker)!: handle `$(literal)` safely'] in h.calls
@@ -569,7 +581,56 @@ def test_review_fail_stops_and_refusals() -> None:
         assert '--reject and --why apply only after a review FAIL' in h.invoke(None, [1], 'x')[0]
 
 
+def test_rebase_regenerates_generated_conflicts() -> None:
+    """TASK-251: a rebase that conflicts only in `generated` files finishes by regenerating them; any other conflict still aborts."""
+    from types import SimpleNamespace
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        repo, cfg = root / "repo", root / "state"
+        (cfg / ".omi").mkdir(parents=True)
+        regen = root / "regen.py"  # gen.txt lists every src file: both branches add one, so both edit gen.txt
+        regen.write_text("from pathlib import Path\nPath('gen.txt').write_text(''.join(sorted(p.name + '\\n' for p in Path('src').glob('*.txt'))))\n")
+        (cfg / ".omi" / "config.json").write_text(json.dumps({"generated": ["gen.txt"], "regenerate": f'"{sys.executable}" "{regen}"'}))
+        run = lambda *a: subprocess.run(["git", "-C", str(repo), *a], check=True, capture_output=True, text=True).stdout.strip()
+        repo.mkdir()
+        run("init", "-q", "-b", "development")
+        run("config", "user.email", "t@t"); run("config", "user.name", "t")
+        (repo / "src").mkdir()
+        (repo / "src" / "a.txt").write_text("a\n")
+        (repo / "shared.txt").write_text("base\n")
+        subprocess.run([sys.executable, str(regen)], cwd=repo, check=True)
+        run("add", "-A"); run("commit", "-qm", "base")
+        run("checkout", "-qb", "task/TASK-900")
+        (repo / "src" / "b.txt").write_text("b\n")
+        subprocess.run([sys.executable, str(regen)], cwd=repo, check=True)
+        run("add", "-A"); run("commit", "-qm", "task adds b")
+        run("checkout", "-q", "development")
+        (repo / "src" / "c.txt").write_text("c\n")
+        subprocess.run([sys.executable, str(regen)], cwd=repo, check=True)
+        run("add", "-A"); run("commit", "-qm", "development adds c")
+        run("checkout", "-q", "task/TASK-900")
+        ctx = SimpleNamespace(wt=repo, project=SimpleNamespace(state=cfg), progress={})
+        advance.rebase(ctx)
+        assert (repo / "gen.txt").read_text() == "a.txt\nb.txt\nc.txt\n" and run("status", "--porcelain") == ""
+        assert run("log", "--format=%s", "-3").splitlines() == ["task adds b", "development adds c", "base"]
+        assert ctx.progress["head"] == run("rev-parse", "HEAD")
+        # a conflict outside `generated` is not resolved: the rebase is aborted as before
+        run("checkout", "-q", "development")
+        (repo / "shared.txt").write_text("development\n"); run("commit", "-qam", "dev edits shared")
+        run("checkout", "-q", "task/TASK-900")
+        (repo / "shared.txt").write_text("task\n"); run("commit", "-qam", "task edits shared")
+        head = run("rev-parse", "HEAD")
+        try:
+            advance.rebase(ctx)
+        except state.StateError as exc:
+            assert "rebase failed; aborted" in str(exc)
+        else:
+            raise AssertionError("a real conflict was resolved")
+        assert run("rev-parse", "HEAD") == head and run("status", "--porcelain") == ""
+
+
 def main():
+    test_rebase_regenerates_generated_conflicts()
     test_commit_stage_reports_clean_and_committed()
     test_task_branch_push_uses_lease()
     test_real_git_push_after_rebase_keeps_lease()

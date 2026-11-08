@@ -119,10 +119,45 @@ def changed_paths(wt, committed=False):
     return paths, untracked
 
 
+def config(project, key, default):
+    """`key` from .omi/config.json under the project's state (or under a root path), else `default`."""
+    try:
+        return json.loads((Path(getattr(project, "state", project)) / ".omi" / "config.json").read_text(encoding="utf-8")).get(key, default)
+    except (OSError, ValueError, AttributeError):
+        return default
+
+
+def owned(scope_value, common):
+    """The task's scope globs that are not `shared`: the ones that may block a parallel run."""
+    return [g for g in core.split(scope_value) if g not in common and not any(PurePosixPath(g).full_match(s) for s in common)]
+
+
+def plan_error(tid, bad):
+    return (f"{tid}: File plan lines the build would ignore (format `- edit|create <path> (<layer>): <note>`):\n"
+            + "\n".join(bad) + "\nNothing changed.")
+
+
+def generated(project):
+    """`generated` globs: files `regenerate` rebuilds after a rebase; any task may write them and they never block a parallel run."""
+    return [g for g in config(project, "generated", []) if isinstance(g, str) and g]
+
+
+def shared(project):
+    """Globs whose overlap does not block a parallel run: `generated` plus `parallel_shared` (e.g. tests/**; a real clash shows at the rebase)."""
+    return [*generated(project), *(g for g in config(project, "parallel_shared", []) if isinstance(g, str) and g)]
+
+
+def module_tests(globs):
+    """`tests/test_<name>.py` for every scoped file `<dir>/<name>.py`: a change's own tests need no NEEDS SCOPE round."""
+    return [f"tests/test_{PurePosixPath(g).stem}.py" for g in globs
+            if g.endswith(".py") and not g.startswith("tests/") and not any(c in g for c in "*?[")]
+
+
 def out_of_scope(wt, tid, committed=False):
     """Changed paths in wt that the authoritative task scope does not allow; committed: also the branch's commits."""
     project = state.resolve(wt)
     globs = task_scope(wt, tid)
+    globs = [*globs, *generated(project), *module_tests(globs)]
     paths, untracked = changed_paths(wt, committed)
     def bad(p):
         if not project.detached and p == f".omi/tasks/{tid}.md":
@@ -137,12 +172,25 @@ def out_of_scope(wt, tid, committed=False):
     return [p for p in paths if bad(p)]
 
 
-def file_plan(text):
-    """Paths of the `- edit|create <path> (<layer>)` lines under `## File plan`; None when the task has no such section."""
+PLAN_LINE = r"^\s*- (?:edit|create) `?([^\s`{}]+)`?(?: \([^()]*\))?(?:\s*:.*)?\s*$"
+
+
+def plan_section(text):
     m = re.search(r"^## File plan[ \t]*\n(.*?)(?=^## |\Z)", text, re.M | re.S)
-    if not m:
-        return None
-    return {x.group(1) for x in re.finditer(r"^\s*- (?:edit|create) (\S+)(?: \(.*\))?\s*$", m.group(1), re.M)}
+    return m.group(1) if m else None
+
+
+def file_plan(text):
+    """Paths of the `- edit|create <path> (<layer>)[: note]` lines under `## File plan`; None when the task has no such section."""
+    body = plan_section(text)
+    return None if body is None else {x.group(1) for x in re.finditer(PLAN_LINE, body, re.M)}
+
+
+def plan_line_errors(text):
+    """Every `- edit|create ...` line under `## File plan` that file_plan would not read (one path per line, no `{a,b}`)."""
+    body = plan_section(text) or ""
+    return [line.strip() for line in body.splitlines()
+            if re.match(r"^\s*- (?:edit|create)\b", line) and not re.match(PLAN_LINE, line)]
 
 
 def plan_violations(wt, tid):

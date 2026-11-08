@@ -46,6 +46,30 @@ def template_shas_cmd(tpl: str | Path, ver: str) -> None:
     print(f"template-shas {ver}: {len(known[ver])} files")
 
 
+def template_regen(repo: str | Path = ".") -> None:
+    """Maintainer step for an omi checkout (`regenerate` in omi's own config): rebuild the template's agents and workflows
+    CATALOG.md from that checkout's template, then its version's entry in its template_shas.json. Writes only under `repo`."""
+    import tempfile
+    repo = Path(repo).resolve()
+    tpl, shas = repo / "src" / "omi" / "template", repo / "src" / "omi" / "template_shas.json"
+    ver = re.search(r'^version = "([^"]+)"', (repo / "pyproject.toml").read_text(encoding="utf-8"), re.M)
+    if not (tpl / "dot-omi").is_dir() or not shas.is_file() or not ver:
+        sys.exit(f"template-regen: {repo} is not an omi checkout (src/omi/template, template_shas.json, pyproject version)")
+    with tempfile.TemporaryDirectory() as tmp:
+        dot = Path(tmp) / ".omi"
+        for kind in ("agents", "workflows"):
+            shutil.copytree(tpl / "dot-omi" / kind, dot / kind, ignore=shutil.ignore_patterns("CATALOG.md"))
+        shutil.copy(tpl / "dot-omi" / "config.json", dot / "config.json")
+        catalogs.agents_catalog(tmp)
+        workflows.workflows_catalog(tmp)
+        for kind in ("agents", "workflows"):
+            shutil.copy(dot / kind / "CATALOG.md", tpl / "dot-omi" / kind / "CATALOG.md")
+    known = json.loads(shas.read_text(encoding="utf-8"))
+    known[ver[1]] = template_shas(tpl)
+    shas.write_text(json.dumps(known, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
+    print(f"template-regen {ver[1]}: catalogs and {len(known[ver[1]])} template hashes")
+
+
 def read_manifest(target: str | Path) -> dict[str, str]:
     f = Path(target) / ".omi" / "manifest.json"
     if not f.is_file():

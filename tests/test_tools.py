@@ -555,7 +555,28 @@ def test_reviewer_skill_reads_counted():
         assert omi.worker.run.skills_read(root, ids, omi.worker.tools.opened_files("codex", json.dumps(cx))) == ["omi-skill-b"]
 
 
+def test_report_lines_and_missing_line_resume():
+    tools, run = omi.worker.tools, omi.worker.run
+    report = "DONE\n- **Suggested commit:** `fix(a): b`\n  * Reproduced: test_x failed before the fix\nSuggested commit:\n"
+    assert tools.report_values(report, "Suggested commit") == ["fix(a): b"]
+    assert tools.report_values(report, "Reproduced") == ["test_x failed before the fix"]
+    assert tools.report_values("DONE\nReproduced: ``", "Reproduced") == []
+    # a DONE write report needs Suggested commit, and Reproduced on a reproduce step; other verdicts need nothing
+    assert run.missing_lines("DONE\nchanged x", "build") == ["Suggested commit"]
+    assert run.missing_lines("DONE\nSuggested commit: fix(a): b", "reproduce") == ["Reproduced"]
+    assert run.missing_lines("DONE\n- Reproduced: t failed\n- Suggested commit: fix(a): b", "reproduce") == []
+    assert run.missing_lines("NEEDS SCOPE: x", "build") == [] and run.missing_lines(None, "build") == []
+    prompt = tools.resume_prompt("t.md", missing=["Reproduced"])
+    assert "missing required lines: Reproduced" in prompt and "Change no code" in prompt and tools.REPORT_LINES in prompt
+    for p in (tools.resume_prompt("t.md"), tools.resume_prompt("t.md", hook_tail="boom")):
+        assert "Suggested commit: <type>(<area>): <summary>" in p, p
+    claude = tools.engineer_cmd("---\nmodel: sonnet\n---\nbody", "t.md", resume="S1", missing=["Suggested commit"])
+    codex = tools.codex_cmd("body", "t.md", "gpt-x", "low", resume="S1", missing=["Suggested commit"])
+    assert "missing required lines: Suggested commit" in claude[2] and "missing required lines: Suggested commit" in codex[-1]
+
+
 def main():
+    test_report_lines_and_missing_line_resume()
     test_task_start_proposal()
     test_po_decides_short_list()
     test_task_start_copies_match()

@@ -295,6 +295,18 @@ def test_detached_scope_and_guard():
         (wt / "app.py").write_text("value = 2\n", encoding="utf-8")
         (wt / "outside.py").write_text("bad\n", encoding="utf-8")
         assert omi.project.scope.out_of_scope(wt, task.stem) == ["outside.py"]
+        # TASK-251: the module's own test file and `generated` files need no NEEDS SCOPE round
+        (wt / "tests").mkdir()
+        (wt / "tests" / "test_app.py").write_text("def test_x(): pass\n", encoding="utf-8")
+        (wt / "gen.json").write_text("{}\n", encoding="utf-8")
+        assert omi.project.scope.out_of_scope(wt, task.stem) == ["gen.json", "outside.py"]
+        cfg = project / ".omi" / "config.json"
+        saved = cfg.read_text(encoding="utf-8") if cfg.exists() else None
+        cfg.write_text(json.dumps({**(json.loads(saved) if saved else {}), "generated": ["gen.json"]}), encoding="utf-8")
+        assert omi.project.scope.out_of_scope(wt, task.stem) == ["outside.py"]
+        cfg.write_text(saved, encoding="utf-8") if saved is not None else cfg.unlink()
+        (wt / "gen.json").unlink()
+        shutil.rmtree(wt / "tests")
         git(wt, "add", "app.py", "outside.py")
         git(wt, "commit", "-qm", "scope fixture")
         assert omi.project.scope.out_of_scope(wt, task.stem, committed=True) == ["outside.py"]
