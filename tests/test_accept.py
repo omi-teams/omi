@@ -353,6 +353,20 @@ def test_marked_criteria_real_paraphrased_reports() -> None:
             assert marked.count('- [x]') == text.count('- [ ]')
 
 
+def test_marked_criteria_bulleted_ac_lines() -> None:
+    text = '\n## Acceptance criteria\n- [ ] handles input\n- [ ] rejects invalid input\n\n## Checkpoint\n'
+    for bullet in ('- ', '* ', '  - '):
+        report = f'VERDICT: PASS\n{bullet}AC: handles input ✓ test\n{bullet}AC: rejects invalid input ✓ test'
+        assert '- [ ]' not in advance.accept.marked_criteria(text, report)
+    bad = 'VERDICT: PASS\n- AC: handles input ✓ test\n- AC: rejects invalid input ✗ test'
+    try:
+        advance.accept.marked_criteria(text, bad)
+    except advance.state.StateError:
+        pass
+    else:
+        raise AssertionError('✗ bulleted line accepted')
+
+
 def test_marked_criteria_ordered_status_guards() -> None:
     text = '\n## Acceptance criteria\n- [ ] handles input\n- [ ] rejects invalid input\n\n## Checkpoint\n'
     good = 'AC: accepts values ✓ input test\nAC: refuses bad values ✓ invalid test'
@@ -621,6 +635,7 @@ def main():
     test_pass_windows_post_merge_failure()
     test_pass_real_report_format()
     test_marked_criteria_real_paraphrased_reports()
+    test_marked_criteria_bulleted_ac_lines()
     test_marked_criteria_ordered_status_guards()
     test_marked_criteria_status_after_verbatim_criterion()
     test_pass_merge_and_resume()

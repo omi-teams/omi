@@ -712,6 +712,11 @@ def test_reviewer_copies_criteria_verbatim() -> None:
     assert "Copy each criterion's text verbatim into its `AC:` line, one line per criterion, in task order." in reviewer
 
 
+def test_security_reviewer_requires_ac_lines() -> None:
+    text = (omi.common.core.TEMPLATE / "dot-omi/agents/omi-agent-security-reviewer.md").read_text(encoding="utf-8")
+    assert "one `AC: <criterion copied verbatim> ✓|✗|UNVERIFIED|QA <evidence>` line per acceptance criterion" in text
+
+
 def test_engineer_requires_suggested_commit_line() -> None:
     engineer = (omi.common.core.TEMPLATE / "dot-omi/agents/omi-agent-engineer.md").read_text(encoding="utf-8")
     assert "`Suggested commit: <type>(<area>): <summary>`" in engineer
@@ -812,6 +817,7 @@ def main():
     test_scope_questions_not_sent_to_po()
     test_pattern_library()
     test_structure_rules_in_roles()
+    test_security_reviewer_requires_ac_lines()
     test_reviewer_copies_criteria_verbatim()
     test_po_decisions_use_pick_list()
     test_ui_mockup_contract()
