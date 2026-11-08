@@ -18,6 +18,7 @@ from omi.project import catalogs
 from omi.state import resolve as state
 from omi.worker import dispatch, drive
 
+REAL_LAUNCH = dispatch.launch
 SRC = {"PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")}
 GATE = "import os,sys,time\nwhile not os.path.exists(sys.argv[1]): time.sleep(0.05)\nsys.exit(int(sys.argv[2]))"
 
@@ -54,7 +55,7 @@ def windows_launch():
                 patch.object(dispatch.subprocess, "CREATE_NO_WINDOW", 0x08000000, create=True), \
                 patch.object(dispatch.subprocess, "CREATE_NEW_PROCESS_GROUP", 512, create=True), \
                 patch.object(dispatch.subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0x01000000, create=True), \
-                patch.object(dispatch, "records", return_value=[]), \
+                patch.object(dispatch, "records", return_value=[]), patch.object(dispatch.tasks, "tasks", return_value={}), \
                 patch.object(dispatch, "runs_dir", return_value=root / "runs"), \
                 patch.object(dispatch.subprocess, "Popen", side_effect=started) as popen, \
                 patch.object(dispatch.subprocess, "run", side_effect=spawner) as run:
@@ -178,6 +179,8 @@ def test_two_runs_finish_together() -> None:
         make_task(root, "TASK-001", "a/**", "DONE\nSuggested commit: x")
         make_task(root, "TASK-002", "b/**", "NEEDS SCOPE: c.py")
         make_task(root, "TASK-003", "a/x.py")
+        late = root / ".omi/tasks/TASK-003.md"  # not started: only in-progress tasks hold their scope
+        late.write_text(late.read_text(encoding="utf-8").replace("status: in-progress", "status: planned"), encoding="utf-8")
         helpers.git(root, "add", ".")
         helpers.git(root, "commit", "-qm", "base")
         project = state.resolve(root)
@@ -392,6 +395,42 @@ def test_next_conflicts_and_dependencies() -> None:
         assert "skip TASK-005:" in output and "depends on TASK-005" in output
 
 
+def test_idle_in_progress_task_holds_its_scope() -> None:
+    with next_fixture() as (project, planned, launch), contextlib.redirect_stdout(io.StringIO()) as out:
+        planned("TASK-900", "a.py")
+        path = project.state / ".omi/tasks/TASK-900.md"
+        path.write_text(path.read_text(encoding="utf-8").replace("status: planned", "status: in-progress"), encoding="utf-8")
+        planned("TASK-001", "a.py")
+        planned("TASK-002", "b.py")
+        dispatch.dispatch_next(project, 2)  # records() is patched empty: no worker runs, TASK-900 is idle
+        assert [c.args[1] for c in launch.call_args_list] == ["TASK-002"]
+        assert "skip TASK-001: TASK-900 holds the scope" in out.getvalue() and "scopes overlap" in out.getvalue()
+        try:  # a planned task is not parallel-safe with an idle in-progress holder
+            REAL_LAUNCH(project, "TASK-001", "omi-agent-engineer")
+        except state.StateError as exc:
+            assert "TASK-900 holds the scope" in str(exc) and "Nothing started" in str(exc)
+        else:
+            raise AssertionError("launch ignored the idle in-progress task")
+
+
+def test_idle_in_progress_tasks_can_each_launch() -> None:
+    with next_fixture() as (project, planned, launch), contextlib.redirect_stdout(io.StringIO()) as out:
+        for tid in ("TASK-900", "TASK-901"):  # overlapping scopes, both started, no worker running
+            path = planned(tid, "a.py")
+            path.write_text(path.read_text(encoding="utf-8").replace("status: planned", "status: in-progress"), encoding="utf-8")
+        planned("TASK-001", "a.py")
+        dispatch.dispatch_next(project)
+        launch.assert_not_called()
+        assert "skip TASK-001: TASK-900 holds the scope" in out.getvalue() and "TASK-901 holds the scope" in out.getvalue()
+        for tid in ("TASK-900", "TASK-901"):
+            with patch.object(dispatch, "runs_dir", return_value=project.code.parent / "runs"), patch.object(dispatch, "subprocess") as sub, \
+                    patch.object(dispatch.core, "WINDOWS", False):  # the direct Popen path on every platform
+                sub.Popen.side_effect = lambda argv, **kw: (Path(argv[-1]) / "started").write_text("1", encoding="utf-8")
+                REAL_LAUNCH(project, tid, "omi-agent-engineer")  # in-progress: only a running worker would refuse
+                sub.Popen.assert_called_once()
+        assert "started omi-agent-engineer on TASK-901" in out.getvalue()
+
+
 def test_next_readiness_and_limit() -> None:
     with next_fixture() as (project, planned, launch), contextlib.redirect_stdout(io.StringIO()) as out:
         planned("TASK-001", "")
@@ -551,6 +590,37 @@ def test_drive_advances_next_and_stops_on_decide() -> None:
         assert calls == [("advance", "TASK-001"), ("advance", "TASK-005")], "a driven run is not advanced twice"
 
 
+def test_drive_prints_decide_of_reported_run_once() -> None:
+    actions = {"TASK-001": "DECIDE: NEEDS SCOPE: a.py - why", "TASK-002": "DECIDE: LOST, killed"}
+    def make(root):
+        recs = [finished_rec(root, "TASK-001"), finished_rec(root, "TASK-002")]
+        recs[0]["reported"] = True  # `omi watch` showed it first; drive.log must still carry the DECIDE
+        return [recs]
+    with drive_fixture(make, actions) as (project, _, calls, _), contextlib.redirect_stdout(io.StringIO()) as out:
+        drive.drive(project, once=True)
+        drive.drive(project, once=True)  # a restarted driver
+        text = out.getvalue()
+        assert text.count("TASK-001 omi-agent-engineer: DECIDE: NEEDS SCOPE: a.py - why") == 1, text
+        assert text.count("TASK-002 omi-agent-engineer: DECIDE: LOST, killed") == 1, text
+        assert not calls
+
+
+def test_drive_starts_no_work_after_an_advance_failure() -> None:
+    for advance_fails in (True, False):
+        task = "TASK-005" if advance_fails else "TASK-006"
+        actions = {task: "NEXT: python -m omi advance " + task, "TASK-001": "DECIDE: x"}
+        make = lambda root: [[finished_rec(root, "TASK-001", running=True), finished_rec(root, task)]] * 2 + \
+            [[finished_rec(root, "TASK-001"), finished_rec(root, task)]]
+        with drive_fixture(make, actions) as (project, _, calls, _), contextlib.redirect_stdout(io.StringIO()) as out:
+            drive.drive(project, once=True)
+            assert ("advance", task) in calls
+            assert (("dispatch", "next", "--max", "1") in calls) is not advance_fails, calls
+            if advance_fails:
+                assert "DECIDE: advance failed" in out.getvalue()
+                drive.drive(project, once=True)  # restarted: still waiting, nothing started
+                assert ("dispatch", "next", "--max", "1") not in calls
+
+
 def test_drive_starts_next_when_slot_frees_and_stops_when_idle() -> None:
     make = lambda root: [[finished_rec(root, "TASK-001", running=True)]] * 2 + [[finished_rec(root, "TASK-001")]]
     with drive_fixture(make, {"TASK-001": "DECIDE: x"}, done=("TASK-001",)) as (project, _, calls, _), \
@@ -602,6 +672,10 @@ def test_free_slots_follows_auto_dispatch_max() -> None:
 
 
 def main():
+    test_idle_in_progress_task_holds_its_scope()
+    test_idle_in_progress_tasks_can_each_launch()
+    test_drive_prints_decide_of_reported_run_once()
+    test_drive_starts_no_work_after_an_advance_failure()
     test_drive_advances_next_and_stops_on_decide()
     test_drive_starts_next_when_slot_frees_and_stops_when_idle()
     test_drive_is_one_per_project()

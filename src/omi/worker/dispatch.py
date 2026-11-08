@@ -60,16 +60,27 @@ def records(code: Path) -> list[dict]:
     return sorted(found, key=lambda r: r["started"])
 
 
+def holders(project: state.Project, found: dict[str, dict], idle: bool = True) -> list[str]:
+    """Tasks holding their scope: those with a running worker, plus (idle) every other in-progress task."""
+    containers = tree.children_map(found)
+    return list(dict.fromkeys([*(r["tid"] for r in records(project.code) if r["running"]),
+                               *(t for t, m in found.items() if idle and m.get("status") == "in-progress" and t not in containers)]))
+
+
+def held_by(project: state.Project, tid: str, others: list[str]) -> list[str]:
+    """Scope overlaps and dependencies between `tid` and the tasks in `others`, each naming the holder."""
+    return [f"{other} holds the scope: {c}" for other in others if other != tid
+            for c in tasks.parallel(project, [tid, other]) if "overlap" in c or "depends on" in c]
+
+
 def launch(project: state.Project, tid: str, role: str, argv: list[str] | None = None) -> Path:
-    """Start the run detached; refuse when it conflicts with a running task."""
-    running = [r for r in records(project.code) if r["running"]]
-    if any(r["tid"] == tid for r in running):
+    """Start the run detached; refuse when it conflicts with a running task, and a not yet started task also with idle in-progress ones."""
+    if any(r["running"] and r["tid"] == tid for r in records(project.code)):
         raise state.StateError(f"{tid} already has a running worker. Nothing started.")
-    others = list(dict.fromkeys(r["tid"] for r in running))
-    if others:
-        bad = [c for c in tasks.parallel(project, [tid, *others]) if "overlap" in c or "depends on" in c]
-        if bad:
-            raise state.StateError("not parallel-safe with running tasks:\n" + "\n".join(bad) + "\nNothing started.")
+    found = tasks.tasks(project)
+    bad = held_by(project, tid, holders(project, found, idle=found.get(tid, {}).get("status", "planned") == "planned"))
+    if bad:
+        raise state.StateError("not parallel-safe with in-progress tasks:\n" + "\n".join(bad) + "\nNothing started.")
     rundir = runs_dir(project.code) / f"{tid}-{role}-{datetime.datetime.now():{STAMP}}"
     rundir.mkdir(parents=True)
     argv = argv or [sys.executable, "-m", "omi", "run", role, tid]
@@ -147,7 +158,7 @@ def dispatch_next(project: state.Project, maximum: int = 1) -> None:
         raise state.StateError("--max must be a positive integer")
     found = tasks.rolled_up(tasks.tasks(project))
     containers = tree.children_map(found)
-    running = list(dict.fromkeys(r["tid"] for r in records(project.code) if r["running"]))
+    held = holders(project, found)
     picked = []
     for tid, meta in found.items():
         if meta.get("status", "planned") != "planned":
@@ -169,8 +180,7 @@ def dispatch_next(project: state.Project, maximum: int = 1) -> None:
             except SystemExit as exc:
                 reason = " ".join(str(exc).splitlines())
         if not reason:
-            conflicts = [c for other in dict.fromkeys([*running, *picked])
-                         for c in tasks.parallel(project, [tid, other])]
+            conflicts = held_by(project, tid, list(dict.fromkeys([*held, *picked])))
             if conflicts:
                 reason = "; ".join(conflicts)
         if not reason and len(picked) >= maximum:
