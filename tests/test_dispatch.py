@@ -423,7 +423,8 @@ def test_idle_in_progress_tasks_can_each_launch() -> None:
         launch.assert_not_called()
         assert "skip TASK-001: TASK-900 holds the scope" in out.getvalue() and "TASK-901 holds the scope" in out.getvalue()
         for tid in ("TASK-900", "TASK-901"):
-            with patch.object(dispatch, "runs_dir", return_value=project.code.parent / "runs"), patch.object(dispatch, "subprocess") as sub:
+            with patch.object(dispatch, "runs_dir", return_value=project.code.parent / "runs"), patch.object(dispatch, "subprocess") as sub, \
+                    patch.object(dispatch.core, "WINDOWS", False):  # the direct Popen path on every platform
                 sub.Popen.side_effect = lambda argv, **kw: (Path(argv[-1]) / "started").write_text("1", encoding="utf-8")
                 REAL_LAUNCH(project, tid, "omi-agent-engineer")  # in-progress: only a running worker would refuse
                 sub.Popen.assert_called_once()
