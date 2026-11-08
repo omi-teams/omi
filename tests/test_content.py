@@ -755,6 +755,57 @@ def test_status_skill_resumes_orphans() -> None:
         assert words in text, words
 
 
+def test_architect_claude_only():
+    ok = '{"type": "result", "result": "DONE", "usage": {}}'
+    quota = '{"type": "result", "is_error": true, "result": "usage limit reached"}'
+    assert "tool: claude\n" in (omi.common.core.TEMPLATE / "dot-omi" / "agents" / "omi-agent-architect.md").read_text(encoding="utf-8")
+    for doc in ("AGENTS.md", "dot-claude/skills/omi-task/SKILL.md"):
+        assert "architect (`omi-agent-architect`) is Claude only" in (omi.common.core.TEMPLATE / doc).read_text(encoding="utf-8")
+    from unittest.mock import patch
+    with tempfile.TemporaryDirectory() as d:
+        wt = Path(d).resolve()
+        (wt / ".git").write_text("gitdir: /x", encoding="utf-8")
+        task = wt / ".omi" / "tasks" / "TASK-901.md"
+        task.parent.mkdir(parents=True)
+        omi.setup.upgrade.init(wt)
+        calls, outputs = [], []
+
+        def run(cmd, **kw):
+            if cmd[:2] == ["docker", "run"] and not any(x in cmd for x in ("chmod", "grep")):
+                calls.append(cmd)
+                return outputs.pop(0)
+            if "--git-common-dir" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, str(wt / "shared.git"), "")
+            if "--show-toplevel" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, str(wt), "")
+            if "show" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, "---\nscope: src/**\n---\n", "")
+            return subprocess.CompletedProcess(cmd, 1 if "grep" in cmd else 0, "", "")
+
+        def go(front="", tool=None, out=ok, rc=0):
+            task.write_text(f"---\nid: TASK-901\nscope: src/**\nrole: omi-agent-architect\n{front}---\n## Checkpoint\nDone:\n", encoding="utf-8")
+            calls.clear()
+            outputs[:] = [subprocess.CompletedProcess([], rc, out, "")] * 2
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                try:
+                    code = omi.worker.run.run_role("omi-agent-architect", wt, task, tool=tool)
+                except SystemExit as e:
+                    code = str(e)
+            return code, buf.getvalue()
+
+        with patch("subprocess.run", run), patch("shutil.which", return_value="docker"), \
+                patch("omi.common.core.main_checkout", return_value=wt), patch("omi.common.core.WINDOWS", False), \
+                patch("omi.worker.docker.ensure_image", return_value="img"), \
+                patch.dict(os.environ, {omi.worker.creds.TOKEN_ENV: "tok", omi.worker.creds.CODEX_ENV: "key"}):
+            for front, tool in (("", "codex"), ("tool: codex\n", None), ("workflow: omi-flow-feature-sensitive\nstep: architect\nstep_settings: architect=codex//\n", None)):
+                code, _ = go(front, tool)
+                assert isinstance(code, str) and "Claude only" in code and "\n" not in code and not calls, (front, tool, code)
+            code, text = go(out=quota, rc=1)
+            assert code == 5 and len(calls) == 1 and "QUOTA:" in text, (code, len(calls), text)
+            assert "codex" not in " ".join(calls[0]).lower().replace("no fallback to codex", "")
+
+
 def main():
     test_status_skill_resumes_orphans()
     test_dispatch_watch_advance_templates()
@@ -788,7 +839,9 @@ def main():
     test_reviewer_mockup_evidence_is_qa()
     test_engineer_requires_suggested_commit_line()
     test_reproduce_and_fix_report_requires_reproduced_line()
+    test_architect_claude_only()
 
 
 if __name__ == "__main__":
     main()
+

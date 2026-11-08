@@ -237,8 +237,15 @@ def test_tool_choice_and_quota_switch():
 
                 settings = "build=codex/opus/high, architect=codex/opus/high, security=codex/opus/high"
                 for sid, role in steps:
-                    assert step_run(sid, role, settings, ok_codex) == 0
-                    assert "gpt-o" in calls[0] and "model_reasoning_effort=high" in calls[0]
+                    if role == "omi-agent-architect":  # Claude only: the codex setting is refused
+                        try:
+                            step_run(sid, role, settings, ok_codex)
+                            raise AssertionError("architect on codex was not refused")
+                        except SystemExit as exc:
+                            assert "Claude only" in str(exc) and not calls
+                    else:
+                        assert step_run(sid, role, settings, ok_codex) == 0
+                        assert "gpt-o" in calls[0] and "model_reasoning_effort=high" in calls[0]
                     assert step_run(sid, role, settings, ok_claude, tool="claude", model="sonnet", effort="medium") == 0
                     assert "claude-sonnet-5-5" in calls[0] and "medium" in calls[0]
                 assert step_run("build", "omi-agent-engineer", settings, ok_claude, tool="claude") == 0

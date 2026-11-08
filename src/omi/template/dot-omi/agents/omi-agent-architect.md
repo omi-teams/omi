@@ -1,5 +1,6 @@
 ---
 role: omi-agent-architect
+tool: claude
 model: opus
 effort: high
 access: read
