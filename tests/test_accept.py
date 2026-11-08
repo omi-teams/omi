@@ -532,6 +532,54 @@ def test_pass_host_error_prints_recordable_line() -> None:
         assert not h.invoke()[0]
 
 
+def test_pass_host_quoted_item() -> None:
+    with accepted() as h:
+        request = 'Windows evidence `Host: native check -> PASS` and `Host: CI -> PASS`'
+        text = h.text.replace('HOST: python check.py', 'HOST: ' + request)
+        text = text.replace('Host: python check.py -> PASS', f'Host: {request} -> PASS')
+        h.task.write_text(text, encoding='utf-8')
+        error, _ = h.invoke()
+        assert not error, error
+
+
+def test_pass_host_test_prose_current_head() -> None:
+    for role in (REVIEWER, 'omi-agent-security-reviewer'):
+        with accepted() as h:
+            h.head = 'abc1234'
+            h.rec['role'] = role
+            h.steps[0]['role'] = role
+            request = 'Host test: the Coordinator already recorded host-test PASS abc1234 for this commit'
+            text = h.text.replace(REVIEWER, role).replace('HOST: python check.py', 'HOST: ' + request)
+            text = text.replace('Host: python check.py -> PASS', '')
+            h.task.write_text(text, encoding='utf-8')
+            with patch.object(advance.accept.core, 'git', return_value=h.head) as git:
+                error, _ = h.invoke()
+            assert not error, error
+            git.assert_called_with(h.project.code, 'rev-parse', '--short=7', 'HEAD')
+
+
+def test_pass_host_test_prose_invalid_evidence_blocks() -> None:
+    for verdict in ('PASS stale12', 'FAIL abc1234', '', 'PASS abc1234 |\n| host-test | m | FAIL abc1234'):
+        with accepted() as h:
+            h.head = 'abc1234'
+            request = 'Host test: the Coordinator already recorded host-test PASS abc1234'
+            text = h.text.replace('HOST: python check.py', 'HOST: ' + request)
+            text = text.replace('| host-test | m | PASS abc1234 |', f'| host-test | m | {verdict} |')
+            h.task.write_text(text, encoding='utf-8')
+            with patch.object(advance.accept.core, 'git', return_value=h.head):
+                error, _ = h.invoke()
+            assert 'HOST checks need' in error, (verdict, error)
+            assert h.task.read_text(encoding='utf-8') == text
+            assert not any(c[:2] == ['git', 'commit'] or 'step' in c for c in h.calls)
+
+
+def test_reviewer_host_test_guidance() -> None:
+    for role in (REVIEWER, 'omi-agent-security-reviewer'):
+        text = (advance.core.TEMPLATE / 'dot-omi/agents' / f'{role}.md').read_text(encoding='utf-8')
+        assert 'When only the configured host test is needed, report `HOST: none`' in text
+        assert '`host-test | PASS <sha>`' in text and 'current HEAD' in text
+
+
 def test_pass_ci_classifies_check_results() -> None:
     for final in (False, True):
         for bucket in ('pending', 'pass', 'fail', 'cancel', 'empty', 'invalid'):
@@ -583,6 +631,10 @@ def main():
     test_pass_no_ci_checks_blocks_merge()
     test_pass_pr_body_filters_reports_and_describes_changes()
     test_pass_host_error_prints_recordable_line()
+    test_pass_host_quoted_item()
+    test_pass_host_test_prose_current_head()
+    test_pass_host_test_prose_invalid_evidence_blocks()
+    test_reviewer_host_test_guidance()
     test_pass_ci_classifies_check_results()
     test_pass_local_and_post_merge_failure()
 

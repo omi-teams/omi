@@ -19,7 +19,7 @@ def section(text: str, heading: str) -> str:
     return text.partition('\n## ' + heading + '\n')[2].split('\n## ', 1)[0]
 
 
-def marked_criteria(text: str, report: str) -> str:
+def marked_criteria(text: str, report: str, worktree: Path | None = None) -> str:
     """Accept complete ordered AC statuses, otherwise require exact criterion text."""
     criteria = section(text, 'Acceptance criteria')
     marked = {re.sub(r'^\s*(?:[-*] )?(?:\[[ xX]\] )?✓\s*', '', line).strip()
@@ -36,18 +36,24 @@ def marked_criteria(text: str, report: str) -> str:
         rf'^(?:AC: )?{re.escape(row)}[ \t]+✓(?:[ \t]|$)', report, re.M)]
     if not rows or missing:
         raise state.StateError('criteria not marked ✓: ' + '; '.join(missing or ['no acceptance criteria']))
-    check_hosts(text, report)
+    check_hosts(text, report, worktree)
     return text.replace('\n## Acceptance criteria\n' + criteria,
                         '\n## Acceptance criteria\n' + re.sub(r'^- \[ \]', '- [x]', criteria, flags=re.M), 1)
 
 
-def check_hosts(text: str, report: str) -> None:
-    """Only an explicit passing host result satisfies a report's HOST request."""
+def check_hosts(text: str, report: str, worktree: Path | None = None) -> None:
+    """Accept explicit host results or the latest host-test PASS on current HEAD."""
     checkpoint = section(text, 'Checkpoint')
     hosts = [h for h in re.findall(r'^\s*(?:[-*] )?HOST:?[ \t]+(.+)$', report, re.M)
              if h.strip().lower().rstrip('.') not in ('none', 'n/a', '-')]
-    passed = set(re.findall(r'^Host: (.+?) -> (?:PASS(?:\b.*)?|passed(?:\b.*)?|0|exit 0)$', checkpoint, re.M))
+    passed = set(re.findall(r'^Host: (.+) -> (?:PASS(?:\b.*)?|passed(?:\b.*)?|0|exit 0)$', checkpoint, re.M))
     pending = [h for h in hosts if h not in passed]
+    host_tests = [h for h in pending if re.match(r'host[- ]test\b', h, re.I)]
+    if host_tests and worktree is not None:
+        head = core.git(worktree, 'rev-parse', '--short=7', 'HEAD')
+        rows = [r[-1] for r in tasks.usage_rows(text) if r[0] == 'host-test']
+        if head and rows and rows[-1] == f'PASS {head}':
+            pending = [h for h in pending if h not in host_tests]
     if pending:
         raise state.StateError('HOST checks need a passing Host: line under ## Checkpoint; after running each check, record: '
                                + '; '.join(f'Host: {item} -> PASS' for item in pending))
@@ -81,12 +87,13 @@ def eligible(ctx: Any) -> bool:
     if any(r['running'] and not (ctx.progress.get('step-next') and r['role'] == following.get('role'))
            for r in dispatch.records(ctx.project.code) if r['tid'] == ctx.tid):
         raise state.StateError('task has a running worker')
-    check_hosts(text, ctx.report)
+    worktree = core.task_worktrees(ctx.project.code).get(ctx.tid)
+    check_hosts(text, ctx.report, worktree)
     next_review = following.get('gate') == 'review'
     if not next_review and (following.get('gate') != 'auto' or at + 2 != len(steps)):
         raise state.StateError('PASS requires a next reviewer or a final auto acceptance gate')
     if not next_review:
-        marked_criteria(text, ctx.report)  # all untrusted-input checks precede mutation
+        marked_criteria(text, ctx.report, worktree)  # all untrusted-input checks precede mutation
     ctx.step, ctx.following = steps[at], following
     ctx.review_roles = tuple(s['role'] for s in steps if s.get('gate') == 'review')
     ctx.progress['step'] = sid
@@ -112,7 +119,7 @@ def stage(ctx: Any, perform: Callable, command: Callable, name: str, action: Cal
 
 def tick_criteria(ctx: Any, command: Callable) -> None:
     task = task_file(ctx)
-    core.write_text(task, tasks.set_front(marked_criteria(core.read_task(task), ctx.report), 'status', 'done'))
+    core.write_text(task, tasks.set_front(marked_criteria(core.read_task(task), ctx.report, core.task_worktrees(ctx.project.code).get(ctx.tid)), 'status', 'done'))
 
 
 def step_done(ctx: Any, command: Callable) -> None:
