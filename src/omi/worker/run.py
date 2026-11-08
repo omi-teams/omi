@@ -133,6 +133,32 @@ def test_prompt_line(wt, main):
         shlex.join("python3" if a == sys.executable else a for a in argv)
 
 
+def test_text(wt, main):
+    """The `test` command text for the worker image: config `test`, else the default test script or pytest."""
+    cfg = Path(main) / ".omi" / "config.json"
+    return (json.loads(cfg.read_text(encoding="utf-8")) if cfg.exists() else {}).get("test") or \
+        ("python3 tests/test_omi.py" if (Path(wt) / "tests" / "test_omi.py").exists() else "python3 -m pytest -q")
+
+
+def clean_head(wt, tid):
+    """Short HEAD of the worktree when it has no changes besides the task file, else None."""
+    dirty = core.git(wt, "status", "--porcelain", "--", ".", f":(exclude).omi/tasks/{tid}.md")
+    return None if dirty != "" else core.git(wt, "rev-parse", "--short=7", "HEAD")
+
+
+def reused_hook(wt, main, tid):
+    """`reused: hook post-run on X` when worker mode is on and the post-run hook passed on the worktree's clean HEAD X, else None."""
+    if not hooks.review_test_in_worker(main):
+        return None
+    project = state.resolve(wt)
+    task = state.task_file(project, tid)
+    sha = clean_head(wt, tid)
+    if task.exists() and hooks.hook_passed_on(core.read_task(task), sha):
+        tasks.append_note(task, "Reports", f"{datetime.datetime.now():%Y-%m-%d %H:%M} reused: hook post-run on {sha}")
+        return f"reused: hook post-run on {sha}"
+    return None
+
+
 def deterministic_checks(wt, main, tid):
     """Problems a script can find in the diff before a read role is started (empty = start the role)."""
     catalog = state.catalog_root(state.resolve(wt), wt)
@@ -151,9 +177,16 @@ def deterministic_checks(wt, main, tid):
         r = subprocess.run([sys.executable, "-m", "omi", "workflows", "--check"], cwd=wt, capture_output=True, encoding="utf-8", errors="replace")
         if r.returncode:
             problems.append("workflows --check: " + (r.stdout + r.stderr).strip())
+    if note := reused_hook(wt, main, tid):
+        print(note)
+        return problems
     try:
-        r = subprocess.run(test_command(wt, main), cwd=wt, capture_output=True, encoding="utf-8", errors="replace")
-    except OSError as e:
+        if hooks.review_test_in_worker(main):
+            code, out = hooks.run_test(wt, main, test_text(wt, main), tid, None)
+            r = types.SimpleNamespace(returncode=code, stdout=out, stderr="")
+        else:
+            r = subprocess.run(test_command(wt, main), cwd=wt, capture_output=True, encoding="utf-8", errors="replace")
+    except (OSError, SystemExit) as e:
         problems.append(f"test command failed to start: {e}")
     else:
         if r.returncode in (127, 9009):  # shell: command not found (sh/bash, cmd)
@@ -179,6 +212,11 @@ def host_test(project, tid):
         sys.exit(f"cannot read the git status of {tid}'s worktree. Nothing changed.")
     if dirty:
         sys.exit(f"{tid} worktree has uncommitted changes: commit first, so the result covers HEAD. Nothing changed.")
+    if note := reused_hook(wt, project.state, tid):
+        tasks.record_usage(state.task_file(project, tid), "host-test", "-", None, (None, None, None), 0,
+                           "-", f"PASS {core.git(wt, 'rev-parse', '--short=7', 'HEAD')}")
+        print(f"HOST TEST PASSED ({note})")
+        return 0
     t0 = time.monotonic()
     try:
         r = subprocess.run(shell_command(cmd), cwd=wt, capture_output=True, encoding="utf-8", errors="replace")
@@ -477,7 +515,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             res = hooks.run_hook(wt, main, "post-run", task.stem, image)
         if res:
             pr.post_hook(wt, task.stem, "post-run", res)
-            if hooks.hook_note(task, "post-run", res):
+            if hooks.hook_note(task, "post-run", res, clean_head(wt, task.stem)):
                 hook_failed = True
     finally:
         if tmp:

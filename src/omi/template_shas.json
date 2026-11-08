@@ -471,7 +471,7 @@
     ".omi/agents/omi-agent-researcher.md": "72c06d4ea6ff70d97cdfa885444c8f22868edd067282f2cce99d14f145f54ba5",
     ".omi/agents/omi-agent-reviewer.md": "9fcd80a6d6447b57089f6c740c5aa1a7f3b510ed7e4a8d8abc2dfae686d146ca",
     ".omi/agents/omi-agent-security-reviewer.md": "ca5262f13448b890f175a6267b68210df0d09d0359d7fd1b5f2c19a9d4e29342",
-    ".omi/config.json": "a4f83434046b8d29cfe076a3a8d5dcabf2d1e72edfac51699dffbb877290b51b",
+    ".omi/config.json": "bd9275223eac4a718f5f24dcbcb1f776ee59ed0cf24babbef634ee613867f2f2",
     ".omi/decisions.md": "ebcde066e22de9b7f5c1ff3d551d5849334fd09fe97954f14b43067428702aef",
     ".omi/hooks/post-run.sh": "9c617b2c092769ef17dc77706bc957e076c28486a54f008a22123403b71cc330",
     ".omi/plans/PLAN-000.md": "64c6734027ba0a1ee88ac3677900eb5568444f08b1350597740504e06b37b66d",
