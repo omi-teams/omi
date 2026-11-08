@@ -39,8 +39,9 @@ def usage_rows(text):
 
 
 def failed_rounds(text):
-    """Review and security FAIL rows of `## Usage`, plus host-test FAIL rows counted once per commit sha."""
-    return len({(r[0], r[-1] if r[0] == "host-test" else i) for i, r in enumerate(usage_rows(text)) if r[0] in (*REVIEW_ROLES, "host-test") and r[-1].startswith("FAIL")})
+    """Review and security FAIL rows of `## Usage` (reviewers of one stage failing one commit: one round), plus host-test FAIL rows counted once per commit sha."""
+    rows = [(r[0], (r[-1].split()[1:2] or [i])[0]) for i, r in enumerate(usage_rows(text)) if r[0] in (*REVIEW_ROLES, "host-test") and r[-1].startswith("FAIL")]
+    return len({("host-test", sha, 0) if role == "host-test" else ("review", sha, rows[:n].count((role, sha))) for n, (role, sha) in enumerate(rows)})
 
 
 def root_of(report):
@@ -192,17 +193,12 @@ def add_step_log(text, line):
     return f"{head}{sep}{body}{line}\n" + (f"\n## {tail}" if nxt else "")
 
 
-SENSITIVE_SCOPE = (r".*migration.*", r"auth([-_.*].*)?", r"secrets?", r"\.github")  # scope path segments (regex, fullmatch) that want omi-flow-feature-sensitive
-
-
 def warn_sensitive(m):
     """Print a warning (never fail) when the task's scope touches a sensitive path under a non-sensitive workflow."""
     if m.get("workflow") == "omi-flow-feature-sensitive":
         return
-    segs = dict.fromkeys(seg for g in core.split(m.get("scope")) for seg in g.lower().split("/"))
-    for seg in segs:
-        if any(re.fullmatch(p, seg) for p in SENSITIVE_SCOPE):
-            print(f"WARN: scope touches {seg} - consider omi-flow-feature-sensitive")
+    for seg in workflows.sensitive_segments(m):
+        print(f"WARN: scope touches {seg} - consider omi-flow-feature-sensitive")
 
 
 def commit_task_file(root, task, msg):
@@ -331,8 +327,12 @@ def step(root, tid, action, why=None, now=None, to=None, po=None):
             catalogs.warn_skills_empty(root, m)
         if cur == "plan":
             warn_sensitive(m)
-        mark = f" (verdicts: {len(verdicts.rows(text, new['role']))})" if new["gate"] == "review" else ""
+            workflows.warn_lane(m)
+        staged = re.findall(rf"^- {re.escape(new['id'])} staged .*?\(verdicts: (\d+)\)", text.partition("\n## Steps\n")[2], re.M) if cur and steps[at].get("stage") == new.get("stage") else []
+        mark = f" (verdicts: {(staged or [len(verdicts.rows(text, new['role']))])[-1]})" if new["gate"] == "review" else ""
         text = add_step_log(set_front(text, "step", new["id"]), f"- {new['id']} started {stamp}{mark}")
+        for s in [s for s in workflows.stage_of(steps, new["id"]) if s["id"] != new["id"] and not staged]:  # dispatched alongside: verdicts count from the stage start
+            text = add_step_log(text, f"- {s['id']} staged {stamp} (verdicts: {len(verdicts.rows(text, s['role']))})")
         msg = (f"{tid}: step {new['id']} ({new['role']}, gate {new['gate']}): input {new['input']}; "
                f"output {new['output']}; stop when {new['stop']}")
     elif not cur:

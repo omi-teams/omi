@@ -937,7 +937,33 @@ def test_template_regen() -> None:
     assert omi.setup.upgrade.SHAS.read_bytes() == installed, "template-regen must not touch the installed omi"
 
 
+def test_speed_pack_templates() -> None:
+    """TASK-257: fast-lane workflow, architect slices, engineer module tests, brief status skill."""
+    tpl = omi.common.core.TEMPLATE
+    wf = tpl / "dot-omi" / "workflows"
+    steps = omi.project.workflows.workflow_steps((wf / "omi-flow-bugfix-fast.md").read_text(encoding="utf-8"))
+    assert [(s["id"], s["role"], s["gate"]) for s in steps] == [
+        ("plan", "coordinator", "none"), ("reproduce-fix", "omi-agent-engineer", "none"),
+        ("review", "omi-agent-reviewer", "review"), ("accept", "coordinator", "auto")]
+    assert "omi-skill-diff-security-review" in omi.project.catalogs.task_skills(steps[2])
+    assert "omi-skill-debug-root-cause" in omi.project.catalogs.task_skills(steps[1])
+    line = next(l for l in (wf / "CATALOG.md").read_text(encoding="utf-8").splitlines() if l.startswith("- omi-flow-bugfix-fast:"))
+    assert "at most 3 non-test files outside sensitive scope" in line and "[plan > reproduce-fix > review > accept]" in line
+    assert omi.worker.run.missing_lines("DONE\nSuggested commit: fix(a): b", "reproduce-fix") == ["Reproduced"]
+    assert omi.worker.run.missing_lines("DONE\nSuggested commit: fix(a): b\nReproduced: test_x failed before the fix", "reproduce-fix") == []
+    sensitive = omi.project.workflows.workflow_steps((wf / "omi-flow-feature-sensitive.md").read_text(encoding="utf-8"))
+    assert [s.get("stage") for s in sensitive if s["gate"] == "review"] == ["review", "review"]
+    agents = tpl / "dot-omi" / "agents"
+    architect = (agents / "omi-agent-architect.md").read_text(encoding="utf-8")
+    assert "disjoint modules" in architect and "omi parallel" in architect and "child task" in architect
+    engineer = (agents / "omi-agent-engineer.md").read_text(encoding="utf-8")
+    assert "tests of the modules you changed" in engineer and "small: sonnet/low" in engineer
+    status = (tpl / "dot-claude" / "skills" / "omi-status" / "SKILL.md").read_text(encoding="utf-8")
+    assert "!`python -m omi status --brief`" in status and "only when the PO asks" in status
+
+
 def main():
+    test_speed_pack_templates()
     test_template_regen()
     test_promote_tags_retry()
     test_promote_tags()

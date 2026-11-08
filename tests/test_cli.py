@@ -234,7 +234,7 @@ def test_cli_characterization():
         rc, usage, err = cli(root)
         assert rc == 0 and usage.startswith("usage: omi <command>\n") and not err
         assert [l.split()[0] for l in usage.splitlines()[1:]] == [
-            "attach", "install-user", "init", "upgrade", "version", "status", "improve", "sync", "board", "guard", "github", "clean", "skills", "skills", "token", "structure", "plans",
+            "attach", "install-user", "init", "upgrade", "version", "status", "dockerfile", "improve", "sync", "board", "guard", "github", "clean", "skills", "skills", "token", "structure", "plans",
             "references", "rules", "agents", "workflows", "host-test", "step", "note", "run", "hook", "dispatch", "dispatch", "drive", "advance", "watch", "parallel", "worker", "worker"]
         # unknown commands and incomplete arguments fall through to the usage text
         for args in (["help"], ["bogus"], ["step", "TASK-001"], ["run", "omi-agent-engineer", "--model"], ["parallel", "X"],
@@ -582,6 +582,47 @@ def test_dispatch_next_args() -> None:
             start.assert_not_called()
 
 
+def test_status_brief_and_metrics() -> None:
+    """TASK-257: `status --brief` is one line per open task plus `next:`; full status prints the delivery metrics line."""
+    row = lambda role, n, verdict="-": f"| {role} | m | low | {n} | 1 | 0 | 1s | - | {verdict} |\n"  # noqa: E731
+    usage = "\n## Usage\n" + omi.project.tasks.USAGE_HEAD + "\n|---|---|---|---|---|---|---|---|---|\n"
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        omi.setup.upgrade.init(root)
+        (root / ".omi" / "config.json").write_text(json.dumps({"test": "x", "token_budget": {"omi-agent-engineer": 500}}), encoding="utf-8")
+        (root / ".omi/tasks/TASK-001.md").write_text("---\nid: TASK-001\ntitle: A\nstatus: in-progress\nstep: build\ntool: codex\n---\n"
+                                                      + usage + row("omi-agent-engineer", 900) + row("omi-agent-engineer", 100), encoding="utf-8")
+        (root / ".omi/tasks/TASK-002.md").write_text("---\nid: TASK-002\ntitle: B\nstatus: planned\n---\n## Checkpoint\nDone: x\n", encoding="utf-8")
+        done = lambda tid, start, end, reports="": (  # noqa: E731
+            f"---\nid: {tid}\ntitle: D\nstatus: done\n---\n## Steps\n- plan started {start}\n- build started {start}\n- accept done {end}\n"
+            f"\n## Reports\n{reports}" + usage + row("omi-agent-engineer", 10) * 2 + row("omi-agent-reviewer", 5, "FAIL abc1234")
+            + row("omi-agent-reviewer", 5, "PASS abc1235"))
+        (root / ".omi/tasks/TASK-003.md").write_text(done("TASK-003", "2026-11-08 10:00", "2026-11-08 11:00",
+                                                          "2026-11-08 10:30 omi-agent-engineer (claude):\n> NEEDS SCOPE: src/x.py - why\n"), encoding="utf-8")
+        (root / ".omi/tasks/TASK-004.md").write_text(done("TASK-004", "2026-11-08 10:00", "2026-11-08 13:00"), encoding="utf-8")
+
+        def run(*flags: str) -> str:
+            output = io.StringIO()
+            output.reconfigure = lambda **kw: None
+            busy = [{"tid": "TASK-001", "running": True, "reported": False}]
+            with patch("omi.worker.dispatch.records", return_value=busy), patch("omi.worker.docker.running_workers", return_value=[]), \
+                    contextlib.redirect_stdout(output):
+                omi.app.cli.dispatch(["status", *flags]) if flags else omi.app.cli.status(root)
+            return output.getvalue()
+
+        with contextlib.chdir(root):
+            brief = run("--brief")
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                out.reconfigure = lambda **kw: None
+                omi.app.cli.dispatch(["dockerfile", "reviewed"])
+        assert "dockerfile_reviewed" in json.loads((root / ".omi" / "project.json").read_text(encoding="utf-8"))
+        assert brief.splitlines() == ["TASK-001 build codex running · over budget: engineer 900>500", "TASK-002 - - planned", "next: TASK-002"], brief
+        full = run()
+        assert "last 2 done: lead time median 2.0 h, engineer runs/task 2.0, review FAIL rate 2/4 (50%), NEEDS SCOPE 1" in full, full
+        assert "branch:" in full and "Done: x" not in brief
+    assert omi.app.cli.metrics({"TASK-9": {"status": "in-progress", "_text": ""}}) == ""
+
+
 def main():
     test_dispatch_next_args()
     test_block_list_scope_and_bom_writers()
@@ -592,6 +633,7 @@ def main():
     test_improve_status_count()
     test_status_phase_and_step_lines()
     test_status_next_resumes_orphaned_and_flags_unhandled()
+    test_status_brief_and_metrics()
     test_step_po_flag()
     test_clean_args()
     test_step_records_behind()

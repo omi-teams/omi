@@ -76,7 +76,8 @@ def eligible(ctx: Any) -> bool:
     at = next((i for i, s in enumerate(steps) if s['id'] == sid), -1)
     if at < 0 or steps[at]['role'] != ctx.rec['role'] or steps[at].get('gate') != 'review':
         raise state.StateError('run role does not match the current review step')
-    starts = re.findall(rf'^- {re.escape(sid)} started (\d{{4}}-\d\d-\d\d \d\d:\d\d)', section(text, 'Steps'), re.M)
+    first = workflows.stage_of(steps, sid)[0]['id']  # a stage's reviewers all ran from its first step's start
+    starts = re.findall(rf'^- {re.escape(first)} started (\d{{4}}-\d\d-\d\d \d\d:\d\d)', section(text, 'Steps'), re.M)
     if not starts or datetime.datetime.strptime(starts[-1], '%Y-%m-%d %H:%M') > ctx.rec['started'].replace(second=0, microsecond=0):
         raise state.StateError('finished run is stale for the current step')
     following = steps[at + 1] if at + 1 < len(steps) else {}
@@ -132,7 +133,9 @@ def step_next(ctx: Any, command: Callable) -> None:
         omi(ctx, command, 'step', ctx.tid, 'next')
 
 
-def reviewer(ctx: Any, command: Callable) -> None:
+def reviewer(ctx: Any, command: Callable) -> str | None:
+    if ctx.following.get('stage') and ctx.following.get('stage') == ctx.step.get('stage'):
+        return 'skipped (ran with its stage)'
     if not any(r['tid'] == ctx.tid and r['role'] == ctx.following['role'] and r['started'] >= ctx.rec['started']
                for r in dispatch.records(ctx.project.code)):
         omi(ctx, command, 'dispatch', ctx.following['role'], ctx.tid)

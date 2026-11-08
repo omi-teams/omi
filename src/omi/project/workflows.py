@@ -10,7 +10,7 @@ from ..common import core
 
 WORKFLOW_TOKENS = 2000  # per workflow file (bytes/4)
 DEFAULT_WORKFLOW = "omi-flow-feature"
-STEP_KEYS = ("id", "role", "skills", "input", "output", "gate", "stop")
+STEP_KEYS = ("id", "role", "skills", "input", "output", "gate", "stop")  # optional `stage:` runs read-only review steps together
 GATES = ("none", "review", "auto", "po")
 COORDINATOR = "coordinator"  # a step the Coordinator does itself (plan, PO acceptance); no role file
 
@@ -73,10 +73,56 @@ def validate_workflow(root, f):
                 catalogs.check_skills(root, step_skill_ids(root, s))
             except SystemExit as e:
                 errs.append(f"step {sid}: {e}")
+    stages = [s.get("stage") for s in steps]
+    for name in dict.fromkeys(filter(None, stages)):
+        at = [i for i, st in enumerate(stages) if st == name]
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", name) or at != list(range(at[0], at[-1] + 1)):
+            errs.append(f"stage {name}: lowercase id, steps listed one after another")
+        for s in (steps[i] for i in at):
+            try:
+                read = catalogs.get_role(root, s["role"])["access"] == "read"
+            except (SystemExit, KeyError):
+                read = False
+            if s.get("gate") != "review" or not read:
+                errs.append(f"step {s.get('id')}: only read-only review steps share a stage")
     n = core.tokens(f)
     if n > WORKFLOW_TOKENS:
         errs.append(f"{n} tokens, at most {WORKFLOW_TOKENS} per workflow")
     return errs
+
+
+def stage_of(steps, sid):
+    """The steps sharing step `sid`'s `stage:` in workflow order, else just that step ([] for an unknown id)."""
+    cur = next((s for s in steps if s.get("id") == sid), None)
+    return [s for s in steps if cur.get("stage") and s.get("stage") == cur["stage"]] or [cur] if cur else []
+
+
+SENSITIVE_SCOPE = (r".*migration.*", r"auth([-_.*].*)?", r"secrets?", r"\.github")  # scope path segments (regex, fullmatch) that want omi-flow-feature-sensitive
+FAST_LANE, SMALL_FILES = "omi-flow-bugfix-fast", 3  # the fast lane takes bugs touching at most 3 non-test files
+
+
+def sensitive_segments(m):
+    """Path segments of the task's scope that match SENSITIVE_SCOPE."""
+    segs = dict.fromkeys(seg for g in core.split(m.get("scope")) for seg in g.lower().split("/"))
+    return [seg for seg in segs if any(re.fullmatch(p, seg) for p in SENSITIVE_SCOPE)]
+
+
+def task_size(m):
+    """Non-test files the task names (`## File plan` paths, else scope entries); None when a scope glob hides the count."""
+    plan = re.findall(r"^- (?:edit|create) (\S+)", m.get("_text", "").partition("\n## File plan\n")[2].split("\n## ", 1)[0], re.M)
+    paths = plan or core.split(m.get("scope"))
+    if not paths or not plan and any(ch in p for p in paths for ch in "*?["):
+        return None
+    return len([p for p in paths if not re.search(r"(^|/)tests?/|(^|/)test_[^/]*$|_test\.\w+$|\.test\.\w+$", p)])
+
+
+def warn_lane(m):
+    """Warn (never fail) when a small bug outside sensitive scope takes the slow bugfix lane, or sensitive scope the fast lane."""
+    size, sensitive = task_size(m), sensitive_segments(m)
+    if m.get("workflow") == FAST_LANE and sensitive:
+        print(f"WARN: {FAST_LANE} on sensitive scope ({', '.join(sensitive)}) - use omi-flow-bugfix or omi-flow-feature-sensitive")
+    elif m.get("workflow") == "omi-flow-bugfix" and m.get("type") == "bug" and size is not None and size <= SMALL_FILES and not sensitive:
+        print(f"WARN: bug touching {size} non-test file(s) - consider the fast lane {FAST_LANE}")
 
 
 def workflow_files(root):

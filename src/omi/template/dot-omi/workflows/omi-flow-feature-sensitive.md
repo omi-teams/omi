@@ -5,8 +5,8 @@ steps:
 - id: plan | role: coordinator | skills: omi-skill-task-brief | input: PO idea | output: task file with scope and acceptance criteria | gate: none | stop: task file complete and PO picked it
 - id: architect | role: omi-agent-architect | skills: | input: task file | output: options and one recommendation in the task file | gate: none | stop: recommendation recorded and trust boundaries named
 - id: build | role: omi-agent-engineer | skills: omi-skill-lean-implementation | input: task file with recommendation | output: diff, tests passing, Checkpoint updated | gate: none | stop: every criterion has a passing test
-- id: review | role: omi-agent-reviewer | skills: omi-skill-verify-evidence, omi-skill-simplify-review | input: task file, diff | output: VERDICT PASS or FAIL | gate: review | stop: VERDICT PASS
-- id: security | role: omi-agent-security-reviewer | skills: omi-skill-diff-security-review, omi-skill-ci-workflow-audit, omi-skill-verify-evidence, omi-skill-simplify-review | input: task file, diff | output: findings with location and how verified, VERDICT | gate: review | stop: VERDICT PASS
+- id: review | role: omi-agent-reviewer | skills: omi-skill-verify-evidence, omi-skill-simplify-review | input: task file, diff | output: VERDICT PASS or FAIL | gate: review | stop: VERDICT PASS | stage: review
+- id: security | role: omi-agent-security-reviewer | skills: omi-skill-diff-security-review, omi-skill-ci-workflow-audit, omi-skill-verify-evidence, omi-skill-simplify-review | input: task file, diff | output: findings with location and how verified, VERDICT | gate: review | stop: VERDICT PASS | stage: review
 - id: accept | role: coordinator | skills: | input: both PASS verdicts | output: `Auto accept: review PASS` line in ## Steps | gate: auto | stop: every review-type step passed or an explicit PO approval line
 ---
 # Feature, sensitive
@@ -23,7 +23,7 @@ steps:
 - accept: Coordinator; automatic after review PASS.
 
 ## Review-fail rule
-A FAIL at review or security goes back to build with the findings. Enforced in code: after `max_fix_rounds` (2) failed rounds `omi step <ID> back` and `omi run` refuse with `ROUND LIMIT` until the Coordinator decides (rescope, replan, or one more round with `--why "<reason>"`, recorded as `Coordinator round override N: <reason>`). From round 2 a FAIL whose report ends `ROOT: same` makes `omi step back` return to architect (opus/high) to re-plan and prints `REPLAN: same root cause`.
+review and security share `stage: review`: `omi advance` dispatches both reviewers together and the stage passes when both PASS. A FAIL in either goes back to build once, with the findings of both. Enforced in code: after `max_fix_rounds` (2) failed rounds `omi step <ID> back` and `omi run` refuse with `ROUND LIMIT` until the Coordinator decides (rescope, replan, or one more round with `--why "<reason>"`, recorded as `Coordinator round override N: <reason>`). From round 2 a FAIL whose report ends `ROOT: same` makes `omi step back` return to architect (opus/high) to re-plan and prints `REPLAN: same root cause`.
 
 ## PO gates
 `accept` is automatic: `omi step <ID> done` records `Auto accept: review PASS` under `## Steps` when every review-type step passed (or an explicit `PO approval accept:` line exists), and refuses otherwise. Merge to staging/main stays with the PO.

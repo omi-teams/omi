@@ -1,7 +1,10 @@
 """Command line: usage text, omi status and argument dispatch."""
 
 import contextlib
+import datetime
 import json
+import re
+import statistics
 import sys
 import webbrowser
 from pathlib import Path
@@ -21,7 +24,8 @@ USAGE = """usage: omi <command>
   init [dir]   install the squad into a project (never overwrites)
   upgrade [--check | --to vX.Y.Z]   install a newer omi and update the project's unmodified template files (modified ones get <path>.omi-new)
   version      print the omi version and how to check for a newer one (also --version)
-  status       show tasks, checkpoints and the next suggested task
+  status [--brief]   show tasks, checkpoints, delivery metrics and the next suggested task (--brief: one line per task and the next line)
+  dockerfile reviewed   record that docker/Dockerfile was reviewed against this omi template; status warns again only when the template changes
   improve "<one line>" [--kind bug|security|idea] [--from <project>]   file an omi improvement
   sync         pull, commit leftover detached state changes and push
   board [--port N] [--no-open]   serve the read-only task board on 127.0.0.1 (default port 8765)
@@ -52,11 +56,72 @@ USAGE = """usage: omi <command>
   worker <wt> --prove   run docker/prove.sh in the worker (boundary check, no token)"""
 
 
-def status(cwd="."):
+def metrics(ts: dict) -> str:
+    """Median lead time (first step start to the last step done, just before the merge), engineer runs per task,
+    review FAIL rate and NEEDS SCOPE reports over the last 20 done tasks; '' without one."""
+    done = []
+    for m in ts.values():
+        log = m.get("_text", "").partition("\n## Steps\n")[2].split("\n## ", 1)[0]
+        stamps = re.findall(r"^- \S+ (started|done) (\d{4}-\d\d-\d\d \d\d:\d\d)", log, re.M)
+        starts, ends = [s for e, s in stamps if e == "started"], [s for e, s in stamps if e == "done"]
+        if m.get("status") == "done" and starts and ends:
+            at = lambda s: datetime.datetime.strptime(s, "%Y-%m-%d %H:%M")  # noqa: E731
+            done.append((at(ends[-1]), (at(ends[-1]) - at(starts[0])).total_seconds() / 3600, m["_text"]))
+    done = sorted(done, key=lambda d: d[0])[-20:]
+    if not done:
+        return ""
+    rows = [r for _, _, text in done for r in tasks.usage_rows(text)]
+    reviews = [r for r in rows if r[0] in tasks.REVIEW_ROLES and r[-1][:4] in ("PASS", "FAIL")]
+    fails = sum(r[-1].startswith("FAIL") for r in reviews)
+    scope_asks = sum(len(re.findall(r"^> \W*NEEDS SCOPE\b", text.partition("\n## Reports\n")[2].split("\n## ", 1)[0], re.M)) for _, _, text in done)
+    return (f"last {len(done)} done: lead time median {statistics.median(h for _, h, _ in done):.1f} h, "
+            f"engineer runs/task {sum(r[0] == 'omi-agent-engineer' for r in rows) / len(done):.1f}, "
+            f"review FAIL rate {fails}/{len(reviews)}{f' ({fails * 100 // len(reviews)}%)' if reviews else ''}, NEEDS SCOPE {scope_asks}")
+
+
+def busy_tasks(project) -> tuple[list[dict], set[str]]:
+    """(run records, ids of tasks with a running worker)."""
+    try:
+        recs = worker_dispatch.records(project.code)
+    except state.StateError:
+        recs = []
+    busy = {r["tid"] for r in recs if r["running"]}
+    return recs, busy | {row[0] for row in docker.running_workers(project.state if project.detached else project.code)}
+
+
+def next_line(ts: dict, kids: dict, busy: set[str]) -> str:
+    done = {k for k, m in ts.items() if m.get("status") == "done"}
+    resume = [f"{k} (resume)" for k, m in ts.items() if m.get("status") == "in-progress" and k not in kids and k not in busy]
+    nxt = next((k for k, m in ts.items()
+                if m.get("status", "planned") == "planned" and k not in kids and set(core.split(m.get("depends"))) <= done), None)
+    return f"next: {' '.join(resume + ([nxt] if nxt else [])) or 'none ready'}"
+
+
+def brief(project) -> None:
+    """`omi status --brief`: one line per open task (id, step, tool, running; runs over their token budget), the next line."""
+    ts = tasks.rolled_up(tasks.tasks(project))
+    kids = tree.children_map(ts)
+    recs, busy = busy_tasks(project)
+    budgets = {}
+    budget_of = lambda role: budgets.setdefault(role, run.token_budget(project, role, ts))  # noqa: E731
+    for st in STATUSES:
+        for k, m in ts.items():
+            if m.get("status", "planned") == st and k not in kids:
+                over = run.over_budget(m["_text"], budget_of)
+                print(f"{k} {m.get('step') or '-'} {m.get('tool') or '-'} {'running' if k in busy else st}"
+                      + (f" · over budget: {', '.join(over)}" if over else ""))
+    print(next_line(ts, kids, busy))
+    if unhandled := sum(not r["running"] and not r["reported"] for r in recs):
+        print(f"finished runs not handled: {unhandled}; run python -m omi watch")
+
+
+def status(cwd=".", brief_form=False):
     project = state.resolve(cwd)
     if project.detached:
         attach.warn_in_repo_files(project.code)
         state_sync.pull(project)
+    if brief_form:
+        return brief(project)
     root = project.state
     print(f"branch: {core.git(cwd, 'rev-parse', '--abbrev-ref', 'HEAD')}")
     stamp_file = root / ".omi" / "version"
@@ -76,10 +141,8 @@ def status(cwd="."):
         print("installed omi user skills or Codex block differ from the current template; run `python -m omi install-user`")
     source = project.state.name if project.detached else project.code.name
     print(f"omi improvements filed: {improve.open_count(source)} open")
-    dockerfile = root / "docker" / "Dockerfile"
-    if dockerfile.exists() and dockerfile.read_bytes().replace(b"\r\n", b"\n") != (core.TEMPLATE / "docker" / "Dockerfile").read_bytes().replace(b"\r\n", b"\n"):
-        print(f"docker/Dockerfile differs from the omi {core.version()} template; review it (omi init never overwrites it)")
-        print(f"  see the diff: git diff --no-index {core.TEMPLATE / 'docker' / 'Dockerfile'} docker/Dockerfile\n  merge by hand; omi init and upgrade never overwrite it")
+    for line in upgrade.dockerfile_hint(project):
+        print(line)
     for line in docker.full_volumes(root if project.detached else project.code):
         print(line)
     cfg = root / ".omi" / "config.json"
@@ -108,6 +171,8 @@ def status(cwd="."):
         return
     done = {k for k, m in ts.items() if m.get("status") == "done"}
     print(f"done: {len(done)}/{len(ts)}")
+    if line := metrics(ts):
+        print(line)
     for st in STATUSES:
         for k, m in ts.items():
             if m.get("status", "planned") == st and k not in kids:
@@ -139,16 +204,8 @@ def status(cwd="."):
         for k, m in ts.items():
             if m.get("parent") not in ts:
                 show(k, 0)
-    try:
-        recs = worker_dispatch.records(project.code)
-    except state.StateError:
-        recs = []
-    busy = {r["tid"] for r in recs if r["running"]}
-    busy |= {row[0] for row in docker.running_workers(project.state if project.detached else project.code)}
-    resume = [f"{k} (resume)" for k, m in ts.items() if m.get("status") == "in-progress" and k not in kids and k not in busy]
-    nxt = next((k for k, m in ts.items()
-                if m.get("status", "planned") == "planned" and k not in kids and set(core.split(m.get("depends"))) <= done), None)
-    print(f"next: {' '.join(resume + ([nxt] if nxt else [])) or 'none ready'}")
+    recs, busy = busy_tasks(project)
+    print(next_line(ts, kids, busy))
     unhandled = sum(not r["running"] and not r["reported"] for r in recs)
     if unhandled:
         print(f"finished runs not handled: {unhandled}; run python -m omi watch")
@@ -161,8 +218,8 @@ def main(argv: list[str] | None = None) -> None:
         cmd = args[0] if args else "help"
         if cmd != "guard":  # guard handles StateError itself and must exit 2 (blocking), not 1
             state.registry()
-        mutates = cmd in {"init", "upgrade", "skills", "rules", "plans", "references", "agents",
-                          "workflows", "step", "note", "host-test", "run", "hook", "worker"} or (cmd == "dispatch" and args[1:2] == ["next"])
+        mutates = cmd in {"init", "upgrade", "skills", "rules", "plans", "references", "agents", "dockerfile",
+                          "workflows", "step", "note", "host-test", "run", "hook", "worker", "dispatch"}
         target = args[1] if cmd == "init" and len(args) > 1 else "."
         project = state.resolve(target) if mutates else None
         if project and project.detached:
@@ -226,7 +283,9 @@ def dispatch(argv: list[str] | None = None) -> None:
             raise state.StateError("omi sync requires a detached project (omi attach)")
         sys.exit(state_sync.sync(project))
     elif cmd == "status":
-        status(*rest[:1])
+        status(*[a for a in rest if a != "--brief"][:1], brief_form="--brief" in rest)
+    elif cmd == "dockerfile" and rest == ["reviewed"]:
+        upgrade.dockerfile_reviewed(state.resolve())
     elif cmd == "board":
         port = core.flag(rest, "--port")
         if not set(rest) <= {"--port", "--no-open", port} or ("--port" in rest and not ((port or "").isascii() and (port or "").isdigit())):

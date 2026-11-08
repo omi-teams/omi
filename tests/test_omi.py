@@ -1,4 +1,5 @@
-"""Runs every area test file: python tests/test_omi.py [--jobs N] [--profile] (--jobs 1: one process, the old serial run)"""
+"""Runs every area test file: python tests/test_omi.py [--jobs N] [--profile] (--jobs 1: one process, the old serial run)
+OMI_QUIET=1: print only failures and a one-line summary; the full output goes to $OMI_RUN_DIR/test-output.log (else .omi-cache/)."""
 import concurrent.futures
 import contextlib
 import io
@@ -237,6 +238,40 @@ def run_parallel(mods, jobs, skips, times):
     return failed
 
 
+def quiet(argv, log):
+    """Run argv with its full output in `log`; print only the failure lines and one summary line. Returns its exit code."""
+    try:
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.touch()
+    except OSError:  # read-only worktree (review container)
+        log = Path(tempfile.gettempdir()) / "omi-test-output.log"
+    start = time.perf_counter()
+    with log.open("w", encoding="utf-8", newline="\n") as out:
+        code = subprocess.run(argv, stdout=out, stderr=subprocess.STDOUT, env={k: v for k, v in os.environ.items() if k != "OMI_QUIET"}).returncode
+    lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
+    failed = [l for l in lines if l.startswith("FAILED")]
+    if code:
+        print("\n".join(failed or lines[-20:]))
+    print(f"tests: {'FAILED' if code else 'ok'} ({len(failed)} failure lines, {time.perf_counter() - start:.0f}s; full output: {log})", flush=True)
+    return code
+
+
+def test_quiet() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        log = Path(d) / "run" / "test-output.log"
+        script = "import sys; print('noise\\n' * 50 + 'FAILED test_x a.py:1 AssertionError: boom'); sys.exit(1)"
+        with contextlib.redirect_stdout(io.StringIO()) as shown:
+            assert quiet([sys.executable, "-c", script], log) == 1
+        assert shown.getvalue().splitlines()[0] == "FAILED test_x a.py:1 AssertionError: boom", shown.getvalue()
+        assert "noise" not in shown.getvalue() and len(shown.getvalue().splitlines()) == 2
+        assert shown.getvalue().splitlines()[-1].startswith("tests: FAILED (1 failure lines")
+        assert log.read_text(encoding="utf-8").count("noise") == 50
+        with contextlib.redirect_stdout(io.StringIO()) as shown:
+            assert quiet([sys.executable, "-c", "print('all fine')"], log) == 0
+        assert shown.getvalue().startswith("tests: ok (0 failure lines") and len(shown.getvalue().splitlines()) == 1
+        assert log.read_text(encoding="utf-8") == "all fine\n"
+
+
 def options(argv):
     jobs, profile, only = os.cpu_count() or 1, "--profile" in argv, None
     if "--jobs" in argv:
@@ -258,6 +293,9 @@ if __name__ == "__main__":
     if only:
         run_child(only)
         sys.exit(0)
+    if os.environ.get("OMI_QUIET") == "1":
+        run_dir = os.environ.get("OMI_RUN_DIR") or Path(__file__).parent.parent / ".omi-cache"
+        sys.exit(quiet([sys.executable, __file__, *sys.argv[1:]], Path(run_dir) / "test-output.log"))
     check_test_modules(Path(__file__).parent, list(sys.modules.values()))
     real_skips, times = [], {}
     own = sys.modules[__name__]
@@ -268,6 +306,7 @@ if __name__ == "__main__":
     test_phase()
     test_release_0_6_0()
     test_options()
+    test_quiet()
     assert {m.__name__ for m in MODULES} | {"test_omi"} == {p.stem for p in Path(__file__).parent.glob("test_*.py")}, "MODULES must list every test file"
     if jobs == 1:
         run_modules(MODULES, real_skips, times)

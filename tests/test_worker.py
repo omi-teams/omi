@@ -1305,8 +1305,115 @@ def test_claude_report_skips_subagent_messages():
         assert omi.worker.tools.full_report("claude", out, final) == final
 
 
+def run_role_harness(wt, outputs, calls):
+    """subprocess.run fake for run_role: docker runs pop `outputs`, git reads answer like a clean worktree."""
+    def run(cmd, **kw):
+        if cmd[:2] == ["docker", "run"] and not any(x in cmd for x in ("chmod", "grep")):
+            calls.append(cmd)
+            return outputs.pop(0)
+        if "--git-common-dir" in cmd:
+            return subprocess.CompletedProcess(cmd, 0, str(wt / "shared.git"), "")
+        if "--show-toplevel" in cmd:
+            return subprocess.CompletedProcess(cmd, 0, str(wt), "")
+        if "show" in cmd:
+            return subprocess.CompletedProcess(cmd, 0, "---\nscope: src/**\n---\n", "")
+        return subprocess.CompletedProcess(cmd, 1 if "grep" in cmd else 0, "", "")
+    return run
+
+
+def test_token_budget_stop():
+    """TASK-257: a run whose input tokens pass token_budget stops with BUDGET: and a checkpoint, no follow-up run or hook."""
+    result = lambda n, text="DONE\nSuggested commit: fix(x): y": subprocess.CompletedProcess([], 0, json.dumps(  # noqa: E731
+        {"type": "result", "result": text, "usage": {"input_tokens": n, "output_tokens": 1}}), "")
+    with tempfile.TemporaryDirectory() as d:
+        wt = Path(d).resolve()
+        (wt / ".git").write_text("gitdir: /x", encoding="utf-8")
+        task = wt / ".omi" / "tasks" / "TASK-257.md"
+        task.parent.mkdir(parents=True)
+        cfg = wt / ".omi" / "config.json"
+        calls, outputs, hooks_run = [], [], []
+        with patch("subprocess.run", run_role_harness(wt, outputs, calls)), patch("shutil.which", return_value="docker"), \
+                patch("omi.common.core.main_checkout", return_value=wt), patch("omi.common.core.WINDOWS", False), \
+                patch("omi.worker.docker.ensure_image", return_value="img"), \
+                patch("omi.worker.hooks.run_hook", side_effect=lambda *a: hooks_run.append(a[2])), \
+                patch.dict(os.environ, {omi.worker.creds.TOKEN_ENV: "tok"}), \
+                contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()):
+            for budget, used, want in ((500, 1000, 7), (5000, 1000, 0)):
+                cfg.write_text(json.dumps({"token_budget": {"omi-agent-engineer": budget}}), encoding="utf-8")
+                task.write_text("---\nid: TASK-257\nscope: src/**\n---\n## Checkpoint\nDone:\n", encoding="utf-8")
+                calls.clear(), hooks_run.clear()
+                outputs[:] = [result(used)]
+                assert omi.worker.run.run_role("omi-agent-engineer", wt, task, effort="low") == want, out.getvalue()
+                checkpoint = task.read_text(encoding="utf-8").partition("## Checkpoint")[2].partition("\n## ")[0]
+                assert len(calls) == 1
+                assert any(omi.worker.run.MODULE_TESTS in a for a in calls[0]), "the engineer runs only its modules' tests"
+                if want:
+                    assert "BUDGET: omi-agent-engineer used 1000 input tokens, over its token_budget 500" in checkpoint, checkpoint
+                    assert hooks_run == ["pre-run"], "no post-run hook after a budget stop"
+                else:
+                    assert "BUDGET" not in checkpoint and hooks_run == ["pre-run", "post-run"]
+    # default: 3x the median input of the role's last 20 runs, none under 5 runs; a config value wins
+    row = lambda role, n: f"| {role} | m | low | {n} | 1 | 0 | 1s | - | - |\n"  # noqa: E731
+    found = {"TASK-1": {"_text": "\n## Usage\n" + "".join(row("omi-agent-engineer", n) for n in (10, 20, 30, 40, 1000))
+                        + row("omi-agent-reviewer", 99)}}
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        assert omi.worker.run.token_budget(root, "omi-agent-engineer", found) == 90
+        assert omi.worker.run.token_budget(root, "omi-agent-reviewer", found) is None
+        found["TASK-2"] = {"_text": "\n## Usage\n" + "".join(row("omi-agent-engineer", 100) for _ in range(30))}
+        assert omi.worker.run.token_budget(root, "omi-agent-engineer", found) == 300, "only the last 20 runs count"
+        (root / ".omi").mkdir()
+        (root / ".omi" / "config.json").write_text(json.dumps({"token_budget": {"omi-agent-engineer": 7}}), encoding="utf-8")
+        assert omi.worker.run.token_budget(root, "omi-agent-engineer", found) == 7
+        assert omi.worker.run.over_budget(found["TASK-1"]["_text"], lambda role: 25 if role == "omi-agent-engineer" else None) == \
+            ["engineer 30>25", "engineer 40>25", "engineer 1000>25"]
+
+
+def test_reviewer_ac_lines_rerun():
+    """TASK-257: a review report without one AC: line per criterion reruns the reviewer once, fresh, listing the missing ones."""
+    report = lambda *acs: subprocess.CompletedProcess([], 0, json.dumps(  # noqa: E731
+        {"type": "result", "result": "VERDICT: PASS\n" + "".join(f"AC: {a} ✓ ok\n" for a in acs) + "HOST: none\nROOT: n/a", "usage": {}}), "")
+    with tempfile.TemporaryDirectory() as d:
+        wt = Path(d).resolve()
+        (wt / ".git").write_text("gitdir: /x", encoding="utf-8")
+        task = wt / ".omi" / "tasks" / "TASK-257.md"
+        task.parent.mkdir(parents=True)
+        shutil.copytree(omi.common.core.TEMPLATE / "dot-omi" / "skills", wt / ".omi" / "skills")  # the reviewer's default skills
+        with contextlib.redirect_stdout(io.StringIO()):
+            omi.project.catalogs.skills_catalog(wt)
+        calls, outputs = [], []
+        with patch("subprocess.run", run_role_harness(wt, outputs, calls)), patch("shutil.which", return_value="docker"), \
+                patch("omi.common.core.main_checkout", return_value=wt), patch("omi.common.core.WINDOWS", False), \
+                patch("omi.worker.docker.ensure_image", return_value="img"), \
+                patch("omi.worker.run.deterministic_checks", return_value=[]), \
+                patch.dict(os.environ, {omi.worker.creds.TOKEN_ENV: "tok"}), \
+                contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()):
+            for first, runs in ((report("first rule"), 2), (report("first rule", "second rule"), 1)):
+                task.write_text("---\nid: TASK-257\nscope: src/**\n---\n## Acceptance criteria\n- [ ] first rule\n- [ ] second rule\n\n"
+                                "## Checkpoint\nDone:\n", encoding="utf-8")
+                calls.clear()
+                outputs[:] = [first, report("first rule", "second rule")]
+                assert omi.worker.run.run_role("omi-agent-reviewer", wt, task) == 0, out.getvalue()
+                text = task.read_text(encoding="utf-8")
+                assert len(calls) == runs, (runs, out.getvalue())
+                assert not any(omi.worker.run.MODULE_TESTS in a for a in calls[0]), "reviewers keep the full test line"
+                verdicts = [r[-1].split()[0] for r in omi.project.tasks.usage_rows(text)]
+                if runs == 2:
+                    prompt = next(a for a in calls[1] if "AC:" in a and "second rule" in a)
+                    assert "- second rule" in prompt and "- first rule" not in prompt
+                    assert verdicts == ["AC-MISSING", "PASS"] and omi.project.verdicts.rows(text, "omi-agent-reviewer") == ["PASS"]
+                else:
+                    assert verdicts == ["PASS"]
+    # HOST-only criteria count; a report with one AC line per criterion is complete even when paraphrased
+    text = "\n## Acceptance criteria\n- [ ] parse alpha\n- [ ] run beta on Windows\n- [ ] print gamma\n"
+    assert omi.worker.run.missing_ac(text, "AC: parse alpha ✓\nHOST: run beta on Windows needs the host") == ["print gamma"]
+    assert omi.worker.run.missing_ac(text, "AC: parse alpha ✓\nAC: Beta ✓\nAC: Gamma ✓") == []
+
+
 def main():
     test_codex_capacity_fallback()
+    test_token_budget_stop()
+    test_reviewer_ac_lines_rerun()
     test_verdict_of_forms()
     test_full_report_keeps_earlier_block()
     test_claude_report_skips_subagent_messages()

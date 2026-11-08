@@ -3,10 +3,12 @@ import contextlib
 import datetime
 import io
 import json
+import re
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import helpers
@@ -454,7 +456,7 @@ class ReviewFail(Handoff):
             if self.fail == 'step-back':
                 return subprocess.CompletedProcess(argv, 1, '', 'ROUND LIMIT: TASK-218 failed 2 review rounds; the Coordinator decides')
             self.why = argv[argv.index('--why') + 1] if '--why' in argv else None
-            self.task.write_text(self.task.read_text(encoding='utf-8').replace('step: security', 'step: build'), encoding='utf-8')
+            self.task.write_text(re.sub(r'^step: \S+', 'step: build', self.task.read_text(encoding='utf-8'), count=1, flags=re.M), encoding='utf-8')
             return subprocess.CompletedProcess(argv, 0, self.back_out, '')
         return super().run(argv, **kwargs)
 
@@ -629,7 +631,99 @@ def test_rebase_regenerates_generated_conflicts() -> None:
         assert run("rev-parse", "HEAD") == head and run("status", "--porcelain") == ""
 
 
+STAGE = [dict(id='build', role=ROLE), dict(id='review', role='omi-agent-reviewer', gate='review', stage='check'),
+         dict(id='security', role=REVIEWER, gate='review', stage='check')]
+
+
+def staged_review(h, reviewer_report):
+    """Both reviewers of stage `check` ran on commit abc1234; returns the reviewer's run record (still running)."""
+    h.steps = STAGE
+    h.text = (h.text.replace('step: security', 'step: review')
+              .replace('- security started 2026-11-06 11:18', '- review started 2026-11-06 11:18 (verdicts: 0)\n- security staged 2026-11-06 11:18 (verdicts: 0)')
+              + f"2026-11-06 11:22 omi-agent-reviewer (claude):\n> {reviewer_report}\n")
+    h.task.write_text(h.text, encoding='utf-8')
+    (h.run_dir.parent / 'run2').mkdir()
+    rec = dict(tid=TID, role='omi-agent-reviewer', rc=None, running=True, started=STAMP, dir=h.run_dir.parent / 'run2')
+    h.recs.append(rec)
+    return rec
+
+
+def test_review_stage_waits_then_one_fix_round() -> None:
+    """TASK-257: advance waits for every reviewer of a stage; a FAIL in either makes one fix round with all findings."""
+    with review_fail() as h:
+        rec = staged_review(h, "VERDICT: FAIL\n> - d.py:4 reviewer finding\n> ROOT: new")
+        error, out = h.invoke()
+        assert not error and 'stage check: waiting for omi-agent-reviewer' in out and not h.calls, (error, out)
+        assert h.task.read_text(encoding='utf-8') == h.text
+        rec.update(rc=0, running=False)
+        h.task.write_text(h.text + "\n## Usage\n| role | model |\n|---|---|\n"
+                          "| omi-agent-reviewer | m | high | 1 | 1 | 1 | 1s | - | FAIL abc1234 |\n"
+                          "| omi-agent-security-reviewer | m | high | 1 | 1 | 1 | 1s | - | FAIL abc1234 root:new |\n", encoding='utf-8')
+        error, out = h.invoke()
+        assert not error, (error, out)
+        assert 'findings: 4 finding(s) under Review round 1 FAIL:' in out and f'dispatch: {ROLE} dispatched' in out, out
+        cp = checkpoint_of(h)
+        assert all(f in cp for f in ('- d.py:4 reviewer finding', '- a.py:1', '- b.py:2', '- c.py:3')), cp
+        assert sum(c[3:6] == ['step', TID, 'back'] for c in h.calls) == 1
+        assert core_meta_step(h) == 'build'
+
+
+def core_meta_step(h):
+    return advance.core.parse(h.task.read_text(encoding='utf-8')).get('step')
+
+
+def test_review_stage_passes_through_each_reviewer() -> None:
+    """TASK-257: both reviewers PASS: the handoff runs for each in workflow order, the last one goes on to accept."""
+    with review_fail() as h:
+        rec = staged_review(h, "VERDICT: PASS\n> AC: works ✓ ok\n> ROOT: n/a")
+        h.text = h.text.replace('> VERDICT: FAIL', '> VERDICT: PASS', 1)
+        h.task.write_text(h.text, encoding='utf-8')
+        rec.update(rc=0, running=False)
+        passed = []
+        with patch.object(advance.accept, 'advance_pass', side_effect=lambda ctx, *a: passed.append(ctx.rec['role'])):
+            assert h.invoke()[0] == ''
+            assert passed == ['omi-agent-reviewer', REVIEWER]
+            assert json.loads((rec['dir'] / 'advance.json').read_text(encoding='utf-8'))['stage-handoff'] is True
+            passed.clear()
+            assert h.invoke()[0] == '' and passed == [REVIEWER], passed
+    ctx = SimpleNamespace(step=STAGE[1], following=STAGE[2])
+    assert advance.accept.reviewer(ctx, None) == 'skipped (ran with its stage)'
+
+
+def test_write_done_dispatches_the_whole_stage() -> None:
+    with handoff() as h:
+        h.steps = [dict(id='build', role=ROLE), *STAGE[1:]]
+        error, out = h.invoke()
+        assert not error, (error, out)
+        assert [c[-2] for c in h.calls if c[-3:-2] == ['dispatch']] == ['omi-agent-reviewer', REVIEWER]
+
+
+def test_regenerate_split_and_done_reports_only() -> None:
+    """TASK-251 notes: `regenerate` keeps Windows backslashes; Suggested commit reuse reads only earlier DONE reports."""
+    seen = []
+    ctx = SimpleNamespace(wt=Path('.'), project=SimpleNamespace(state=Path('.')))
+    with patch.object(advance.scope, 'generated', return_value=['gen.txt']), \
+            patch.object(advance.scope, 'config', return_value=r'C:\Python\python.exe C:\tools\regen.py'), \
+            patch.object(advance, 'git', side_effect=lambda c, *a: 'gen.txt' if a[:2] == ('diff', '--name-only') else ''), \
+            patch.object(advance, 'command', side_effect=lambda wt, argv, **kw: seen.append(argv) or ''), \
+            patch.object(advance.core, 'WINDOWS', True):
+        advance.resolve_generated(ctx)
+    assert seen == [[r'C:\Python\python.exe', r'C:\tools\regen.py']], seen
+    with handoff() as h:
+        earlier = ("2026-11-06 11:10 omi-agent-engineer (codex):\n> BLOCKED\n> Suggested commit: fix(a): blocked one\n"
+                   "2026-11-06 11:21 omi-agent-engineer (codex):\n> DONE\n> fixed it\n")
+        h.task.write_text(h.text.split('## Reports\n')[0] + '## Reports\n' + earlier, encoding='utf-8')
+        assert 'Suggested commit' in h.invoke()[0]
+        h.task.write_text(h.task.read_text(encoding='utf-8').replace('> BLOCKED', '> DONE'), encoding='utf-8')
+        error, _ = h.invoke()
+        assert not error and ['git', 'commit', '-m', 'fix(a): blocked one'] in h.calls, error
+
+
 def main():
+    test_review_stage_waits_then_one_fix_round()
+    test_review_stage_passes_through_each_reviewer()
+    test_write_done_dispatches_the_whole_stage()
+    test_regenerate_split_and_done_reports_only()
     test_rebase_regenerates_generated_conflicts()
     test_commit_stage_reports_clean_and_committed()
     test_task_branch_push_uses_lease()

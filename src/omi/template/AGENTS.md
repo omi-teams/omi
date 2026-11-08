@@ -12,7 +12,7 @@ Continue from it. Don't re-explore the repo.
 - `omi-task <ID>`: follow `.claude/skills/omi-task/SKILL.md`
 - `omi-release [promote]`: follow `.claude/skills/omi-release/SKILL.md`
 - `omi-upgrade`: follow `.claude/skills/omi-upgrade/SKILL.md`
-- `omi-status`: run `python -m omi status`, show the output verbatim.
+- `omi-status`: run `python -m omi status --brief` (one line per task and `next:`) and show it; the full `python -m omi status` only when the PO asks.
 
 ## State (files in the repo are the only source of truth)
 - `docs/product.md`: approved product spec.

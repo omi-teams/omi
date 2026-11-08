@@ -671,7 +671,55 @@ def test_free_slots_follows_auto_dispatch_max() -> None:
             assert dispatch.free_slots(project) == 1
 
 
+def test_size_routing_parallel_reviewers_and_budget() -> None:
+    """TASK-257: small tasks get the role's `small:` model/effort (recorded under ## Runs); a task's reviewers run together;
+    a budget stop is a DECIDE; the wrapper names the run dir for quiet test logs."""
+    import json
+    eng, rev, sec = "omi-agent-engineer", "omi-agent-reviewer", "omi-agent-security-reviewer"
+    with patch.dict(os.environ, SRC), tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        omi.setup.upgrade.init(root)
+        make_task(root, "TASK-001", "src/a.py, tests/test_a.py")
+        make_task(root, "TASK-002", "src/**")
+        make_task(root, "TASK-003", "a.py, b.py, c.py, d.py")
+        helpers.git(root, "add", ".")
+        helpers.git(root, "commit", "-qm", "base")
+        project = state.resolve(root)
+        seen = "import os, pathlib; pathlib.Path(os.environ['OMI_RUN_DIR'], 'seen').write_text('x')"
+        with contextlib.redirect_stdout(io.StringIO()):
+            rundir = dispatch.launch(project, "TASK-001", eng, [sys.executable, "-c", seen])
+        while not (rundir / "rc").exists():
+            time.sleep(0.05)
+        assert (rundir / "seen").exists(), "the wrapper passes OMI_RUN_DIR to the run"
+        assert json.loads((rundir / "argv.json").read_text(encoding="utf-8"))["argv"][-4:] == ["--model", "sonnet", "--effort", "low"]
+        runs = lambda tid: (root / ".omi/tasks" / f"{tid}.md").read_text(encoding="utf-8").partition("\n## Runs\n")[2]  # noqa: E731
+        assert "- dispatch omi-agent-engineer: 1 non-test file(s) -> small sonnet/low" in runs("TASK-001")
+        found = dispatch.tasks.tasks(project)
+        assert dispatch.size_flags(project, "TASK-002", eng, found["TASK-002"]) == []
+        assert "- dispatch omi-agent-engineer: unknown non-test file(s) -> role default sonnet/medium" in runs("TASK-002")
+        assert dispatch.size_flags(project, "TASK-003", eng, found["TASK-003"]) == []
+        assert "4 non-test file(s) -> role default sonnet/medium" in runs("TASK-003")
+        assert dispatch.size_flags(project, "TASK-001", eng, {**found["TASK-001"], "model": "opus"}) == []
+        assert dispatch.size_flags(project, "TASK-001", "omi-agent-docs-writer", found["TASK-001"]) == [], "no `small:`: role default"
+        gate = root / "gate"
+        with contextlib.redirect_stdout(io.StringIO()):
+            dispatch.launch(project, "TASK-002", rev, [sys.executable, "-c", GATE, str(gate), "0", "--model", "x"])
+            dispatch.launch(project, "TASK-002", sec, [sys.executable, "-c", GATE, str(gate), "0", "--model", "x"])
+        for role in (rev, eng):
+            try:
+                dispatch.launch(project, "TASK-002", role, [sys.executable, "-c", "pass", "--model", "x"])
+                raise AssertionError(f"{role} started next to running reviewers")
+            except state.StateError as exc:
+                assert "already has a running worker" in str(exc)
+        gate.write_text("", encoding="utf-8")
+        while any(r["running"] for r in dispatch.records(root)):
+            time.sleep(0.05)
+    rec = {"tid": "TASK-001", "role": eng, "rc": 7, "dir": Path("run")}
+    assert dispatch.next_action(project, rec, "", "DONE").startswith("DECIDE: BUDGET: the run passed its token_budget")
+
+
 def main():
+    test_size_routing_parallel_reviewers_and_budget()
     test_idle_in_progress_task_holds_its_scope()
     test_idle_in_progress_tasks_can_each_launch()
     test_drive_prints_decide_of_reported_run_once()

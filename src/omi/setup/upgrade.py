@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path, PurePosixPath
 
 from ..project import catalogs, workflows
@@ -49,7 +50,6 @@ def template_shas_cmd(tpl: str | Path, ver: str) -> None:
 def template_regen(repo: str | Path = ".") -> None:
     """Maintainer step for an omi checkout (`regenerate` in omi's own config): rebuild the template's agents and workflows
     CATALOG.md from that checkout's template, then its version's entry in its template_shas.json. Writes only under `repo`."""
-    import tempfile
     repo = Path(repo).resolve()
     tpl, shas = repo / "src" / "omi" / "template", repo / "src" / "omi" / "template_shas.json"
     ver = re.search(r'^version = "([^"]+)"', (repo / "pyproject.toml").read_text(encoding="utf-8"), re.M)
@@ -226,6 +226,41 @@ def stale_template_hint(target: str | Path, *, detached: bool = False) -> None:
             count += 1
     if count:
         print(f"{count} unmodified template files are stale; run `python -m omi upgrade --apply`")
+
+
+def project_json(project) -> Path:
+    """Project settings: the detached manifest, else .omi/project.json."""
+    return project.state / "project.json" if project.detached else project.state / ".omi" / "project.json"
+
+
+def dockerfile_hint(project) -> list[str]:
+    """Lines for `omi status` while docker/Dockerfile differs from a template the PO/Coordinator has not reviewed."""
+    dockerfile, template = (project.state / "docker" / "Dockerfile").resolve(), core.TEMPLATE / "docker" / "Dockerfile"
+    sha = norm_sha(template.read_bytes())
+    try:
+        reviewed = json.loads(project_json(project).read_text(encoding="utf-8")).get("dockerfile_reviewed")
+    except (OSError, ValueError, AttributeError):
+        reviewed = None
+    if not dockerfile.is_file() or norm_sha(dockerfile.read_bytes()) == sha or reviewed == sha:
+        return []
+    return [f"docker/Dockerfile differs from the omi {core.version()} template; review it (omi init never overwrites it)",
+            f"  see the diff: git diff --no-index {template} {dockerfile}\n  merge by hand; omi init and upgrade never overwrite it",
+            "  reviewed? `python -m omi dockerfile reviewed` (warns again when the template changes)"]
+
+
+def dockerfile_reviewed(project) -> None:
+    """`omi dockerfile reviewed`: store the current template's sha so status stops repeating the Dockerfile warning."""
+    path = project_json(project)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    except ValueError as exc:
+        sys.exit(f"invalid {path}: {exc}. Nothing changed.")
+    if not isinstance(data, dict):
+        sys.exit(f"invalid {path}: expected a JSON object. Nothing changed.")
+    data["dockerfile_reviewed"] = norm_sha((core.TEMPLATE / "docker" / "Dockerfile").read_bytes())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8", newline="\n")
+    print(f"Dockerfile review recorded in {path}; status warns again when the omi template changes")
 
 
 def upgrade_apply(target: str | Path = ".", *, detached: bool = False) -> int:
