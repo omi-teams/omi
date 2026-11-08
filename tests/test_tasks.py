@@ -1007,6 +1007,81 @@ def test_review_prompts_and_host_test_docs():
     assert json.loads((tpl / "dot-omi/config.json").read_text(encoding="utf-8"))["host_test"] == ""
 
 
+def test_review_test_in_worker():
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve() / "repo"
+        root.mkdir()
+        git(root, "init", "-b", "development")
+        (root / ".omi").mkdir()
+        git(root, "commit", "--allow-empty", "-m", "init")
+        wt = Path(d).resolve() / "wt"
+        git(root, "worktree", "add", "-b", "task/TASK-1", str(wt))
+        task = wt / ".omi" / "tasks" / "TASK-1.md"
+        task.parent.mkdir(parents=True)
+        task.write_text("---\nid: TASK-1\n---\n## Steps\n- build done 2026-11-03 10:00\n", encoding="utf-8")
+        git(wt, "add", "-A")
+        git(wt, "commit", "-m", "work")
+        sha = omi.common.core.git(wt, "rev-parse", "--short=7", "HEAD")
+        cfg = root / ".omi" / "config.json"
+        assert not omi.worker.hooks.review_test_in_worker(root)
+        cfg.write_text(json.dumps({"test": "make check", "review_test_in_worker": False}), encoding="utf-8")
+        assert not omi.worker.hooks.review_test_in_worker(root)
+        calls = []
+
+        def checks(rc=0):
+            calls.clear()
+            with patch.object(omi.worker.hooks, "run_test", lambda *a: calls.append(a) or (rc, "boom\n")), \
+                    patch.object(omi.project.scope, "out_of_scope", lambda *a, **k: []), \
+                    patch.object(omi.project.catalogs, "check_all_skills", lambda wt: None), \
+                    patch("sys.stdout", io.StringIO()) as out:
+                return omi.worker.run.deterministic_checks(wt, root, "TASK-1"), out.getvalue()
+
+        # host mode (default): the worker image is not used
+        with patch.object(omi.worker.run, "test_command", lambda *a: [sys.executable, "-c", "pass"]):
+            with patch.object(omi.worker.hooks, "run_test", lambda *a: calls.append(a)):
+                with patch.object(omi.project.scope, "out_of_scope", lambda *a, **k: []), \
+                        patch.object(omi.project.catalogs, "check_all_skills", lambda wt: None):
+                    assert omi.worker.run.deterministic_checks(wt, root, "TASK-1") == [] and not calls
+        # worker mode: the configured command runs in the image
+        cfg.write_text(json.dumps({"test": "make check", "review_test_in_worker": True}), encoding="utf-8")
+        assert omi.worker.hooks.review_test_in_worker(root)
+        assert checks() == ([], "") and calls[0][2] == "make check"
+        problems, _ = checks(1)
+        assert len(problems) == 1 and problems[0].startswith("tests failed:") and "boom" in problems[0], problems
+        # a hook pass recorded for this HEAD: no rerun, reuse is recorded
+        text = task.read_text(encoding="utf-8")
+        task.write_text(text + f"\n## Reports\n2026-11-08 18:39 hook post-run passed on {sha}:\n> ok\n", encoding="utf-8")
+        problems, out = checks(1)
+        assert problems == [] and not calls and f"reused: hook post-run on {sha}" in out
+        assert f"reused: hook post-run on {sha}" in task.read_text(encoding="utf-8")
+        # host-test reuses it too and records the PASS row the gate reads
+        cfg.write_text(json.dumps({"host_test": "exit 1", "review_test_in_worker": True}), encoding="utf-8")
+        with patch("sys.stdout", io.StringIO()) as out:
+            assert omi.worker.run.host_test(omi.state.resolve.Project(root, root), "TASK-1") == 0
+        assert "reused: hook post-run on" in out.getvalue()
+        tasks.host_test_gate(root, "TASK-1", task.read_text(encoding="utf-8"), sha)
+        # a pass on another HEAD, or worker mode off, is not reused
+        assert not omi.worker.hooks.hook_passed_on(task.read_text(encoding="utf-8"), "abcdef0")
+        cfg.write_text(json.dumps({"test": "make check"}), encoding="utf-8")
+        with patch.object(omi.worker.run, "test_command", lambda *a: [sys.executable, "-c", "pass"]):
+            assert checks()[0] == [] and not calls
+        # hook_note records the commit on a pass only
+        omi.worker.hooks.hook_note(task, "post-run", (1, ""), "1234567")
+        omi.worker.hooks.hook_note(task, "post-run", (0, ""), "7654321")
+        body = task.read_text(encoding="utf-8")
+        assert "hook post-run passed on 7654321:" in body and "1234567" not in body
+    # omi init: the worker mode is on for stacks the host cannot run, off otherwise
+    for marker, want in (("package.json", True), ("docker", True), (None, False)):
+        with tempfile.TemporaryDirectory() as d:
+            if marker == "docker":
+                (Path(d) / marker).mkdir()
+            elif marker:
+                (Path(d) / marker).write_text("{}")
+            with patch("sys.stdout", io.StringIO()):
+                omi.setup.upgrade.init(d)
+            assert json.loads((Path(d) / ".omi" / "config.json").read_text(encoding="utf-8"))["review_test_in_worker"] is want, marker
+
+
 def test_host_test():
     row = lambda role, v: f"| {role} | m | high | 1 | 1 | 1 | 1s | - | {v} |\n"
     head = "\n## Usage\n| role | model | effort | input | output | cache | duration | skills read | verdict |\n|---|---|---|---|---|---|---|---|---|\n"
@@ -1140,6 +1215,7 @@ def main():
     test_note()
     test_append_note_strips_control_bytes()
     test_host_test()
+    test_review_test_in_worker()
     test_review_prompts_and_host_test_docs()
     test_warn_skills_empty()
     test_task_skill_step_commands()

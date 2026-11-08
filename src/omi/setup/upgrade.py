@@ -106,11 +106,17 @@ def ensure_gitignore(target: Path, *, detached: bool = False) -> None:
         print("update .gitignore (*.omi-new)")
 
 
+def host_cannot_run(target: Path) -> bool:
+    """Stacks that need the worker image to test: Node dependencies or a Docker-based setup (`docker/`, compose file)."""
+    return any(next(target.glob(pat), None) is not None for pat in ("package.json", "docker", "docker-compose*", "compose.y*ml"))
+
+
 def init(target: str | Path = ".", *, detached: bool = False) -> None:
     target = Path(target).resolve()
     manifest_safe = upgrade_write_safe(target, ".omi/manifest.json")
     files = read_manifest(target) if manifest_safe else {}
     current, released = template_shas(), released_shas()
+    worker_stack = host_cannot_run(target)  # before the template adds its own docker/
     for rel, src in template_map().items():
         if detached and (rel == "AGENTS.md" or rel.startswith(".claude/")):
             continue
@@ -126,6 +132,11 @@ def init(target: str | Path = ".", *, detached: bool = False) -> None:
         shutil.copyfile(src, dst)
         files[rel] = current[rel]
         print(f"create {rel}")
+        if rel == ".omi/config.json" and worker_stack:
+            cfg = json.loads(dst.read_text(encoding="utf-8"))
+            cfg["review_test_in_worker"] = True
+            dst.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8", newline="\n")
+            files[rel] = norm_sha(dst.read_bytes())
     if manifest_safe:
         write_manifest(target, files)
     if upgrade_write_safe(target, ".omi/version"):

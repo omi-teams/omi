@@ -3,8 +3,10 @@
 import datetime
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from ..common import core
@@ -32,6 +34,11 @@ def git_env(wt):
                                     "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=safe.directory", "GIT_CONFIG_VALUE_0=*")
 
 
+def hook_timeout(main):
+    cfg = Path(main) / ".omi" / "config.json"
+    return (json.loads(cfg.read_text(encoding="utf-8")) if cfg.exists() else {}).get("hook_timeout", 600)
+
+
 def run_hook(wt, main, event, tid, image):
     """Run .omi/hooks/<event>.sh|.py from state or the main checkout in its own one-shot container:
     worktree ro as cwd, no network, no token. Returns (exit code, output), or None when there is no hook."""
@@ -52,8 +59,7 @@ def run_hook(wt, main, event, tid, image):
                        mounts=[f"{Path(__file__).parents[1]}:{OMI_MOUNT}/omi", *([f"{project.state}:/state"] if project.detached else []),
                                *([f"{git_mount}:/gitdir"] if git_mount else [])],
                        **docker.worker_sizes(main))
-    cfg = Path(main) / ".omi" / "config.json"
-    limit = (json.loads(cfg.read_text(encoding="utf-8")) if cfg.exists() else {}).get("hook_timeout", 600)
+    limit = hook_timeout(main)
     try:
         r = subprocess.run(argv, env=env, input=script.read_bytes().replace(b"\r\n", b"\n"), stdout=subprocess.PIPE,
                            stderr=subprocess.STDOUT, timeout=limit)
@@ -63,12 +69,47 @@ def run_hook(wt, main, event, tid, image):
     return r.returncode, r.stdout.decode("utf-8", "replace")
 
 
-def hook_note(task, event, res):
-    """Print a hook's output and record the outcome under `## Reports` (step done reads the last post-run line)."""
+def run_test(wt, main, cmd, tid, image):
+    """Run the shell command `cmd` in the worker image on a temporary copy of the worktree, no network, no token.
+    Returns (exit code, output); the copy is removed afterwards."""
+    docker.need_docker()
+    image = image or docker.ensure_image(main)
+    env = dict(os.environ)
+    env.pop(creds.TOKEN_ENV, None)
+    name = docker.container_name(docker.repo_label(main), "test", tid)
+    with tempfile.TemporaryDirectory(prefix="omi-test-") as tmp:
+        copy = Path(tmp) / "work"
+        shutil.copytree(wt, copy, symlinks=True)
+        argv = docker.worker_argv(copy, image, ["bash", "-c", cmd], name, docker.repo_key(main), docker.worker_labels("test", tid, None, None),
+                                  env_names=(), offline=True, **docker.worker_sizes(main))
+        try:
+            r = subprocess.run(argv, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=hook_timeout(main))
+        except subprocess.TimeoutExpired as e:
+            subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+            return 124, (e.stdout or b"").decode("utf-8", "replace") + "test timed out\n"
+    return r.returncode, r.stdout.decode("utf-8", "replace")
+
+
+def review_test_in_worker(main):
+    """`review_test_in_worker` from .omi/config.json: run the pre-review test in the worker image; false when unset."""
+    try:
+        return json.loads((Path(main) / ".omi" / "config.json").read_text(encoding="utf-8")).get("review_test_in_worker") is True
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def hook_passed_on(text, sha):
+    """True when the task's `## Reports` has a passed post-run hook line recorded for commit `sha`."""
+    return bool(sha) and f" hook post-run passed on {sha}:" in text
+
+
+def hook_note(task, event, res, sha=None):
+    """Print a hook's output and record the outcome under `## Reports` (step done reads the last post-run line).
+    `sha` (the clean HEAD the hook ran on) is recorded on a pass, so later test runs can reuse it."""
     rc, out = res
     print(out, end="")
     print(f"hook {event} " + ("passed" if rc == 0 else f"FAILED (exit {rc})"))
-    line = f"{datetime.datetime.now():%Y-%m-%d %H:%M} hook {event} " + ("passed" if rc == 0 else f"FAILED (exit {rc})") + ":"
+    line = f"{datetime.datetime.now():%Y-%m-%d %H:%M} hook {event} " + ("passed" + (f" on {sha}" if sha else "") if rc == 0 else f"FAILED (exit {rc})") + ":"
     tasks.append_note(task, "Reports", line + "\n" + "\n".join("> " + l for l in tasks.clip_report(out or "(no output)")))
     return rc
 
