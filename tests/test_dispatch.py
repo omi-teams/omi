@@ -14,8 +14,9 @@ from unittest.mock import patch
 
 import helpers
 import omi.setup.upgrade
+from omi.project import catalogs
 from omi.state import resolve as state
-from omi.worker import dispatch
+from omi.worker import dispatch, drive
 
 SRC = {"PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")}
 GATE = "import os,sys,time\nwhile not os.path.exists(sys.argv[1]): time.sleep(0.05)\nsys.exit(int(sys.argv[2]))"
@@ -305,6 +306,15 @@ def test_reviewer_next_action() -> None:
         assert dispatch.next_action(project, rec, "", "no verdict").startswith("DECIDE")
 
 
+def test_verdict_alone_on_a_line() -> None:
+    shaped = "Done. Final report:\n\n**DONE**\n- Files changed: `a.py`\n- Suggested commit: feat(x): y"
+    assert dispatch.verdict(shaped) == "DONE"
+    assert dispatch.verdict("DONE\n- Suggested commit: feat(x): y") == dispatch.verdict("  `BLOCKED`\nx").replace("BLOCKED", "DONE")
+    assert dispatch.verdict("intro\n__NEEDS SCOPE__\nx") == "NEEDS SCOPE" and dispatch.verdict("intro\nBLOCKED\nx") == "BLOCKED"
+    assert dispatch.verdict("The task is DONE and tested\nit is not BLOCKED by anything") == "n/a"
+    assert dispatch.verdict("Done. Final report:\nVERDICT: PASS") == "PASS"
+
+
 def test_records_sort_across_roles() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
@@ -323,12 +333,15 @@ def next_fixture():
         root = Path(d).resolve() / "code"
         root.mkdir()
         omi.setup.upgrade.init(root)
+        with contextlib.redirect_stdout(io.StringIO()):
+            catalogs.skills_catalog(root)
         helpers.git(root, "add", ".")
         helpers.git(root, "commit", "-qm", "base")
         helpers.git(root, "branch", "-m", "development")
         project = state.resolve(root)
         def planned(tid, scope="a.py", extra=""):
             path = root / ".omi/tasks" / f"{tid}.md"
+            extra = extra if "skills:" in extra else extra + "skills: [omi-skill-lean-implementation]\n"
             path.write_text(f"---\nid: {tid}\nstatus: planned\nscope: {scope}\n"
                             f"tool: codex\nmodel: task-model\neffort: high\n{extra}---\n"
                             "## Acceptance criteria\n- [ ] works\n\n## Checkpoint\nDone:\n", encoding="utf-8")
@@ -393,6 +406,15 @@ def test_next_readiness_and_limit() -> None:
         assert "skip TASK-004:" in output and "max" in output
 
 
+def test_next_skips_empty_skills() -> None:
+    with next_fixture() as (project, planned, launch), contextlib.redirect_stdout(io.StringIO()) as out:
+        planned("TASK-001", extra="skills: []\n")
+        planned("TASK-002", "b.py")
+        dispatch.dispatch_next(project, 2)
+        assert "skip TASK-001: no skills picked" in out.getvalue()
+        assert [c.args[1] for c in launch.call_args_list] == ["TASK-002"]
+
+
 def test_next_nothing_ready() -> None:
     with next_fixture() as (project, planned, launch), contextlib.redirect_stdout(io.StringIO()) as out:
         planned("TASK-001", extra="depends: TASK-999\n")
@@ -435,7 +457,7 @@ def test_next_detached_state() -> None:
         home, _, _ = helpers.state_remote(catalog)
         tid = "TASK-098"
         target = task.with_name(f"{tid}.md")
-        target.write_text("---\nid: TASK-098\nstatus: planned\nscope: other.py\n"
+        target.write_text("---\nid: TASK-098\nstatus: planned\nscope: other.py\nskills: [omi-skill-lean-implementation]\n"
                           "tool: codex\nmodel: detached-model\neffort: medium\n---\n"
                           "## Acceptance criteria\n- [ ] works\n\n## Checkpoint\nDone:\n", encoding="utf-8")
         project = state.resolve(code)
@@ -480,16 +502,122 @@ def test_next_setup_failure_stops() -> None:
             assert dispatch.core.meta(second)["status"] == "planned"
 
 
+def finished_rec(root, tid, running=False):
+    directory = root / f"{tid}-run"
+    directory.mkdir(exist_ok=True)
+    return {"dir": directory, "tid": tid, "role": "omi-agent-engineer", "rc": None if running else 0, "running": running,
+            "reported": False, "started": datetime.datetime(2026, 11, 8, 9, 0)}
+
+
+@contextlib.contextmanager
+def drive_fixture(make, actions, done=()):
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        snapshots = make(root)
+        project = state.Project(state=root, code=root)
+        calls, seen = [], []
+        def records(_):
+            seen.append(1)
+            return snapshots[min(len(seen), len(snapshots)) - 1]
+        found = {tid: {"status": "done" if tid in done else "in-progress", "_text": ""} for tid in actions}
+        def omi(_, *args):
+            calls.append(args)
+            return (1, "boom") if args[0] == "advance" and args[1] == "TASK-005" else (0, "ok")
+        with patch.object(dispatch, "records", side_effect=records), patch.object(dispatch, "runs_dir", return_value=root / "runs"), \
+                patch.object(dispatch, "next_action", side_effect=lambda p, rec, t, r: actions[rec["tid"]]), \
+                patch.object(dispatch, "free_slots", return_value=1), \
+                patch.object(drive.tasks, "tasks", return_value=found), patch.object(drive, "omi", side_effect=omi):
+            yield project, root, calls, snapshots
+
+
+def test_drive_advances_next_and_stops_on_decide() -> None:
+    actions = {t: "NEXT: python -m omi advance " + t for t in ("TASK-001", "TASK-004", "TASK-005")}
+    actions.update({"TASK-002": "DECIDE: review round limit reached", "TASK-003": "NEXT: python -m omi advance TASK-003"})
+    make = lambda root: [[finished_rec(root, "TASK-001"), finished_rec(root, "TASK-002"), finished_rec(root, "TASK-003", running=True),
+                          finished_rec(root, "TASK-004"), finished_rec(root, "TASK-005")]]
+    with drive_fixture(make, actions, done=("TASK-004",)) as (project, _, calls, snaps), contextlib.redirect_stdout(io.StringIO()) as out:
+        snap = snaps[0]
+        drive.drive(project, once=True)
+        assert calls == [("advance", "TASK-001"), ("advance", "TASK-005")], calls
+        assert (snap[0]["dir"] / "driven").exists() and (snap[0]["dir"] / "reported").exists()
+        assert not (snap[4]["dir"] / "reported").exists()
+        for tid in ("TASK-002", "TASK-003", "TASK-004"):
+            assert not (next(r for r in snap if r["tid"] == tid)["dir"] / "driven").exists()
+        text = out.getvalue()
+        assert "TASK-002 omi-agent-engineer: DECIDE: review round limit reached" in text
+        assert "waiting for the Coordinator" in text and "TASK-005-run: DECIDE: advance failed" in text
+        assert "TASK-003" not in text.replace("TASK-003-run", "")
+        drive.drive(project, once=True)
+        assert calls == [("advance", "TASK-001"), ("advance", "TASK-005")], "a driven run is not advanced twice"
+
+
+def test_drive_starts_next_when_slot_frees_and_stops_when_idle() -> None:
+    make = lambda root: [[finished_rec(root, "TASK-001", running=True)]] * 2 + [[finished_rec(root, "TASK-001")]]
+    with drive_fixture(make, {"TASK-001": "DECIDE: x"}, done=("TASK-001",)) as (project, _, calls, _), \
+            contextlib.redirect_stdout(io.StringIO()):
+        with patch.object(drive.time, "sleep") as sleep:
+            drive.drive(project, poll=0)
+        assert calls == [("dispatch", "next", "--max", "1")], calls
+        assert sleep.call_count == 1, "one more pass after the work, then the driver exits idle"
+
+
+def test_drive_is_one_per_project() -> None:
+    with drive_fixture(lambda _: [[]], {}) as (project, root, calls, _), contextlib.redirect_stdout(io.StringIO()) as out:
+        (root / "runs").mkdir()
+        with dispatch.core.file_lock(root / "runs" / "drive.lock", 0):
+            assert dispatch.driver_running(project)
+            drive.drive(project, once=True)
+        assert "already running" in out.getvalue() and not calls
+        assert not dispatch.driver_running(project)
+
+
+def test_start_driver_default_on_and_config_off() -> None:
+    with drive_fixture(lambda _: [[]], {}) as (project, root, _, _), contextlib.redirect_stdout(io.StringIO()), \
+            patch.object(dispatch.subprocess, "Popen") as popen:
+        dispatch.start_driver(project)
+        assert popen.call_args.args[0][-3:] == ["-m", "omi", "drive"] and popen.call_args.kwargs["cwd"] == project.code
+        popen.reset_mock()
+        with dispatch.core.file_lock(root / "runs" / "drive.lock", 0):
+            dispatch.start_driver(project)
+        popen.assert_not_called()
+        (root / ".omi").mkdir()
+        (root / ".omi" / "config.json").write_text('{"auto_drive": false}', encoding="utf-8")
+        dispatch.start_driver(project)
+        popen.assert_not_called()
+
+
+def test_free_slots_follows_auto_dispatch_max() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        project = state.Project(state=root, code=root)
+        busy = [finished_rec(root, "TASK-001", running=True)]
+        with patch.object(dispatch, "records", return_value=busy):
+            assert dispatch.free_slots(project) == 0
+            (root / ".omi").mkdir()
+            for value, free in (('{"auto_dispatch_max": 3}', 2), ('{"auto_dispatch_max": 0}', 0), ('{"auto_dispatch_max": "x"}', 0), ("{", 0)):
+                (root / ".omi" / "config.json").write_text(value, encoding="utf-8")
+                assert dispatch.free_slots(project) == free, value
+        with patch.object(dispatch, "records", return_value=[]):
+            assert dispatch.free_slots(project) == 1
+
+
 def main():
+    test_drive_advances_next_and_stops_on_decide()
+    test_drive_starts_next_when_slot_frees_and_stops_when_idle()
+    test_drive_is_one_per_project()
+    test_start_driver_default_on_and_config_off()
+    test_free_slots_follows_auto_dispatch_max()
     test_next_container_skipped()
     test_next_setup_failure_stops()
     test_next_detached_state()
     test_next_two_ready()
     test_next_conflicts_and_dependencies()
     test_next_readiness_and_limit()
+    test_next_skips_empty_skills()
     test_next_nothing_ready()
     test_next_failure_stops()
     test_next_existing_worktree_and_done_dependency()
+    test_verdict_alone_on_a_line()
     test_records_sort_across_roles()
     test_windows_launch_uses_spawner()
     test_windows_launch_waits_for_wrapper()

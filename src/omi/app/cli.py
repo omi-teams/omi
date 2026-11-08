@@ -10,7 +10,7 @@ from ..board import server
 from ..setup import attach, install, upgrade
 from ..project import catalogs, github, improve, scope, structure, tasks, tree, workflows
 from ..common import core
-from ..worker import advance, creds, dispatch as worker_dispatch, docker, hooks, run
+from ..worker import advance, creds, dispatch as worker_dispatch, docker, drive, hooks, run
 from ..state import resolve as state, sync as state_sync
 
 
@@ -42,8 +42,9 @@ USAGE = """usage: omi <command>
   note <TASK-ID> --step <step> --verdict <verdict> "<text>"   record a Coordinator decision under the task's ## Reports
   run <role> <TASK-ID> [--model M] [--effort E] [--tool claude|codex] [--fresh] [--why "<Coordinator reason>"|--po "<PO's words>"]   run a role in Docker (--fresh: no engineer session resume; read roles: ro worktree, after the deterministic checks)
   hook pre-run|post-run|pre-merge <TASK-ID>   run .omi/hooks/<event> (from the main checkout) in Docker against the task worktree; exits with its code
-  dispatch next [--max N]   start ready parallel-safe planned tasks (default: 1)
-  dispatch <role> <TASK-ID>   start `omi run` detached with a run record; refuses when scope or depends conflict with a running task
+  dispatch next [--max N]   start ready parallel-safe planned tasks with skills picked (default: 1); starts `omi drive` unless it runs or `auto_drive` is false in .omi/config.json
+  dispatch <role> <TASK-ID>   start `omi run` detached with a run record; refuses when scope or depends conflict with a running task; starts `omi drive` too
+  drive [--once]   one loop per project (detached by dispatch): `omi advance` every finished run whose next action is NEXT:, `dispatch next` when a slot frees (`auto_dispatch_max` in .omi/config.json, default 1, 0 = off); stops a task only on DECIDE: and lists those; `omi advance` also runs `dispatch next` after a merge
   advance <TASK-ID> [--message "<msg>"] [--reject <n>[,<n>] --why "<reason>"]   scope-check a DONE write run, commit, rebase, draft PR, host-test and dispatch its reviewer; after a review FAIL: record the findings, step back, PR to draft, rerun the engineer (--reject leaves findings out); after review PASS: accept, pre-merge hook, PR ready, green CI, squash merge, pull, clean and post-merge test
   watch [--wait] [--all]   list running workers and every finished run not yet shown, with its next action (NEXT: deterministic, DECIDE: Coordinator); --wait blocks until a run finishes; --all: whole history
   parallel <TASK-ID> <TASK-ID> [...]   check that tasks can run in parallel (depends, status, scope overlap)
@@ -311,13 +312,17 @@ def dispatch(argv: list[str] | None = None) -> None:
         if len(rest) not in (1, 3) or (len(rest) == 3 and (rest[1] != "--max" or not rest[2].isascii()
                                                                      or not rest[2].isdigit() or int(rest[2]) < 1)):
             raise state.StateError("usage: omi dispatch next [--max N] (N must be positive)")
-        worker_dispatch.dispatch_next(state.resolve(core.main_checkout(".") or Path(".").resolve()),
-                                      int(rest[2]) if len(rest) == 3 else 1)
+        project = state.resolve(core.main_checkout(".") or Path(".").resolve())
+        worker_dispatch.dispatch_next(project, int(rest[2]) if len(rest) == 3 else 1)
+        worker_dispatch.start_driver(project)
     elif cmd == "dispatch" and len(rest) == 2 and not rest[1].startswith("--"):
         project = state.resolve(core.main_checkout(".") or Path(".").resolve())
         tasks.check_runnable(project, rest[1])
         catalogs.get_role(project.state, rest[0])
         worker_dispatch.launch(project, rest[1], rest[0])
+        worker_dispatch.start_driver(project)
+    elif cmd == "drive" and set(rest) <= {"--once"}:
+        drive.drive(state.resolve(core.main_checkout(".") or Path(".").resolve()), "--once" in rest)
     elif cmd == "advance" and len(rest) % 2 == 1 and set(rest[1::2]) <= {"--message", "--reject", "--why"}:
         reject = core.flag(rest, "--reject")
         if reject is not None and not all(n.isdigit() for n in reject.split(",")):

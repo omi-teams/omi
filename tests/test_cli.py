@@ -235,7 +235,7 @@ def test_cli_characterization():
         assert rc == 0 and usage.startswith("usage: omi <command>\n") and not err
         assert [l.split()[0] for l in usage.splitlines()[1:]] == [
             "attach", "install-user", "init", "upgrade", "version", "status", "improve", "sync", "board", "guard", "github", "clean", "skills", "skills", "token", "structure", "plans",
-            "references", "rules", "agents", "workflows", "host-test", "step", "note", "run", "hook", "dispatch", "dispatch", "advance", "watch", "parallel", "worker", "worker"]
+            "references", "rules", "agents", "workflows", "host-test", "step", "note", "run", "hook", "dispatch", "dispatch", "drive", "advance", "watch", "parallel", "worker", "worker"]
         # unknown commands and incomplete arguments fall through to the usage text
         for args in (["help"], ["bogus"], ["step", "TASK-001"], ["run", "omi-agent-engineer", "--model"], ["parallel", "X"],
                      ["hook", "pre-run"], ["token"], ["worker"]):
@@ -563,9 +563,11 @@ def test_dispatch_next_args() -> None:
     project = object()
     with patch("omi.state.resolve.resolve", return_value=project), \
             patch("omi.common.core.main_checkout", return_value=Path(".")), \
+            patch("omi.worker.dispatch.start_driver") as driver, \
             patch("omi.worker.dispatch.dispatch_next") as start:
         omi.app.cli.dispatch(["dispatch", "next"])
         start.assert_called_once_with(project, 1)
+        driver.assert_called_once_with(project)
         start.reset_mock()
         omi.app.cli.dispatch(["dispatch", "next", "--max", "2"])
         start.assert_called_once_with(project, 2)
