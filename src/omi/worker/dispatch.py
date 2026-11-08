@@ -94,6 +94,53 @@ def launch(project: state.Project, tid: str, role: str, argv: list[str] | None =
     return rundir
 
 
+def config(project: state.Project, key: str, default: object) -> object:
+    """`key` from .omi/config.json, else `default`."""
+    try:
+        return json.loads((project.state / ".omi" / "config.json").read_text(encoding="utf-8")).get(key, default)
+    except (OSError, ValueError, AttributeError):
+        return default
+
+
+def free_slots(project: state.Project) -> int:
+    """`auto_dispatch_max` (default 1, 0 = off) minus the tasks running now."""
+    limit = config(project, "auto_dispatch_max", 1)
+    limit = limit if isinstance(limit, int) and not isinstance(limit, bool) and limit >= 0 else 1
+    return max(0, limit - len({r["tid"] for r in records(project.code) if r["running"]}))
+
+
+def driver_running(project: state.Project) -> bool:
+    """True while `omi drive` holds drive.lock (the OS releases it when the driver dies)."""
+    runs = runs_dir(project.code)
+    runs.mkdir(parents=True, exist_ok=True)
+    try:
+        with core.file_lock(runs / "drive.lock", 0):
+            return False
+    except TimeoutError:
+        return True
+
+
+def start_driver(project: state.Project) -> None:
+    """Start `omi drive` detached unless it runs already or `auto_drive` is false in config."""
+    if config(project, "auto_drive", True) is False or driver_running(project):
+        return
+    flags = {"start_new_session": True}
+    if core.WINDOWS:
+        flags = {"creationflags": subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_BREAKAWAY_FROM_JOB}
+    log_path = runs_dir(project.code) / "drive.log"
+    with log_path.open("a", encoding="utf-8", newline="\n") as log:
+        for attempt in range(2):
+            try:
+                subprocess.Popen([sys.executable, "-W", "ignore::RuntimeWarning", "-m", "omi", "drive"], cwd=project.code,
+                                 stdin=subprocess.DEVNULL, stdout=log, stderr=log, **flags)
+                break
+            except OSError as exc:
+                if not core.WINDOWS or attempt or getattr(exc, "winerror", None) != 5:
+                    raise
+                flags["creationflags"] &= ~subprocess.CREATE_BREAKAWAY_FROM_JOB  # the host job forbids breakaway
+    print(f"omi drive started: advances finished runs and starts ready tasks (log: {log_path})")
+
+
 def dispatch_next(project: state.Project, maximum: int = 1) -> None:
     """Start ready planned tasks in status order, stopping at the first launch failure."""
     if maximum < 1:
@@ -116,7 +163,9 @@ def dispatch_next(project: state.Project, maximum: int = 1) -> None:
             reason = "no scope"
         else:
             try:
-                catalogs.check_skills(project.state, catalogs.task_skill_ids(project.state, meta))
+                skills = catalogs.task_skill_ids(project.state, meta)
+                catalogs.check_skills(project.state, skills)
+                reason = "" if skills else "no skills picked"
             except SystemExit as exc:
                 reason = " ".join(str(exc).splitlines())
         if not reason:
@@ -210,7 +259,8 @@ def last_report(text: str, role: str, since: datetime.datetime) -> str:
 
 
 def verdict(report: str) -> str:
-    m = re.match(r"\W*(DONE|BLOCKED|NEEDS SCOPE)\b", report)
+    """The verdict opening the report, or alone on a line (`**DONE**`); never a word inside a sentence."""
+    m = re.match(r"\W*(DONE|BLOCKED|NEEDS SCOPE)\b", report) or re.search(r"^[ \t*_`]*(DONE|BLOCKED|NEEDS SCOPE)[ \t*_`]*$", report, re.M)
     return m[1] if m else tools.verdict_of(report) or "n/a"
 
 

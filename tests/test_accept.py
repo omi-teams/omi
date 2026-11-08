@@ -2,6 +2,7 @@
 import contextlib
 import json
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -85,6 +86,30 @@ def test_pass_merge_and_resume() -> None:
         h.calls.clear()
         error, out = h.invoke()
         assert not error and 'already done' in out and not h.calls, (error, out, h.calls)
+
+
+def test_pass_merge_starts_next_tasks() -> None:
+    next_call = [sys.executable, '-m', 'omi', 'dispatch', 'next', '--max', '1']
+    with accepted() as h:
+        error, out = h.invoke()
+        assert not error, (error, out)
+        assert h.calls.index(next_call) > max(i for i, c in enumerate(h.calls) if c[-2:] == ['-c', 'python check.py'] or c[-2:] == ['clean', TID])
+    with accepted() as h:  # auto_dispatch_max 0 is off
+        (h.project.state / '.omi').mkdir()
+        (h.project.state / '.omi' / 'config.json').write_text('{"auto_dispatch_max": 0}', encoding='utf-8')
+        error, out = h.invoke()
+        assert not error and next_call not in h.calls and 'auto-dispatch: skipped' in out, (error, out)
+    with accepted() as h:  # a failing dispatch next never fails the finished merge
+        h.fail = 'dispatch'
+        error, out = h.invoke()
+        assert not error and 'auto-dispatch: FAILED' in out, (error, out)
+    with accepted() as h:  # a failed post-merge test starts nothing
+        h.fail = 'post-merge-test'
+        (h.project.state / '.omi').mkdir()
+        (h.project.state / '.omi' / 'config.json').write_text('{"host_test": "python check.py"}', encoding='utf-8')
+        with patch.object(advance.accept.run, 'shell_command', return_value=['sh', '-c', 'python check.py']):
+            error, _ = h.invoke()
+        assert 'post-merge-test FAILED' in error and next_call not in h.calls
 
 
 def test_pass_merged_pr_resumes_unsaved_merge() -> None:
@@ -537,6 +562,7 @@ def test_pass_ci_classifies_check_results() -> None:
 
 
 def main():
+    test_pass_merge_starts_next_tasks()
     test_pass_merged_pr_resumes_unsaved_merge()
     test_pass_unmerged_pr_keeps_final_ci_guard()
     test_pass_every_stage_stops_and_resumes()

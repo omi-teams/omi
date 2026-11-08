@@ -352,6 +352,17 @@ def advance_fail(ctx: Context) -> None:
     perform(ctx, "dispatch", engineer)
 
 
+def auto_dispatch(ctx: Context) -> str:
+    """After a merge, start the next ready tasks (free slots under `auto_dispatch_max`); a failure never undoes the merge."""
+    free = dispatch.free_slots(ctx.project)
+    if not free:
+        return "skipped (auto_dispatch_max is 0 or no free slot)"
+    try:
+        return omi(ctx, "dispatch", "next", "--max", str(free))
+    except state.StateError as exc:
+        return f"FAILED (the merge is done): {exc}"
+
+
 def advance(project: state.Project, tid: str, message: str | None = None, reject: list[int] | None = None, why: str | None = None) -> None:
     """Advance only the newest successful run: a DONE write run to its reviewer, a review FAIL back to the engineer, or a review PASS through acceptance; stop at the first failed stage."""
     ctx = None
@@ -365,10 +376,13 @@ def advance(project: state.Project, tid: str, message: str | None = None, reject
                 report = dispatch.last_report(core.read_task(state.task_file(project, tid)), rec["role"], rec["started"])
                 if dispatch.verdict(report) == "PASS":
                     try:
-                        return accept.advance_pass(ctx, perform, command)
+                        accept.advance_pass(ctx, perform, command)
                     finally:
                         if ctx.progress.get("ci-failed"):
                             save_progress(ctx)
+                    if ctx.progress.get("post-merge-test"):
+                        perform(ctx, "auto-dispatch", auto_dispatch)
+                    return
                 return advance_fail(ctx)
             if reject or why:
                 raise state.StateError("--reject and --why apply only after a review FAIL")
