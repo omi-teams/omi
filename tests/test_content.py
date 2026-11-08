@@ -717,6 +717,14 @@ def test_engineer_requires_suggested_commit_line() -> None:
     assert "`Suggested commit: <type>(<area>): <summary>`" in engineer
 
 
+def test_reproduce_and_fix_report_requires_reproduced_line() -> None:
+    line = "`Reproduced: <test> failed before the fix`"
+    template = omi.common.core.TEMPLATE / "dot-omi"
+    steps = {s["id"]: s for s in omi.project.workflows.workflow_steps((template / "workflows/omi-flow-bugfix.md").read_text(encoding="utf-8"))}
+    assert line in steps["reproduce"]["output"]
+    assert line in (template / "agents/omi-agent-engineer.md").read_text(encoding="utf-8")
+
+
 def test_po_decisions_use_pick_list() -> None:
     line = next(x for x in (omi.common.core.TEMPLATE / "AGENTS.md").read_text(encoding="utf-8").splitlines() if x.startswith("The AskUserQuestion pick-list is used only"))
     for words in ("only for the PO decisions above", "every one is asked", "AskUserQuestion pick-list", "recommended option first", "in Vietnamese", "never as a plain-text question", "numbered option list", "Other questions never use the pick-list"):
@@ -779,6 +787,7 @@ def main():
     test_skills_check()
     test_reviewer_mockup_evidence_is_qa()
     test_engineer_requires_suggested_commit_line()
+    test_reproduce_and_fix_report_requires_reproduced_line()
 
 
 if __name__ == "__main__":
