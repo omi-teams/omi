@@ -399,6 +399,11 @@ def test_state_sync():
         git(home, "rm", "--", plan.relative_to(home).as_posix())
         leftover.unlink()
         assert "state synced" in detached_cli(code, "sync")
+        # TASK-251: a path another writer already deleted and committed is no pathspec any more; the commit still succeeds.
+        gone = plan.relative_to(home).as_posix()
+        before = omi.common.core.git(home, "rev-parse", "HEAD")
+        omi.state.sync.commit(omi.state.resolve.resolve(code), [gone], "stale path")
+        assert omi.common.core.git(home, "rev-parse", "HEAD") == before and omi.common.core.git(home, "status", "--porcelain") == ""
         assert omi.common.core.git(home, "status", "--porcelain") == ""
         # Offline exceptions and a repository without a remote both remain readable.
         real_git = omi.state.sync.git

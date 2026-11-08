@@ -1,8 +1,12 @@
-"""Runs every area test file in one process: python tests/test_omi.py"""
+"""Runs every area test file: python tests/test_omi.py [--jobs N] [--profile] (--jobs 1: one process, the old serial run)"""
+import concurrent.futures
 import contextlib
 import io
 import json
+import os
+import subprocess
 import sys
+import time
 import tempfile
 import traceback
 from pathlib import Path
@@ -44,9 +48,10 @@ def report_failure(exc_type, exc, tb):
     print(f"FAILED {name} {filename}:{lineno} {exc_type.__name__}: {exc}".replace("\n", " "), file=sys.stderr, flush=True)
 
 
-def track_calls(modules, skips=None):
-    """Record test calls and printed skips, silencing only implicit fixture output."""
+def track_calls(modules, skips=None, times=None):
+    """Record test calls, printed skips and (times) each test's wall time, silencing only implicit fixture output."""
     skips = [] if skips is None else skips
+    times = {} if times is None else times
     defined, called = set(), set()
     for mod in modules:
         for name, fn in list(vars(mod).items()):
@@ -58,10 +63,12 @@ def track_calls(modules, skips=None):
                     out = io.StringIO()
                     # omi.app.cli.main reconfigures stdout to UTF-8; StringIO already stores Unicode.
                     out.reconfigure = lambda **kw: None
+                    start = time.perf_counter()
                     try:
                         with contextlib.redirect_stdout(out), helpers.quiet_fixtures():
                             return _fn(*a, **kw)
                     finally:
+                        times[f"{_key[0]}.{_key[1]}"] = times.get(f"{_key[0]}.{_key[1]}", 0) + time.perf_counter() - start
                         text = out.getvalue()
                         for line in text.splitlines():
                             if line.lower().startswith("skip "):
@@ -184,38 +191,94 @@ def test_phase():
     assert tasks.step_strip({**m, "status": "done"}, wf[:2]) == "plan ✓ design ✓"
 
 
+MODULES = [test_upgrade, test_init, test_github, test_worker, test_creds, test_tools, test_hooks, test_tasks, test_content,
+           test_cli, test_attach, test_detached, test_install, test_board, test_board_server, test_board_web, test_structure,
+           test_dispatch, test_advance, test_accept]
+RESULT = "OMI-SUITE-RESULT: "
+
+
+def run_modules(mods, skips, times):
+    """Run each module's main() in this process; fail when a defined test was never called."""
+    defined, called = track_calls(mods, skips, times)
+    for mod in mods:
+        mod.main()
+    skipped = sorted(f"{mod}.{name}" for mod, name in defined - called)
+    assert not skipped, f"test functions never called by a main(): {', '.join(skipped)}"
+
+
+def run_child(name):
+    """One module in its own process (--only): prints its output, then one result line for the parent."""
+    skips, times = [], {}
+    run_modules([sys.modules[name]], skips, times)
+    print(RESULT + json.dumps({"skips": skips, "times": times}), flush=True)
+
+
+def run_parallel(mods, jobs, skips, times):
+    """Each module in a child process, `jobs` at a time; output is printed per module once it finishes. Returns failed module names."""
+    def one(mod):
+        start = time.perf_counter()
+        r = subprocess.run([sys.executable, __file__, "--only", mod.__name__], cwd=Path(__file__).parent.parent,
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+        return mod.__name__, r, time.perf_counter() - start
+    failed = []
+    with concurrent.futures.ThreadPoolExecutor(jobs) as pool:
+        for name, r, took in pool.map(one, mods):
+            out, _, result = r.stdout.rpartition(RESULT)
+            if r.returncode or not result:
+                failed.append(name)
+                sys.stdout.write(r.stdout + r.stderr)
+                print(f"FAILED module {name} (exit {r.returncode}, {took:.1f}s)", flush=True)
+                continue
+            sys.stdout.write(out)
+            data = json.loads(result)
+            skips += data["skips"]
+            times.update(data["times"])
+            times[f"{name} (process)"] = took
+    return failed
+
+
+def options(argv):
+    jobs, profile, only = os.cpu_count() or 1, "--profile" in argv, None
+    if "--jobs" in argv:
+        jobs = max(1, int(argv[argv.index("--jobs") + 1]))
+    if "--only" in argv:
+        only = argv[argv.index("--only") + 1]
+    return jobs, profile, only
+
+
+def test_options() -> None:
+    assert options(["--jobs", "3", "--profile"]) == (3, True, None)
+    assert options(["--jobs", "0"])[0] == 1 and options([])[0] == (os.cpu_count() or 1)
+    assert options(["--only", "test_tasks"])[2] == "test_tasks"
+
+
 if __name__ == "__main__":
     sys.excepthook = report_failure
+    jobs, profile, only = options(sys.argv[1:])
+    if only:
+        run_child(only)
+        sys.exit(0)
     check_test_modules(Path(__file__).parent, list(sys.modules.values()))
-    real_skips = []
-    defined, called = track_calls([m for m in list(sys.modules.values()) if getattr(m, "__file__", None)
-                                   and Path(m.__file__).parent == Path(__file__).parent and Path(m.__file__).name.startswith("test_")], real_skips)
+    real_skips, times = [], {}
+    own = sys.modules[__name__]
+    own_defined, own_called = track_calls([own], real_skips, times)
     test_fixture_output_capture()
     test_skip_summary()
     test_unimported_test_file()
     test_phase()
     test_release_0_6_0()
-    test_upgrade.main()
-    test_init.main()
-    test_github.main()
-    test_worker.main()
-    test_creds.main()
-    test_tools.main()
-    test_hooks.main()
-    test_tasks.main()
-    test_content.main()
-    test_cli.main()
-    test_attach.main()
-    test_detached.main()
-    test_install.main()
-    test_board.main()
-    test_board_server.main()
-    test_board_web.main()
-    test_structure.main()
-    test_dispatch.main()
-    test_advance.main()
-    test_accept.main()
-    skipped = sorted(f"{mod}.{name}" for mod, name in defined - called)
-    assert not skipped, f"test functions never called by a main(): {', '.join(skipped)}"
+    test_options()
+    assert {m.__name__ for m in MODULES} | {"test_omi"} == {p.stem for p in Path(__file__).parent.glob("test_*.py")}, "MODULES must list every test file"
+    if jobs == 1:
+        run_modules(MODULES, real_skips, times)
+    elif failed := run_parallel(MODULES, jobs, real_skips, times):
+        sys.exit(f"FAILED modules: {', '.join(failed)}")
+    assert own_defined == own_called, f"runner tests never called: {sorted(own_defined - own_called)}"
+    if profile:
+        print("slowest tests:")
+        for name, took in sorted(((n, s) for n, s in times.items() if not n.endswith("(process)")), key=lambda x: -x[1])[:20]:
+            print(f"  {took:6.2f}s {name}")
+        print("module processes: " + ", ".join(f"{n.split()[0]} {s:.0f}s" for n, s in sorted(
+            ((n, s) for n, s in times.items() if n.endswith("(process)")), key=lambda x: -x[1])[:8]))
     print("skipped: " + ("; ".join(real_skips) if real_skips else "none"))
     print("ok")

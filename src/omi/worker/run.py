@@ -212,6 +212,14 @@ def parse_step_settings(value: str, step_ids: list[str] | None = None) -> dict[s
     return settings
 
 
+def missing_lines(report, step_id):
+    """Lines a DONE write report still needs before advance can use it: `Suggested commit:`, and `Reproduced:` on a reproduce step."""
+    if not report or not re.match(r"\W*DONE\b", report):  # the same verdict test as the run record below
+        return []
+    need = ["Suggested commit"] + (["Reproduced"] if step_id == "reproduce" else [])
+    return [k for k in need if not tools.report_values(report, k)]
+
+
 def report_note(task: Path, role: str, tool: str, report: str) -> None:
     """Append an agent report to ## Reports in full: the next step reads it from there."""
     tasks.append_note(task, "Reports", f"{datetime.datetime.now():%Y-%m-%d %H:%M} {role} ({tool}):\n" + "\n".join("> " + l for l in report.splitlines()))
@@ -311,14 +319,14 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
 
     repo = docker.repo_key(main)
 
-    def attempt(t, secret, note="", resume=None, hook_tail=None):
+    def attempt(t, secret, note="", resume=None, hook_tail=None, missing=None):
         """One container run with tool t (resume: continue that session id); returns (process, report text, skills read)."""
         env = dict(os.environ)
         env.pop(creds.TOKEN_ENV, None)
         env_name, value, _ = secret
         env[env_name] = value
         mdl, eff = models[t], efforts[t]
-        cmd = (tools.engineer_cmd if t == "claude" else tools.codex_cmd)(text, task_rel, mdl, eff, prompt_skills + note, resume, hook_tail)
+        cmd = (tools.engineer_cmd if t == "claude" else tools.codex_cmd)(text, task_rel, mdl, eff, prompt_skills + note, resume, hook_tail, missing)
         if resume and declared:  # the resume prompt is short: point again at the step's skills so reading them is counted
             cmd[2 if t == "claude" else -1] += resume_skills + "\nRe-read them now, they are not in your context after a resume."
         if resume and added:  # the resumed session still remembers the old scope
@@ -457,6 +465,12 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             if tools.quota_hit(other, r.stdout, r.returncode, r.stderr):
                 return stop_quota("claude and codex both hit their usage limit")
         rc = r.returncode
+        if not read and not rc and (missing := missing_lines(result, cur["id"] if cur else "")) \
+                and (sid := session.recorded(core.read_task(task), tool, role)) and session.available(repo, task.stem, tool, sid):
+            print(f"report is missing {', '.join(missing)}; resuming the engineer once to add them")
+            fix = attempt(tool, secret, resume=sid, missing=missing)
+            if not fix[0].returncode and fix[1] is not None:
+                r, result, done = fix[0], fix[1], list(dict.fromkeys([*done, *fix[2]]))
         print(result if result is not None else (r.stdout or ""))
         report = result or "(no report)"
         if rc:  # not a usage limit (handled above): show why the CLI failed

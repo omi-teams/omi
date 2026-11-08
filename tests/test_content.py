@@ -912,7 +912,33 @@ def test_promote_tags_retry() -> None:
         assert attempts == [today, "v0.6.0", "v0.6.0"], attempts
 
 
+def test_template_regen() -> None:
+    """TASK-251: `omi template-regen <repo>` rebuilds the template catalogs and that version's hashes, only under <repo>."""
+    import json
+    src = omi.common.core.TEMPLATE.parents[2]  # the omi checkout these tests run from
+    installed = omi.setup.upgrade.SHAS.read_bytes()
+    with tempfile.TemporaryDirectory() as d, contextlib.redirect_stdout(io.StringIO()) as out:
+        repo = Path(d) / "omi"
+        shutil.copytree(src / "src" / "omi" / "template", repo / "src" / "omi" / "template", ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copy(src / "src" / "omi" / "template_shas.json", repo / "src" / "omi" / "template_shas.json")
+        shutil.copy(src / "pyproject.toml", repo / "pyproject.toml")
+        omi.setup.upgrade.template_regen(repo)
+        tpl = repo / "src" / "omi" / "template"
+        assert (tpl / "dot-omi" / "workflows" / "CATALOG.md").read_bytes() == (src / "src/omi/template/dot-omi/workflows/CATALOG.md").read_bytes()
+        flow = tpl / "dot-omi" / "workflows" / "omi-flow-docs-only.md"
+        flow.write_text(re.sub(r"^summary: .*$", "summary: Regenerated summary for the test.", flow.read_text(encoding="utf-8"), count=1, flags=re.M),
+                        encoding="utf-8", newline="\n")
+        omi.setup.upgrade.template_regen(repo)
+        assert "Regenerated summary for the test." in (tpl / "dot-omi" / "workflows" / "CATALOG.md").read_text(encoding="utf-8")
+        ver = omi.common.core.version()
+        shas = json.loads((repo / "src" / "omi" / "template_shas.json").read_text(encoding="utf-8"))
+        assert shas[ver][".omi/workflows/omi-flow-docs-only.md"] == omi.setup.upgrade.norm_sha(flow.read_bytes())
+        assert "template-regen " + ver in out.getvalue()
+    assert omi.setup.upgrade.SHAS.read_bytes() == installed, "template-regen must not touch the installed omi"
+
+
 def main():
+    test_template_regen()
     test_promote_tags_retry()
     test_promote_tags()
     test_status_skill_resumes_orphans()

@@ -438,7 +438,7 @@ def test_record_runs():
 
 def test_session_resume():
     sess, tools = omi.worker.session, omi.worker.tools
-    out = '{"type":"system","session_id":"S1"}\n{"type":"result","session_id":"S2","result":"DONE","usage":{}}\n'
+    out = '{"type":"system","session_id":"S1"}\n{"type":"result","session_id":"S2","result":"DONE\\nSuggested commit: fix(x): y","usage":{}}\n'
     assert sess.session_id("claude", out) == "S2" and sess.session_id("codex", '{"type":"thread.started","thread_id":"T1"}') == "T1"
     assert sess.session_id("claude", "junk") is None and sess.session_id("codex", out) is None
     text = sess.with_session("---\na: b\n---\n## Checkpoint\nDone:\n\n## Usage\nrow\n", "claude", "S1")

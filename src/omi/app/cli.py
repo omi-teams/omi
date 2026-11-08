@@ -214,6 +214,8 @@ def dispatch(argv: list[str] | None = None) -> None:
         sys.exit(upgrade.upgrade_cmd(rest, root, detached=project.detached))
     elif cmd == "template-shas" and len(rest) == 2:
         upgrade.template_shas_cmd(*rest)
+    elif cmd == "template-regen" and len(rest) <= 1:
+        upgrade.template_regen(*rest)
     elif cmd == "improve":
         improve.improve(rest)
     elif cmd == "sync":
