@@ -217,6 +217,9 @@ def report_note(task: Path, role: str, tool: str, report: str) -> None:
     tasks.append_note(task, "Reports", f"{datetime.datetime.now():%Y-%m-%d %H:%M} {role} ({tool}):\n" + "\n".join("> " + l for l in report.splitlines()))
 
 
+CLAUDE_ONLY = ("omi-agent-architect",)  # PO rule: the architect never runs on Codex
+
+
 def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=False):
     wt = Path(wt).resolve()
     main = core.main_checkout(wt)
@@ -246,6 +249,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
     tool = tool or step_settings.get("tool") or (tm.get("tool") if task_settings else None) or am.get("tool") or "claude"
     if tool not in ("claude", "codex"):
         sys.exit(f"unknown tool `{tool}`: claude or codex. Nothing changed.")
+    if tool == "codex" and role in CLAUDE_ONLY:
+        sys.exit(f"{role} runs on Claude only (PO rule: the architect is never given to Codex). Nothing started.")
     other = "codex" if tool == "claude" else "claude"
     docker.need_docker()  # read roles too: no host fallback
     secret = creds.claude_auth() if tool == "claude" else creds.tool_secret(tool)
@@ -425,6 +430,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             print(f"RESUME FAILED: session {sid} could not be resumed; starting a fresh session")
             r, result, done = attempt(tool, secret)
         if tools.quota_hit(tool, r.stdout, r.returncode, r.stderr):
+            if role in CLAUDE_ONLY:
+                return stop_quota(f"{tool} hit its usage limit and {role} runs on Claude only, no fallback to {other}")
             other_secret, problem = (creds.claude_auth() if other == "claude" else creds.tool_secret(other)), None
             try:
                 efforts[other] = tools.resolve_effort(want, other)
