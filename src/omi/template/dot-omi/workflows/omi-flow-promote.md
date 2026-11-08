@@ -21,7 +21,7 @@ Never merge into staging or main (ruleset `omi-po-only`: only admin merges). Ope
 
 ## tag (old 3.1-3.4, after the PO merges staging -> main)
 1. `git fetch origin --tags`. Require `git diff --quiet origin/main origin/staging` (origin/main's tree equals the candidate's, ignoring merge commits). Otherwise report the mismatch and stop.
-2. Read `[project].version` from `origin/main:pyproject.toml`, never the working tree. Tag both `v<YYYY.MM.DD>` and `v<pyproject version>` on the main commit. Skip any tag already on the same commit (including annotated tags). For a date tag on another commit, try `.2`, `.3`, ...; for a version tag on another commit, stop before creating any tags and request a version bump. Never move, force-push or delete an existing tag.
+2. Read `[project].version` from `origin/main:pyproject.toml`, never the working tree. Tag both `v<YYYY.MM.DD>` and `v<pyproject version>` on the main commit. Check origin and skip any tag already there on the same commit (including annotated tags). Local-only tags are not published; retry failed pushes. For a date tag on another commit, try `.2`, `.3`, ...; for a version tag on another commit, stop before creating any tags and request a version bump. Never move, force-push or delete an existing tag.
 3. After the fetch and tree check above, run this procedure with Python 3.13:
 
 ```python
@@ -35,9 +35,10 @@ def git(*args):
 
 
 def target(tag):
-    result = subprocess.run(["git", "rev-parse", "--verify", f"refs/tags/{tag}^{{commit}}"],
-                            capture_output=True, encoding="utf-8")
-    return result.stdout.strip() if result.returncode == 0 else None
+    ref = f"refs/tags/{tag}"
+    refs = {name: sha for sha, name in (line.split() for line in
+            git("ls-remote", "--tags", "origin", ref, ref + "^{}").splitlines())}
+    return refs.get(ref + "^{}", refs.get(ref))
 
 
 main = git("rev-parse", "origin/main")
@@ -53,8 +54,7 @@ while target(dated) not in (None, main):
 for tag in dict.fromkeys((dated, version)):
     if target(tag) == main:
         continue
-    git("tag", tag, main)
-    git("push", "origin", f"refs/tags/{tag}")
+    git("push", "origin", f"{main}:refs/tags/{tag}")
 print(f"{dated} {version}")
 ```
 
