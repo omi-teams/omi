@@ -71,6 +71,7 @@ class Context:
     step: dict = field(init=False)
     following: dict = field(init=False)
     fix: dict | None = None
+    handoff: bool = False  # the next step is another agent step, not a reviewer: no rebase, push, PR or host-test
     stage: str = "eligibility"
     target: str = ""
     repository: str = ""
@@ -129,9 +130,10 @@ def eligible(ctx: Context) -> tuple[dict, str, dict, dict]:
             and steps[at + 1]["role"] == rec["role"] and tools.report_values(report, "Reproduced")):
         ctx.fix = steps[at + 1]
     last = at + 1 + (ctx.fix is not None)
-    if last >= len(steps) or steps[last]["role"] not in tasks.REVIEW_ROLES:
-        raise state.StateError("the next workflow step is not a reviewer")
+    if last >= len(steps) or steps[last]["role"] == workflows.COORDINATOR:
+        raise state.StateError("the next workflow step is not an agent or a reviewer")
     following = steps[last]
+    ctx.handoff = following["role"] not in tasks.REVIEW_ROLES
     ctx.members = workflows.stage_of(steps, following["id"])
     if ctx.meta.get("step") != sid and not (ctx.fix and ctx.meta.get("step") == ctx.fix["id"]) and not (ctx.progress.get("step-done") and ctx.meta.get("step") == following["id"]):
         raise state.StateError("finished run is not for the current step")
@@ -386,7 +388,8 @@ def engineer(ctx: Context) -> str:
     if ctx.progress.get("replan") and role != "omi-agent-architect":
         print(ctx.progress["replan"])
         raise Stop(1)
-    if not any(r["tid"] == ctx.tid and r["role"] == role and r["started"] >= ctx.rec["started"] for r in dispatch.records(ctx.project.code)):
+    if not any(r["tid"] == ctx.tid and r["role"] == role and r["started"] >= ctx.rec["started"] and r["dir"] != ctx.rec["dir"]  # not the finished run itself
+               for r in dispatch.records(ctx.project.code)):
         omi(ctx, "dispatch", role, ctx.tid)
     return f"{role} dispatched"
 
@@ -557,19 +560,20 @@ def advance(project: state.Project, tid: str, message: str | None = None, reject
             if hook_fixed:
                 perform(ctx, "hook-fixed", post_run_passes, remember=False)
             ensure_clean(ctx)
-            redo_if_development_moved(ctx)
-            perform(ctx, "rebase", rebase)
-            select_remote(ctx)
-            if ctx.target:
-                perform(ctx, "push", push)
-                perform(ctx, "pr", draft)
-            else:
-                print("push: skipped (no GitHub remote)")
-                print("pr: skipped (no GitHub remote)")
-            perform(ctx, "host-test", host_test)
+            if not ctx.handoff:
+                redo_if_development_moved(ctx)
+                perform(ctx, "rebase", rebase)
+                select_remote(ctx)
+                if ctx.target:
+                    perform(ctx, "push", push)
+                    perform(ctx, "pr", draft)
+                else:
+                    print("push: skipped (no GitHub remote)")
+                    print("pr: skipped (no GitHub remote)")
+                perform(ctx, "host-test", host_test)
             perform(ctx, "step-done", step_done)
             perform(ctx, "step-next", step_next)
-            perform(ctx, "dispatch", reviewer)
+            perform(ctx, "dispatch", engineer if ctx.handoff else reviewer)
     except Stop:
         raise
     except (SystemExit, state.StateError, OSError, ValueError, TimeoutError) as exc:
