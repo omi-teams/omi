@@ -47,8 +47,12 @@ def announce(rec: dict, tid: str, action: str, waiting: dict[str, str], project:
 def advance_finished(project: state.Project, waiting: dict[str, str]) -> bool:
     """`omi advance` the newest finished run of each open task whose next action is `NEXT:`; list `DECIDE:` ones in `waiting`."""
     found = tasks.tasks(project)
+    newest = {r["tid"]: r for r in dispatch.records(project.code)}
+    current = {r["dir"].name for tid, r in newest.items() if tid in found and found[tid].get("status") != "done"}
+    for name in waiting.keys() - current:
+        waiting.pop(name)
     worked = False
-    for tid, rec in {r["tid"]: r for r in dispatch.records(project.code)}.items():
+    for tid, rec in newest.items():
         meta = found.get(tid)
         if rec["running"] or not meta or meta.get("status") == "done":
             waiting.pop(rec["dir"].name, None)

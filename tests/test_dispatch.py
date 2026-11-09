@@ -733,6 +733,53 @@ def test_drive_starts_no_work_after_an_advance_failure() -> None:
                 assert ("dispatch", "next", "--max", "1") not in calls
 
 
+def test_drive_drops_superseded_waiting_entries() -> None:
+    for running in (False, True):
+        actions = {tid: "DECIDE: x" for tid in ("TASK-001", "TASK-002", "TASK-003")}
+        def make(root):
+            return [[finished_rec(root, "TASK-001"), finished_rec(root, "TASK-002"),
+                     finished_rec(root, "TASK-003", running=True)]]
+        with drive_fixture(make, actions, done=("TASK-003",)) as (project, root, _, snapshots), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            recs = snapshots[0]
+            def supersede(_):
+                if len(recs) > 3:
+                    recs[-1]["running"] = False
+                    return
+                newer = {**recs[0], "dir": root / "TASK-001-newer", "running": running,
+                         "started": recs[0]["started"] + datetime.timedelta(minutes=1)}
+                newer["dir"].mkdir()
+                recs.append(newer)
+                recs[2]["running"] = False
+            with patch.object(drive.time, "sleep", side_effect=supersede):
+                drive.drive(project, poll=0)
+            text = out.getvalue()
+            assert "TASK-001 omi-agent-engineer: DECIDE: x" in text, text
+            assert "waiting for the Coordinator: TASK-001-run:" not in text, text
+            assert "waiting for the Coordinator: TASK-001-newer: DECIDE: x" in text, text
+            assert "waiting for the Coordinator: TASK-002-run: DECIDE: x" in text, text
+
+
+def test_drive_drops_waiting_entry_when_task_done() -> None:
+    actions = {tid: "DECIDE: x" for tid in ("TASK-001", "TASK-002", "TASK-003")}
+    def make(root):
+        return [[finished_rec(root, "TASK-001"), finished_rec(root, "TASK-002"),
+                 finished_rec(root, "TASK-003", running=True)]]
+    with drive_fixture(make, actions, done=("TASK-003",)) as (project, _, _, snapshots), \
+            contextlib.redirect_stdout(io.StringIO()) as out:
+        found = {tid: {"status": "in-progress", "_text": ""} for tid in actions}
+        found["TASK-003"]["status"] = "done"
+        def complete(_):
+            found["TASK-001"]["status"] = "done"
+            snapshots[0][2]["running"] = False
+        with patch.object(drive.tasks, "tasks", return_value=found), patch.object(drive.time, "sleep", side_effect=complete):
+            drive.drive(project, poll=0)
+        text = out.getvalue()
+        assert "TASK-001 omi-agent-engineer: DECIDE: x" in text, text
+        assert "waiting for the Coordinator: TASK-001-run:" not in text, text
+        assert "waiting for the Coordinator: TASK-002-run: DECIDE: x" in text, text
+
+
 def test_drive_starts_next_when_slot_frees_and_stops_when_idle() -> None:
     make = lambda root: [[finished_rec(root, "TASK-001", running=True)]] * 2 + [[finished_rec(root, "TASK-001")]]
     with drive_fixture(make, {"TASK-001": "DECIDE: x"}, done=("TASK-001",)) as (project, _, calls, _), \
@@ -921,6 +968,8 @@ def main():
     test_idle_in_progress_tasks_can_each_launch()
     test_drive_prints_decide_of_reported_run_once()
     test_drive_starts_no_work_after_an_advance_failure()
+    test_drive_drops_superseded_waiting_entries()
+    test_drive_drops_waiting_entry_when_task_done()
     test_drive_advances_next_and_stops_on_decide()
     test_drive_starts_next_when_slot_frees_and_stops_when_idle()
     test_drive_is_one_per_project()
