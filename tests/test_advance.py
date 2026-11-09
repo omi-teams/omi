@@ -101,6 +101,79 @@ def handoff():
         yield h
 
 
+@contextlib.contextmanager
+def architect_handoff():
+    with handoff() as h:
+        h.rec['role'] = 'omi-agent-architect'
+        h.steps = [dict(id='design', role=h.rec['role']), dict(id='build', role=ROLE)]
+        h.text = ("---\nid: TASK-218\nstep: design\nworkflow: flow\n---\n## Steps\n"
+                  "- design started 2026-11-06 11:18\n\n## Reports\n"
+                  "2026-11-06 11:21 omi-agent-architect (codex):\n"
+                  "> RECOMMEND: reuse the module\n> OPTIONS: minimal change\n> TASKS: build it\n")
+        h.task.write_text(h.text, encoding='utf-8')
+
+        def run(argv, **kwargs):
+            assert argv[:3] == [sys.executable, '-m', 'omi'], argv
+            args = argv[3:]
+            h.calls.append(args)
+            name = 'step-' + args[-1] if args[0] == 'step' else args[0]
+            if name == h.fail:
+                return subprocess.CompletedProcess(argv, 1, '', 'action failed')
+            text = h.task.read_text(encoding='utf-8')
+            if args == ['step', TID, 'done']:
+                text = text.replace('\n## Reports', '- design done 2026-11-06 11:22\n\n## Reports')
+            elif args == ['step', TID, 'next']:
+                text = text.replace('step: design', 'step: build')
+            h.task.write_text(text, encoding='utf-8')
+            return subprocess.CompletedProcess(argv, 0, '', '')
+
+        with patch.object(advance.subprocess, 'run', side_effect=run):
+            yield h
+
+
+def test_architect_advances_to_build_and_rerun() -> None:
+    with architect_handoff() as h:
+        error, out = h.invoke()
+        assert not error, error
+        assert h.calls == [['step', TID, 'done'], ['step', TID, 'next'], ['dispatch', ROLE, TID]], h.calls
+        assert '- design done' in h.task.read_text(encoding='utf-8')
+        h.calls.clear()
+        error, out = h.invoke()
+        assert not error and not h.calls and out.count('already done') == 3, (error, out, h.calls)
+
+
+def test_architect_refuses_invalid_run() -> None:
+    for change in ('rc', 'report', 'blocked', 'scope', 'stale', 'role', 'done', 'running', 'next', 'reject'):
+        with architect_handoff() as h:
+            if change == 'rc': h.rec['rc'] = 1
+            elif change == 'report': h.text = h.text.split('\n## Reports')[0]
+            elif change == 'blocked': h.text = h.text.replace('> RECOMMEND:', '> BLOCKED\n> RECOMMEND:')
+            elif change == 'scope': h.text = h.text.replace('> RECOMMEND:', '> NEEDS SCOPE\n> RECOMMEND:')
+            elif change == 'stale': h.rec['started'] = STAMP.replace(hour=10)
+            elif change == 'role': h.steps[0]['role'] = ROLE
+            elif change == 'done': h.text = h.text.replace('\n## Reports', '- design done 2026-11-06 11:22\n\n## Reports')
+            elif change == 'running': h.recs.append({**h.rec, 'running': True})
+            elif change == 'next': h.steps.pop()
+            h.task.write_text(h.text, encoding='utf-8')
+            error, _ = h.invoke(reject=[1] if change == 'reject' else None)
+            assert 'eligibility FAILED' in error and not h.calls, (change, error, h.calls)
+            assert not (h.run_dir / 'advance.json').exists()
+
+
+def test_architect_failure_and_recovery() -> None:
+    for failure in ('step-done', 'step-next', 'dispatch'):
+        with architect_handoff() as h:
+            h.fail = failure
+            error, _ = h.invoke()
+            assert f'advance {failure} FAILED' in error, error
+            h.calls.clear()
+            h.fail = None
+            error, _ = h.invoke()
+            assert not error and h.calls[-1] == ['dispatch', ROLE, TID], (error, h.calls)
+            if failure != 'step-done':
+                assert ['step', TID, 'done'] not in h.calls
+
+
 def test_all_stages_and_rerun() -> None:
     with handoff() as h:
         error, out = h.invoke()
@@ -723,6 +796,9 @@ def test_regenerate_split_and_done_reports_only() -> None:
 
 
 def main():
+    test_architect_advances_to_build_and_rerun()
+    test_architect_refuses_invalid_run()
+    test_architect_failure_and_recovery()
     test_review_stage_waits_then_one_fix_round()
     test_review_stage_passes_through_each_reviewer()
     test_write_done_dispatches_the_whole_stage()

@@ -444,6 +444,8 @@ def next_action(project: state.Project, rec: dict, text: str, report: str) -> st
            7: "BUDGET: the run passed its token_budget (see Checkpoint): split or rescope the task, or raise token_budget in .omi/config.json"}.get(rc)
     if why or v == "BLOCKED" or rc:
         return f"DECIDE: {why or (v if v != 'n/a' else f'exit {rc}')}; see the report and the log"
+    if rec["role"] == "omi-agent-architect":
+        return WRITE_DONE.format(tid=tid) if report.strip() else "DECIDE: architect left no report; read the log"
     access = catalogs.load_roles(project.state).get(rec["role"], {}).get("access")
     if access == "write":
         return WRITE_DONE.format(tid=tid) if v == "DONE" else "DECIDE: no DONE in the report; read it and the log"

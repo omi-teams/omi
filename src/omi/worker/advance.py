@@ -452,6 +452,38 @@ def auto_dispatch(ctx: Context) -> str:
         return f"FAILED (the merge is done): {exc}"
 
 
+def advance_architect(ctx: Context) -> None:
+    """Complete a reported design run and hand off to the next workflow role."""
+    text = core.read_task(state.task_file(ctx.project, ctx.tid))
+    report = dispatch.last_report(text, ctx.rec["role"], ctx.rec["started"])
+    if ctx.rec["rc"] != 0 or not report.strip() or dispatch.verdict(report) in ("BLOCKED", "NEEDS SCOPE"):
+        raise state.StateError("architect run must exit 0 and leave a report without BLOCKED or NEEDS SCOPE")
+    ctx.meta = core.parse(text)
+    steps = workflows.get_workflow(ctx.project.state, ctx.meta.get("workflow") or workflows.DEFAULT_WORKFLOW)
+    sid = ctx.progress.get("step", ctx.meta.get("step"))
+    at = next((i for i, s in enumerate(steps) if s["id"] == sid), -1)
+    if at < 0 or steps[at]["role"] != ctx.rec["role"]:
+        raise state.StateError("run role does not match the current architect step")
+    if at + 1 >= len(steps) or steps[at + 1]["role"] == workflows.COORDINATOR:
+        raise state.StateError("the next workflow step is not an agent")
+    ctx.step, ctx.following = steps[at:at + 2]
+    starts = re.findall(rf"^- {re.escape(sid)} started (\d{{4}}-\d\d-\d\d \d\d:\d\d)",
+                        text.partition("\n## Steps\n")[2].split("\n## ", 1)[0], re.M)
+    if not starts or datetime.datetime.strptime(starts[-1], "%Y-%m-%d %H:%M") > ctx.rec["started"].replace(second=0, microsecond=0):
+        raise state.StateError("finished run is stale for the current step")
+    if not (ctx.meta.get("step") == sid and (tasks.step_states(text).get(sid) == "started" or ctx.progress.get("step-done"))
+            or ctx.progress.get("step-done") and ctx.meta.get("step") == ctx.following["id"]):
+        raise state.StateError("finished run is not for the current step")
+    if any(r["running"] and not (ctx.progress.get("step-next") and r["role"] == ctx.following["role"])
+           for r in dispatch.records(ctx.project.code) if r["tid"] == ctx.tid):
+        raise state.StateError("task has a running worker")
+    ctx.progress["step"] = sid
+    print("eligibility: architect report for " + sid)
+    perform(ctx, "step-done", step_done)
+    perform(ctx, "step-next", step_next)
+    perform(ctx, "dispatch", engineer)
+
+
 def advance(project: state.Project, tid: str, message: str | None = None, reject: list[int] | None = None, why: str | None = None,
             hook_fixed: bool = False) -> None:
     """Advance only the newest successful run: a DONE write run to its reviewer, a review FAIL back to the engineer, or a review PASS through acceptance; stop at the first failed stage."""
@@ -462,6 +494,10 @@ def advance(project: state.Project, tid: str, message: str | None = None, reject
             path = rec["dir"] / "advance.json"
             progress = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
             ctx = Context(project, tid, rec, progress, message, reject or [], why, hook_fixed)
+            if rec["role"] == "omi-agent-architect":
+                if reject or why:
+                    raise state.StateError("--reject and --why apply only after a review FAIL")
+                return advance_architect(ctx)
             if rec["role"] in tasks.REVIEW_ROLES and (found := stage_runs(project, tid, rec)) is not None:
                 return advance_stage(project, tid, found, message, reject, why) if found else None
             if rec["role"] in tasks.REVIEW_ROLES or catalogs.get_role(project.state, rec["role"])["access"] == "read":
