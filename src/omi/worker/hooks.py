@@ -12,7 +12,7 @@ from pathlib import Path
 from ..common import core
 from . import creds, docker
 from ..state import resolve as state
-from ..project import tasks
+from ..project import scope, structure, tasks
 
 
 HOOK_EVENTS = ("pre-run", "post-run", "pre-merge")
@@ -146,3 +146,21 @@ def hook_cmd(event, tid):
         print(f"no {event} hook")
         return 0
     return hook_note(state.task_file(project, tid), event, res)
+
+
+def regenerate(wt, project):
+    """Run the project's `regenerate` command in the worktree so `generated` files match the engineer's changes."""
+    cmd = scope.config(project, "regenerate", "")
+    if not (scope.generated(project) and cmd):
+        return
+    try:
+        res = subprocess.run(structure.tool_argv(cmd, posix=not core.WINDOWS), cwd=wt, stdin=subprocess.DEVNULL, capture_output=True,
+                             encoding="utf-8", errors="replace")
+    except OSError as exc:
+        print(f"REGENERATE FAILED: {cmd} ({exc})")
+        return
+    if res.returncode:
+        print(f"REGENERATE FAILED: {cmd} (exit {res.returncode})")
+        print("\n".join((res.stdout + res.stderr).strip().splitlines()[-20:]))
+    else:
+        print(f"REGENERATED: {cmd}")

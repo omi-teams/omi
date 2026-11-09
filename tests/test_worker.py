@@ -1399,43 +1399,67 @@ def run_role_harness(wt, outputs, calls):
 
 
 def test_run_role_regenerates_before_post_run_hook():
-    """TASK-277: a write run that exited 0 runs the configured `regenerate` in the worktree before the post-run hook."""
-    result = subprocess.CompletedProcess([], 0, json.dumps({"type": "result", "result": "DONE\nSuggested commit: fix(x): y", "usage": {}}), "")
+    """TASK-277: a write run that exited 0 runs the configured `regenerate` in the worktree before each post-run hook."""
+    def result(n=0, text="DONE\nSuggested commit: fix(x): y", rc=0):
+        return subprocess.CompletedProcess([], rc, json.dumps({"type": "result", "result": text, "usage": {"input_tokens": n}}), "")
+    review = "VERDICT: PASS\nHOST: none\nROOT: n/a"
     with tempfile.TemporaryDirectory() as d:
         wt = Path(d).resolve()
         (wt / ".git").write_text("gitdir: /x", encoding="utf-8")
         task = wt / ".omi" / "tasks" / "TASK-277.md"
         task.parent.mkdir(parents=True)
+        shutil.copytree(omi.common.core.TEMPLATE / "dot-omi" / "skills", wt / ".omi" / "skills")
+        with contextlib.redirect_stdout(io.StringIO()):
+            omi.project.catalogs.skills_catalog(wt)
         cfg = wt / ".omi" / "config.json"
-        calls, outputs, events = [], [], []
+        calls, outputs, events, hook_results = [], [], [], []
         base = run_role_harness(wt, outputs, calls)
 
         def run(cmd, **kw):
+            if cmd[0].endswith("regen-tool"):
+                events.append("regenerate")
+                raise FileNotFoundError(cmd[0])
             if cmd[1:2] == ["-c"] and "marker" in cmd[2]:
                 events.append("regenerate")
                 return subprocess.CompletedProcess(cmd, 3 if "fail" in cmd[2] else 0, "", "")
             return base(cmd, **kw)
+
+        def hook(*a):
+            events.append(a[2])
+            return hook_results.pop(0) if a[2] == "post-run" and hook_results else None
         cmd = f"{sys.executable} -c \"marker\""
+        gen = {"generated": ["src/x.json"], "regenerate": cmd}
+        pre, post = ["pre-run", "regenerate", "post-run"], ["pre-run", "post-run"]
         with patch("subprocess.run", run), patch("shutil.which", return_value="docker"), \
                 patch("omi.common.core.main_checkout", return_value=wt), patch("omi.common.core.WINDOWS", False), \
-                patch("omi.worker.docker.ensure_image", return_value="img"), \
-                patch("omi.worker.hooks.run_hook", side_effect=lambda *a: events.append(a[2])), \
+                patch("omi.worker.docker.ensure_image", return_value="img"), patch("omi.worker.run.deterministic_checks", return_value=[]), \
+                patch("omi.worker.hooks.run_hook", side_effect=hook), \
                 patch.dict(os.environ, {omi.worker.creds.TOKEN_ENV: "tok"}), \
                 contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()):
-            for config, role, want in (({"generated": ["src/x.json"], "regenerate": cmd}, "omi-agent-engineer", ["pre-run", "regenerate", "post-run"]),
-                                       ({"generated": ["src/x.json"], "regenerate": cmd.replace("marker", "marker fail")}, "omi-agent-engineer", ["pre-run", "regenerate", "post-run"]),
-                                       ({"regenerate": cmd}, "omi-agent-engineer", ["pre-run", "post-run"]),
-                                       ({"generated": ["src/x.json"]}, "omi-agent-engineer", ["pre-run", "post-run"])):
+            for config, role, outs, hooks_res, want in (
+                    (gen, "omi-agent-engineer", [result()], [], pre),
+                    ({**gen, "regenerate": cmd.replace("marker", "marker fail")}, "omi-agent-engineer", [result()], [], pre),
+                    ({**gen, "regenerate": "/nonexistent/regen-tool"}, "omi-agent-engineer", [result()], [], pre),
+                    ({"regenerate": cmd}, "omi-agent-engineer", [result()], [], post),
+                    ({"generated": ["src/x.json"]}, "omi-agent-engineer", [result()], [], post),
+                    (gen, "omi-agent-reviewer", [result(text=review)], [], []),
+                    (gen, "omi-agent-engineer", [result(rc=1)], [], ["pre-run"]),
+                    ({**gen, "token_budget": {"omi-agent-engineer": 500}}, "omi-agent-engineer", [result(1000)], [], ["pre-run"]),
+                    (gen, "omi-agent-engineer", [result(), result()], [(1, "bad"), (0, "ok")],
+                     ["pre-run", "regenerate", "post-run", "regenerate", "post-run"])):
                 cfg.write_text(json.dumps(config), encoding="utf-8")
                 task.write_text("---\nid: TASK-277\nscope: src/**\n---\n## Checkpoint\nDone:\n", encoding="utf-8")
                 events.clear(), calls.clear()
-                outputs[:] = [result]
+                hook_results[:] = hooks_res
+                outputs[:] = outs
                 out.truncate(0), out.seek(0)
-                omi.worker.run.run_role(role, wt, task, effort="low")
-                assert events == want, (config, events)
-                if "regenerate" in want:
-                    assert ("REGENERATE FAILED:" in out.getvalue()) == ("fail" in config["regenerate"]), out.getvalue()
-                    assert ("REGENERATED:" in out.getvalue()) == ("fail" not in config["regenerate"]), out.getvalue()
+                with patch("omi.worker.session.recorded", return_value="S1"), patch("omi.worker.session.available", return_value=True):
+                    omi.worker.run.run_role(role, wt, task, effort="low")
+                assert events == want, (config, role, events)
+                text = out.getvalue()
+                failed = "fail" in config.get("regenerate", "") or "nonexistent" in config.get("regenerate", "")
+                assert text.count("REGENERATE FAILED:") == (events.count("regenerate") if failed else 0), text
+                assert text.count("REGENERATED:") == (0 if failed else events.count("regenerate")), text
 
 
 def test_token_budget_stop():
