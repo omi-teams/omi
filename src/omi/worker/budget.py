@@ -55,14 +55,19 @@ def missing_ac(text, report):
     return [] if len(acs) + len(hosted) >= len(rows) else gap
 
 
+CACHE_WEIGHT = 0.1  # a cache read costs about a tenth of uncached input
+
+
 def token_count(input_tokens: int | None, cache_tokens: int | None, codex: bool = False) -> int:
-    """Total input including cache: Codex input already includes its cache tokens."""
-    return (input_tokens or 0) + (0 if codex else (cache_tokens or 0))
+    """Input-equivalent tokens: uncached input in full plus cache reads at CACHE_WEIGHT.
+    Claude input excludes its cache tokens; Codex input already includes them."""
+    used, cache = input_tokens or 0, cache_tokens or 0
+    return round((max(used - cache, 0) if codex else used) + cache * CACHE_WEIGHT)
 
 
 def token_budget(root, role, found=None):
-    """`token_budget` {role: total input including cache} from .omi/config.json, else 3x the role's last 20 runs' median.
-    Units are Claude input+cache, or Codex input alone (model ends `(codex)`), which already includes cache.
+    """`token_budget` {role: input-equivalent tokens} from .omi/config.json, else 3x the role's last 20 runs' median.
+    Units: uncached input plus cache reads at CACHE_WEIGHT (Codex model ends `(codex)`; its input includes cache).
     (`found`: the tasks, read when None); None without a budget or under 5 runs."""
     budget = scope.config(root, "token_budget", {})
     value = budget.get(role) if isinstance(budget, dict) else None
@@ -75,7 +80,7 @@ def token_budget(root, role, found=None):
 
 
 def over_budget(text, budget_of):
-    """`role total_input>budget` for each Usage row, counting cached input once."""
+    """`role input_equivalent>budget` for each Usage row (cache reads at CACHE_WEIGHT)."""
     return [f"{r[0].removeprefix('omi-agent-')} {used}>{b}" for r in tasks.usage_rows(text)
             if len(r) > 3 and r[3].isdigit() and (b := budget_of(r[0]))
             and (used := token_count(int(r[3]), int(r[5]) if len(r) > 5 and r[5].isdigit() else None, r[1].endswith("(codex)"))) > b]

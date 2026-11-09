@@ -361,7 +361,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
     timeout = agent.run_timeout(project, am["access"])
 
     repo = docker.repo_key(main)
-    spent, ac = {}, {"left": role in tasks.REVIEW_ROLES}  # last attempt's input+cache tokens; one fresh rerun for missing AC lines
+    spent, ac = {}, {"left": role in tasks.REVIEW_ROLES}  # last attempt's input-equivalent tokens (cache at budget.CACHE_WEIGHT); one fresh rerun for missing AC lines
 
     def attempt(t, secret, note="", resume=None, hook_tail=None, missing=None):
         """One container run with tool t (resume: continue that session id); returns (process, report text, skills read)."""
@@ -489,7 +489,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         limit = budget.token_budget(project, role)
         over = bool(limit and (spent.get("input") or 0) > limit)
         if over:
-            line = (f"BUDGET: {role} used {spent['input']} input+cache tokens, over its token_budget {limit}; stopped instead of continuing, "
+            line = (f"BUDGET: {role} used {spent['input']} input-equivalent tokens (cache reads at {budget.CACHE_WEIGHT:.0%}), over its token_budget {limit}; stopped instead of continuing, "
                     f"the partial diff stays in {wt}. Resume: omi-task {task.stem}")
             tasks.append_note(task, "Checkpoint", line)
             print(line)
