@@ -600,14 +600,16 @@ def test_dispatch_next_args() -> None:
 
 def test_status_brief_and_metrics() -> None:
     """TASK-257: `status --brief` is one line per open task plus `next:`; full status prints the delivery metrics line."""
-    row = lambda role, n, verdict="-": f"| {role} | m | low | {n} | 1 | 0 | 1s | - | {verdict} |\n"  # noqa: E731
+    row = lambda role, n, verdict="-", cache=0, model="m": f"| {role} | {model} | low | {n} | 1 | {cache} | 1s | - | {verdict} |\n"  # noqa: E731
     usage = "\n## Usage\n" + omi.project.tasks.USAGE_HEAD + "\n|---|---|---|---|---|---|---|---|---|\n"
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         omi.setup.upgrade.init(root)
         (root / ".omi" / "config.json").write_text(json.dumps({"test": "x", "token_budget": {"omi-agent-engineer": 500}}), encoding="utf-8")
         (root / ".omi/tasks/TASK-001.md").write_text("---\nid: TASK-001\ntitle: A\nstatus: in-progress\nstep: build\ntool: codex\n---\n"
-                                                      + usage + row("omi-agent-engineer", 900) + row("omi-agent-engineer", 100), encoding="utf-8")
+                                                      + usage + row("omi-agent-engineer", 8, cache=892, model="sonnet")
+                                                      + row("omi-agent-engineer", 900, cache=100, model="gpt (codex)")
+                                                      + row("omi-agent-engineer", 100), encoding="utf-8")
         (root / ".omi/tasks/TASK-002.md").write_text("---\nid: TASK-002\ntitle: B\nstatus: planned\n---\n## Checkpoint\nDone: x\n", encoding="utf-8")
         done = lambda tid, start, end, reports="": (  # noqa: E731
             f"---\nid: {tid}\ntitle: D\nstatus: done\n---\n## Steps\n- plan started {start}\n- build started {start}\n- accept done {end}\n"
@@ -632,7 +634,7 @@ def test_status_brief_and_metrics() -> None:
                 out.reconfigure = lambda **kw: None
                 omi.app.cli.dispatch(["dockerfile", "reviewed"])
         assert "dockerfile_reviewed" in json.loads((root / ".omi" / "project.json").read_text(encoding="utf-8"))
-        assert brief.splitlines() == ["TASK-001 build codex running · over budget: engineer 900>500", "TASK-002 - - planned", "next: TASK-002"], brief
+        assert brief.splitlines() == ["TASK-001 build codex running · over budget: engineer 900>500, engineer 900>500", "TASK-002 - - planned", "next: TASK-002"], brief
         full = run()
         assert "last 2 done: lead time median 2.0 h, engineer runs/task 2.0, review FAIL rate 2/4 (50%), NEEDS SCOPE 1" in full, full
         assert "branch:" in full and "Done: x" not in brief

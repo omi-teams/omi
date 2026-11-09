@@ -360,7 +360,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
     timeout = agent.run_timeout(project, am["access"])
 
     repo = docker.repo_key(main)
-    spent, ac = {}, {"left": role in tasks.REVIEW_ROLES}  # last attempt's input tokens; one fresh rerun for missing AC lines
+    spent, ac = {}, {"left": role in tasks.REVIEW_ROLES}  # last attempt's input+cache tokens; one fresh rerun for missing AC lines
 
     def attempt(t, secret, note="", resume=None, hook_tail=None, missing=None):
         """One container run with tool t (resume: continue that session id); returns (process, report text, skills read)."""
@@ -418,7 +418,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             verdict = "AUTH"
         elif ac["left"] and verdict[:4] in ("PASS", "FAIL") and (gap := budget.missing_ac(core.read_task(task) if task.exists() else "", result)):
             ac["gap"], verdict = gap, "AC-MISSING"  # not a verdict: the fresh rerun's row counts
-        spent["input"] = nums[0]
+        spent["input"] = budget.token_count(nums[0], nums[2], t == "codex")
         if not read and not dropped and (sid := session.session_id(t, r.stdout)) and task.exists():
             task.write_text(session.with_session(core.read_task(task), t, sid, role, seen), encoding="utf-8", newline="\n")
             record_scope(task, now_scope)
@@ -488,7 +488,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         limit = budget.token_budget(project, role)
         over = bool(limit and (spent.get("input") or 0) > limit)
         if over:
-            line = (f"BUDGET: {role} used {spent['input']} input tokens, over its token_budget {limit}; stopped instead of continuing, "
+            line = (f"BUDGET: {role} used {spent['input']} input+cache tokens, over its token_budget {limit}; stopped instead of continuing, "
                     f"the partial diff stays in {wt}. Resume: omi-task {task.stem}")
             tasks.append_note(task, "Checkpoint", line)
             print(line)

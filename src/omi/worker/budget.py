@@ -55,19 +55,27 @@ def missing_ac(text, report):
     return [] if len(acs) + len(hosted) >= len(rows) else gap
 
 
+def token_count(input_tokens: int | None, cache_tokens: int | None, codex: bool = False) -> int:
+    """Total input including cache: Codex input already includes its cache tokens."""
+    return (input_tokens or 0) + (0 if codex else (cache_tokens or 0))
+
+
 def token_budget(root, role, found=None):
-    """`token_budget` {role: input tokens} from .omi/config.json, else 3x the median input of the role's last 20 runs
+    """`token_budget` {role: total input including cache} from .omi/config.json, else 3x the role's last 20 runs' median.
+    Units are Claude input+cache, or Codex input alone (model ends `(codex)`), which already includes cache.
     (`found`: the tasks, read when None); None without a budget or under 5 runs."""
     budget = scope.config(root, "token_budget", {})
     value = budget.get(role) if isinstance(budget, dict) else None
     if isinstance(value, int) and not isinstance(value, bool):
         return value if value > 0 else None
-    runs = [int(r[3]) for m in (tasks.tasks(root) if found is None else found).values()
+    runs = [token_count(int(r[3]), int(r[5]) if len(r) > 5 and r[5].isdigit() else None, r[1].endswith("(codex)"))
+            for m in (tasks.tasks(root) if found is None else found).values()
             for r in tasks.usage_rows(m.get("_text", "")) if r[0] == role and len(r) > 3 and r[3].isdigit()][-20:]
     return int(3 * statistics.median(runs)) if len(runs) >= 5 else None  # ponytail: a handful of runs is no baseline
 
 
 def over_budget(text, budget_of):
-    """`role input>budget` for each `## Usage` row whose input tokens pass `budget_of(role)`."""
-    return [f"{r[0].removeprefix('omi-agent-')} {r[3]}>{b}" for r in tasks.usage_rows(text)
-            if len(r) > 3 and r[3].isdigit() and (b := budget_of(r[0])) and int(r[3]) > b]
+    """`role total_input>budget` for each Usage row, counting cached input once."""
+    return [f"{r[0].removeprefix('omi-agent-')} {used}>{b}" for r in tasks.usage_rows(text)
+            if len(r) > 3 and r[3].isdigit() and (b := budget_of(r[0]))
+            and (used := token_count(int(r[3]), int(r[5]) if len(r) > 5 and r[5].isdigit() else None, r[1].endswith("(codex)"))) > b]

@@ -1425,7 +1425,7 @@ def test_token_budget_stop():
                 assert len(calls) == 1
                 assert any(omi.worker.run.MODULE_TESTS in a for a in calls[0]), "the engineer runs only its modules' tests"
                 if want:
-                    assert "BUDGET: omi-agent-engineer used 1000 input tokens, over its token_budget 500" in checkpoint, checkpoint
+                    assert "BUDGET: omi-agent-engineer used 1000 input+cache tokens, over its token_budget 500" in checkpoint, checkpoint
                     assert hooks_run == ["pre-run"], "no post-run hook after a budget stop"
                 else:
                     assert "BUDGET" not in checkpoint and hooks_run == ["pre-run", "post-run"]
@@ -1444,6 +1444,78 @@ def test_token_budget_stop():
         assert omi.worker.budget.token_budget(root, "omi-agent-engineer", found) == 7
         assert omi.worker.budget.over_budget(found["TASK-1"]["_text"], lambda role: 25 if role == "omi-agent-engineer" else None) == \
             ["engineer 30>25", "engineer 40>25", "engineer 1000>25"]
+
+
+def test_token_budget_mixed_tools():
+    """TASK-264: history, live reviews and status count cached input once."""
+    role = "omi-agent-reviewer"
+    history = "\n## Usage\n" + "".join(
+        f"| {role} | sonnet | low | {n} | 1 | {cache} | 1s | - | PASS |\n"
+        for n, cache in ((8, 100000), (10, 150000), (12, 250000), (12, 275000), (40, 300000)))
+    codex_row = f"| {role} | gpt (codex) | low | 709703 | 1 | 651392 | 1s | - | PASS |\n"
+    report = "VERDICT: PASS\nAC: review the change ✓ checked\nHOST: none\nROOT: n/a"
+    with tempfile.TemporaryDirectory() as d:
+        wt = Path(d).resolve()
+        (wt / ".git").write_text("gitdir: /x", encoding="utf-8")
+        task = wt / ".omi" / "tasks" / "TASK-264.md"
+        task.parent.mkdir(parents=True)
+        shutil.copytree(omi.common.core.TEMPLATE / "dot-omi" / "skills", wt / ".omi" / "skills")
+        with contextlib.redirect_stdout(io.StringIO()):
+            omi.project.catalogs.skills_catalog(wt)
+        calls, outputs = [], []
+        with patch("subprocess.run", run_role_harness(wt, outputs, calls)), patch("shutil.which", return_value="docker"), \
+                patch("omi.common.core.main_checkout", return_value=wt), patch("omi.common.core.WINDOWS", False), \
+                patch("omi.worker.docker.ensure_image", return_value="img"), \
+                patch("omi.worker.run.deterministic_checks", return_value=[]), \
+                patch.dict(os.environ, {omi.worker.creds.TOKEN_ENV: "tok", omi.worker.creds.CODEX_ENV: "key"}), \
+                contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()):
+            for tool, used, cache, configured, want in (
+                    ("codex", 709703, 651392, None, 0),
+                    ("claude", 40, 100000, None, 0),
+                    ("claude", 40, 100000, 100039, 7),
+                    ("codex", 709703, 651392, 709702, 7),
+                    ("codex", 709703, 651392, 709703, 0)):
+                text = ("---\nid: TASK-264\nscope: src/**\n---\n## Acceptance criteria\n"
+                        "- [ ] review the change\n\n## Checkpoint\nDone:\n" + history)
+                task.write_text(text, encoding="utf-8")
+                (wt / ".omi" / "config.json").write_text(json.dumps(
+                    {"token_budget": {role: configured}} if configured else {}), encoding="utf-8")
+                events = ([{"type": "result", "result": report, "usage": {
+                    "input_tokens": used, "output_tokens": 1, "cache_read_input_tokens": cache}}] if tool == "claude" else [
+                    {"type": "item.completed", "item": {"type": "agent_message", "text": report}},
+                    {"type": "turn.completed", "usage": {"input_tokens": used, "output_tokens": 1, "cached_input_tokens": cache}}])
+                outputs[:] = [subprocess.CompletedProcess([], 0, "\n".join(json.dumps(e) for e in events), "")]
+                calls.clear()
+                out.seek(0)
+                out.truncate()
+                rc = omi.worker.run.run_role(role, wt, task, tool=tool, model="gpt-x" if tool == "codex" else "sonnet")
+                assert rc == want, out.getvalue()
+                assert len(calls) == 1
+                checkpoint = task.read_text(encoding="utf-8")
+                if want:
+                    total = used if tool == "codex" else used + cache
+                    assert f"used {total} input+cache tokens" in checkpoint, checkpoint
+                else:
+                    assert "BUDGET:" not in checkpoint, checkpoint
+        found = {"TASK-264": {"_text": history + codex_row}}
+        (wt / ".omi" / "config.json").write_text("{}", encoding="utf-8")
+        limit = omi.worker.budget.token_budget(wt, role, found)
+        assert limit == 787536, limit
+        assert omi.worker.budget.over_budget(history + codex_row, lambda _: limit) == []
+        excessive = f"| {role} | sonnet | low | 8 | 1 | 2000000 | 1s | - | PASS |\n"
+        assert omi.worker.budget.over_budget(history + codex_row + excessive, lambda _: limit) == [
+            "reviewer 2000008>787536"]
+
+        # A genuinely smaller history still limits a larger run, using Codex input once.
+        small = "\n## Usage\n" + "".join(
+            f"| {role} | sonnet | low | {n} | 1 | 100000 | 1s | - | PASS |\n"
+            for n in (8, 10, 12, 12, 40))
+        found["TASK-264"]["_text"] = small + codex_row
+        limit = omi.worker.budget.token_budget(wt, role, found)
+        assert limit == 300036, limit
+        assert omi.worker.budget.over_budget(small + codex_row, lambda _: limit) == ["reviewer 709703>300036"]
+        found["TASK-264"]["_text"] = small + codex_row * 6
+        assert omi.worker.budget.token_budget(wt, role, found) == 2129109
 
 
 def test_reviewer_ac_lines_rerun():
@@ -1525,6 +1597,7 @@ def main():
     test_codex_capacity_fallback()
     test_auth_retry_fallback_and_timeout()
     test_token_budget_stop()
+    test_token_budget_mixed_tools()
     test_reviewer_ac_lines_rerun()
     test_verdict_of_forms()
     test_full_report_keeps_earlier_block()
