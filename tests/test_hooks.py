@@ -73,7 +73,10 @@ def test_post_run_writable_copy() -> None:
         (main / '.omi/hooks').mkdir(parents=True)
         wt.mkdir()
         (wt / 'f.txt').write_text('x', encoding='utf-8')
-        (wt / 'link').symlink_to('f.txt')
+        try:
+            (wt / 'link').symlink_to('f.txt')
+        except OSError:
+            print('skip post-run copy symlink check: symlink creation unavailable')
         for event in hooks.HOOK_EVENTS:
             (main / f'.omi/hooks/{event}.sh').write_text('true\n', encoding='utf-8')
         mounts = {}
@@ -87,7 +90,7 @@ def test_post_run_writable_copy() -> None:
             ro = src.endswith(':ro')
             if not ro:  # what `npm ci` does: write into the mounted tree
                 (path / 'node_modules').mkdir()
-                assert (path / 'link').is_symlink()
+                assert not (wt / 'link').is_symlink() or (path / 'link').is_symlink()
             mounts[path] = ro
             return subprocess.CompletedProcess(argv, 0, b'')
 
