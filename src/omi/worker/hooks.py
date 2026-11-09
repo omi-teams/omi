@@ -60,7 +60,9 @@ def run_hook(wt, main, event, tid, image):
         map_mount = []
         if event == "post-run" and not project.detached:
             mapping = core.git(wt, "show", "development:.omi/structure.md")
+            mapping = mapping.replace("\r\n", "\n") if mapping is not None else None
             local = Path(wt) / ".omi" / "structure.md"
+            # read_text normalizes the checkout's CRLF to LF as well.
             if mapping is not None and (not local.is_file() or local.read_text(encoding="utf-8").strip() != mapping):
                 source = Path(tmp) / "structure.md"
                 core.write_text(source, mapping + "\n")
