@@ -302,7 +302,42 @@ def test_reproduce_and_fix_in_one_run() -> None:
                 assert [c[-1] for c in h.calls if c[0] not in ('git', 'gh') and c[3] == 'step'] == ['done', 'next', 'done', 'next']
                 assert any(c[-3:] == ['dispatch', REVIEWER, TID] for c in h.calls)
             else:
-                assert 'the next workflow step is not a reviewer' in error, error
+                assert not error, error
+                assert any(c[-3:] == ['dispatch', ROLE, TID] for c in h.calls)
+                assert not any(c[:2] == ['git', 'rebase'] or c[:2] == ['git', 'push'] or 'host-test' in c for c in h.calls)
+
+
+def test_agent_handoff_after_write_run() -> None:
+    with handoff() as h:
+        h.steps = [dict(id='build', role=ROLE), dict(id='refactor', role=ROLE), dict(id='security', role=REVIEWER)]
+        plain = h.run
+
+        def run(argv, **kwargs):
+            if argv[0] not in ('git', 'gh') and argv[3:4] == ['step']:
+                h.calls.append(argv)
+                text = h.task.read_text(encoding='utf-8')
+                if argv[-1] == 'done':
+                    text = text.replace('\n## Reports', '- build done 2026-11-06 11:22\n\n## Reports')
+                else:
+                    text = text.replace('step: build', 'step: refactor')
+                h.task.write_text(text, encoding='utf-8')
+                return subprocess.CompletedProcess(argv, 0, '', '')
+            if argv[0] not in ('git', 'gh'):
+                h.calls.append(argv)
+                return subprocess.CompletedProcess(argv, 0, '', '')
+            return plain(argv, **kwargs)
+        with patch.object(advance.subprocess, 'run', side_effect=run):
+            error, out = h.invoke()
+        assert not error, error
+        names = [c[1] for c in h.calls if c[0] == 'git']
+        assert 'commit' in names and not {'rebase', 'push'} & set(names), names
+        assert not any(c[0] == 'gh' or 'host-test' in c for c in h.calls)
+        assert [c[-1] for c in h.calls if c[0] not in ('git', 'gh') and c[3] == 'step'] == ['done', 'next']
+        assert h.calls[-1][-3:] == ['dispatch', ROLE, TID]
+    with handoff() as h:  # a coordinator step next still fails eligibility
+        h.steps = [dict(id='build', role=ROLE), dict(id='accept', role='coordinator')]
+        error, _ = h.invoke()
+        assert 'eligibility FAILED: the next workflow step is not an agent or a reviewer' in error, error
 
 
 def test_scope_stops_before_staging() -> None:
@@ -942,6 +977,7 @@ def main():
     test_each_stage_failure_and_retry()
     test_eligibility_refuses_without_mutations()
     test_reproduce_and_fix_in_one_run()
+    test_agent_handoff_after_write_run()
     test_scope_stops_before_staging()
     test_scope_git_path_exact_match()
     test_commit_messages()
