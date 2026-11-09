@@ -9,7 +9,14 @@ if [ -f "${OMI_PROJECT_STATE:-.}/.omi/structure.md" ]; then
 fi
 # new or changed binary files over 1 MB are build outputs: they go to /tmp or /cache, never into the diff
 big=$(command -v git >/dev/null 2>&1 && ( [ -z "$OMI_GIT_DIR" ] || export GIT_DIR="$OMI_GIT_DIR" GIT_WORK_TREE="$PWD"
-  { git diff --name-only development...HEAD; git diff --name-only HEAD; git ls-files --others --exclude-standard; } 2>/dev/null ) |
+  base=  # committed files: since development, else the merge base with the default branch
+  for b in development "$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)" main master; do
+    [ -n "$b" ] && git rev-parse -q --verify "$b^{commit}" >/dev/null 2>&1 && { base=$b; break; }
+  done
+  [ -n "$base" ] || echo "post-run: binary check could not diff committed files (no development or default branch)" >&2
+  [ -z "$base" ] || git diff --name-only "$base"...HEAD 2>/dev/null ||
+    echo "post-run: binary check could not diff committed files (no merge base with $base)" >&2
+  { git diff --name-only HEAD; git ls-files --others --exclude-standard; } 2>/dev/null ) |
   sort -u | while IFS= read -r f; do
     [ -f "$f" ] && [ "$(wc -c < "$f")" -gt 1048576 ] && ! grep -Iq . "$f" && echo "$f"
   done )

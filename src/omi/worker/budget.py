@@ -9,7 +9,8 @@ from ..project import scope, tasks
 def missing_ac(text, report):
     """Acceptance criteria a review report covers with neither an `AC:` line nor its `HOST:` line ([] once it has one line per criterion)."""
     rows = re.findall(r"^- \[[ xX]\] (.+)$", text.partition("\n## Acceptance criteria\n")[2].split("\n## ", 1)[0], re.M)
-    acs = [re.sub(r"^[ \t]*(?:[-*] )?AC: ?", "", l) for l in re.findall(r"^[ \t]*(?:[-*] )?AC: ?.*$", report or "", re.M)]
+    acs = [a for l in re.findall(r"^[ \t]*(?:[-*] )?AC: ?.*$", report or "", re.M)
+           if not re.match(r"AC\d+\b", a := re.sub(r"^[ \t]*(?:[-*] )?AC: ?", "", l))]  # `AC: AC1 ✓` short forms count as missing
     host = " ".join(re.findall(r"^[ \t]*(?:[-*] )?HOST:?[ \t]+(.+)$", report or "", re.M))
     hosted = [row for row in rows if row in host]
     gap = [row for row in rows if row not in hosted and not any(a.startswith(row) for a in acs)]

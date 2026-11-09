@@ -119,3 +119,12 @@ def other_tool(tool, role, main, want, want_model, role_model, efforts, models):
 
 def auth_line(tool):
     return f"AUTH: {tool} login invalid; run {LOGIN[tool]} on the host"
+
+
+def cmd_shims(wt) -> list[str]:
+    """The pre-review problem line for Windows `.cmd` shims in node_modules/.bin (npm ran on the Windows host, so the Linux
+    worker gets host binaries); [] when there are none."""
+    # ponytail: root and two workspace levels; a deeper monorepo layout needs a walk
+    found = sorted({p.relative_to(wt).as_posix() for pat in ("", "*/", "*/*/") for p in Path(wt).glob(pat + "node_modules/.bin/*.cmd")})
+    return [f"node_modules has {len(found)} Windows .cmd shims (npm ran on the host; delete node_modules and install in the worker): "
+            + ", ".join(found[:5])] if found else []

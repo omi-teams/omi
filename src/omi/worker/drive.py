@@ -2,11 +2,15 @@
 
 import contextlib
 import datetime
+import hashlib
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
+from pathlib import Path
+from xml.sax.saxutils import escape
 
 from ..common import core
 from ..project import tasks, workflows
@@ -107,6 +111,8 @@ def drive(project: state.Project, once: bool = False, poll: float = POLL, loop: 
     one driver per project (drive.lock). The driver's commands share one Coordinator session, `drive:<pid>`."""
     runs = dispatch.runs_dir(project.code)
     runs.mkdir(parents=True, exist_ok=True)
+    if sys.stdout is None:  # pythonw under the scheduled task (--install): the log is the output
+        sys.stdout = sys.stderr = (runs / "drive.log").open("a", encoding="utf-8", newline="\n")
     stack = contextlib.ExitStack()
     try:
         stack.enter_context(core.file_lock(runs / "drive.lock", 0))
@@ -134,3 +140,44 @@ def drive(project: state.Project, once: bool = False, poll: float = POLL, loop: 
             time.sleep(loop if idle and loop else poll)
         for name, action in waiting.items():
             print(f"waiting for the Coordinator: {name}: {action}")
+
+
+def task_name(project: state.Project) -> str:
+    return f"omi-drive-{re.sub(r'[^\w.-]', '_', project.code.name)}-{hashlib.sha1(str(project.code).encode()).hexdigest()[:6]}"
+
+
+def schedule(project: state.Project, install: bool) -> None:
+    """`omi drive --install|--uninstall`: a Windows scheduled task starts `omi drive --loop` every 10 minutes for this user
+    (the drive lock keeps one driver, so a start while one runs is a no-op); POSIX prints the cron line instead."""
+    log = dispatch.runs_dir(project.code) / "drive.log"
+    if not core.WINDOWS:
+        line = (f"*/10 * * * * mkdir -p {shlex.quote(str(log.parent))} && cd {shlex.quote(str(project.code))}"
+                f" && {shlex.quote(sys.executable)} -m omi drive --loop"
+                f" >> {shlex.quote(str(log))} 2>&1")
+        print(f"add this line with `crontab -e` (a systemd user timer running the same command works too):\n{line}" if install
+              else f"remove the `omi drive --loop` line for {project.code} with `crontab -e`")
+        return
+    name = task_name(project)
+    if not install:
+        r = subprocess.run(["schtasks", "/Delete", "/TN", name, "/F"], capture_output=True, encoding="utf-8", errors="replace")
+        print(f"omi drive: scheduled task {name} removed" if r.returncode == 0 else f"omi drive: no scheduled task {name} removed: {(r.stdout + r.stderr).strip()}")
+        return
+    exe = Path(sys.executable).with_name("pythonw.exe")  # no console window; drive writes drive.log itself
+    xml = f"""<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>omi drive --loop for {escape(str(project.code))}</Description></RegistrationInfo>
+  <Triggers><TimeTrigger><StartBoundary>{datetime.datetime.now():%Y-%m-%dT%H:%M:%S}</StartBoundary><Repetition><Interval>PT10M</Interval></Repetition><Enabled>true</Enabled></TimeTrigger></Triggers>
+  <Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><StartWhenAvailable>true</StartWhenAvailable><ExecutionTimeLimit>PT0S</ExecutionTimeLimit></Settings>
+  <Actions><Exec><Command>{escape(str(exe if exe.exists() else Path(sys.executable)))}</Command><Arguments>-W ignore::RuntimeWarning -m omi drive --loop</Arguments><WorkingDirectory>{escape(str(project.code))}</WorkingDirectory></Exec></Actions>
+</Task>
+"""
+    spec = dispatch.runs_dir(project.code) / "drive-task.xml"
+    spec.parent.mkdir(parents=True, exist_ok=True)
+    spec.write_text(xml, encoding="utf-16", newline="\n")
+    try:
+        r = subprocess.run(["schtasks", "/Create", "/TN", name, "/XML", str(spec), "/F"], capture_output=True, encoding="utf-8", errors="replace")
+    finally:
+        spec.unlink(missing_ok=True)
+    if r.returncode:
+        raise state.StateError(f"schtasks /Create failed: {(r.stdout + r.stderr).strip()}")
+    print(f"omi drive: scheduled task {name} starts `omi drive --loop` every 10 minutes (log: {log}); remove it with `omi drive --uninstall`")

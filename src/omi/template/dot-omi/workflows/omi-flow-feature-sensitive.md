@@ -3,6 +3,7 @@ id: omi-flow-feature-sensitive
 summary: Feature touching auth, secrets, permissions, data, CI or the agent harness: architect design first, then implement, review, security review, automatic acceptance. Use only for that risk; plain feature is enough otherwise.
 steps:
 - id: plan | role: coordinator | skills: omi-skill-task-brief | input: PO idea | output: task file with scope and acceptance criteria | gate: none | stop: task file complete and PO picked it
+- id: pins | role: coordinator | skills: omi-skill-ci-workflow-audit | input: task scope and the `uses:` lines of .github/workflows | output: one `Pin: <owner/repo>@<tag> <sha>` line per action under ## Checkpoint, or the step skipped when the scope has no .github path | gate: none | stop: every `uses:` tag resolved on the host to its latest release SHA
 - id: architect | role: omi-agent-architect | skills: | input: task file | output: options and one recommendation in the task file | gate: none | stop: recommendation recorded and trust boundaries named
 - id: build | role: omi-agent-engineer | skills: omi-skill-lean-implementation | input: task file with recommendation | output: diff, tests passing, Checkpoint updated | gate: none | stop: every criterion has a passing test
 - id: review | role: omi-agent-reviewer | skills: omi-skill-verify-evidence, omi-skill-simplify-review | input: task file, diff | output: VERDICT PASS or FAIL | gate: review | stop: VERDICT PASS | stage: review
@@ -16,11 +17,15 @@ steps:
 
 ## Models
 - plan: Coordinator, sonnet/low.
+- pins: Coordinator on the host (network and `gh` login), no model run.
 - architect: architect, opus/high.
 - build: engineer, sonnet/medium.
 - review: reviewer, sonnet/medium, fresh each round.
 - security: security-reviewer, sonnet/medium; opus/high when the diff touches auth, payment or secrets (AGENTS.md Quota rules).
 - accept: Coordinator; automatic after review PASS.
+
+## CI action pins
+When the scope touches `.github/workflows` the Coordinator does the `pins` step before any agent runs (the worker has no network): for every action the workflows use or the task will add, `gh api repos/<owner>/<repo>/releases/latest --jq .tag_name`, then `gh api repos/<owner>/<repo>/commits/<tag> --jq .sha`, and records `Pin: <owner/repo>@<tag> <sha>` under `## Checkpoint`. The engineer writes `uses: <owner/repo>@<sha> # <tag>` from those lines; the security reviewer fails a `uses:` that is a tag or a SHA without a `Pin:` line. `omi dispatch next` holds such a task until a `Pin:` line exists; with no `.github` path in the scope the step is skipped.
 
 ## Review-fail rule
 review and security share `stage: review`: `omi advance` dispatches both reviewers together and the stage passes when both PASS. A FAIL in either goes back to build once, with the findings of both. Enforced in code: after `max_fix_rounds` (2) failed rounds `omi step <ID> back` and `omi run` refuse with `ROUND LIMIT` until the Coordinator decides (rescope, replan, or one more round with `--why "<reason>"`, recorded as `Coordinator round override N: <reason>`). From round 2 a FAIL whose report ends `ROOT: same` makes `omi step back` return to architect (opus/high) to re-plan and prints `REPLAN: same root cause`.
