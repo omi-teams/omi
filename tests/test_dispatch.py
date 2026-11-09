@@ -336,6 +336,7 @@ def next_fixture():
         root = Path(d).resolve() / "code"
         root.mkdir()
         omi.setup.upgrade.init(root)
+        (root / ".omi/structure.md").write_text("---\nid: structure\n---\n- ** | platform | all | imports: -\n", encoding="utf-8")
         with contextlib.redirect_stdout(io.StringIO()):
             catalogs.skills_catalog(root)
         helpers.git(root, "add", ".")
@@ -352,6 +353,26 @@ def next_fixture():
         with patch.object(dispatch, "records", return_value=[]), \
                 patch.object(dispatch, "launch") as launch:
             yield project, planned, launch
+
+
+def test_dispatch_refuses_write_step_without_map() -> None:
+    """TASK-242: `omi dispatch next` and `omi dispatch <write role> <ID>` refuse before anything changes when .omi/structure.md is missing."""
+    out = io.StringIO()
+    out.reconfigure = lambda **kw: None  # the CLI reconfigures stdout
+    with next_fixture() as (project, planned, launch), contextlib.redirect_stdout(out):
+        task = planned("TASK-001")
+        (project.state / ".omi/structure.md").unlink()
+        before = task.read_text(encoding="utf-8")
+        for call in (lambda: dispatch.dispatch_next(project, 1),
+                     lambda: omi.app.cli.dispatch(["dispatch", "omi-agent-engineer", "TASK-001"])):
+            try:
+                with contextlib.chdir(project.code), patch.object(dispatch, "start_driver"):
+                    call()
+                raise AssertionError("write step started without a map")
+            except SystemExit as exc:
+                assert "omi-idea layout step" in str(exc), exc
+        launch.assert_not_called()
+        assert task.read_text(encoding="utf-8") == before and not (project.code.parent / "code.wt" / "TASK-001").exists()
 
 
 def test_next_two_ready() -> None:
@@ -755,6 +776,7 @@ def main():
     test_watch_round_limit()
     test_reviewer_next_action()
     test_coordinator_lock()
+    test_dispatch_refuses_write_step_without_map()
     test_stop_kills_and_never_resumes()
     test_foreground_record_and_dispatcher()
     test_drive_loop_resumes_noted_task_first()
@@ -809,6 +831,22 @@ def test_coordinator_lock() -> None:
             env.pop("OMI_SESSION", None)
             env.pop("CLAUDE_CODE_SESSION_ID", None)
             assert dispatch.session() == (f"pid:{os.getppid()}", os.getppid())
+        # a Claude session without CLAUDE_PID: the lock lives LOCK_IDLE seconds after its last use instead of following a pid
+        with patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": "s2"}) as env:
+            env.pop("OMI_SESSION", None)
+            env.pop("CLAUDE_PID", None)
+            assert dispatch.session() == ("s2", None)
+            dispatch.claim(project, "TASK-002")
+        with patch.dict(os.environ, {"OMI_SESSION": other}):
+            try:
+                dispatch.claim(project, "TASK-002")
+                raise AssertionError("a recent pid-less holder was taken over")
+            except state.StateError as exc:
+                assert "session s2 (pid None)" in str(exc)
+            stale = dispatch.runs_dir(root) / "TASK-002.coordinator"
+            old = time.time() - dispatch.LOCK_IDLE - 5
+            os.utime(stale, (old, old))
+            dispatch.claim(project, "TASK-002")  # idle past LOCK_IDLE: taken over
         assert not dispatch.core.pid_alive(dead.pid) and dispatch.core.pid_alive(os.getpid()) and not dispatch.core.pid_alive(None)
 
 

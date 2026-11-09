@@ -391,6 +391,8 @@ def dispatch(argv: list[str] | None = None) -> None:
         tasks.check_runnable(project, rest[1])
         if (task := state.task_file(project, rest[1])).exists():
             workflows.check_role(project.state, core.meta(task), rest[0])
+        if catalogs.get_role(project.state, rest[0])["access"] == "write":
+            structure.require_map(project.state)
         worker_dispatch.launch(project, rest[1], rest[0])
         worker_dispatch.start_driver(project)
     elif cmd == "drive" and set(rest) - {core.flag(rest, "--interval")} <= {"--once", "--loop", "--interval"}:

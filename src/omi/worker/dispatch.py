@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 from ..common import core
-from ..project import catalogs, tasks, tree, workflows
+from ..project import catalogs, structure, tasks, tree, workflows
 from ..state import resolve as state
 from ..state import sync as state_sync
 from . import docker, tools
@@ -88,12 +88,23 @@ def size_flags(project: state.Project, tid: str, role: str, meta: dict) -> list[
     return [*(["--model", model] if model else []), *(["--effort", effort] if effort else [])]
 
 
-def session() -> tuple[str, int]:
-    """(Coordinator session id, pid whose life holds the lock): OMI_SESSION (`drive:<pid>`), else the Claude Code session, else the parent."""
+LOCK_IDLE = 1800  # seconds a lock without a known holder pid stays held after its last use
+
+
+def session() -> tuple[str, int | None]:
+    """(Coordinator session id, pid whose life holds the lock): OMI_SESSION (`drive:<pid>`), else the Claude Code session
+    (pid CLAUDE_PID; None when unset: the lock then lives LOCK_IDLE seconds after its last use), else the parent."""
     sid = os.environ.get("OMI_SESSION") or os.environ.get("CLAUDE_CODE_SESSION_ID") or f"pid:{os.getppid()}"
-    tail = sid.rsplit(":", 1)[-1]
-    pid = os.environ.get("CLAUDE_PID", "") if sid == os.environ.get("CLAUDE_CODE_SESSION_ID") and not os.environ.get("OMI_SESSION") else tail
-    return sid, int(pid) if pid.isdigit() else os.getppid()
+    claude = sid == os.environ.get("CLAUDE_CODE_SESSION_ID") and not os.environ.get("OMI_SESSION")
+    pid = os.environ.get("CLAUDE_PID", "") if claude else sid.rsplit(":", 1)[-1]
+    return sid, int(pid) if pid.isdigit() else (None if claude else os.getppid())
+
+
+def holder_alive(held: dict, path: Path) -> bool:
+    """The lock holder still counts: its pid runs, or (no pid recorded) the lock was used in the last LOCK_IDLE seconds."""
+    if held.get("pid") is None:
+        return bool(held.get("session")) and time.time() - path.stat().st_mtime < LOCK_IDLE
+    return core.pid_alive(held.get("pid"))
 
 
 def claim(project: state.Project, tid: str, release: bool = False) -> None:
@@ -110,11 +121,11 @@ def claim(project: state.Project, tid: str, release: bool = False) -> None:
             held = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             held = {}
-        if held.get("session") not in (None, sid) and core.pid_alive(held.get("pid")):
+        if held.get("session") not in (None, sid) and holder_alive(held, path):
             raise state.StateError(f"{tid} is driven by Coordinator session {held['session']} (pid {held['pid']}); nothing changed")
         if release:
             path.unlink(missing_ok=True)
-        elif held.get("session") != sid or not core.pid_alive(held.get("pid")):
+        else:  # rewritten on every use: a holder without a pid stays held LOCK_IDLE seconds after its last command
             core.write_text(path, json.dumps({"session": sid, "pid": pid}))
 
 
@@ -310,6 +321,8 @@ def dispatch_next(project: state.Project, maximum: int = 1) -> None:
         first = next((s for s in steps if s["role"] != workflows.COORDINATOR), None)
         if first is None:
             raise state.StateError(f"{tid}: workflow has no agent step")
+        if catalogs.get_role(project.state, first["role"])["access"] == "write":
+            structure.require_map(project.state)  # before the task changes: no write step without the approved map
         with contextlib.redirect_stdout(io.StringIO()):
             core.write_text(task, tasks.set_front(core.read_task(task), "status", "in-progress"))
             owner = project if project.detached else state.Project(state=task.parents[2], code=project.code)
