@@ -531,8 +531,9 @@ def test_round_limit_and_replan():
             new = task.read_text(encoding="utf-8")
             assert omi.common.core.parse(new)["step"] == "build" and "Coordinator replan override review: ok to patch" in new
     with patch.object(sys, "argv", ["omi"]):
-        for name in ("reviewer", "security-reviewer"):
-            assert "ROOT: same | new | n/a" in (omi.common.core.TEMPLATE / f"dot-omi/agents/omi-agent-{name}.md").read_text(encoding="utf-8")
+        for name in ("reviewer", "security-reviewer"):  # TASK-263: the ROOT line comes from the prompt skeleton
+            assert "`ROOT: same`" in (omi.common.core.TEMPLATE / f"dot-omi/agents/omi-agent-{name}.md").read_text(encoding="utf-8")
+        assert "ROOT: same | new | n/a" in Path(omi.worker.budget.__file__).read_text(encoding="utf-8")
     assert json.loads((omi.common.core.TEMPLATE / "dot-omi/config.json").read_text(encoding="utf-8"))["max_fix_rounds"] == 2
     for f in (omi.common.core.TEMPLATE / "dot-omi/workflows").glob("omi-flow-*.md"):
         text = f.read_text(encoding="utf-8")

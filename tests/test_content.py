@@ -1,3 +1,4 @@
+import json
 import io
 import re
 import shutil
@@ -500,8 +501,8 @@ def test_qa_host_criteria_do_not_fail() -> None:
     assert "mark only the host part `HOST`" in reviewer
     assert rule in qa
     assert "citing the task's host-test row" in qa
-    assert "`RESULT` is FAIL only when an item is ✗" in qa
-    assert "AC: <criterion> ✓|✗|HOST <evidence" in qa
+    assert "The verdict is FAIL when an item is ✗ or UNVERIFIED" in qa
+    assert "report skeleton appended to the run prompt" in qa
 
 
 def test_reviewers_accept_host_evidence() -> None:
@@ -515,7 +516,7 @@ def test_reviewers_accept_host_evidence() -> None:
                         "passing `Host:` lines recorded by the Coordinator count as evidence",
                         "cite the matching line", "verify the worker part"):
             assert wording in text, (role, wording)
-        assert "HOST: <exact command that checks it on the host>" in text and "need a build or file writes" in text  # TASK-246
+        assert "report skeleton appended to the run prompt" in text and "need a build or file writes" in text  # TASK-246
 
 
 def test_reviewer_mockup_rule_depends_on_workflow() -> None:
@@ -537,7 +538,7 @@ def test_reviewer_mockup_evidence_is_qa() -> None:
     root = omi.common.core.TEMPLATE / "dot-omi"
     reviewer = (root / "agents" / "omi-agent-reviewer.md").read_text(encoding="utf-8")
     assert "report that part of the criterion as `QA <criterion>`; it does not block PASS" in reviewer
-    assert "✓|✗|UNVERIFIED|QA <evidence>" in reviewer
+    assert "report skeleton appended to the run prompt" in reviewer
     assert "Host items go only on the single `HOST:` line" in reviewer and "|HOST|" not in reviewer
     assert "comparison evidence cannot receive PASS" not in reviewer
     flow = (root / "workflows" / "omi-flow-feature-ui.md").read_text(encoding="utf-8")
@@ -709,17 +710,30 @@ def test_structure_rules_in_roles() -> None:
 
 def test_reviewer_copies_criteria_verbatim() -> None:
     reviewer = (omi.common.core.TEMPLATE / "dot-omi/agents/omi-agent-reviewer.md").read_text(encoding="utf-8")
-    assert "Copy each criterion's text verbatim into its `AC:` line, one line per criterion, in task order." in reviewer
+    assert "keep criterion text verbatim and in task order" in reviewer
 
 
 def test_security_reviewer_requires_ac_lines() -> None:
     text = (omi.common.core.TEMPLATE / "dot-omi/agents/omi-agent-security-reviewer.md").read_text(encoding="utf-8")
-    assert "one `AC: <criterion copied verbatim> ✓|✗|UNVERIFIED|QA <evidence>` line per acceptance criterion" in text
+    assert "keep criterion text verbatim and in task order" in text
 
+
+
+def test_agent_report_skeleton_references() -> None:
+    agents = omi.common.core.TEMPLATE / "dot-omi" / "agents"
+    shas = json.loads(omi.setup.upgrade.SHAS.read_text(encoding="utf-8"))[omi.common.core.version()]
+    current = omi.setup.upgrade.template_shas()
+    for role in ("engineer", "docs-writer", "reviewer", "security-reviewer", "qa-tester", "devops", "designer-ui"):
+        name = f"omi-agent-{role}.md"
+        text = (agents / name).read_text(encoding="utf-8")
+        assert "report skeleton appended to the run prompt" in text
+        assert "VERDICT: PASS | FAIL" not in text and "Suggested commit: <type>" not in text
+        key = f".omi/agents/{name}"
+        assert shas[key] == current[key]
 
 def test_engineer_requires_suggested_commit_line() -> None:
     engineer = (omi.common.core.TEMPLATE / "dot-omi/agents/omi-agent-engineer.md").read_text(encoding="utf-8")
-    assert "`Suggested commit: <type>(<area>): <summary>`" in engineer
+    assert "report skeleton appended to the run prompt" in engineer
 
 
 def test_reproduce_and_fix_report_requires_reproduced_line() -> None:
@@ -727,7 +741,7 @@ def test_reproduce_and_fix_report_requires_reproduced_line() -> None:
     template = omi.common.core.TEMPLATE / "dot-omi"
     steps = {s["id"]: s for s in omi.project.workflows.workflow_steps((template / "workflows/omi-flow-bugfix.md").read_text(encoding="utf-8"))}
     assert line in steps["reproduce"]["output"]
-    assert line in (template / "agents/omi-agent-engineer.md").read_text(encoding="utf-8")
+    assert "For reproduce steps, name the test actually run before the fix" in (template / "agents/omi-agent-engineer.md").read_text(encoding="utf-8")
 
 
 def test_po_decisions_use_pick_list() -> None:
@@ -963,6 +977,7 @@ def test_speed_pack_templates() -> None:
 
 
 def main():
+    test_agent_report_skeleton_references()
     test_speed_pack_templates()
     test_template_regen()
     test_promote_tags_retry()

@@ -4,11 +4,49 @@ import re
 import statistics
 
 from ..project import scope, tasks
+from . import tools
+
+
+CRITERIA_PATTERN = r"^- \[[ xX]\] (.+)$"
+
+
+def criteria(text: str) -> list[str]:
+    """Exact acceptance criterion rows in task order."""
+    return re.findall(CRITERIA_PATTERN, text.partition("\n## Acceptance criteria\n")[2].split("\n## ", 1)[0], re.M)
+
+
+def report_skeleton(text: str, role: str, access: str, step_id: str) -> str:
+    """Prefill the parser contract, preserving criterion text (including status symbols)."""
+    if access == "write":
+        lines = ["DONE | BLOCKED | NEEDS SCOPE", "Files: <files changed>",
+                 "Tests: <command, result, skipped checks>", "Open issues: <none or details>",
+                 f"{tools.COMMIT_KEY}: <type>(<area>): <summary>"]
+        if step_id in tools.REPRODUCE_STEPS:
+            lines.append(f"{tools.REPRODUCED_KEY}: <test> failed before the fix")
+    elif role in (*tasks.REVIEW_ROLES, "omi-agent-qa-tester"):
+        lines = [f"{tools.VERDICT_KEYS[0]}: {' | '.join(tools.VERDICTS)}",
+                 *[f"AC: {row} <{'|'.join(tools.AC_STATUSES)}> <evidence>" for row in criteria(text)],
+                 "HOST: none", "ROOT: same | new | n/a"]
+    else:
+        return ""
+    return "\n".join(lines)
+
+
+def skeleton_prompt(text: str, role: str, access: str, step_id: str) -> str:
+    """The prompt tail that hands the agent its report skeleton ("" for roles without one)."""
+    skeleton = report_skeleton(text, role, access, step_id)
+    if not skeleton:
+        return ""
+    return ("\nReport skeleton: copy these lines into your final report; choose one status and fill the placeholders. "
+            "Keep the labels and use bare lines without bullets or backticks.\n"
+            + ("Keep criterion text verbatim and in order. Add findings before HOST; replace HOST: none with any host items. "
+               "Keep ROOT last. Include every criterion even when this exceeds a template's line limit.\n" if access != "write" else "")
+            + skeleton)
 
 
 def missing_ac(text, report):
     """Acceptance criteria a review report covers with neither an `AC:` line nor its `HOST:` line ([] once it has one line per criterion)."""
-    rows = re.findall(r"^- \[[ xX]\] (.+)$", text.partition("\n## Acceptance criteria\n")[2].split("\n## ", 1)[0], re.M)
+    rows = criteria(text)
     acs = [a for l in re.findall(r"^[ \t]*(?:[-*] )?AC: ?.*$", report or "", re.M)
            if not re.match(r"AC\d+\b", a := re.sub(r"^[ \t]*(?:[-*] )?AC: ?", "", l))]  # `AC: AC1 ✓` short forms count as missing
     host = " ".join(re.findall(r"^[ \t]*(?:[-*] )?HOST:?[ \t]+(.+)$", report or "", re.M))

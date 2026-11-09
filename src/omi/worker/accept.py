@@ -12,7 +12,7 @@ from typing import Any
 from ..common import core
 from ..project import tasks, workflows
 from ..state import resolve as state
-from . import dispatch, pr, run
+from . import budget, dispatch, pr, run, tools
 
 
 def section(text: str, heading: str) -> str:
@@ -24,14 +24,14 @@ def marked_criteria(text: str, report: str, worktree: Path | None = None) -> str
     criteria = section(text, 'Acceptance criteria')
     marked = {re.sub(r'^\s*(?:[-*] )?(?:\[[ xX]\] )?✓\s*', '', line).strip()
               for line in report.splitlines() if re.match(r'^\s*(?:[-*] )?(?:\[[ xX]\] )?✓\s*', line)}
-    rows = re.findall(r'^- \[[ xX]\] (.+)$', criteria, re.M)
+    rows = re.findall(budget.CRITERIA_PATTERN, criteria, re.M)
     ac_lines = re.findall(r'^[ \t]*(?:[-*] )?AC: ?.*$', report, re.M)
     statuses = []
     for line in ac_lines:
         body = re.sub(r'^[ \t]*(?:[-*] )?AC: ?', '', line)
         criterion = max((row for row in rows if body.startswith(row)), key=len, default='')
-        statuses.append(re.search(r'[ \t]+(✓|✗|UNVERIFIED|QA)(?:[ \t]|$)', body[len(criterion):]))
-    ordered = len(ac_lines) == len(rows) and all(status and status[1] == '✓' for status in statuses)
+        statuses.append(re.search(rf'[ \t]+({"|".join(map(re.escape, tools.AC_STATUSES))})(?:[ \t]|$)', body[len(criterion):]))
+    ordered = len(ac_lines) == len(rows) and all(status and status[1] == tools.AC_STATUSES[0] for status in statuses)
     missing = [row for row in rows if not ordered and row not in marked and not re.search(
         rf'^[ \t]*(?:[-*] )?(?:AC: )?{re.escape(row)}[ \t]+✓(?:[ \t]|$)', report, re.M)]
     if not rows or missing:

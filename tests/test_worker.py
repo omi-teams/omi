@@ -596,6 +596,9 @@ def test_session_resume():
             calls.clear(); runs.clear(); scans.clear()
             buf.truncate(0); buf.seek(0)
             omi.worker.run.run_role(role, wt, task, effort="low", **kw)
+            for call in calls:
+                prompt = call[call.index("-p") + 1] if "-p" in call else call[-1]
+                assert prompt.endswith(omi.worker.budget.report_skeleton(task.read_text(encoding="utf-8"), role, omi.project.catalogs.get_role(wt, role)["access"], "")), prompt
             return calls[0] if calls else None
 
         def recreated():
@@ -1462,7 +1465,7 @@ def test_reviewer_ac_lines_rerun():
                 patch("omi.worker.run.deterministic_checks", return_value=[]), \
                 patch.dict(os.environ, {omi.worker.creds.TOKEN_ENV: "tok"}), \
                 contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()):
-            for first, runs in ((report("first rule"), 2), (report("first rule", "second rule"), 1)):
+            for first, runs in ((report("first rule"), 2), *((report("first rule", "second rule"), 1) for _ in range(5))):
                 task.write_text("---\nid: TASK-257\nscope: src/**\n---\n## Acceptance criteria\n- [ ] first rule\n- [ ] second rule\n\n"
                                 "## Checkpoint\nDone:\n", encoding="utf-8")
                 calls.clear()
@@ -1471,6 +1474,9 @@ def test_reviewer_ac_lines_rerun():
                 text = task.read_text(encoding="utf-8")
                 assert len(calls) == runs, (runs, out.getvalue())
                 assert not any(omi.worker.run.MODULE_TESTS in a for a in calls[0]), "reviewers keep the full test line"
+                for call in calls:
+                    prompt = call[call.index("-p") + 1]
+                    assert prompt.endswith(omi.worker.budget.report_skeleton(text, "omi-agent-reviewer", "read", ""))
                 verdicts = [r[-1].split()[0] for r in omi.project.tasks.usage_rows(text)]
                 if runs == 2:
                     prompt = next(a for a in calls[1] if "AC:" in a and "second rule" in a)
@@ -1488,7 +1494,34 @@ def test_reviewer_ac_lines_rerun():
     assert omi.worker.budget.missing_ac(text, "AC: parse alpha ✓\nAC: AC2 ✓\nAC: AC3 ✓") == ["run beta on Windows", "print gamma"]
 
 
+
+def test_report_skeleton_round_trip() -> None:
+    run, tools, budget = omi.worker.run, omi.worker.tools, omi.worker.budget
+    text = "\n## Acceptance criteria\n- [ ] first rule\n- [x] print ✓ literally\n- [ ] third rule\n\n## Checkpoint\nDone:\n"
+    rows = ["first rule", "print ✓ literally", "third rule"]
+    for role in ("omi-agent-reviewer", "omi-agent-security-reviewer", "omi-agent-qa-tester"):
+        skeleton = budget.report_skeleton(text, role, "read", "review")
+        lines = skeleton.splitlines()
+        assert lines == ["VERDICT: PASS | FAIL", *[f"AC: {row} <✓|✗|UNVERIFIED|QA> <evidence>" for row in rows],
+                         "HOST: none", "ROOT: same | new | n/a"]
+        filled = skeleton.replace("PASS | FAIL", "PASS").replace("<✓|✗|UNVERIFIED|QA>", "✓").replace("<evidence>", "test: exit 0").replace("same | new | n/a", "n/a")
+        assert tools.verdict_of(filled) == "PASS"
+        assert omi.worker.budget.missing_ac(text, filled) == []
+        assert omi.worker.accept.marked_criteria(text, filled).count("- [x]") == 3
+        for status in ("✗", "UNVERIFIED", "QA"):
+            assert omi.worker.budget.missing_ac(text, filled.replace(" ✓ test:", f" {status} test:")) == []
+    for role in ("omi-agent-engineer", "omi-agent-docs-writer"):
+        for step in ("build", "reproduce", "reproduce-fix"):
+            skeleton = budget.report_skeleton(text, role, "write", step)
+            assert skeleton.splitlines()[:4] == ["DONE | BLOCKED | NEEDS SCOPE", "Files: <files changed>", "Tests: <command, result, skipped checks>", "Open issues: <none or details>"]
+            assert "\nSuggested commit: <type>(<area>): <summary>" in skeleton
+            assert ("\nReproduced: <test> failed before the fix" in skeleton) == step.startswith("reproduce")
+            filled = skeleton.replace("DONE | BLOCKED | NEEDS SCOPE", "DONE").replace("<type>(<area>): <summary>", "fix(worker): fill reports").replace("<test>", "test_x")
+            assert run.missing_lines(filled, step) == []
+    assert budget.report_skeleton(text, "omi-agent-researcher", "read", "research") == ""
+
 def main():
+    test_report_skeleton_round_trip()
     test_codex_capacity_fallback()
     test_auth_retry_fallback_and_timeout()
     test_token_budget_stop()
