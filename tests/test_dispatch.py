@@ -360,6 +360,21 @@ def test_watch_round_limit() -> None:
         assert "PO" not in out, out
 
 
+def test_architect_next_action() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        project = state.Project(state=root, code=root)
+        rec = {"tid": "TASK-001", "role": "omi-agent-architect", "rc": 0, "dir": root}
+        report = "RECOMMEND: use the existing module\nOPTIONS: keep it small\nTASKS: implement the change"
+        with patch.object(dispatch.catalogs, "load_roles", return_value={rec["role"]: {"access": "read"}}):
+            action = dispatch.next_action(project, rec, "", report)
+            assert action == "NEXT: python -m omi advance TASK-001", action
+            assert dispatch.next_action(project, rec, "", "").startswith("DECIDE:")
+            assert dispatch.next_action(project, rec, "", "   ").startswith("DECIDE:")
+            for rc, report in ((1, report), (0, "BLOCKED"), (0, "NEEDS SCOPE")):
+                assert dispatch.next_action(project, {**rec, "rc": rc}, "", report).startswith("DECIDE:")
+
+
 def test_reviewer_next_action() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d).resolve()
@@ -898,6 +913,7 @@ def test_size_routing_parallel_reviewers_and_budget() -> None:
 
 
 def main():
+    test_architect_next_action()
     test_dispatch_refuses_read_role_outside_current_stage()
     test_dispatch_starts_current_stage_read_roles()
     test_size_routing_parallel_reviewers_and_budget()
