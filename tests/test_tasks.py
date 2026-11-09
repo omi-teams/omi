@@ -146,6 +146,30 @@ def test_sync_coordinator_sections():
         assert "Done: local work" in got and "- local step" in got and "old goal" not in got
 
 
+def test_sync_missing_coordinator_sections() -> None:
+    front = "---\nid: TASK-001\nscope: src/**\n---\n"
+    sections = "## Goal\nnew goal\n\n## Acceptance criteria\n- [ ] a\n\n## File plan\n- src/x.py\n\n"
+    for tail in ("", "\n", "\n\n", "\n\n## Steps\n- local step\n", "\n\n## Checkpoint\nDone: local work\n\n## Steps\n- local step\n"):
+        with tempfile.TemporaryDirectory() as d:
+            wt = Path(d)
+            task = wt / "TASK-001.md"
+            original = front + "## Reports\nlocal report" + tail
+            task.write_text(original, encoding="utf-8")
+            output = io.StringIO()
+            with patch("omi.state.resolve.resolve", return_value=type("P", (), {"detached": False})()), \
+                    patch("omi.common.core.git", return_value=front + sections), contextlib.redirect_stdout(output):
+                tasks.sync_scope(wt, task, "TASK-001")
+                assert output.getvalue() == "SECTIONS SYNCED: Goal, Acceptance criteria, File plan\n"
+                got = task.read_text(encoding="utf-8")
+                expected = (original.replace("## Checkpoint", sections + "## Checkpoint", 1)
+                            if "## Checkpoint" in original else original.rstrip() + "\n\n" + sections)
+                assert got == expected, (output.getvalue(), got, expected)
+                output.seek(0)
+                output.truncate()
+                tasks.sync_scope(wt, task, "TASK-001")
+                assert output.getvalue() == "" and task.read_text(encoding="utf-8") == got
+
+
 def test_task_flow_commit_scope_sync_warn():
     with tempfile.TemporaryDirectory() as d:
         main = Path(d).resolve() / "main"
@@ -1393,6 +1417,7 @@ def main():
     test_roles()
     test_task_flow_commit_scope_sync_warn()
     test_sync_coordinator_sections()
+    test_sync_missing_coordinator_sections()
     test_type_validation_and_workflow_warning()
 
 
