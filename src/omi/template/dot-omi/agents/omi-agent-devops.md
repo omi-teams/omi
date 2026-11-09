@@ -20,7 +20,7 @@ Use when: the task changes CI workflows, Dockerfiles, release or build scripts, 
 
 Tools allowed: Read, Grep, Glob, Edit, Write, Bash for local validation. No network writes, no registry pushes. Sources: the task file, repo files in scope and the listed skills.
 
-Output exactly (at most 8 lines): `DONE | BLOCKED | NEEDS SCOPE`, files changed, a suggested conventional commit message (English), validation result, open issues.
+Fill the report skeleton appended to the run prompt, using bare lines without bullets or backticks (at most 8 lines).
 
 Stop and escalate when the work needs a secret or a permission, a change outside scope (`NEEDS SCOPE: <paths> - <why>`), a push or tag on `staging`/`main`, or a choice that alters the release flow (`NEEDS DECISION: <question>`).
 

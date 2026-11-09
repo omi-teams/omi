@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from test_advance import handoff, STAMP, TID
-from omi.worker import advance
+from omi.worker import advance, budget, run, tools
 from omi.app import cli
 from omi.project import tasks
 
@@ -407,6 +407,22 @@ def test_marked_criteria_ordered_status_guards() -> None:
         raise AssertionError('empty criteria accepted')
 
 
+
+def test_marked_criteria_shares_skeleton_constants() -> None:
+    text = ('\n## Acceptance criteria\n- [ ] requirement: first rule\n'
+            '- [ ] requirement: print ✓ literally\n- [ ] requirement: third rule\n')
+    # Changing the shared contract must update both generation and acceptance.
+    with patch('omi.worker.budget.CRITERIA_PATTERN', r'^- \[[ xX]\] requirement: (.+)$'), \
+            patch('omi.worker.tools.AC_STATUSES', ('VERIFIED', '✗', 'UNVERIFIED', 'QA')):
+        skeleton = budget.report_skeleton(text, REVIEWER, 'read', 'review')
+        assert 'AC: print ✓ literally <VERIFIED|✗|UNVERIFIED|QA>' in skeleton
+        report = (skeleton.replace('PASS | FAIL', 'PASS')
+                  .replace('<VERIFIED|✗|UNVERIFIED|QA>', 'VERIFIED')
+                  .replace('<evidence>', 'check: exit 0').replace('same | new | n/a', 'n/a'))
+        assert tools.verdict_of(report) == 'PASS'
+        assert budget.missing_ac(text, report) == []
+        assert advance.accept.marked_criteria(text, report).count('- [x]') == 3
+
 def test_marked_criteria_status_after_verbatim_criterion() -> None:
     for criterion in ('each carries ✓ as its status', 'criteria not marked ✓',
                       'QA and UNVERIFIED and ✗ are statuses'):
@@ -658,6 +674,7 @@ def main():
     test_marked_criteria_bulleted_ac_lines()
     test_marked_criteria_ordered_status_guards()
     test_marked_criteria_status_after_verbatim_criterion()
+    test_marked_criteria_shares_skeleton_constants()
     test_pass_merge_and_resume()
     test_pass_refusals_do_not_change_task()
     test_pass_next_reviewer()

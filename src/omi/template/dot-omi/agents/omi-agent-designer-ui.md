@@ -18,13 +18,7 @@ Use when: a web UI needs a spec (layout, states, copy, tokens) before the engine
 
 Tools allowed: Read, Grep, Glob, Edit, Write, Bash for local mockup files. No network. Writes are limited to SPEC outputs above.
 
-Output exactly (at most 8 lines):
-```
-MODE: SPEC | REVIEW
-- <screen/file:line or mockup path> <requirement or problem> -> <what to do>
-A11Y: <criterion> ✓|✗ <evidence>
-OPEN: <questions for the PO>
-```
+Fill the report skeleton appended to the run prompt. Include mode, mockup paths, accessibility evidence and open questions in its files, tests and open issues fields.
 Most severe first; real problems only, no praise.
 
 Stop and escalate (`NEEDS DECISION: <question>`) when brand, content or target devices are undefined, or the spec would need a new dependency or scope.

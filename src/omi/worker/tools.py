@@ -84,6 +84,14 @@ def auth_failed(tool: str, out: str, rc: int, err: str = "") -> bool:
     return bool(rc) and any(re.search(AUTH_PATTERNS[tool], t, re.I) for t in [*error_texts(tool, out), *plain, err or ""])
 
 
+VERDICT_KEYS = ("VERDICT", "RESULT")
+VERDICTS = ("PASS", "FAIL")
+AC_STATUSES = ("✓", "✗", "UNVERIFIED", "QA")
+COMMIT_KEY = "Suggested commit"
+REPRODUCED_KEY = "Reproduced"
+REPRODUCE_STEPS = ("reproduce", "reproduce-fix")
+
+
 REPORT_LINES = ("End the report with the literal line `Suggested commit: <type>(<area>): <summary>` at the start of a line "
                 "(no bullet), and in a bugfix reproduce run also `Reproduced: <test> failed before the fix`.")
 
@@ -270,7 +278,7 @@ def parse_usage(tool, out):
 
 def verdict_of(report):
     """The last `VERDICT|RESULT: PASS|FAIL` line of a report, or None."""
-    found = re.findall(r"^\W*(?:VERDICT|RESULT):\W*(PASS|FAIL)", report or "", re.M)
+    found = re.findall(rf"^\W*(?:{'|'.join(VERDICT_KEYS)}):\W*({'|'.join(VERDICTS)})", report or "", re.M)
     return found[-1] if found else None
 
 

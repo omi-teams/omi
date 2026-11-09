@@ -254,7 +254,7 @@ def missing_lines(report, step_id):
     """Lines a DONE write report still needs before advance can use it: `Suggested commit:`, and `Reproduced:` on a reproduce step."""
     if not report or not re.match(r"\W*DONE\b", report):  # the same verdict test as the run record below
         return []
-    need = ["Suggested commit"] + (["Reproduced"] if step_id in ("reproduce", "reproduce-fix") else [])
+    need = [tools.COMMIT_KEY] + ([tools.REPRODUCED_KEY] if step_id in tools.REPRODUCE_STEPS else [])
     return [k for k in need if not tools.report_values(report, k)]
 
 
@@ -375,6 +375,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         if resume and added:  # the resumed session still remembers the old scope
             cmd[2 if t == "claude" else -1] += ("\nSCOPE SYNCED: the task scope was widened since your last run; these paths are now in scope: "
                                               + ", ".join(added) + ". Do not report NEEDS SCOPE for them.")
+        cmd[2 if t == "claude" else -1] += budget.skeleton_prompt(before, role, am["access"], cur["id"] if cur else tm.get("step", ""))
         if not read:  # the CLI's transcripts go to the per-task cache so a fix round can resume them
             cmd = session.wrap(t, cmd)
         chatgpt = env_name == creds.CODEX_AUTH_ENV
@@ -478,8 +479,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
                 return stop(why, tool, f"{tool} {what} and {other_secret}")
             tasks.append_note(task, "Checkpoint", f"{why.upper()}: {tool} {what}; {role} continued with {other} on the partial diff.")
             print(f"{why.upper()}: {tool} {what}; rerunning {role} with {other} ({models[other]})")
-            r, result, done = attempt(other, other_secret,
-                                      f"\nNote: a previous run with {tool} stopped on its {'usage limit' if why == 'quota' else 'login'}; "
+            r, result, done = attempt(other, other_secret, f"\nNote: a previous run with {tool} stopped on its {'usage limit' if why == 'quota' else 'login'}; "
                                       "a partial diff already exists in /work. Inspect it and continue, do not start over.")
             first, tool, secret = tool, other, other_secret
             if again := agent.failure(tool, r):

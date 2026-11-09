@@ -19,15 +19,7 @@ Input: the task file path and the worktree path. You did not write this code; ju
 
 Copy each criterion's text verbatim into its `AC:` line, one line per criterion, in task order.
 
-Output exactly:
-```
-VERDICT: PASS | FAIL
-- <file:line> <problem> -> <fix>
-AC: <criterion> ✓|✗|UNVERIFIED|QA <evidence>
-Known issues: <later-round findings that are not NEW-SEVERE>
-HOST: <exact command that checks it on the host>; the Coordinator records `Host: <command> [host|container|ci] -> PASS|FAIL`
-ROOT: same | new | n/a
-```
+Use the report skeleton appended to the run prompt. Fill statuses and evidence; keep criterion text verbatim and in task order. Put findings and known issues before HOST, and keep ROOT last. Repeat the complete filled skeleton in the final response. For host-only criteria, move their exact text from AC to HOST; for mixed criteria, keep the verified worker evidence on AC and add the host check to HOST.
 `ROOT: same` = the findings are new instances of a root cause an earlier round already named (see `## Checkpoint`); `new` = a different cause; `n/a` = PASS or first round. It is the last line.
 List at most 10 findings, most severe first. Report real problems only: no style nits, no praise.
-Your final message must repeat the complete output block above, never refer to an earlier message ("see above", "unchanged").
+Your final message must repeat the complete filled skeleton, never refer to an earlier message ("see above", "unchanged").
