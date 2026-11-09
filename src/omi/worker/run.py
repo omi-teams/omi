@@ -175,6 +175,7 @@ def deterministic_checks(wt, main, tid):
         r = subprocess.run([sys.executable, "-m", "omi", "workflows", "--check"], cwd=wt, capture_output=True, encoding="utf-8", errors="replace")
         if r.returncode:
             problems.append("workflows --check: " + (r.stdout + r.stderr).strip())
+    problems.extend(agent.cmd_shims(wt))
     if note := reused_hook(wt, main, tid):
         print(note)
         return problems

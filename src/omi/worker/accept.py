@@ -48,7 +48,7 @@ def check_hosts(text: str, report: str, worktree: Path | None = None) -> None:
     """Accept explicit host results (`Host: <command> [host|container|ci] -> PASS`) or the latest host-test PASS on current HEAD."""
     checkpoint = section(text, 'Checkpoint')
     hosts = [h for h in re.findall(r'^\s*(?:[-*] )?HOST:?[ \t]+(.+)$', report, re.M)
-             if not re.match(r'(?:none|n/a|-)(?:[\s;:,.(]|$)', h.strip(), re.I)]  # `HOST: none; <why>` is no host check
+             if not re.match(r'(?:none|n/a|-)\s*(?:[;:]|$)', h.strip(), re.I)]  # `HOST: none; <why>` is no host check, `HOST: - X` is one
     lines = re.findall(r'^Host:.*$', checkpoint, re.M)
     bad = [line for line in lines if not HOST_LINE.match(line)]
     if bad:

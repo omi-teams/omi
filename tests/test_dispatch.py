@@ -2,6 +2,9 @@
 import contextlib
 import datetime
 import io
+import json
+import re
+import subprocess
 import os
 import runpy
 import warnings
@@ -32,7 +35,8 @@ def make_task(root, tid, scope, report=None):
 
 def watch(project, *flags):
     out = io.StringIO()
-    with contextlib.redirect_stdout(out):
+    shell = {k: v for k, v in os.environ.items() if k not in ("OMI_SESSION", "CLAUDE_CODE_SESSION_ID")}  # the shared marker
+    with contextlib.redirect_stdout(out), patch.dict(os.environ, shell, clear=True):
         dispatch.watch(project, "--wait" in flags, "--all" in flags)
     return out.getvalue()
 
@@ -475,6 +479,17 @@ def test_next_skips_empty_skills() -> None:
         assert [c.args[1] for c in launch.call_args_list] == ["TASK-002"]
 
 
+def test_next_holds_ci_task_until_pins() -> None:
+    """TASK-262: a feature-sensitive task whose scope has .github waits for the Coordinator's `Pin:` lines (pins step)."""
+    with next_fixture() as (project, planned, launch), contextlib.redirect_stdout(io.StringIO()) as out:
+        task = planned("TASK-001", ".github/workflows/ci.yml", "workflow: omi-flow-feature-sensitive\n")
+        dispatch.dispatch_next(project)
+        assert "skip TASK-001: pins step" in out.getvalue() and not launch.called, out.getvalue()
+        task.write_text(task.read_text(encoding="utf-8").replace("Done:\n", "Done:\nPin: actions/checkout@v4.2.2 0123abcd\n"), encoding="utf-8")
+        dispatch.dispatch_next(project)
+        assert [c.args[1:3] for c in launch.call_args_list] == [("TASK-001", "omi-agent-architect")], launch.call_args_list
+
+
 def test_next_nothing_ready() -> None:
     with next_fixture() as (project, planned, launch), contextlib.redirect_stdout(io.StringIO()) as out:
         planned("TASK-001", extra="depends: TASK-999\n")
@@ -662,6 +677,78 @@ def test_drive_is_one_per_project() -> None:
         assert not dispatch.driver_running(project)
 
 
+def test_drive_install_uninstall() -> None:
+    """TASK-262: --install registers `omi drive --loop` with Task Scheduler, --uninstall removes it; POSIX prints a cron line."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        dispatch.core.git(root, "init", "-q")
+        project = state.Project(state=root, code=root)
+        specs = []
+
+        real_run = subprocess.run
+
+        def schtasks(argv, **kw):
+            if argv[0] != "schtasks":  # git for runs_dir
+                return real_run(argv, **kw)
+            if "/XML" in argv:
+                specs.append(Path(argv[argv.index("/XML") + 1]).read_text(encoding="utf-16"))
+            return subprocess.CompletedProcess(argv, 0, "SUCCESS", "")
+        name = drive.task_name(project)
+        with patch.object(drive.core, "WINDOWS", True), patch.object(drive.subprocess, "run", side_effect=schtasks) as run, \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            drive.schedule(project, True)
+            drive.schedule(project, False)
+        create, delete = (c.args[0] for c in run.call_args_list if c.args[0][0] == "schtasks")
+        assert create[:5] == ["schtasks", "/Create", "/TN", name, "/XML"] and create[-1] == "/F", create
+        assert delete == ["schtasks", "/Delete", "/TN", name, "/F"] and name.startswith("omi-drive-"), delete
+        assert "<Arguments>-W ignore::RuntimeWarning -m omi drive --loop</Arguments>" in specs[0], specs
+        assert f"<WorkingDirectory>{root}</WorkingDirectory>" in specs[0] and "<Interval>PT10M</Interval>" in specs[0]
+        assert "IgnoreNew" in specs[0] and not (dispatch.runs_dir(root) / "drive-task.xml").exists()
+        assert "every 10 minutes" in out.getvalue() and "removed" in out.getvalue(), out.getvalue()
+        with patch.object(drive.core, "WINDOWS", False), patch.object(drive.subprocess, "run", side_effect=schtasks) as run, \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            drive.schedule(project, True)
+            drive.schedule(project, False)
+        assert not any(c.args[0][0] == "schtasks" for c in run.call_args_list) and "crontab -e" in out.getvalue() and "-m omi drive --loop >> " in out.getvalue(), out.getvalue()
+
+
+def test_watch_per_session_cursor() -> None:
+    """TASK-262: each Coordinator session reads finished runs with its own cursor; `omi watch <ID>` shows one task."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        dispatch.core.git(root, "init", "-q")
+        project = state.Project(state=root, code=root)
+        runs = dispatch.runs_dir(root)
+
+        def finish(tid, stamp):
+            rd = runs / f"{tid}-omi-agent-engineer-{stamp}"
+            rd.mkdir(parents=True)
+            (rd / "argv.json").write_text(json.dumps({"tid": tid, "role": "omi-agent-engineer"}), encoding="utf-8")
+            (rd / "log").write_text("done\n", encoding="utf-8")
+            (rd / "rc").write_text("0", encoding="utf-8")
+        env = {k: v for k, v in os.environ.items() if k not in ("OMI_SESSION", "CLAUDE_CODE_SESSION_ID", "CLAUDE_PID")}
+
+        def seen(session, *ids):
+            out = io.StringIO()
+            with patch.dict(os.environ, {**env, **({"OMI_SESSION": session} if session else {})}, clear=True), \
+                    patch.object(dispatch.docker, "print_workers"), patch.object(dispatch.tasks, "tasks", return_value={}), \
+                    patch.object(dispatch, "next_action", return_value="NEXT: x"), contextlib.redirect_stdout(out):
+                dispatch.watch(project, False, False, *ids)
+            return re.findall(r"finished: (TASK-\d+)", out.getvalue())
+        assert seen("a") == [] and seen("b") == []
+        finish("TASK-001", "20261109-100000")
+        assert seen("a") == ["TASK-001"] and seen("a") == []
+        assert seen("b") == ["TASK-001"] and seen("b") == []  # a did not consume b's run
+        assert seen("c") == []  # reported before c's first watch: history
+        finish("TASK-002", "20261109-100100")
+        finish("TASK-003", "20261109-100200")
+        assert seen("a", "TASK-003") == ["TASK-003"] and seen("a") == ["TASK-002"] and seen("a") == []
+        assert seen("b") == ["TASK-002", "TASK-003"]
+        assert seen(None) == []  # a bare shell: the shared marker, already set
+        finish("TASK-004", "20261109-100300")
+        assert seen(None) == ["TASK-004"] and seen("a") == ["TASK-004"] and seen(None) == []
+
+
 def test_start_driver_default_on_and_config_off() -> None:
     with drive_fixture(lambda _: [[]], {}) as (project, root, _, _), contextlib.redirect_stdout(io.StringIO()), \
             patch.object(dispatch.subprocess, "Popen") as popen:
@@ -747,6 +834,8 @@ def main():
     test_drive_advances_next_and_stops_on_decide()
     test_drive_starts_next_when_slot_frees_and_stops_when_idle()
     test_drive_is_one_per_project()
+    test_drive_install_uninstall()
+    test_watch_per_session_cursor()
     test_start_driver_default_on_and_config_off()
     test_free_slots_follows_auto_dispatch_max()
     test_next_container_skipped()
@@ -756,6 +845,7 @@ def main():
     test_next_conflicts_and_dependencies()
     test_next_readiness_and_limit()
     test_next_skips_empty_skills()
+    test_next_holds_ci_task_until_pins()
     test_next_nothing_ready()
     test_next_failure_stops()
     test_next_existing_worktree_and_done_dependency()

@@ -1482,6 +1482,10 @@ def test_reviewer_ac_lines_rerun():
     text = "\n## Acceptance criteria\n- [ ] parse alpha\n- [ ] run beta on Windows\n- [ ] print gamma\n"
     assert omi.worker.budget.missing_ac(text, "AC: parse alpha ✓\nHOST: run beta on Windows needs the host") == ["print gamma"]
     assert omi.worker.budget.missing_ac(text, "AC: parse alpha ✓\nAC: Beta ✓\nAC: Gamma ✓") == []
+    # TASK-262: `AC1 ✓` short forms, with or without `AC: `, are missing lines, so the reviewer reruns once
+    for short in ("AC: AC1 ✓\nAC: AC2 ✓\nAC: AC3 ✓", "AC1 ✓ ok\nAC2 ✓\nAC3 ✓", "- AC: AC1: ✓\n- AC: AC2 ✓\n- AC: AC3 ✓"):
+        assert omi.worker.budget.missing_ac(text, short) == ["parse alpha", "run beta on Windows", "print gamma"], short
+    assert omi.worker.budget.missing_ac(text, "AC: parse alpha ✓\nAC: AC2 ✓\nAC: AC3 ✓") == ["run beta on Windows", "print gamma"]
 
 
 def main():

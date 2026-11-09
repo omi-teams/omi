@@ -246,18 +246,18 @@ def step(root, tid, action, why=None, now=None, to=None, po=None):
     task = state.task_file(project, tid)
     if not task.exists():
         sys.exit(f"no task file {task}. Nothing changed.")
-    m = core.meta(task)
-    wid = m.get("workflow") or workflows.DEFAULT_WORKFLOW
+    wid = (m := core.meta(task)).get("workflow") or workflows.DEFAULT_WORKFLOW
     steps = workflows.get_workflow(root, wid)
     ids = [s["id"] for s in steps]
     text, events, cur = m["_text"], step_states(m["_text"]), m.get("step") or ""
     if cur and cur not in ids:
         sys.exit(f"{tid}: step `{cur}` is not in workflow {wid} ({', '.join(ids)}). Nothing changed.")
     at = ids.index(cur) if cur else -1
-    open_steps = [s for s in ids[:max(at, 0)] if events.get(s) not in ("done", "skipped")]
+    late = {s["id"] for i, s in enumerate(steps) if s["role"] == workflows.COORDINATOR and s["id"] not in events  # added after
+            and any(x in events for x in ids[i + 1:])}  # the task passed it (TASK-262 pins): no jump
+    open_steps = [s for s in ids[:max(at, 0)] if events.get(s) not in ("done", "skipped") and s not in late]
     if open_steps:
-        sys.exit(f"{tid}: at step {cur} but {', '.join(open_steps)} not done or skipped; steps cannot be jumped over. "
-                 "Nothing changed.")
+        sys.exit(f"{tid}: at step {cur} but {', '.join(open_steps)} not done or skipped; steps cannot be jumped over. Nothing changed.")
     stamp = (now or datetime.datetime.now()).strftime("%Y-%m-%d %H:%M")
     replan = ""
     if action == "back" and cur:

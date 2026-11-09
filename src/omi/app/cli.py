@@ -50,9 +50,9 @@ USAGE = """usage: omi <command>
   dispatch next [--max N]   start ready parallel-safe planned tasks with skills picked (default: 1); starts `omi drive` unless it runs or `auto_drive` is false in .omi/config.json
   dispatch <role> <TASK-ID>   start `omi run` detached with a run record; refuses when scope or depends conflict with a running task; starts `omi drive` too
   stop <TASK-ID>   kill the task's running runs (wrapper process tree and containers), write rc and a `stopped` marker: watch shows DECIDE: STOPPED by <who>; never resumed
-  drive [--once | --loop [--interval N]]   --loop: keep running when idle (poll every N s, default 60), resume idle in-progress tasks with a newer Coordinator note before planned ones; one loop per project (detached by dispatch): `omi advance` every finished run whose next action is NEXT:, `dispatch next` when a slot frees (`auto_dispatch_max` in .omi/config.json, default 1, 0 = off); stops a task only on DECIDE: and lists those; `omi advance` also runs `dispatch next` after a merge
+  drive [--once | --loop [--interval N] | --install | --uninstall]   --install: register `omi drive --loop` as a Windows scheduled task (POSIX: prints a cron line), --uninstall removes it; --loop: keep running when idle (poll every N s, default 60), resume idle in-progress tasks with a newer Coordinator note before planned ones; one loop per project (detached by dispatch): `omi advance` every finished run whose next action is NEXT:, `dispatch next` when a slot frees (`auto_dispatch_max` in .omi/config.json, default 1, 0 = off); stops a task only on DECIDE: and lists those; `omi advance` also runs `dispatch next` after a merge
   advance <TASK-ID> [--message "<msg>"] [--reject <n>[,<n>] --why "<reason>"] [--hook-fixed]   (--hook-fixed: accept a write run whose post-run hook failed once `omi hook post-run` passes on the current HEAD) scope-check a DONE write run, commit, rebase, draft PR, host-test and dispatch its reviewer; after a review FAIL: record the findings, step back, PR to draft, rerun the engineer (--reject leaves findings out); after review PASS: accept, pre-merge hook, PR ready, green CI, squash merge, pull, clean and post-merge test
-  watch [--wait] [--all]   list running workers and every finished run not yet shown, with its next action (NEXT: deterministic, DECIDE: Coordinator); --wait blocks until a run finishes; --all: whole history
+  watch [<TASK-ID>] [--wait] [--all]   list running workers and every finished run this Coordinator session has not seen (a per-session cursor), with its next action (NEXT: deterministic, DECIDE: Coordinator); <TASK-ID>: that task only; --wait blocks until a run finishes; --all: whole history
   parallel <TASK-ID> <TASK-ID> [...]   check that tasks can run in parallel (depends, status, scope overlap)
   worker <wt> <task-file> [--model M] [--effort E]   run the engineer in the Docker worker
   worker <wt> --prove   run docker/prove.sh in the worker (boundary check, no token)"""
@@ -395,6 +395,8 @@ def dispatch(argv: list[str] | None = None) -> None:
             structure.require_map(project.state)
         worker_dispatch.launch(project, rest[1], rest[0])
         worker_dispatch.start_driver(project)
+    elif cmd == "drive" and rest in (["--install"], ["--uninstall"]):
+        drive.schedule(state.resolve(core.main_checkout(".") or Path(".").resolve()), rest[0] == "--install")
     elif cmd == "drive" and set(rest) - {core.flag(rest, "--interval")} <= {"--once", "--loop", "--interval"}:
         interval = core.flag(rest, "--interval") or "60"
         if not interval.isdigit() or int(interval) < 1 or ("--interval" in rest and "--loop" not in rest):
@@ -411,8 +413,8 @@ def dispatch(argv: list[str] | None = None) -> None:
         worker_dispatch.claim(project, opts[0])
         advance.advance(project, opts[0], core.flag(opts, "--message"), [int(n) for n in reject.split(",")] if reject else None,
                         core.flag(opts, "--why"), hook_fixed="--hook-fixed" in rest)
-    elif cmd == "watch" and set(rest) <= {"--wait", "--all"}:
-        worker_dispatch.watch(state.resolve(core.main_checkout(".") or Path(".").resolve()), "--wait" in rest, "--all" in rest)
+    elif cmd == "watch" and len(ids := [a for a in rest if a not in ("--wait", "--all")]) <= 1 and all(re.fullmatch(r"TASK-\d+", i) for i in ids):
+        worker_dispatch.watch(state.resolve(core.main_checkout(".") or Path(".").resolve()), "--wait" in rest, "--all" in rest, *ids)
     elif cmd == "host-test" and len(rest) == 1:
         sys.exit(run.host_test(state.resolve(core.main_checkout(".") or Path(".").resolve()), rest[0]))
     elif cmd == "hook" and len(rest) == 2:

@@ -57,6 +57,21 @@ def test_cli_correctness():
         finally:
             omi.project.scope.out_of_scope, omi.project.catalogs.check_all_skills = real[1], real[2]
         assert len(problems) == 1 and problems[0].startswith("test command failed to start: "), problems
+        # TASK-262: Windows `.cmd` shims in node_modules are reported (npm ran on the host)
+        for bin_dir in (root / "node_modules" / ".bin", root / "packages" / "a" / "node_modules" / ".bin"):
+            bin_dir.mkdir(parents=True)
+            (bin_dir / "tsc.cmd").write_text("@echo off", encoding="utf-8")
+            (bin_dir / "tsc").write_text("#!/bin/sh", encoding="utf-8")
+        assert omi.worker.agent.cmd_shims(root) == ["node_modules has 2 Windows .cmd shims (npm ran on the host; delete node_modules "
+                                                    "and install in the worker): node_modules/.bin/tsc.cmd, packages/a/node_modules/.bin/tsc.cmd"]
+        omi.project.scope.out_of_scope, omi.project.catalogs.check_all_skills = lambda *a, **k: [], lambda wt: None
+        try:
+            problems = omi.worker.run.deterministic_checks(root, root, "TASK-001")
+        finally:
+            omi.project.scope.out_of_scope, omi.project.catalogs.check_all_skills = real[1], real[2]
+        assert any(p.startswith("node_modules has 2 Windows .cmd shims") for p in problems), problems
+        shutil.rmtree(root / "node_modules"), shutil.rmtree(root / "packages")
+        assert omi.worker.agent.cmd_shims(root) == []
         # #14 status hint on an empty `test`
         (root / ".omi" / "config.json").write_text('{"test": ""}')
         buf = io.StringIO()

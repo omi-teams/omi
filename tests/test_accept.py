@@ -565,6 +565,17 @@ def test_pass_host_none_with_reason() -> None:
         assert not error, error
 
 
+def test_host_none_filter_is_exact() -> None:
+    """TASK-262: only `none`, `n/a` or `-` followed by `;`, `:` or the line end means no host check."""
+    for line, none in (('none', True), ('None; nothing host-only', True), ('n/a: no build', True), ('- ;', True),
+                       ('- check X on Windows', False), ('none of the above; run make', False), ('n/a, run make', False)):
+        with accepted() as h:
+            text = h.text.replace('HOST: python check.py', 'HOST: ' + line)
+            h.task.write_text(text.replace('Host: python check.py [host] -> PASS', ''), encoding='utf-8')
+            error, _ = h.invoke()
+            assert (not error) if none else 'HOST checks need' in error, (line, error)
+
+
 def test_pass_host_test_prose_current_head() -> None:
     for role in (REVIEWER, 'omi-agent-security-reviewer'):
         with accepted() as h:
@@ -657,6 +668,7 @@ def main():
     test_pass_host_error_prints_recordable_line()
     test_pass_host_quoted_item()
     test_pass_host_none_with_reason()
+    test_host_none_filter_is_exact()
     test_pass_host_test_prose_current_head()
     test_pass_host_test_prose_invalid_evidence_blocks()
     test_reviewer_host_test_guidance()

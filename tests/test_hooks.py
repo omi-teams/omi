@@ -300,6 +300,24 @@ def test_hooks():
             (w / "app.bin").write_bytes(b"\0\1\2" * 400000)
             r = subprocess.run(hook, cwd=w, capture_output=True, text=True, env=env)
             assert r.returncode == 1 and "binary files over 1 MB" in r.stdout and "app.bin" in r.stdout and "big.txt" not in r.stdout, r
+    # TASK-262: a committed binary is found without a `development` branch (merge base with main); no base at all is said
+    with tempfile.TemporaryDirectory() as d:
+        sh = shutil.which("sh")
+        if sh and shutil.which("git"):
+            w = Path(d)
+            git(w, "init", "-q", "-b", "main")
+            git(w, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "base")
+            git(w, "checkout", "-q", "-b", "task/TASK-1")
+            (w / "app.bin").write_bytes(b"\0\1\2" * 400000)
+            git(w, "add", "app.bin")
+            git(w, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "bin")
+            env = {k: v for k, v in os.environ.items() if k not in ("OMI_PROJECT_STATE", "OMI_GIT_DIR")}
+            hook = [sh, str(omi.common.core.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh")]
+            r = subprocess.run(hook, cwd=w, capture_output=True, text=True, env=env)
+            assert r.returncode == 1 and "app.bin" in r.stdout and "could not diff" not in r.stderr, r
+            git(w, "branch", "-q", "-m", "main", "other")
+            r = subprocess.run(hook, cwd=w, capture_output=True, text=True, env=env)
+            assert r.returncode == 0 and "could not diff committed files" in r.stderr, r
     text = (omi.common.core.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh").read_text()
     assert all(w in text for w in ("pytest", "go test", "npm test"))
     for f in (omi.common.core.TEMPLATE / "AGENTS.md",

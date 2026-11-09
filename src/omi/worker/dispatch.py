@@ -300,6 +300,9 @@ def dispatch_next(project: state.Project, maximum: int = 1) -> None:
             reason = "depends not done: " + ", ".join(deps)
         elif not core.split(meta.get("scope")):
             reason = "no scope"
+        elif (".github" in meta.get("scope", "") and not re.search(r"^Pin: ", meta.get("_text", ""), re.M) and any(
+                s["id"] == "pins" for s in workflows.get_workflow(project.state, meta.get("workflow") or workflows.DEFAULT_WORKFLOW))):
+            reason = "pins step: resolve every `uses:` tag to its release SHA on the host and record `Pin:` lines first"
         else:
             try:
                 skills = catalogs.task_skill_ids(project.state, meta)
@@ -448,11 +451,27 @@ def next_action(project: state.Project, rec: dict, text: str, report: str) -> st
     return "DECIDE: reviewer gave no PASS or FAIL; read the report"
 
 
-def watch(project: state.Project, wait: bool = False, show_all: bool = False) -> None:
-    """Print running workers, then each finished run not yet reported (all: the whole history) and mark it reported."""
+def watch(project: state.Project, wait: bool = False, show_all: bool = False, tid: str | None = None) -> None:
+    """Print running workers, then each finished run not yet reported (all: the whole history) and mark it reported; `tid`: that task only.
+    A lasting Coordinator session (OMI_SESSION, CLAUDE_CODE_SESSION_ID) reads with its own cursor, `reported.<session>` markers since
+    its first watch (`watch.<session>`), so it never loses a run another session reported; a bare shell uses the shared marker."""
+    sid = session()[0]
+    key = None if sid.startswith("pid:") else re.sub(r"[^\w.-]", "_", sid)
+    cursor = runs_dir(project.code) / f"watch.{key}" if key else None
+    if cursor and not cursor.exists():
+        cursor.parent.mkdir(parents=True, exist_ok=True)
+        core.write_text(cursor, "")
+    since = cursor.stat().st_mtime if cursor else 0.0
+
+    def unseen(r: dict) -> bool:  # runs another session reported before this session's first watch are history
+        if not key:
+            return not r["reported"]
+        rc = r["dir"] / "rc"
+        return not (r["dir"] / f"reported.{key}").exists() and (not r["reported"] or (rc.exists() and rc.stat().st_mtime >= since))
+
     while True:
-        recs = records(project.code)
-        fresh = [r for r in recs if not r["running"] and (show_all or not r["reported"])]
+        recs = [r for r in records(project.code) if tid is None or r["tid"] == tid]
+        fresh = [r for r in recs if not r["running"] and (show_all or unseen(r))]
         if fresh or not wait or not any(r["running"] for r in recs):
             break
         time.sleep(2)
@@ -470,6 +489,8 @@ def watch(project: state.Project, wait: bool = False, show_all: bool = False) ->
             tail = (r["dir"] / "log").read_text(encoding="utf-8", errors="replace").strip().splitlines()[-1:]
             print("  log: " + (tail[0] if tail else "(empty)"))
         core.write_text(r["dir"] / "reported", "")
+        if key:
+            core.write_text(r["dir"] / f"reported.{key}", "")
     if not fresh and not any(r["running"] for r in recs):
         print("no running workers, no new finished runs")
 
