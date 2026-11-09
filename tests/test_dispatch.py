@@ -17,6 +17,7 @@ from unittest.mock import patch
 
 import helpers
 import omi.setup.upgrade
+from omi.app import cli
 from omi.project import catalogs
 from omi.state import resolve as state
 from omi.worker import dispatch, drive
@@ -64,6 +65,66 @@ def windows_launch():
                 patch.object(dispatch.subprocess, "Popen", side_effect=started) as popen, \
                 patch.object(dispatch.subprocess, "run", side_effect=spawner) as run:
             yield project, popen, started, run
+
+
+@contextlib.contextmanager
+def review_dispatch(stage=""):
+    class Output(io.StringIO):
+        def reconfigure(self, **kwargs):
+            pass
+
+    with windows_launch() as (base, popen, _, _):
+        project = state.Project(state=base.code / "state", code=base.code, detached=True)
+        task_dir = project.state / ".omi/tasks"
+        task_dir.mkdir(parents=True)
+        task = task_dir / "TASK-266.md"
+        task.write_text("---\nid: TASK-266\nstatus: in-progress\nstep: review\n"
+                        "workflow: omi-flow-dispatch-test\nrole: omi-agent-engineer\nscope: a.py\n---\n", encoding="utf-8")
+        workflow_dir = project.state / ".omi/workflows"
+        workflow_dir.mkdir()
+        steps = [("review", "omi-agent-reviewer"), ("security", "omi-agent-security-reviewer")]
+        workflow_dir.joinpath("omi-flow-dispatch-test.md").write_text(
+            "---\nid: omi-flow-dispatch-test\nsummary: Dispatch test\nsteps:\n" + "".join(
+                f"- id: {sid} | role: {role} | skills: | input: diff | output: verdict | gate: review | stop: PASS{stage}\n"
+                for sid, role in steps) + "---\n", encoding="utf-8")
+        out = Output()
+        with patch.object(dispatch.tasks, "tasks", side_effect=lambda _: {"TASK-266": dispatch.core.meta(task)}), \
+                patch.object(dispatch.catalogs, "check_skills"), \
+                patch.object(cli.state, "resolve", return_value=project), \
+                patch.object(cli.core, "main_checkout", return_value=project.code), \
+                patch.object(dispatch, "start_driver") as driver, contextlib.redirect_stdout(out):
+            yield cli, project, popen, driver, out
+
+
+def test_dispatch_refuses_read_role_outside_current_stage() -> None:
+    for stage, role, roles in (("", "omi-agent-security-reviewer", "omi-agent-reviewer"),
+                               (" | stage: reviews", "omi-agent-architect", "omi-agent-reviewer, omi-agent-security-reviewer")):
+        with review_dispatch(stage) as (cli, project, popen, driver, out):
+            try:
+                cli.dispatch(["dispatch", role, "TASK-266"])
+            except state.StateError as exc:
+                message = str(exc)
+                assert len(message.splitlines()) == 1
+                assert "current step review;" in message and f"stage roles: {roles};" in message
+                assert "Nothing started." in message
+            else:
+                raise AssertionError(f"{role} started outside the current review stage")
+            popen.assert_not_called()
+            driver.assert_not_called()
+            assert not (project.code / "runs").exists()
+            assert out.getvalue() == ""
+
+
+def test_dispatch_starts_current_stage_read_roles() -> None:
+    for stage, role in (("", "omi-agent-reviewer"), (" | stage: reviews", "omi-agent-reviewer"),
+                        (" | stage: reviews", "omi-agent-security-reviewer")):
+        with review_dispatch(stage) as (cli, project, popen, driver, out):
+            cli.dispatch(["dispatch", role, "TASK-266"])
+            popen.assert_called_once()
+            driver.assert_called_once_with(project)
+            assert f"started {role} on TASK-266:" in out.getvalue()
+            record = next((project.code / "runs").glob("TASK-266-*/argv.json"))
+            assert json.loads(record.read_text(encoding="utf-8"))["role"] == role
 
 
 def test_windows_launch_uses_spawner() -> None:
@@ -815,6 +876,10 @@ def test_size_routing_parallel_reviewers_and_budget() -> None:
         assert "dispatch" not in runs("TASK-002") + runs("TASK-003"), "the role default writes nothing"
         assert dispatch.size_flags(project, "TASK-001", eng, {**found["TASK-001"], "model": "opus"}) == []
         assert dispatch.size_flags(project, "TASK-001", "omi-agent-docs-writer", found["TASK-001"]) == [], "no `small:`: role default"
+        task = root / ".omi/tasks/TASK-002.md"
+        text = task.read_text(encoding="utf-8")
+        task.write_text(dispatch.tasks.set_front(dispatch.tasks.set_front(text, "step", "review"),
+                                               "workflow", "omi-flow-feature-sensitive"), encoding="utf-8")
         gate = root / "gate"
         with contextlib.redirect_stdout(io.StringIO()):
             dispatch.launch(project, "TASK-002", rev, [sys.executable, "-c", GATE, str(gate), "0", "--model", "x"])
@@ -833,6 +898,8 @@ def test_size_routing_parallel_reviewers_and_budget() -> None:
 
 
 def main():
+    test_dispatch_refuses_read_role_outside_current_stage()
+    test_dispatch_starts_current_stage_read_roles()
     test_size_routing_parallel_reviewers_and_budget()
     test_idle_in_progress_task_holds_its_scope()
     test_idle_in_progress_tasks_can_each_launch()

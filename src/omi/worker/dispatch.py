@@ -200,11 +200,18 @@ def stop(project: state.Project, tid: str, who: str = "Coordinator") -> list[str
 
 def launch(project: state.Project, tid: str, role: str, argv: list[str] | None = None, by: str | None = None) -> Path:
     """Start the run detached; refuse when it conflicts with a running task, and a not yet started task also with idle in-progress ones.
-    Reviewers of one task may run together (a workflow `stage:`)."""
+    Read roles must belong to the current step's stage; its reviewers may run together."""
+    found = tasks.tasks(project)
+    if catalogs.get_role(project.state, role)["access"] == "read":
+        meta = found.get(tid, {})
+        steps = workflows.get_workflow(project.state, meta.get("workflow") or workflows.DEFAULT_WORKFLOW)
+        roles = [s["role"] for s in workflows.stage_of(steps, meta.get("step"))]
+        if role not in roles:
+            raise state.StateError(f"{tid}: current step {meta.get('step') or '(none)'}; "
+                                   f"stage roles: {', '.join(roles) or '(none)'}; cannot dispatch {role}. Nothing started.")
     running = {r["role"] for r in records(project.code) if r["running"] and r["tid"] == tid}
     if running and not (role in tasks.REVIEW_ROLES and running <= set(tasks.REVIEW_ROLES) - {role}):
         raise state.StateError(f"{tid} already has a running worker. Nothing started.")
-    found = tasks.tasks(project)
     bad = held_by(project, tid, holders(project, found, idle=found.get(tid, {}).get("status", "planned") == "planned"))
     if bad:
         raise state.StateError("not parallel-safe with in-progress tasks:\n" + "\n".join(bad) + "\nNothing started.")
