@@ -65,8 +65,8 @@ def token_count(input_tokens: int | None, cache_tokens: int | None, codex: bool 
     return round((max(used - cache, 0) if codex else used) + cache * CACHE_WEIGHT)
 
 
-def token_budget(root, role, found=None):
-    """`token_budget` {role: input-equivalent tokens} from .omi/config.json, else 3x the role's last 20 runs' median.
+def token_budget(root, role: str, found: dict | None = None, tool: str | None = None) -> int | None:
+    """`token_budget` {role: input-equivalent tokens} from .omi/config.json, else 3x the role's last 20 runs' median (of `tool`, when given).
     Units: uncached input plus cache reads at CACHE_WEIGHT (Codex model ends `(codex)`; its input includes cache).
     (`found`: the tasks, read when None); None without a budget or under 5 runs."""
     budget = scope.config(root, "token_budget", {})
@@ -75,12 +75,13 @@ def token_budget(root, role, found=None):
         return value if value > 0 else None
     runs = [token_count(int(r[3]), int(r[5]) if len(r) > 5 and r[5].isdigit() else None, r[1].endswith("(codex)"))
             for m in (tasks.tasks(root) if found is None else found).values()
-            for r in tasks.usage_rows(m.get("_text", "")) if r[0] == role and len(r) > 3 and r[3].isdigit()][-20:]
+            for r in tasks.usage_rows(m.get("_text", "")) if r[0] == role and len(r) > 3 and r[3].isdigit()
+            and (tool is None or ("codex" if r[1].endswith("(codex)") else "claude") == tool)][-20:]
     return int(3 * statistics.median(runs)) if len(runs) >= 5 else None  # ponytail: a handful of runs is no baseline
 
 
 def over_budget(text, budget_of):
     """`role input_equivalent>budget` for each Usage row (cache reads at CACHE_WEIGHT)."""
     return [f"{r[0].removeprefix('omi-agent-')} {used}>{b}" for r in tasks.usage_rows(text)
-            if len(r) > 3 and r[3].isdigit() and (b := budget_of(r[0]))
+            if len(r) > 3 and r[3].isdigit() and (b := budget_of(r[0], "codex" if r[1].endswith("(codex)") else "claude"))
             and (used := token_count(int(r[3]), int(r[5]) if len(r) > 5 and r[5].isdigit() else None, r[1].endswith("(codex)"))) > b]
