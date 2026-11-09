@@ -338,6 +338,8 @@ def dispatch_next(project: state.Project, maximum: int = 1) -> None:
             owner = project if project.detached else state.Project(state=task.parents[2], code=project.code)
             root = state_sync.repo(owner)
             state_sync.commit(owner, [task.relative_to(root).as_posix()], f"{tid}: start task")
+            if not project.detached and not state_sync.push(owner):
+                raise state.StateError(f"{tid}: development push failed after start task; push development before continuing")
             wt = core.task_worktrees(project.code).get(tid)
             if not wt:
                 wt = project.code.parent / f"{project.code.name}.wt" / tid

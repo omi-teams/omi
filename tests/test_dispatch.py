@@ -476,6 +476,49 @@ def test_next_two_ready() -> None:
         assert "nothing ready" not in out.getvalue()
 
 
+def test_next_pushes_start_commit() -> None:
+    """TASK-274: publish the development start commit before launching the task branch."""
+    for upstream in (False, True):
+        with next_fixture() as (project, planned, launch), contextlib.redirect_stdout(io.StringIO()):
+            task = planned("TASK-001")
+            helpers.git(project.code, "add", ".")
+            helpers.git(project.code, "commit", "-qm", "planned task")
+            remote = project.code.parent / "remote.git"
+            helpers.git(project.code.parent, "init", "--bare", "-q", str(remote))
+            helpers.git(remote, "config", "receive.autogc", "false")
+            helpers.git(project.code, "remote", "add", "origin", str(remote))
+            helpers.git(project.code, "push", *(["-u"] if upstream else []), "origin", "development")
+            before = dispatch.core.git(remote, "rev-parse", "development")
+            def launched(*args, **kwargs):
+                head = dispatch.core.git(project.code, "rev-parse", "development")
+                assert head != before
+                assert "TASK-001: start task" in dispatch.core.git(project.code, "log", "-1", "--format=%s", "development")
+                assert dispatch.core.meta(task)["status"] == "in-progress"
+                assert dispatch.core.git(remote, "rev-parse", "development") == head, "development start commit was not pushed"
+                text = dispatch.core.git(remote, "show", "development:.omi/tasks/TASK-001.md")
+                assert "status: in-progress" in text
+            launch.side_effect = launched
+            dispatch.dispatch_next(project)
+            launch.assert_called_once()
+
+
+def test_next_push_failure_stops() -> None:
+    """A failed development push is visible and stops before worktree setup or launch."""
+    with next_fixture() as (project, planned, launch), contextlib.redirect_stdout(io.StringIO()):
+        planned("TASK-001")
+        second = planned("TASK-002", "b.py")
+        helpers.git(project.code, "remote", "add", "origin", str(project.code.parent / "missing.git"))
+        try:
+            dispatch.dispatch_next(project, 2)
+        except state.StateError as exc:
+            assert "development" in str(exc) and "push failed" in str(exc), exc
+        else:
+            raise AssertionError("development push failure swallowed")
+        launch.assert_not_called()
+        assert not (project.code.parent / "code.wt" / "TASK-001").exists()
+        assert dispatch.core.meta(second)["status"] == "planned"
+
+
 def test_next_conflicts_and_dependencies() -> None:
     with next_fixture() as (project, planned, launch), contextlib.redirect_stdout(io.StringIO()) as out:
         planned("TASK-001", "busy/x.py")
@@ -604,16 +647,25 @@ def test_next_existing_worktree_and_done_dependency() -> None:
 
 
 def test_next_detached_state() -> None:
-    with helpers.detached_project() as (code, catalog, _, task), contextlib.redirect_stdout(io.StringIO()):
-        home, _, _ = helpers.state_remote(catalog)
+    out = io.StringIO()
+    out.reconfigure = lambda **kw: None
+    with helpers.detached_project() as (code, catalog, _, task), contextlib.redirect_stdout(out):
+        home, remote, _ = helpers.state_remote(catalog)
+        before = dispatch.core.git(remote, "rev-parse", "main")
         tid = "TASK-098"
         target = task.with_name(f"{tid}.md")
         target.write_text("---\nid: TASK-098\nstatus: planned\nscope: other.py\nskills: [omi-skill-lean-implementation]\n"
                           "tool: codex\nmodel: detached-model\neffort: medium\n---\n"
                           "## Acceptance criteria\n- [ ] works\n\n## Checkpoint\nDone:\n", encoding="utf-8")
         project = state.resolve(code)
-        with patch.object(dispatch, "records", return_value=[]), patch.object(dispatch, "launch") as launch:
-            dispatch.dispatch_next(project)
+        with patch.object(dispatch, "records", return_value=[]), patch.object(dispatch, "launch") as launch, \
+                patch.object(dispatch.state_sync, "push", wraps=dispatch.state_sync.push) as push, \
+                patch.object(dispatch, "start_driver"), contextlib.chdir(code):
+            cli.main(["dispatch", "next"])
+        push.assert_called_once_with(project)  # only the command-level detached state sync pushes
+        assert dispatch.core.git(remote, "rev-parse", "main") != before
+        text = dispatch.core.git(remote, "show", f"main:{target.relative_to(home).as_posix()}")
+        assert "status: in-progress" in text and "step: build" in text
         launch.assert_called_once()
         assert launch.call_args.args[1] == tid
         assert dispatch.core.meta(target)["status"] == "in-progress"
@@ -981,6 +1033,8 @@ def main():
     test_next_setup_failure_stops()
     test_next_detached_state()
     test_next_two_ready()
+    test_next_pushes_start_commit()
+    test_next_push_failure_stops()
     test_next_conflicts_and_dependencies()
     test_next_readiness_and_limit()
     test_next_skips_empty_skills()
