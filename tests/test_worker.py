@@ -1567,6 +1567,24 @@ def test_reviewer_ac_lines_rerun():
 
 
 
+def test_deterministic_checks_stdin_devnull() -> None:
+    """Every subprocess of the pre-review checks gets stdin=DEVNULL (Windows: no inherited detached stdin, WinError 50)."""
+    run = omi.worker.run
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / ".omi" / "workflows").mkdir(parents=True)
+        calls = []
+        fake = lambda argv, **kw: calls.append((argv, kw)) or subprocess.CompletedProcess(argv, 0, "", "")  # noqa: E731
+        with patch("omi.worker.run.subprocess.run", fake), patch("omi.project.scope.out_of_scope", lambda *a, **k: []), \
+                patch("omi.project.catalogs.check_all_skills", lambda wt: None), patch("omi.worker.run.reused_hook", lambda *a: None), \
+                patch("omi.worker.hooks.review_test_in_worker", lambda main: False):
+            assert run.deterministic_checks(root, root, "TASK-001") == []
+        calls = [c for c in calls if c[0][0] != "git"]  # git lookups in common.core are not part of run.py
+        assert len(calls) == 2, calls  # workflows --check and the test command
+        for argv, kw in calls:
+            assert kw.get("stdin") is subprocess.DEVNULL, argv
+
+
 def test_report_skeleton_round_trip() -> None:
     run, tools, budget = omi.worker.run, omi.worker.tools, omi.worker.budget
     text = "\n## Acceptance criteria\n- [ ] first rule\n- [x] print ✓ literally\n- [ ] third rule\n\n## Checkpoint\nDone:\n"
@@ -1594,6 +1612,7 @@ def test_report_skeleton_round_trip() -> None:
 
 def main():
     test_report_skeleton_round_trip()
+    test_deterministic_checks_stdin_devnull()
     test_codex_capacity_fallback()
     test_auth_retry_fallback_and_timeout()
     test_token_budget_stop()
