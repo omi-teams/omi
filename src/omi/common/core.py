@@ -125,7 +125,10 @@ def pid_alive(pid: object) -> bool:
         return False
     except PermissionError:
         return True
-    return True
+    try:  # Linux: a killed but unreaped process (zombie) still answers kill 0
+        return Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").rsplit(")", 1)[1].split()[0] != "Z"
+    except (OSError, IndexError):
+        return True
 
 
 @contextmanager
