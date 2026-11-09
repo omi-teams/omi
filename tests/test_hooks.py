@@ -65,6 +65,45 @@ def test_post_run_uses_development_structure() -> None:
                 assert omi.common.core.git(wt, 'status', '--porcelain') == ''
 
 
+def test_post_run_writable_copy() -> None:
+    """post-run mounts a writable temporary copy (symlinks kept, removed afterwards); pre-run and pre-merge stay ro."""
+    hooks = omi.worker.hooks
+    with tempfile.TemporaryDirectory() as d:
+        main, wt = Path(d) / 'main', Path(d) / 'wt'
+        (main / '.omi/hooks').mkdir(parents=True)
+        wt.mkdir()
+        (wt / 'f.txt').write_text('x', encoding='utf-8')
+        (wt / 'link').symlink_to('f.txt')
+        for event in hooks.HOOK_EVENTS:
+            (main / f'.omi/hooks/{event}.sh').write_text('true\n', encoding='utf-8')
+        mounts = {}
+        real_run = subprocess.run
+
+        def run(argv, **kwargs):
+            if argv[:2] != ['docker', 'run']:
+                return real_run(argv, **kwargs)
+            src = next(a for a in argv if a.endswith(':/work') or a.endswith(':/work:ro'))
+            path = Path(src.rsplit(':/work', 1)[0])
+            ro = src.endswith(':ro')
+            if not ro:  # what `npm ci` does: write into the mounted tree
+                (path / 'node_modules').mkdir()
+                assert (path / 'link').is_symlink()
+            mounts[path] = ro
+            return subprocess.CompletedProcess(argv, 0, b'')
+
+        with patch.object(hooks.docker, 'need_docker'), patch.object(hooks.subprocess, 'run', side_effect=run), \
+                patch.object(hooks.state, 'resolve', return_value=omi.state.resolve.Project(main, main)):
+            for event in hooks.HOOK_EVENTS:
+                mounts.clear()
+                assert hooks.run_hook(wt, main, event, 'TASK-001', 'img')[0] == 0
+                (path, ro), = mounts.items()
+                if event == 'post-run':
+                    assert path != wt and not ro and not path.exists()
+                else:
+                    assert path == wt and ro
+        assert not (wt / 'node_modules').exists()
+
+
 def test_windows_test_shell():
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
@@ -658,6 +697,7 @@ def test_ci_structure_skip_notice():
 
 def main():
     test_post_run_uses_development_structure()
+    test_post_run_writable_copy()
     test_ci_structure_fetch()
     test_ci_structure_skip_notice()
     test_host_only_criteria()

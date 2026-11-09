@@ -385,7 +385,8 @@ def test_detached_run_and_hooks():
             assert "DONE detached" in committed and "## Usage" in committed
             detached_cli(wt, "hook", "post-run", task.stem)
             argv, kwargs = next((a, k) for a, k in reversed(calls) if a[:2] == ["docker", "run"])
-            assert f"{project}:/state:ro" in argv and f"{wt}:/work:ro" in argv
+            work = next(a for a in argv if a.endswith(":/work") or a.endswith(":/work:ro"))
+            assert f"{project}:/state:ro" in argv and work.endswith(":/work") and work != f"{wt}:/work"  # writable temporary copy
             assert "OMI_PROJECT_STATE=/state" in argv
             gitdir = Path(wt.joinpath(".git").read_text(encoding="utf-8").split(":", 1)[1].strip())
             assert f"{gitdir.parents[1]}:/gitdir:ro" in argv and f"OMI_GIT_DIR=/gitdir/worktrees/{gitdir.name}" in argv
