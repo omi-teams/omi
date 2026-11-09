@@ -1425,7 +1425,7 @@ def test_token_budget_stop():
                 assert len(calls) == 1
                 assert any(omi.worker.run.MODULE_TESTS in a for a in calls[0]), "the engineer runs only its modules' tests"
                 if want:
-                    assert "BUDGET: omi-agent-engineer used 1000 input+cache tokens, over its token_budget 500" in checkpoint, checkpoint
+                    assert "BUDGET: omi-agent-engineer used 1000 input-equivalent tokens (cache reads at 10%), over its token_budget 500" in checkpoint, checkpoint
                     assert hooks_run == ["pre-run"], "no post-run hook after a budget stop"
                 else:
                     assert "BUDGET" not in checkpoint and hooks_run == ["pre-run", "post-run"]
@@ -1452,7 +1452,8 @@ def test_token_budget_mixed_tools():
     history = "\n## Usage\n" + "".join(
         f"| {role} | sonnet | low | {n} | 1 | {cache} | 1s | - | PASS |\n"
         for n, cache in ((8, 100000), (10, 150000), (12, 250000), (12, 275000), (40, 300000)))
-    codex_row = f"| {role} | gpt (codex) | low | 709703 | 1 | 651392 | 1s | - | PASS |\n"
+    codex_row = f"| {role} | gpt (codex) | low | 70000 | 1 | 60000 | 1s | - | PASS |\n"  # 10000 uncached + 6000 cache-equivalent
+    codex_big = f"| {role} | gpt (codex) | low | 709703 | 1 | 651392 | 1s | - | PASS |\n"  # 123450
     report = "VERDICT: PASS\nAC: review the change ✓ checked\nHOST: none\nROOT: n/a"
     with tempfile.TemporaryDirectory() as d:
         wt = Path(d).resolve()
@@ -1470,11 +1471,12 @@ def test_token_budget_mixed_tools():
                 patch.dict(os.environ, {omi.worker.creds.TOKEN_ENV: "tok", omi.worker.creds.CODEX_ENV: "key"}), \
                 contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()):
             for tool, used, cache, configured, want in (
-                    ("codex", 709703, 651392, None, 0),
+                    ("codex", 70000, 60000, None, 0),
                     ("claude", 40, 100000, None, 0),
-                    ("claude", 40, 100000, 100039, 7),
-                    ("codex", 709703, 651392, 709702, 7),
-                    ("codex", 709703, 651392, 709703, 0)):
+                    ("claude", 40, 100000, 10039, 7),
+                    ("codex", 70000, 60000, 15999, 7),
+                    ("codex", 70000, 60000, 16000, 0),
+                    ("codex", 709703, 651392, None, 7)):
                 text = ("---\nid: TASK-264\nscope: src/**\n---\n## Acceptance criteria\n"
                         "- [ ] review the change\n\n## Checkpoint\nDone:\n" + history)
                 task.write_text(text, encoding="utf-8")
@@ -1493,29 +1495,29 @@ def test_token_budget_mixed_tools():
                 assert len(calls) == 1
                 checkpoint = task.read_text(encoding="utf-8")
                 if want:
-                    total = used if tool == "codex" else used + cache
-                    assert f"used {total} input+cache tokens" in checkpoint, checkpoint
+                    total = used - cache + cache // 10 if tool == "codex" else used + cache // 10
+                    assert f"used {total} input-equivalent tokens" in checkpoint, checkpoint
                 else:
                     assert "BUDGET:" not in checkpoint, checkpoint
         found = {"TASK-264": {"_text": history + codex_row}}
         (wt / ".omi" / "config.json").write_text("{}", encoding="utf-8")
         limit = omi.worker.budget.token_budget(wt, role, found)
-        assert limit == 787536, limit
+        assert limit == 61518, limit
         assert omi.worker.budget.over_budget(history + codex_row, lambda _: limit) == []
         excessive = f"| {role} | sonnet | low | 8 | 1 | 2000000 | 1s | - | PASS |\n"
         assert omi.worker.budget.over_budget(history + codex_row + excessive, lambda _: limit) == [
-            "reviewer 2000008>787536"]
+            "reviewer 200008>61518"]
 
         # A genuinely smaller history still limits a larger run, using Codex input once.
         small = "\n## Usage\n" + "".join(
             f"| {role} | sonnet | low | {n} | 1 | 100000 | 1s | - | PASS |\n"
             for n in (8, 10, 12, 12, 40))
-        found["TASK-264"]["_text"] = small + codex_row
+        found["TASK-264"]["_text"] = small + codex_big
         limit = omi.worker.budget.token_budget(wt, role, found)
-        assert limit == 300036, limit
-        assert omi.worker.budget.over_budget(small + codex_row, lambda _: limit) == ["reviewer 709703>300036"]
-        found["TASK-264"]["_text"] = small + codex_row * 6
-        assert omi.worker.budget.token_budget(wt, role, found) == 2129109
+        assert limit == 30036, limit
+        assert omi.worker.budget.over_budget(small + codex_big, lambda _: limit) == ["reviewer 123450>30036"]
+        found["TASK-264"]["_text"] = small + codex_big * 6
+        assert omi.worker.budget.token_budget(wt, role, found) == 370350
 
 
 def test_reviewer_ac_lines_rerun():
@@ -1609,6 +1611,18 @@ def test_report_skeleton_round_trip() -> None:
             filled = skeleton.replace("DONE | BLOCKED | NEEDS SCOPE", "DONE").replace("<type>(<area>): <summary>", "fix(worker): fill reports").replace("<test>", "test_x")
             assert run.missing_lines(filled, step) == []
     assert budget.report_skeleton(text, "omi-agent-researcher", "read", "research") == ""
+def test_token_count_prices_cache_reads():
+    """TASK-282: cache reads count at CACHE_WEIGHT for Claude (input + cache) and Codex (input includes cache); TASK-274's row is under budget."""
+    count = omi.worker.budget.token_count
+    assert omi.worker.budget.CACHE_WEIGHT == 0.1
+    assert count(100, 1000) == 200 and count(100, None) == 100
+    assert count(1100, 1000, True) == 200 and count(1000, 1000, True) == 100
+    assert count(2371654, 2326144, True) == 278124 < 1141422, "TASK-274 was 2371654 > 1141422"
+    row = "\n## Usage\n| omi-agent-engineer | gpt (codex) | low | 2371654 | 1 | 2326144 | 1s | - | - |\n"
+    assert omi.worker.budget.over_budget(row, lambda _: 1141422) == [] and omi.worker.budget.over_budget(row, lambda _: 278123)
+    uncached = "\n## Usage\n| omi-agent-engineer | gpt (codex) | low | 2371654 | 1 | 100 | 1s | - | - |\n"
+    assert omi.worker.budget.over_budget(uncached, lambda _: 1141422) == ["engineer 2371564>1141422"]
+
 
 def main():
     test_report_skeleton_round_trip()
@@ -1617,6 +1631,7 @@ def main():
     test_auth_retry_fallback_and_timeout()
     test_token_budget_stop()
     test_token_budget_mixed_tools()
+    test_token_count_prices_cache_reads()
     test_reviewer_ac_lines_rerun()
     test_verdict_of_forms()
     test_full_report_keeps_earlier_block()
@@ -1643,4 +1658,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
