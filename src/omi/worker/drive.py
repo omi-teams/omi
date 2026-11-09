@@ -76,18 +76,24 @@ def advance_finished(project: state.Project, waiting: dict[str, str]) -> bool:
     return worked
 
 
-NOTE = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d) Coordinator \(", re.M)
+NOTE = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d) Coordinator \([^)]*\) (\w+):", re.M)
+RESUME = "RESUME"  # the `omi note --verdict` that asks the driver to resume the task's current step
 
 
-def resume_idle(project: state.Project) -> bool:
-    """Dispatch the current agent step of each idle in-progress task whose newest Coordinator note (`omi note`) is newer than its last run."""
+def resume_idle(project: state.Project, refused: set[tuple[str, str]] | None = None) -> bool:
+    """Dispatch the current agent step of each idle in-progress task whose newest Coordinator note (`omi note`) has verdict RESUME and is
+    newer than its last run; a refused dispatch (in `refused`) is not retried for the same note."""
+    refused = set() if refused is None else refused
     recs, worked = dispatch.records(project.code), False
     for tid, meta in tasks.tasks(project).items():
         mine = [r for r in recs if r["tid"] == tid]
         notes = NOTE.findall(meta.get("_text", "").partition("\n## Reports\n")[2])
         if meta.get("status") != "in-progress" or not notes or any(r["running"] for r in mine):
             continue
-        noted = datetime.datetime.strptime(notes[-1], "%Y-%m-%d %H:%M")
+        stamp, verdict = notes[-1]
+        if verdict != RESUME or (tid, stamp) in refused:
+            continue
+        noted = datetime.datetime.strptime(stamp, "%Y-%m-%d %H:%M")
         if mine and noted <= mine[-1]["started"].replace(second=0, microsecond=0):
             continue
         steps = workflows.get_workflow(project.state, meta.get("workflow") or workflows.DEFAULT_WORKFLOW)
@@ -96,7 +102,9 @@ def resume_idle(project: state.Project) -> bool:
             continue
         rc, out = omi(project, "dispatch", role, tid)
         worked = True
-        print(f"resume {tid} {role} (Coordinator note {notes[-1]}){'' if rc == 0 else f' FAILED rc={rc}'}: {out}", flush=True)
+        if rc != 0:
+            refused.add((tid, stamp))
+        print(f"resume {tid} {role} (Coordinator note {stamp}){'' if rc == 0 else f' FAILED rc={rc}'}: {out}", flush=True)
     return worked
 
 
@@ -121,11 +129,12 @@ def drive(project: state.Project, once: bool = False, poll: float = POLL, loop: 
         return
     with stack:
         waiting: dict[str, str] = {}
+        refused: set[tuple[str, str]] = set()
         recs = dispatch.records(project.code)
         finished = sum(not r["running"] for r in recs)
         while True:
             worked = advance_finished(project, waiting)
-            worked = resume_idle(project) or worked  # idle in-progress tasks go before planned ones
+            worked = resume_idle(project, refused) or worked  # idle in-progress tasks go before planned ones
             recs = dispatch.records(project.code)
             now = sum(not r["running"] for r in recs)
             free = dispatch.free_slots(project)

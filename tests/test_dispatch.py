@@ -944,6 +944,7 @@ def main():
     test_stop_kills_and_never_resumes()
     test_foreground_record_and_dispatcher()
     test_drive_loop_resumes_noted_task_first()
+    test_resume_idle_only_on_resume_note_and_one_refusal()
 
 
 def git_project(d):
@@ -1097,7 +1098,7 @@ def test_drive_loop_resumes_noted_task_first() -> None:
         rec["reported"] = True
         (rec["dir"] / "driven").write_text("", encoding="utf-8")
         text = ("---\nid: x\n---\n## Steps\n- build started 2026-11-08 08:00\n\n## Reports\n"
-                "2026-11-08 10:00 Coordinator (build) GO:\n> fixed the host, rerun\n")
+                "2026-11-08 10:00 Coordinator (build) RESUME:\n> fixed the host, rerun\n")
         found = {"TASK-001": {"status": "in-progress", "step": "build", "workflow": "w", "_text": text},
                  "TASK-002": {"status": "in-progress", "step": "build", "workflow": "w", "_text": text.replace("10:00", "08:30")}}
         recs = [rec, {**finished_rec(root, "TASK-002"), "reported": True}]
@@ -1126,6 +1127,29 @@ def test_drive_loop_resumes_noted_task_first() -> None:
         assert calls[0] == ("dispatch", "omi-agent-engineer", "TASK-001") and calls[1] == ("dispatch", "next", "--max", "1"), calls
         assert ("dispatch", "omi-agent-engineer", "TASK-002") not in calls, "a note older than the last run is not a resume"
         assert sleeps[-1] == 60 and "resume TASK-001 omi-agent-engineer (Coordinator note 2026-11-08 10:00)" in out.getvalue()
+
+
+def test_resume_idle_only_on_resume_note_and_one_refusal() -> None:
+    """TASK-267: a DONE note is no resume request; a refused dispatch is not retried for the same note."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        project = state.Project(state=root, code=root)
+        def found(verdict):
+            text = f"---\nid: x\n---\n## Steps\n- build started 2026-11-08 08:00\n\n## Reports\n2026-11-08 10:00 Coordinator (build) {verdict}:\n> host fix\n"
+            return {"TASK-001": {"status": "in-progress", "step": "build", "workflow": "w", "_text": text}}
+        calls = []
+        def omi_call(_, *args):
+            calls.append(args)
+            return 1, "locked by Coordinator"
+        with patch.object(dispatch, "records", return_value=[]), patch.object(drive.workflows, "get_workflow",
+                return_value=[{"id": "build", "role": "omi-agent-engineer"}]), patch.object(drive, "omi", side_effect=omi_call), \
+                contextlib.redirect_stdout(io.StringIO()):
+            with patch.object(drive.tasks, "tasks", return_value=found("DONE")):
+                assert not drive.resume_idle(project) and not calls
+            with patch.object(drive.tasks, "tasks", return_value=found("RESUME")):
+                refused = set()
+                assert drive.resume_idle(project, refused) and len(calls) == 1
+                assert not drive.resume_idle(project, refused) and len(calls) == 1, "refused: no retry for the same note"
 
 
 if __name__ == "__main__":
