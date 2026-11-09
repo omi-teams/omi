@@ -556,6 +556,15 @@ def test_pass_host_quoted_item() -> None:
         assert not error, error
 
 
+def test_pass_host_none_with_reason() -> None:
+    """TASK-261 (was TASK-260): `HOST: none; <reason>` asks for no Host: line."""
+    with accepted() as h:
+        text = h.text.replace('HOST: python check.py', 'HOST: none; no host-only criterion needs a separate host check.')
+        h.task.write_text(text.replace('Host: python check.py -> PASS', ''), encoding='utf-8')
+        error, _ = h.invoke()
+        assert not error, error
+
+
 def test_pass_host_test_prose_current_head() -> None:
     for role in (REVIEWER, 'omi-agent-security-reviewer'):
         with accepted() as h:
@@ -647,6 +656,7 @@ def main():
     test_pass_pr_body_filters_reports_and_describes_changes()
     test_pass_host_error_prints_recordable_line()
     test_pass_host_quoted_item()
+    test_pass_host_none_with_reason()
     test_pass_host_test_prose_current_head()
     test_pass_host_test_prose_invalid_evidence_blocks()
     test_reviewer_host_test_guidance()
