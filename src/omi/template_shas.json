@@ -457,7 +457,7 @@
   },
   "0.6.0": {
     ".claude/settings.json": "bb82110c2fdb62932040ad7c42387123cc6f947578492571ab37e2947ec8fb7f",
-    ".claude/skills/omi-idea/SKILL.md": "ac8b8f3890c0d644e92b30e0ec94a2b1e99ccd088dc9546754e2bfb14a854ece",
+    ".claude/skills/omi-idea/SKILL.md": "fe4f605df19622944fb15cd4e742c16f658b48625ef1c85863aeba4f9d4454b1",
     ".claude/skills/omi-release/SKILL.md": "975713594cd34e4f882dc308d392e5689809d57dae8cc2ca926d9925360cf4ef",
     ".claude/skills/omi-status/SKILL.md": "dec0d92eb997c7ec691f31bde2739526a3cdfa05727653003ccabef3d2447c21",
     ".claude/skills/omi-task/SKILL.md": "a4d9631e6b77ca0943023a65a6673c2efec4c787b9dc597630053863a5503faa",
