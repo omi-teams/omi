@@ -653,7 +653,29 @@ def test_status_drift_hints():
         assert "docker/Dockerfile differs" not in status_text(root), "CRLF is not a difference"
         df.write_bytes(crlf + b"RUN true\r\n")
         assert f"docker/Dockerfile differs from the omi {omi.common.core.version()} template; review it (omi init never overwrites it)" in status_text(root)
-        assert f"git diff --no-index {omi.common.core.TEMPLATE / 'docker' / 'Dockerfile'} docker/Dockerfile" in status_text(root) and "merge by hand" in status_text(root)
+        assert f"git diff --no-index {omi.common.core.TEMPLATE / 'docker' / 'Dockerfile'} {df.resolve()}" in status_text(root) and "merge by hand" in status_text(root)
+        # TASK-257: a recorded review silences the warning until the template changes
+        with contextlib.redirect_stdout(io.StringIO()):
+            omi.setup.upgrade.dockerfile_reviewed(omi.state.resolve.resolve(root))
+        assert json.loads((root / ".omi" / "project.json").read_text(encoding="utf-8"))["dockerfile_reviewed"] == \
+            omi.setup.upgrade.norm_sha((omi.common.core.TEMPLATE / "docker" / "Dockerfile").read_bytes())
+        assert "docker/Dockerfile differs" not in status_text(root)
+        with tempfile.TemporaryDirectory() as tpl:
+            (Path(tpl) / "docker").mkdir()
+            (Path(tpl) / "docker" / "Dockerfile").write_text("FROM newer\n", encoding="utf-8")
+            with patch.object(omi.setup.upgrade.core, "TEMPLATE", Path(tpl)):
+                assert omi.setup.upgrade.dockerfile_hint(omi.state.resolve.resolve(root)), "a changed template warns again"
+        with tempfile.TemporaryDirectory() as s:  # detached: the review lives in the state manifest, the diff names the state Dockerfile
+            state_dir = Path(s).resolve()
+            (state_dir / "docker").mkdir()
+            (state_dir / "docker" / "Dockerfile").write_text("FROM other\n", encoding="utf-8")
+            (state_dir / "project.json").write_text(json.dumps({"remote": "github.com/o/r"}), encoding="utf-8")
+            detached = omi.state.resolve.Project(state_dir, root, True)
+            assert f"git diff --no-index {omi.common.core.TEMPLATE / 'docker' / 'Dockerfile'} {state_dir / 'docker' / 'Dockerfile'}" in "\n".join(omi.setup.upgrade.dockerfile_hint(detached))
+            with contextlib.redirect_stdout(io.StringIO()):
+                omi.setup.upgrade.dockerfile_reviewed(detached)
+            assert omi.setup.upgrade.dockerfile_hint(detached) == []
+            assert json.loads((state_dir / "project.json").read_text(encoding="utf-8"))["remote"] == "github.com/o/r"
         df.unlink()
         assert "docker/Dockerfile differs" not in status_text(root)
         real = omi.common.core.main_checkout, omi.worker.docker.full_volumes

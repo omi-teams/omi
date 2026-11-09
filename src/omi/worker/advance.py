@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 from ..common import core
-from ..project import catalogs, scope, tasks, workflows
+from ..project import catalogs, scope, structure, tasks, workflows
 from ..state import resolve as state
 from . import accept, dispatch, tools
 
@@ -59,6 +59,8 @@ class Context:
     why: str | None = None
     round: int = 0
     findings: list[str] = field(default_factory=list)
+    extra: list[str] = field(default_factory=list)  # reports of the other failing reviewers of a stage
+    members: list[dict] = field(default_factory=list)  # the reviewer steps dispatched together
     wt: Path = field(init=False)
     subject: str = field(init=False)
     meta: dict = field(init=False)
@@ -101,7 +103,7 @@ def eligible(ctx: Context) -> tuple[dict, str, dict, dict]:
         raise state.StateError("newest finished run must exit 0 with verdict DONE")
     if catalogs.get_role(ctx.project.state, rec["role"])["access"] != "write":
         raise state.StateError("newest finished run is not a write role")
-    ctx.subject = commit_message(report, ctx.message, [r for _, r in reversed(dispatch.reports(text, rec["role"]))])
+    ctx.subject = commit_message(report, ctx.message, [r for _, r in reversed(dispatch.reports(text, rec["role"])) if dispatch.verdict(r) == "DONE"])
     wt = core.task_worktrees(ctx.project.code).get(ctx.tid)
     if not wt:
         raise state.StateError("task worktree is missing")
@@ -127,10 +129,11 @@ def eligible(ctx: Context) -> tuple[dict, str, dict, dict]:
     if last >= len(steps) or steps[last]["role"] not in tasks.REVIEW_ROLES:
         raise state.StateError("the next workflow step is not a reviewer")
     following = steps[last]
+    ctx.members = workflows.stage_of(steps, following["id"])
     if ctx.meta.get("step") != sid and not (ctx.fix and ctx.meta.get("step") == ctx.fix["id"]) and not (ctx.progress.get("step-done") and ctx.meta.get("step") == following["id"]):
         raise state.StateError("finished run is not for the current step")
     recs = [r for r in dispatch.records(ctx.project.code) if r["tid"] == ctx.tid]
-    if any(r["running"] and not (ctx.progress.get("step-next") and r["role"] == following["role"]) for r in recs):
+    if any(r["running"] and not (ctx.progress.get("step-next") and r["role"] in {s["role"] for s in ctx.members}) for r in recs):
         raise state.StateError("task has a running worker")
     if ctx.progress.get("head") and git(ctx, "rev-parse", "HEAD") != ctx.progress["head"]:
         raise state.StateError("HEAD changed since advance; finish a fresh write run")
@@ -206,7 +209,7 @@ def resolve_generated(ctx: Context) -> None:
         if not conflicted or other or not cmd:  # no conflict: the rebase failed for another reason
             raise state.StateError("" if not conflicted or other else "only generated files conflict, but .omi/config.json has no `regenerate` command")
         git(ctx, "checkout", "--ours", "--", *conflicted)  # in a rebase, ours is development
-        command(ctx.wt, shlex.split(cmd))
+        command(ctx.wt, structure.tool_argv(cmd, posix=not core.WINDOWS))
         git(ctx, "add", "--", *conflicted)
         try:
             git(ctx, "-c", "core.editor=true", "rebase", "--continue")
@@ -262,8 +265,9 @@ def step_next(ctx: Context) -> None:
 def reviewer(ctx: Context) -> None:
     # Recover a successful launch even if advance died before saving its marker.
     current = dispatch.records(ctx.project.code)
-    if not any(r["tid"] == ctx.tid and r["role"] == ctx.following["role"] and r["started"] >= ctx.rec["started"] for r in current):
-        omi(ctx, "dispatch", ctx.following["role"], ctx.tid)
+    for s in ctx.members or [ctx.following]:  # a stage's reviewers start together
+        if not any(r["tid"] == ctx.tid and r["role"] == s["role"] and r["started"] >= ctx.rec["started"] for r in current):
+            omi(ctx, "dispatch", s["role"], ctx.tid)
 
 
 class Stop(SystemExit):
@@ -288,7 +292,7 @@ def eligible_fail(ctx: Context) -> str:
     steps = workflows.get_workflow(ctx.project.state, ctx.meta.get("workflow") or workflows.DEFAULT_WORKFLOW)
     sid = ctx.progress.get("step", ctx.meta.get("step"))
     ctx.step = next((s for s in steps if s["id"] == sid), {})
-    if not ctx.step or ctx.step["role"] != rec["role"]:
+    if not ctx.step or rec["role"] not in {s["role"] for s in workflows.stage_of(steps, sid)}:
         raise state.StateError("run role does not match the current review step")
     log = text.partition("\n## Steps\n")[2].split("\n## ", 1)[0]
     starts = re.findall(rf"^- {re.escape(sid)} started (\d{{4}}-\d\d-\d\d \d\d:\d\d)", log, re.M)
@@ -299,7 +303,7 @@ def eligible_fail(ctx: Context) -> str:
     if any(r["running"] and not (ctx.progress.get("step-back") and r["role"] != rec["role"])
            for r in dispatch.records(ctx.project.code) if r["tid"] == ctx.tid):
         raise state.StateError("task has a running worker")
-    ctx.findings = [l for l in report.splitlines() if FINDING.match(l)]
+    ctx.findings = [l for r in (report, *ctx.extra) for l in r.splitlines() if FINDING.match(l)]
     if not ctx.findings:
         raise state.StateError("the FAIL report has no finding lines (- <file:line> ...)")
     ctx.progress["step"] = sid
@@ -378,6 +382,53 @@ def advance_fail(ctx: Context) -> None:
     perform(ctx, "dispatch", engineer)
 
 
+def stage_runs(project: state.Project, tid: str, rec: dict) -> list[tuple[dict, dict]] | None:
+    """[(step, newest finished run since the stage started)] when `rec`'s review step shares a stage, else None;
+    [] while a reviewer of the stage still runs or has not finished."""
+    text = core.read_task(state.task_file(project, tid))
+    steps = workflows.get_workflow(project.state, core.parse(text).get("workflow") or workflows.DEFAULT_WORKFLOW)
+    members = workflows.stage_of(steps, next((s["id"] for s in steps if s["role"] == rec["role"] and s.get("stage")), ""))
+    if len(members) < 2:
+        return None
+    log = text.partition("\n## Steps\n")[2].split("\n## ", 1)[0]
+    starts = re.findall(rf"^- {re.escape(members[0]['id'])} started (\d{{4}}-\d\d-\d\d \d\d:\d\d)", log, re.M)
+    since = datetime.datetime.strptime(starts[-1], "%Y-%m-%d %H:%M") if starts else rec["started"]
+    recs = [r for r in dispatch.records(project.code) if r["tid"] == tid and r["started"].replace(second=0, microsecond=0) >= since]
+    found = [(s, ([r for r in recs if r["role"] == s["role"]] or [None])[-1]) for s in members]
+    waiting = [s["role"] for s, r in found if r is None or r["running"]]
+    if waiting:
+        print(f"stage {members[0]['stage']}: waiting for {', '.join(waiting)}; advance again when it finishes")
+        return []
+    return found
+
+
+def advance_stage(project: state.Project, tid: str, found: list[tuple[dict, dict]], message, reject, why) -> None:
+    """All reviewers of a stage PASS: hand off through each, the last one accepts and merges; any FAIL: one fix round with every finding."""
+    text = core.read_task(state.task_file(project, tid))
+    reports = [(s, r, dispatch.last_report(text, r["role"], r["started"])) for s, r in found]
+    failed = [(r, report) for _, r, report in reports if dispatch.verdict(report) != "PASS"]
+    if failed:
+        path = failed[0][0]["dir"] / "advance.json"
+        ctx = Context(project, tid, failed[0][0], json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}, message, reject or [], why)
+        ctx.extra = [report for _, report in failed[1:]]
+        return advance_fail(ctx)
+    for _, r, _ in reports:
+        path = r["dir"] / "advance.json"
+        ctx = Context(project, tid, r, json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}, message, reject or [], why)
+        if ctx.progress.get("stage-handoff"):
+            continue
+        try:
+            accept.advance_pass(ctx, perform, command)
+        finally:
+            if ctx.progress.get("ci-failed"):
+                save_progress(ctx)
+        if r is not reports[-1][1]:
+            ctx.progress["stage-handoff"] = True
+            save_progress(ctx)
+    if ctx.progress.get("post-merge-test"):
+        perform(ctx, "auto-dispatch", auto_dispatch)
+
+
 def auto_dispatch(ctx: Context) -> str:
     """After a merge, start the next ready tasks (free slots under `auto_dispatch_max`); a failure never undoes the merge."""
     free = dispatch.free_slots(ctx.project)
@@ -398,6 +449,8 @@ def advance(project: state.Project, tid: str, message: str | None = None, reject
             path = rec["dir"] / "advance.json"
             progress = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
             ctx = Context(project, tid, rec, progress, message, reject or [], why)
+            if rec["role"] in tasks.REVIEW_ROLES and (found := stage_runs(project, tid, rec)) is not None:
+                return advance_stage(project, tid, found, message, reject, why) if found else None
             if rec["role"] in tasks.REVIEW_ROLES or catalogs.get_role(project.state, rec["role"])["access"] == "read":
                 report = dispatch.last_report(core.read_task(state.task_file(project, tid)), rec["role"], rec["started"])
                 if dispatch.verdict(report) == "PASS":

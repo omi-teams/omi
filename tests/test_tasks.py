@@ -1049,7 +1049,8 @@ def test_review_test_in_worker():
                 return omi.worker.run.deterministic_checks(wt, root, "TASK-1"), out.getvalue()
 
         # host mode (default): the worker image is not used
-        with patch.object(omi.worker.run, "test_command", lambda *a: [sys.executable, "-c", "pass"]):
+        # the host run gets OMI_QUIET=1 (tests/test_omi.py prints only failures and a summary line)
+        with patch.object(omi.worker.run, "test_command", lambda *a: [sys.executable, "-c", "import os, sys; sys.exit(os.environ.get('OMI_QUIET') != '1')"]):
             with patch.object(omi.worker.hooks, "run_test", lambda *a: calls.append(a)):
                 with patch.object(omi.project.scope, "out_of_scope", lambda *a, **k: []), \
                         patch.object(omi.project.catalogs, "check_all_skills", lambda wt: None):
@@ -1057,7 +1058,7 @@ def test_review_test_in_worker():
         # worker mode: the configured command runs in the image
         cfg.write_text(json.dumps({"test": "make check", "review_test_in_worker": True}), encoding="utf-8")
         assert omi.worker.hooks.review_test_in_worker(root)
-        assert checks() == ([], "") and calls[0][2] == "make check"
+        assert checks() == ([], "") and calls[0][2] == "OMI_QUIET=1 make check"
         problems, _ = checks(1)
         assert len(problems) == 1 and problems[0].startswith("tests failed:") and "boom" in problems[0], problems
         # a hook pass recorded for this HEAD: no rerun, reuse is recorded
@@ -1239,7 +1240,77 @@ def test_file_plan_lines():
             assert done("## File plan\n- edit src/a.py (domain): ok\n") == 0 and "architect done" in task.read_text(encoding="utf-8")
 
 
+def test_review_stage_steps_and_lanes():
+    """TASK-257: staged review steps count verdicts from the stage start, a stage FAIL is one round; lane warnings and task size."""
+    W = omi.project.workflows
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        with patch("sys.stdout", io.StringIO()):
+            omi.setup.upgrade.init(root)
+        steps = W.get_workflow(root, "omi-flow-feature-sensitive")
+        assert [s["id"] for s in W.stage_of(steps, "security")] == ["review", "security"]
+        assert [s["id"] for s in W.stage_of(steps, "build")] == ["build"] and W.stage_of(steps, "nope") == []
+        task = root / ".omi" / "tasks" / "TASK-120.md"
+        row = lambda r, v: f"| {r} | m | 1 | {v} |\n"  # noqa: E731
+        rev, sec = "omi-agent-reviewer", "omi-agent-security-reviewer"
+        task.write_text("---\nid: TASK-120\nworkflow: omi-flow-feature-sensitive\nstatus: in-progress\nscope: src/a.py\nstep: build\n---\n"
+                        "## Steps\n- plan done 2026-11-08 09:00\n- architect done 2026-11-08 09:30\n- build started 2026-11-08 10:00\n"
+                        "\n## Usage\n| role | model | tokens | verdict |\n|---|---|---|---|\n" + row(sec, "FAIL aaaaaaa"), encoding="utf-8")
+        with patch("omi.project.tasks.commit_task_file"), patch("omi.common.core.task_worktrees", return_value={}), patch("sys.stdout", io.StringIO()):
+            go = lambda action: omi.project.tasks.step(root, "TASK-120", action)  # noqa: E731
+            assert go("done") == 0 and go("next") == 0
+            log = task.read_text(encoding="utf-8")
+            assert re.search(r"^- review started .* \(verdicts: 0\)$", log, re.M) and re.search(r"^- security staged .* \(verdicts: 1\)$", log, re.M), log
+            with task.open("a", encoding="utf-8") as f:  # both reviewers ran together on bbbbbbb
+                f.write(row(rev, "PASS bbbbbbb") + row(sec, "PASS bbbbbbb"))
+            assert go("done") == 0 and go("next") == 0
+            assert re.search(r"^- security started .* \(verdicts: 1\)$", task.read_text(encoding="utf-8"), re.M)
+            assert go("done") == 0, "the security PASS from the stage counts for the security step"
+    usage = "\n## Usage\n| role | model | tokens | verdict |\n|---|---|---|---|\n"
+    text = usage + row(rev, "FAIL abc1234") + row(sec, "FAIL abc1234 root:new")
+    assert tasks.failed_rounds(text) == 1, "a stage failing one commit is one round"
+    assert tasks.failed_rounds(text + row(rev, "FAIL abc1234")) == 2 and tasks.failed_rounds(text + row(sec, "FAIL def5678")) == 2
+    # stage validation: only read-only review steps, listed one after another
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        with patch("sys.stdout", io.StringIO()):
+            omi.setup.upgrade.init(root)
+        f = root / ".omi" / "workflows" / "omi-flow-zz.md"
+        step = lambda sid, role, gate, stage: f"- id: {sid} | role: {role} | skills: | input: i | output: o | gate: {gate} | stop: s | stage: {stage}\n"  # noqa: E731
+        for body, problem in ((step("build", "omi-agent-engineer", "none", "x") + step("review", rev, "review", "x"), "only read-only review steps"),
+                              (step("review", rev, "review", "x") + step("qa", "omi-agent-qa-tester", "none", "") + step("security", sec, "review", "x"), "one after another"),
+                              (step("review", rev, "review", "x") + step("security", sec, "review", "x"), None)):
+            f.write_text("---\nid: omi-flow-zz\nsummary: s\nsteps:\n" + body + "---\nx\n", encoding="utf-8")
+            errs = W.validate_workflow(root, f)
+            assert (problem is None and not errs) or any(problem in e for e in errs), (problem, errs)
+    # task size and lane warnings
+    assert W.task_size({"scope": "src/a.py, tests/test_a.py, src/b_test.go, web/x.test.ts, test_c.py"}) == 1
+    assert W.task_size({"scope": "src/**"}) is None and W.task_size({}) is None
+    assert W.task_size({"scope": "src/**", "_text": "\n## File plan\n- edit src/a.py (x): y\n- create tests/test_a.py (t)\n"}) == 1
+    for m, warn in (({"type": "bug", "workflow": "omi-flow-bugfix", "scope": "src/a.py, tests/test_a.py"}, "consider the fast lane omi-flow-bugfix-fast"),
+                    ({"type": "bug", "workflow": "omi-flow-bugfix-fast", "scope": ".github/workflows/ci.yml"}, "omi-flow-bugfix-fast on sensitive scope (.github)"),
+                    ({"type": "bug", "workflow": "omi-flow-bugfix", "scope": "a.py, b.py, c.py, d.py"}, ""),
+                    ({"type": "bug", "workflow": "omi-flow-bugfix", "scope": "src/auth.py"}, ""),
+                    ({"type": "task", "workflow": "omi-flow-bugfix", "scope": "src/a.py"}, ""),
+                    ({"type": "bug", "workflow": "omi-flow-bugfix-fast", "scope": "src/a.py"}, "")):
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            W.warn_lane(m)
+        assert (warn in out.getvalue()) if warn else out.getvalue() == "", (m, out.getvalue())
+    with tempfile.TemporaryDirectory() as d:  # `omi step` warns when the plan step closes
+        root = Path(d).resolve()
+        with patch("sys.stdout", io.StringIO()):
+            omi.setup.upgrade.init(root)
+        (root / ".omi" / "tasks" / "TASK-121.md").write_text(
+            "---\nid: TASK-121\ntype: bug\nworkflow: omi-flow-bugfix\nstatus: in-progress\nscope: src/a.py\nskills: [omi-skill-lean-implementation]\n"
+            "step: plan\n---\n## Steps\n- plan started 2026-11-08 10:00\n", encoding="utf-8")
+        with patch("omi.project.tasks.commit_task_file"), patch("omi.common.core.task_worktrees", return_value={}), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            assert omi.project.tasks.step(root, "TASK-121", "done") == 0 and omi.project.tasks.step(root, "TASK-121", "next") == 0
+        assert "WARN: bug touching 1 non-test file(s) - consider the fast lane omi-flow-bugfix-fast" in out.getvalue(), out.getvalue()
+
+
 def main():
+    test_review_stage_steps_and_lanes()
     test_file_plan_lines()
     test_pattern_line_shape()
     test_hierarchy()

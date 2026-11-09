@@ -2,6 +2,7 @@
 role: omi-agent-reviewer
 model: sonnet
 effort: medium
+small: sonnet/low
 access: read
 skills: [omi-skill-verify-evidence, omi-skill-simplify-review]
 summary: Independent read-only review of one task diff against its acceptance criteria, correctness and security; fresh instance every run.

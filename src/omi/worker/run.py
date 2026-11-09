@@ -20,7 +20,7 @@ from pathlib import Path
 
 from ..project import catalogs, runs, scope, tasks, workflows
 from ..common import core
-from . import creds, docker, hooks, pr, session, tools
+from . import budget, creds, docker, hooks, pr, session, tools
 from ..state import resolve as state
 
 
@@ -182,10 +182,11 @@ def deterministic_checks(wt, main, tid):
         return problems
     try:
         if hooks.review_test_in_worker(main):
-            code, out = hooks.run_test(wt, main, test_text(wt, main), tid, None)
+            code, out = hooks.run_test(wt, main, "OMI_QUIET=1 " + test_text(wt, main), tid, None)
             r = types.SimpleNamespace(returncode=code, stdout=out, stderr="")
         else:
-            r = subprocess.run(test_command(wt, main), cwd=wt, capture_output=True, encoding="utf-8", errors="replace")
+            r = subprocess.run(test_command(wt, main), cwd=wt, capture_output=True, encoding="utf-8", errors="replace",
+                               env={**os.environ, "OMI_QUIET": "1"})  # tests/test_omi.py: failures and a summary only
     except (OSError, SystemExit) as e:
         problems.append(f"test command failed to start: {e}")
     else:
@@ -254,7 +255,7 @@ def missing_lines(report, step_id):
     """Lines a DONE write report still needs before advance can use it: `Suggested commit:`, and `Reproduced:` on a reproduce step."""
     if not report or not re.match(r"\W*DONE\b", report):  # the same verdict test as the run record below
         return []
-    need = ["Suggested commit"] + (["Reproduced"] if step_id == "reproduce" else [])
+    need = ["Suggested commit"] + (["Reproduced"] if step_id in ("reproduce", "reproduce-fix") else [])
     return [k for k in need if not tools.report_values(report, k)]
 
 
@@ -263,6 +264,8 @@ def report_note(task: Path, role: str, tool: str, report: str) -> None:
     tasks.append_note(task, "Reports", f"{datetime.datetime.now():%Y-%m-%d %H:%M} {role} ({tool}):\n" + "\n".join("> " + l for l in report.splitlines()))
 
 
+MODULE_TESTS = ("Run only the tests of the modules you changed (OMI_QUIET=1 prints only failures); the full suite above runs once "
+                "in the post-run hook after you finish, so do not run it yourself.")
 CLAUDE_ONLY = ("omi-agent-architect",)  # PO rule: the architect never runs on Codex
 
 
@@ -290,6 +293,8 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         if tm.get("step") or tm.get("step_settings") else []
     settings = parse_step_settings(tm.get("step_settings", ""), [s["id"] for s in steps])
     cur = next((s for s in steps if s["id"] == tm.get("step")), None)
+    if cur and cur["role"] != role:  # a reviewer dispatched with its stage runs as its own step
+        cur = next((s for s in workflows.stage_of(steps, cur["id"]) if s["role"] == role), cur)
     step_settings = settings.get(cur["id"], {}) if cur and cur["role"] == role else {}
     task_settings = am["access"] == "write" or role == tm.get("role")  # other read roles keep their own settings
     tool = tool or step_settings.get("tool") or (tm.get("tool") if task_settings else None) or am.get("tool") or "claude"
@@ -346,7 +351,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         prompt_skills += ("\nDetached state: /state is read-only. Do not edit the task or catalogs. "
                           "Include checkpoint updates in your final report; the Coordinator records them.")
     resume_skills = container_paths(catalogs.skill_prompt(catalog, declared), project.detached)
-    prompt_skills += "\nTests: " + test_prompt_line(wt, main)
+    prompt_skills += "\nTests: " + test_prompt_line(wt, main) + ("" if read else "\n" + MODULE_TESTS)
     if problems:
         prompt_skills += "\nThe pre-review checks currently fail:\n" + "\n".join(problems)
     text = am["_text"]
@@ -356,6 +361,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
     tmp = tempfile.TemporaryDirectory() if read else None
 
     repo = docker.repo_key(main)
+    spent, ac = {}, {"left": role in tasks.REVIEW_ROLES}  # last attempt's input tokens; one fresh rerun for missing AC lines
 
     def attempt(t, secret, note="", resume=None, hook_tail=None, missing=None):
         """One container run with tool t (resume: continue that session id); returns (process, report text, skills read)."""
@@ -433,6 +439,9 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             verdict += f" root:{rt}"
         if tools.quota_hit(t, r.stdout, r.returncode, r.stderr):
             verdict = f"QUOTA->{'codex' if t == 'claude' else 'claude'}"
+        elif ac["left"] and verdict[:4] in ("PASS", "FAIL") and (gap := budget.missing_ac(core.read_task(task) if task.exists() else "", result)):
+            ac["gap"], verdict = gap, "AC-MISSING"  # not a verdict: the fresh rerun's row counts
+        spent["input"] = nums[0]
         if not read and not dropped and (sid := session.session_id(t, r.stdout)) and task.exists():
             task.write_text(session.with_session(core.read_task(task), t, sid, role, seen), encoding="utf-8", newline="\n")
             record_scope(task, now_scope)
@@ -502,8 +511,21 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             tool, secret = other, other_secret
             if tools.quota_hit(other, r.stdout, r.returncode, r.stderr):
                 return stop_quota("claude and codex both hit their usage limit")
+        limit = budget.token_budget(project, role)
+        over = bool(limit and (spent.get("input") or 0) > limit)
+        if over:
+            line = (f"BUDGET: {role} used {spent['input']} input tokens, over its token_budget {limit}; stopped instead of continuing, "
+                    f"the partial diff stays in {wt}. Resume: omi-task {task.stem}")
+            tasks.append_note(task, "Checkpoint", line)
+            print(line)
         rc = r.returncode
-        if not read and not rc and (missing := missing_lines(result, cur["id"] if cur else "")) \
+        if read and not rc and not over and ac.get("gap"):
+            print(f"report has no AC: line for {len(ac['gap'])} criteria; rerunning {role} once fresh")
+            ac["left"] = False
+            r, result, done = attempt(tool, secret, "\nA previous review of this diff gave no `AC:` line for these criteria; review again "
+                                                    "and write one `AC:` line per acceptance criterion, in task order:\n" + "\n".join("- " + g for g in ac["gap"]))
+            rc = r.returncode
+        if not over and not read and not rc and (missing := missing_lines(result, cur["id"] if cur else "")) \
                 and (sid := session.recorded(core.read_task(task), tool, role)) and session.available(repo, task.stem, tool, sid):
             print(f"report is missing {', '.join(missing)}; resuming the engineer once to add them")
             fix = attempt(tool, secret, resume=sid, missing=missing)
@@ -520,7 +542,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         for sid in ids:
             if sid not in done:
                 print(f"SKILL NOT READ: {sid}")
-        res = hooks.run_hook(wt, main, "post-run", task.stem, image) if not rc and not read else None
+        res = hooks.run_hook(wt, main, "post-run", task.stem, image) if not rc and not read and not over else None
         if res and res[0] and (sid := session.recorded(core.read_task(task), tool, role)) \
                 and session.available(repo, task.stem, tool, sid):  # one retry: the engineer fixes what the hook found
             print("post-run hook failed; resuming the engineer once to fix it")
@@ -540,7 +562,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
     if hook_failed:
         print("post-run hook failed: the task cannot move to review")
     if read:
-        return rc or (6 if hook_failed else 0)
+        return rc or (7 if over else 0) or (6 if hook_failed else 0)
     bad = scope.out_of_scope(wt, task.stem)
     for p in bad:
         print(f"OUT OF SCOPE: {p}")
@@ -549,7 +571,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
     plan_bad = scope.plan_violations(wt, task.stem)
     for line in plan_bad:
         print(line)
-    return rc or (3 if bad or plan_bad else 0) or (6 if hook_failed else 0)
+    return rc or (7 if over else 0) or (3 if bad or plan_bad else 0) or (6 if hook_failed else 0)
 
 
 def worker(wt, task_file=None, model=None, effort=None, prove=False):

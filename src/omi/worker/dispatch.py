@@ -73,9 +73,25 @@ def held_by(project: state.Project, tid: str, others: list[str]) -> list[str]:
             for c in tasks.parallel(project, [tid, other]) if "overlap" in c or "depends on" in c]
 
 
+def size_flags(project: state.Project, tid: str, role: str, meta: dict) -> list[str]:
+    """`--model`/`--effort` from the role's `small:` (model/effort) for a task naming at most 3 non-test files, when the task
+    leaves model, effort and step_settings empty; a routed choice goes under the task's `## Runs` (the role default is not written)."""
+    if not meta or any(meta.get(k) for k in ("model", "effort", "step_settings")):
+        return []
+    am, size = catalogs.get_role(project.state, role), workflows.task_size(meta)
+    small = am.get("small") if size is not None and size <= workflows.SMALL_FILES else None
+    if not small:
+        return []
+    tasks.append_note(state.task_file(project, tid), "Runs", f"- dispatch {role}: {size} non-test file(s) -> small {small}")
+    model, _, effort = (small or "").partition("/")
+    return [*(["--model", model] if model else []), *(["--effort", effort] if effort else [])]
+
+
 def launch(project: state.Project, tid: str, role: str, argv: list[str] | None = None) -> Path:
-    """Start the run detached; refuse when it conflicts with a running task, and a not yet started task also with idle in-progress ones."""
-    if any(r["running"] and r["tid"] == tid for r in records(project.code)):
+    """Start the run detached; refuse when it conflicts with a running task, and a not yet started task also with idle in-progress ones.
+    Reviewers of one task may run together (a workflow `stage:`)."""
+    running = {r["role"] for r in records(project.code) if r["running"] and r["tid"] == tid}
+    if running and not (role in tasks.REVIEW_ROLES and running <= set(tasks.REVIEW_ROLES) - {role}):
         raise state.StateError(f"{tid} already has a running worker. Nothing started.")
     found = tasks.tasks(project)
     bad = held_by(project, tid, holders(project, found, idle=found.get(tid, {}).get("status", "planned") == "planned"))
@@ -84,6 +100,8 @@ def launch(project: state.Project, tid: str, role: str, argv: list[str] | None =
     rundir = runs_dir(project.code) / f"{tid}-{role}-{datetime.datetime.now():{STAMP}}"
     rundir.mkdir(parents=True)
     argv = argv or [sys.executable, "-m", "omi", "run", role, tid]
+    if "--model" not in argv and "--effort" not in argv:
+        argv = [*argv, *size_flags(project, tid, role, found.get(tid, {}))]
     core.write_text(rundir / "argv.json", json.dumps({"tid": tid, "role": role, "argv": argv}))
     command = [sys.executable, "-W", "ignore::RuntimeWarning", "-m", "omi.worker.dispatch"]
     with (rundir / "log").open("a", encoding="utf-8", newline="\n") as log:
@@ -253,7 +271,8 @@ def wrap(rundir: Path) -> None:
     with core.file_lock(rundir / "run.lock", 10):
         core.write_text(rundir / "started", str(os.getpid()))
         with (rundir / "log").open("a", encoding="utf-8", newline="\n") as log:
-            rc = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT).returncode
+            rc = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+                                env={**os.environ, "OMI_RUN_DIR": str(rundir)}).returncode  # quiet test logs land here
         core.write_text(rundir / "rc.tmp", str(rc))
         os.replace(rundir / "rc.tmp", rundir / "rc")
 
@@ -292,7 +311,8 @@ def next_action(project: state.Project, rec: dict, text: str, report: str) -> st
         return f"DECIDE: {report.splitlines()[0]}; widen scope or file a new task; see the report and the log"
     why = {3: "out of scope or plan violation: accept the paths (NEEDS SCOPE) or revert them",
            5: "usage limit on every tool: wait, or rerun with another tool/model (TASK-216)",
-           6: "hook failed: the task cannot move on until it is fixed"}.get(rc)
+           6: "hook failed: the task cannot move on until it is fixed",
+           7: "BUDGET: the run passed its token_budget (see Checkpoint): split or rescope the task, or raise token_budget in .omi/config.json"}.get(rc)
     if why or v == "BLOCKED" or rc:
         return f"DECIDE: {why or (v if v != 'n/a' else f'exit {rc}')}; see the report and the log"
     access = catalogs.load_roles(project.state).get(rec["role"], {}).get("access")

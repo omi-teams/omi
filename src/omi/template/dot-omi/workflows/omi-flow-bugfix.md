@@ -11,7 +11,7 @@ steps:
 # Bugfix
 
 **When to use:** a defect with a reproducible symptom in existing code. Why not `omi-flow-feature`: it has no reproduce-first step and no root-cause discipline, so a symptom patch can pass review.
-**Use instead:** `omi-flow-feature` for new behaviour; `omi-flow-feature-sensitive` if the fix touches auth, secrets, data or CI; `omi-flow-refactor` when behaviour must not change.
+**Use instead:** `omi-flow-bugfix-fast` for a bug touching at most 3 non-test files outside sensitive scope; `omi-flow-feature` for new behaviour; `omi-flow-feature-sensitive` if the fix touches auth, secrets, data or CI; `omi-flow-refactor` when behaviour must not change.
 
 ## Models
 - plan: Coordinator, sonnet/low.
