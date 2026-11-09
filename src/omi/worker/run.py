@@ -172,7 +172,8 @@ def deterministic_checks(wt, main, tid):
     finally:
         sys.stdout = saved
     if (catalog / ".omi" / "workflows").is_dir():
-        r = subprocess.run([sys.executable, "-m", "omi", "workflows", "--check"], cwd=wt, capture_output=True, encoding="utf-8", errors="replace")
+        r = subprocess.run([sys.executable, "-m", "omi", "workflows", "--check"], cwd=wt, capture_output=True, encoding="utf-8", errors="replace",
+                           stdin=subprocess.DEVNULL)
         if r.returncode:
             problems.append("workflows --check: " + (r.stdout + r.stderr).strip())
     problems.extend(agent.cmd_shims(wt))
@@ -185,7 +186,7 @@ def deterministic_checks(wt, main, tid):
             r = types.SimpleNamespace(returncode=code, stdout=out, stderr="")
         else:
             r = subprocess.run(test_command(wt, main), cwd=wt, capture_output=True, encoding="utf-8", errors="replace",
-                               env={**os.environ, "OMI_QUIET": "1"})  # tests/test_omi.py: failures and a summary only
+                               stdin=subprocess.DEVNULL, env={**os.environ, "OMI_QUIET": "1"})  # tests/test_omi.py: failures and a summary only
     except (OSError, SystemExit) as e:
         problems.append(f"test command failed to start: {e}")
     else:
