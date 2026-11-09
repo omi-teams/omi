@@ -39,6 +39,7 @@ class Handoff:
         self.fail = None
         self.dirty = True
         self.head = 'aaa'
+        self.moved = False  # development gained commits the task branch lacks
         self.pr = []
         self.bad = []
 
@@ -59,7 +60,9 @@ class Handoff:
                 out = (' M app.py\0' if '-z' in args else ' M app.py') if self.dirty else ''
             elif args[0] == 'rev-parse': out = self.head
             elif args[0] == 'commit': self.dirty = False
-            elif args == ['rebase', '--autostash', 'development']: self.head = 'bbb'
+            elif args == ['rebase', '--autostash', 'development']: self.head, self.moved = 'bbb', False
+            elif args[:2] == ['merge-base', '--is-ancestor'] and self.moved:
+                return subprocess.CompletedProcess(argv, 1, '', '')
             elif args == ['remote']: out = 'origin' if self.remote else ''
             elif args[:2] == ['remote', 'get-url']: out = self.remote
         elif argv[0] == 'gh':
@@ -367,6 +370,29 @@ def test_head_change_and_launch_recovery() -> None:
         error, _ = h.invoke()
         assert not error, error
         assert sum(c[-3:] == ['dispatch', 'omi-agent-security-reviewer', TID] for c in h.calls) == 1
+
+
+def test_rerun_redoes_rebase_when_development_moved() -> None:
+    """TASK-279: after a failed host-test, a development that moved is rebased onto again; unchanged, rebase and push are skipped."""
+    with handoff() as h:
+        h.fail = 'host-test'
+        assert 'host-test FAILED' in h.invoke()[0]
+        h.fail = None
+        h.moved = True  # a fix merged to development
+        error, out = h.invoke()
+        assert not error, error
+        assert sum(c[1:] == ['rebase', '--autostash', 'development'] for c in h.calls) == 2, h.calls
+        assert sum(c[1:2] == ['push'] for c in h.calls) == 2
+        assert [c for c in h.calls if c[1:2] == ['push']][-1] == ['git', 'push', '--force-with-lease', '-u', 'origin', 'task/TASK-218']
+        assert 'rebase: done' in out and 'host-test: done' in out and 'skipped' not in out.split('rebase:')[1].split('\n')[0], out
+        assert json.loads((h.run_dir / 'advance.json').read_text(encoding='utf-8'))['head'] == 'bbb'
+    with handoff() as h:
+        h.fail = 'host-test'
+        assert 'host-test FAILED' in h.invoke()[0]
+        h.fail = None
+        error, out = h.invoke()
+        assert not error and 'rebase: skipped (already done)' in out and 'push: skipped (already done)' in out, (error, out)
+        assert sum(c[1:2] == ['rebase'] for c in h.calls) == 1
 
 
 def test_cli_and_windows_no_console() -> None:
@@ -898,6 +924,7 @@ def main():
     test_commit_messages()
     test_non_github_and_existing_pr()
     test_head_change_and_launch_recovery()
+    test_rerun_redoes_rebase_when_development_moved()
     test_cli_and_windows_no_console()
     test_real_git_local_origin()
     test_review_fail_path_and_rerun()
