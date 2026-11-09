@@ -223,6 +223,18 @@ def resolve_generated(ctx: Context) -> None:
     raise state.StateError("rebase did not finish after resolving generated files")
 
 
+def redo_if_development_moved(ctx: Context) -> None:
+    """A rerun after a failed host-test must test on the current development: forget the recorded rebase and push when it moved."""
+    if not ctx.progress.get("rebase") or ctx.progress.get("host-test"):
+        return
+    try:
+        git(ctx, "merge-base", "--is-ancestor", "development", "HEAD")
+    except state.StateError:
+        for name in ("rebase", "push"):
+            ctx.progress.pop(name, None)
+        print("rebase: development moved since the last rebase; redoing rebase and push")
+
+
 def select_remote(ctx: Context) -> None:
     ctx.stage = "remote"
     remotes = git(ctx, "remote").splitlines()
@@ -540,6 +552,7 @@ def advance(project: state.Project, tid: str, message: str | None = None, reject
             if hook_fixed:
                 perform(ctx, "hook-fixed", post_run_passes, remember=False)
             ensure_clean(ctx)
+            redo_if_development_moved(ctx)
             perform(ctx, "rebase", rebase)
             select_remote(ctx)
             if ctx.target:
