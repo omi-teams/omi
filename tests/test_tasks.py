@@ -111,6 +111,41 @@ def test_roles():
     assert "project_doc_max_bytes=0" not in omi.worker.tools.engineer_cmd("---\n---\nbody", "t.md", "claude-sonnet-5-5", "low", "")
 
 
+def test_sync_coordinator_sections():
+    with tempfile.TemporaryDirectory() as d:
+        main = Path(d).resolve() / "main"
+        omi.setup.upgrade.init(main)
+        (main / ".omi" / "tasks").mkdir(exist_ok=True)
+        task = main / ".omi" / "tasks" / "TASK-001.md"
+        body = "## Goal\nold goal\n\n## Acceptance criteria\n- [ ] a\n\n## Checkpoint\nDone:\n\n## Steps\n- s\n"
+        task.write_text("---\nid: TASK-001\nstatus: in-progress\nscope: src/**\nrole: omi-agent-engineer\n"
+                        "workflow: omi-flow-feature\n---\n" + body, encoding="utf-8")
+        git(main, "symbolic-ref", "HEAD", "refs/heads/development")
+        git(main, "config", "user.name", "t")
+        git(main, "config", "user.email", "t@t")
+        git(main, "add", "-A")
+        git(main, "commit", "-qm", "init")
+        wt = Path(d).resolve() / "wt"
+        git(main, "worktree", "add", "-q", str(wt), "-b", "task/TASK-001", "development")
+        copy = wt / ".omi" / "tasks" / "TASK-001.md"
+        copy.write_text(copy.read_text(encoding="utf-8").replace("Done:", "Done: local work").replace("- s", "- s\n- local step"), encoding="utf-8")
+        run = lambda: (sys.stdout.seek(0), sys.stdout.truncate(), omi.project.tasks.sync_scope(wt, copy, "TASK-001"), sys.stdout.getvalue())[-1]
+        sys.stdout, saved = io.StringIO(), sys.stdout
+        try:
+            assert run() == ""  # nothing differs: no-op
+            task.write_text(task.read_text(encoding="utf-8").replace("old goal", "new goal").replace(
+                "## Checkpoint", "## File plan\n- src/x.py\n\n## Checkpoint"), encoding="utf-8")
+            git(main, "commit", "-qam", "plan")
+            out = run()
+            again = run()
+        finally:
+            sys.stdout = saved
+        assert out == "SECTIONS SYNCED: Goal, File plan\n" and again == "", (out, again)
+        got = copy.read_text(encoding="utf-8")
+        assert "new goal" in got and "## File plan\n- src/x.py\n\n## Checkpoint" in got and "- [ ] a" in got
+        assert "Done: local work" in got and "- local step" in got and "old goal" not in got
+
+
 def test_task_flow_commit_scope_sync_warn():
     with tempfile.TemporaryDirectory() as d:
         main = Path(d).resolve() / "main"
@@ -1357,6 +1392,7 @@ def main():
     test_workflows()
     test_roles()
     test_task_flow_commit_scope_sync_warn()
+    test_sync_coordinator_sections()
     test_type_validation_and_workflow_warning()
 
 
