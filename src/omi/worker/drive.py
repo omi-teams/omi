@@ -151,7 +151,8 @@ def schedule(project: state.Project, install: bool) -> None:
     (the drive lock keeps one driver, so a start while one runs is a no-op); POSIX prints the cron line instead."""
     log = dispatch.runs_dir(project.code) / "drive.log"
     if not core.WINDOWS:
-        line = (f"*/10 * * * * cd {shlex.quote(str(project.code))} && {shlex.quote(sys.executable)} -m omi drive --loop"
+        line = (f"*/10 * * * * mkdir -p {shlex.quote(str(log.parent))} && cd {shlex.quote(str(project.code))}"
+                f" && {shlex.quote(sys.executable)} -m omi drive --loop"
                 f" >> {shlex.quote(str(log))} 2>&1")
         print(f"add this line with `crontab -e` (a systemd user timer running the same command works too):\n{line}" if install
               else f"remove the `omi drive --loop` line for {project.code} with `crontab -e`")

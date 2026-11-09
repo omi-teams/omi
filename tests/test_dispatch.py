@@ -710,6 +710,7 @@ def test_drive_install_uninstall() -> None:
             drive.schedule(project, True)
             drive.schedule(project, False)
         assert not any(c.args[0][0] == "schtasks" for c in run.call_args_list) and "crontab -e" in out.getvalue() and "-m omi drive --loop >> " in out.getvalue(), out.getvalue()
+        assert f"* mkdir -p {dispatch.runs_dir(root)}" in out.getvalue().replace("'", ""), out.getvalue()  # the log dir may not exist yet
 
 
 def test_watch_per_session_cursor() -> None:
@@ -747,6 +748,12 @@ def test_watch_per_session_cursor() -> None:
         assert seen(None) == []  # a bare shell: the shared marker, already set
         finish("TASK-004", "20261109-100300")
         assert seen(None) == ["TASK-004"] and seen("a") == ["TASK-004"] and seen(None) == []
+        finish("TASK-005", "20261109-100400")
+        lost = runs / "TASK-005-omi-agent-engineer-20261109-100400"
+        (lost / "rc").unlink()  # lost: the wrapper started and died without an rc
+        (lost / "started").write_text("1", encoding="utf-8")
+        got = (seen("a"), seen("b"), seen("a"), seen("b"))
+        assert got == (["TASK-005"], ["TASK-004", "TASK-005"], [], []), got
 
 
 def test_start_driver_default_on_and_config_off() -> None:

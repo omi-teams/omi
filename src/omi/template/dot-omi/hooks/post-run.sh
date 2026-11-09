@@ -14,7 +14,9 @@ big=$(command -v git >/dev/null 2>&1 && ( [ -z "$OMI_GIT_DIR" ] || export GIT_DI
     [ -n "$b" ] && git rev-parse -q --verify "$b^{commit}" >/dev/null 2>&1 && { base=$b; break; }
   done
   [ -n "$base" ] || echo "post-run: binary check could not diff committed files (no development or default branch)" >&2
-  { [ -z "$base" ] || git diff --name-only "$base"...HEAD; git diff --name-only HEAD; git ls-files --others --exclude-standard; } 2>/dev/null ) |
+  [ -z "$base" ] || git diff --name-only "$base"...HEAD 2>/dev/null ||
+    echo "post-run: binary check could not diff committed files (no merge base with $base)" >&2
+  { git diff --name-only HEAD; git ls-files --others --exclude-standard; } 2>/dev/null ) |
   sort -u | while IFS= read -r f; do
     [ -f "$f" ] && [ "$(wc -c < "$f")" -gt 1048576 ] && ! grep -Iq . "$f" && echo "$f"
   done )

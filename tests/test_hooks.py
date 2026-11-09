@@ -318,6 +318,11 @@ def test_hooks():
             git(w, "branch", "-q", "-m", "main", "other")
             r = subprocess.run(hook, cwd=w, capture_output=True, text=True, env=env)
             assert r.returncode == 0 and "could not diff committed files" in r.stderr, r
+            git(w, "checkout", "-q", "--orphan", "main")  # unrelated histories: main exists but has no merge base with HEAD
+            git(w, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "unrelated")
+            git(w, "checkout", "-q", "task/TASK-1")
+            r = subprocess.run(hook, cwd=w, capture_output=True, text=True, env=env)
+            assert "could not diff committed files (no merge base with main)" in r.stderr, r
     text = (omi.common.core.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh").read_text()
     assert all(w in text for w in ("pytest", "go test", "npm test"))
     for f in (omi.common.core.TEMPLATE / "AGENTS.md",

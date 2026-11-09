@@ -466,8 +466,8 @@ def watch(project: state.Project, wait: bool = False, show_all: bool = False, ti
     def unseen(r: dict) -> bool:  # runs another session reported before this session's first watch are history
         if not key:
             return not r["reported"]
-        rc = r["dir"] / "rc"
-        return not (r["dir"] / f"reported.{key}").exists() and (not r["reported"] or (rc.exists() and rc.stat().st_mtime >= since))
+        rc = r["dir"] / "rc"  # a lost run has none and no finish time: every session sees it once
+        return not (r["dir"] / f"reported.{key}").exists() and (not r["reported"] or not rc.exists() or rc.stat().st_mtime >= since)
 
     while True:
         recs = [r for r in records(project.code) if tid is None or r["tid"] == tid]
