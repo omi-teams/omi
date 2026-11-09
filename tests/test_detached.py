@@ -410,6 +410,7 @@ def test_detached_default_hook_config():
     """The shipped hook must read detached config while running tests in the code worktree."""
     with detached_project() as (code, project, wt, task):
         hook = project / ".omi" / "hooks" / "post-run.sh"
+        (project / ".omi" / "structure.md").unlink()  # this test covers the config lookup, not the structure check
         local_cfg = wt / ".omi" / "config.json"
         local_cfg.parent.mkdir()
         local_cfg.write_text(json.dumps({"test": "exit 9"}), encoding="utf-8")
