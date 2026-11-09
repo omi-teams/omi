@@ -517,12 +517,13 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         for sid in ids:
             if sid not in done:
                 print(f"SKILL NOT READ: {sid}")
-        res = hooks.run_hook(wt, main, "post-run", task.stem, image) if not rc and not read and not over else None
+        res = (hooks.regenerate(wt, project), hooks.run_hook(wt, main, "post-run", task.stem, image))[1] if not rc and not read and not over else None
         if res and res[0] and not agent.killed(res[0]) and (sid := session.recorded(core.read_task(task), tool, role)) \
                 and session.available(repo, task.stem, tool, sid):  # one retry: the engineer fixes what the hook found
             print("post-run hook failed; resuming the engineer once to fix it")
             if (fix := attempt(tool, secret, resume=sid, hook_tail="\n".join(res[1].strip().splitlines()[-20:])))[0].returncode:
                 print(f"hook-fix attempt exited with code {fix[0].returncode}")
+            hooks.regenerate(wt, project)
             res = hooks.run_hook(wt, main, "post-run", task.stem, image)
         if res:
             pr.post_hook(wt, task.stem, "post-run", res)
