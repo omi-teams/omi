@@ -191,7 +191,8 @@ def ensure_clean(ctx: Context) -> None:
 
 def rebase(ctx: Context) -> None:
     try:
-        git(ctx, "rebase", "development")
+        # ensure_clean allows only this task's report edits; preserve them across the rebase.
+        git(ctx, "rebase", "--autostash", "development")
     except state.StateError as exc:
         try:
             resolve_generated(ctx)
