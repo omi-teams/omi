@@ -696,6 +696,19 @@ def test_pattern_library() -> None:
     assert all(f"- patterns/{n}:" in catalog for n in names)
 
 
+def test_idea_checks_structure_before_po_approval() -> None:
+    text = (omi.common.core.TEMPLATE / "dot-claude/skills/omi-idea/SKILL.md").read_text(encoding="utf-8")
+    step = text.split("\n2. ", 1)[1].split("\n3. ", 1)[0]
+    instructions = (
+        "Write the proposed `.omi/structure.md`",
+        "run `python -m omi structure check`",
+        "Fix the map and rerun the check until it exits 0",
+        "only then ask the PO to approve it by pick list",
+    )
+    positions = [step.index(instruction) for instruction in instructions]
+    assert positions == sorted(positions), step
+
+
 def test_structure_rules_in_roles() -> None:
     agents = omi.common.core.TEMPLATE / "dot-omi" / "agents"
     architect = (agents / "omi-agent-architect.md").read_text(encoding="utf-8")
@@ -986,6 +999,7 @@ def main():
     test_dispatch_watch_advance_templates()
     test_scope_questions_not_sent_to_po()
     test_pattern_library()
+    test_idea_checks_structure_before_po_approval()
     test_structure_rules_in_roles()
     test_security_reviewer_requires_ac_lines()
     test_reviewer_copies_criteria_verbatim()
