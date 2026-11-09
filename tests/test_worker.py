@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import types
 from pathlib import Path
 from unittest.mock import patch
 from helpers import omi, assert_download_cache_env, git, real_egress
@@ -392,6 +393,79 @@ def test_codex_capacity_fallback():
                 rc, text = go(out, err, code)
                 assert rc == code and len(calls) == 1
                 assert "QUOTA:" not in text and "QUOTA->" not in text
+
+
+def test_auth_retry_fallback_and_timeout():
+    """TASK-258: a bad login is retried once with fresh host credentials, then the other tool, then one AUTH line (rc 8).
+    TASK-245/250: run_timeout kills the container (rc 9) and the hook-fix path never resumes it."""
+    ok = json.dumps({"type": "result", "result": "DONE fine", "usage": {}})
+    revoked = json.dumps({"type": "result", "is_error": True, "result": "Failed to authenticate: OAuth token revoked"})
+    codex_401 = json.dumps({"type": "error", "message": "401 Unauthorized"})
+    with tempfile.TemporaryDirectory() as d:
+        wt = Path(d).resolve()
+        (wt / ".git").write_text("gitdir: /x", encoding="utf-8")
+        task = wt / ".omi" / "tasks" / "TASK-258.md"
+        task.parent.mkdir(parents=True)
+        (wt / ".omi" / "config.json").write_text('{"codex_models": {"sonnet": "gpt-x"}}', encoding="utf-8")
+        calls, outputs, buf = [], [], io.StringIO()
+
+        def run(cmd, **kw):
+            if cmd[:2] == ["docker", "run"] and not any(x in cmd for x in ("chmod", "grep")):
+                calls.append(cmd)
+                return outputs.pop(0)
+            if "--git-common-dir" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, str(wt / "shared.git"), "")
+            if "--show-toplevel" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, str(wt), "")
+            if "show" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, "---\nscope: src/**\n---\n", "")
+            return subprocess.CompletedProcess(cmd, 1 if "grep" in cmd else 0, "", "")
+
+        def go(*outs):
+            task.write_text("---\nid: TASK-258\nscope: src/**\n---\n## Checkpoint\nDone:\n", encoding="utf-8")
+            calls.clear()
+            buf.seek(0)
+            buf.truncate(0)
+            outputs[:] = [subprocess.CompletedProcess([], 0 if o == ok else 1, o, "") for o in outs]
+            rc = omi.worker.run.run_role("omi-agent-engineer", wt, task, tool="claude", effort="medium")
+            return rc, task.read_text(encoding="utf-8")
+
+        with patch("subprocess.run", run), patch("shutil.which", return_value="docker"), \
+                patch("omi.common.core.main_checkout", return_value=wt), patch("omi.common.core.WINDOWS", False), \
+                patch("omi.worker.docker.ensure_image", return_value="img"), \
+                patch.dict(os.environ, {omi.worker.creds.TOKEN_ENV: "tok", omi.worker.creds.CODEX_ENV: "key"}), \
+                contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+            rc, text = go(revoked, ok)
+            assert rc == 0 and len(calls) == 2 and all("codex" not in " ".join(c) for c in calls), buf.getvalue()
+            assert "retrying omi-agent-engineer once with host credentials read fresh" in buf.getvalue()
+            assert "| AUTH |" in text
+            rc, text = go(revoked, revoked, ok)
+            assert rc == 0 and len(calls) == 3 and "codex" in " ".join(calls[2]), buf.getvalue()
+            assert "AUTH: claude login is invalid; omi-agent-engineer continued with codex" in text
+            with tempfile.TemporaryDirectory() as rd, patch.dict(os.environ, {"OMI_RUN_DIR": rd}):
+                rc, text = go(revoked, revoked, codex_401)
+                assert rc == omi.worker.agent.AUTH_RC == 8, buf.getvalue()
+                line = "AUTH: codex login invalid; run codex login on the host"
+                assert line in buf.getvalue() and line in text and (Path(rd) / "auth").read_text(encoding="utf-8") == line
+            hooks_run = []
+            with patch("omi.worker.agent.run_container", side_effect=omi.worker.agent.Timeout("c passed its run_timeout of 5 s")), \
+                    patch("omi.worker.hooks.run_hook", lambda *a, **k: hooks_run.append(a) or (0, "")):
+                rc, text = go()
+            assert rc == omi.worker.agent.TIMEOUT_RC == 9 and "TIMEOUT: omi-agent-engineer" in text, buf.getvalue()
+            assert [a for a in hooks_run if a[2] == "post-run"] == []
+    killed = []
+    with patch("omi.worker.docker.kill", lambda containers=(), pids=(): killed.extend(containers)):
+        try:
+            omi.worker.agent.run_container([sys.executable, "-c", "import time; time.sleep(1)"], dict(os.environ), "box", 0.2)
+            raise AssertionError("no Timeout")
+        except omi.worker.agent.Timeout as exc:
+            assert "run_timeout of 0.2 s" in str(exc) and killed == ["box"]
+    project = types.SimpleNamespace(state=Path(tempfile.mkdtemp()))
+    (project.state / ".omi").mkdir()
+    assert omi.worker.agent.run_timeout(project, "write") == 7200 and omi.worker.agent.run_timeout(project, "read") == 3600
+    (project.state / ".omi" / "config.json").write_text('{"run_timeout": {"read": 60}}', encoding="utf-8")
+    assert omi.worker.agent.run_timeout(project, "read") == 60 and omi.worker.agent.run_timeout(project, "write") == 7200
+    assert omi.worker.agent.killed(137) and omi.worker.agent.killed(-9) and not omi.worker.agent.killed(1)
 
 
 def test_session_role_record():
@@ -1412,6 +1486,7 @@ def test_reviewer_ac_lines_rerun():
 
 def main():
     test_codex_capacity_fallback()
+    test_auth_retry_fallback_and_timeout()
     test_token_budget_stop()
     test_reviewer_ac_lines_rerun()
     test_verdict_of_forms()

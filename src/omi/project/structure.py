@@ -7,6 +7,7 @@ import posixpath
 import re
 import shlex
 import subprocess
+import sys
 from pathlib import Path
 
 from ..common import core
@@ -85,6 +86,8 @@ def load(root) -> list[dict]:
         text = core.read_task(path)
     except OSError as exc:
         raise StructureError(f"{MAP}: cannot read ({exc.strerror or exc})") from exc
+    if not text.strip() or not text.startswith("---"):
+        raise StructureError(f"{MAP}: structure map is empty; propose one with `omi structure init` (omi-idea layout step)")
     if core.parse(text).get("id") != "structure":
         raise StructureError(f"{MAP}: frontmatter must have 'id: structure'")
     rules, errors = [], []
@@ -97,7 +100,16 @@ def load(root) -> list[dict]:
                 rules.append(rule)
     if errors:
         raise StructureError(f"{MAP}: " + "; ".join(errors))
+    if not rules:
+        raise StructureError(f"{MAP}: structure map is empty; propose one with `omi structure init` (omi-idea layout step)")
     return rules
+
+
+def require_map(state) -> None:
+    """Exit before a write step when the project has no .omi/structure.md (omi-idea proposes it after the stack)."""
+    if not (Path(state) / MAP).is_file():
+        sys.exit(f"no {MAP}: run the omi-idea layout step (root layout and full structure map, approved by the PO) "
+                 "before any write step. Nothing started.")
 
 
 def _hit(rules, path):
@@ -238,7 +250,7 @@ def scan(rules, root, paths) -> list[tuple[str, str, str]]:
                 dst = match(rules, hit) if hit and hit != path else None
                 if dst is None:
                     continue  # external or unresolvable
-                if dst["layer"] not in src["imports"]:
+                if dst["layer"] not in src["imports"] and dst["layer"] != src["layer"]:  # a layer may import itself
                     found.append((path, "direction", spec))
                 if module and dst["module"] and module != dst["module"] and dst["layer"] != "application":
                     found.append((path, "cross-module", spec))
@@ -311,6 +323,13 @@ def check(code, state=None, changed=False, baseline=False) -> int:
         raise StructureError(f"{code}: not a git repository")
     paths = [p for p in listed if (code / p).is_file()]
     found = scan(rules, code, paths)
+    tops = {}  # root folder -> any file under it is mapped; a wholly unmapped folder is one line, not one per file
+    for p in paths:
+        if "/" in p:
+            top = p.split("/", 1)[0] + "/"
+            tops[top] = tops.get(top, False) or match(rules, p) is not None
+    lost = sorted(top for top, ok in tops.items() if not ok)
+    found = [(top, "root entry not in the map", "-") for top in lost] + [v for v in found if not (v[1] == "unmapped" and any(v[0].startswith(top) for top in lost))]
     for rule in rules:
         if rule["tool"]:
             cmd = rule["responsibility"].removeprefix("tool:").strip()

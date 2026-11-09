@@ -336,6 +336,7 @@ def next_fixture():
         root = Path(d).resolve() / "code"
         root.mkdir()
         omi.setup.upgrade.init(root)
+        (root / ".omi/structure.md").write_text("---\nid: structure\n---\n- ** | platform | all | imports: -\n", encoding="utf-8")
         with contextlib.redirect_stdout(io.StringIO()):
             catalogs.skills_catalog(root)
         helpers.git(root, "add", ".")
@@ -352,6 +353,26 @@ def next_fixture():
         with patch.object(dispatch, "records", return_value=[]), \
                 patch.object(dispatch, "launch") as launch:
             yield project, planned, launch
+
+
+def test_dispatch_refuses_write_step_without_map() -> None:
+    """TASK-242: `omi dispatch next` and `omi dispatch <write role> <ID>` refuse before anything changes when .omi/structure.md is missing."""
+    out = io.StringIO()
+    out.reconfigure = lambda **kw: None  # the CLI reconfigures stdout
+    with next_fixture() as (project, planned, launch), contextlib.redirect_stdout(out):
+        task = planned("TASK-001")
+        (project.state / ".omi/structure.md").unlink()
+        before = task.read_text(encoding="utf-8")
+        for call in (lambda: dispatch.dispatch_next(project, 1),
+                     lambda: omi.app.cli.dispatch(["dispatch", "omi-agent-engineer", "TASK-001"])):
+            try:
+                with contextlib.chdir(project.code), patch.object(dispatch, "start_driver"):
+                    call()
+                raise AssertionError("write step started without a map")
+            except SystemExit as exc:
+                assert "omi-idea layout step" in str(exc), exc
+        launch.assert_not_called()
+        assert task.read_text(encoding="utf-8") == before and not (project.code.parent / "code.wt" / "TASK-001").exists()
 
 
 def test_next_two_ready() -> None:
@@ -754,6 +775,193 @@ def main():
     test_record_before_wrapper_starts()
     test_watch_round_limit()
     test_reviewer_next_action()
+    test_coordinator_lock()
+    test_dispatch_refuses_write_step_without_map()
+    test_stop_kills_and_never_resumes()
+    test_foreground_record_and_dispatcher()
+    test_drive_loop_resumes_noted_task_first()
+
+
+def git_project(d):
+    root = Path(d).resolve()
+    helpers.git(root, "init", "-q", "-b", "development")
+    return root, state.Project(state=root, code=root)
+
+
+def test_coordinator_lock() -> None:
+    """TASK-240: one live Coordinator session per task; a dead holder is taken over; dispatch hands the task to its run."""
+    with tempfile.TemporaryDirectory() as d:
+        root, project = git_project(d)
+        me, other = f"a:{os.getpid()}", f"b:{os.getpid()}"
+        dead = dispatch.subprocess.Popen([sys.executable, "-c", "pass"])
+        dead.wait()
+        lock = dispatch.runs_dir(root) / "TASK-001.coordinator"
+        with patch.dict(os.environ, {"OMI_SESSION": me}):
+            dispatch.claim(project, "TASK-001")
+            dispatch.claim(project, "TASK-001")  # the holder again: fine
+        assert dispatch.json.loads(lock.read_text(encoding="utf-8")) == {"session": me, "pid": os.getpid()}
+        with patch.dict(os.environ, {"OMI_SESSION": other}):
+            for release in (False, True):
+                try:
+                    dispatch.claim(project, "TASK-001", release=release)
+                    raise AssertionError("second live session allowed")
+                except state.StateError as exc:
+                    assert str(exc) == f"TASK-001 is driven by Coordinator session {me} (pid {os.getpid()}); nothing changed"
+            dispatch.release(project, "TASK-001")  # not the holder: kept
+            assert lock.exists()
+        lock.write_text(dispatch.json.dumps({"session": "gone", "pid": dead.pid}), encoding="utf-8")
+        with patch.dict(os.environ, {"OMI_SESSION": other}):
+            dispatch.claim(project, "TASK-001")  # holder process is gone: taken over
+            assert dispatch.json.loads(lock.read_text(encoding="utf-8"))["session"] == other
+            dispatch.claim(project, "TASK-001", release=True)  # a dispatch drops it
+            assert not lock.exists()
+        drive_sid = drive.session()
+        with patch.dict(os.environ, {"OMI_SESSION": drive_sid}):
+            dispatch.claim(project, "TASK-001")
+        rec = {"dir": root / "run", "role": "omi-agent-engineer"}
+        rec["dir"].mkdir()
+        with contextlib.redirect_stdout(io.StringIO()):
+            drive.announce(rec, "TASK-001", "DECIDE: x", {}, project)  # the driver lets go at a DECIDE
+        assert not lock.exists()
+        with patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": "s1", "CLAUDE_PID": "4242"}), \
+                patch.dict(os.environ, {}, clear=False) as env:
+            env.pop("OMI_SESSION", None)
+            assert dispatch.session() == ("s1", 4242)
+        with patch.dict(os.environ, {}) as env:
+            env.pop("OMI_SESSION", None)
+            env.pop("CLAUDE_CODE_SESSION_ID", None)
+            assert dispatch.session() == (f"pid:{os.getppid()}", os.getppid())
+        # a Claude session without CLAUDE_PID: the lock lives LOCK_IDLE seconds after its last use instead of following a pid
+        with patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": "s2"}) as env:
+            env.pop("OMI_SESSION", None)
+            env.pop("CLAUDE_PID", None)
+            assert dispatch.session() == ("s2", None)
+            dispatch.claim(project, "TASK-002")
+        with patch.dict(os.environ, {"OMI_SESSION": other}):
+            try:
+                dispatch.claim(project, "TASK-002")
+                raise AssertionError("a recent pid-less holder was taken over")
+            except state.StateError as exc:
+                assert "session s2 (pid None)" in str(exc)
+            stale = dispatch.runs_dir(root) / "TASK-002.coordinator"
+            old = time.time() - dispatch.LOCK_IDLE - 5
+            os.utime(stale, (old, old))
+            dispatch.claim(project, "TASK-002")  # idle past LOCK_IDLE: taken over
+        assert not dispatch.core.pid_alive(dead.pid) and dispatch.core.pid_alive(os.getpid()) and not dispatch.core.pid_alive(None)
+
+
+def test_stop_kills_and_never_resumes() -> None:
+    """TASK-250: `omi stop` kills the wrapper tree and the task's containers, writes rc and `stopped`; watch says who stopped it.
+    TASK-258/245: AUTH and TIMEOUT exits are their own DECIDE lines."""
+    with patch.dict(os.environ, SRC), tempfile.TemporaryDirectory() as d:
+        root = Path(d).resolve()
+        omi.setup.upgrade.init(root)
+        make_task(root, "TASK-001", "a/**")
+        helpers.git(root, "add", ".")
+        helpers.git(root, "commit", "-qm", "base")
+        project = state.resolve(root)
+        killed, real_kill = [], dispatch.docker.kill
+        def kill(containers=(), pids=()):
+            killed.append((list(containers), list(pids)))
+            real_kill(pids=pids)  # the wrapper tree for real; no docker here
+        with contextlib.redirect_stdout(io.StringIO()) as out, \
+                patch.object(dispatch.docker, "task_containers", return_value=["c1", "c1-proxy"]), \
+                patch.object(dispatch.docker, "kill", side_effect=kill):
+            rundir = dispatch.launch(project, "TASK-001", "omi-agent-engineer", [sys.executable, "-c", "import time; time.sleep(60)"])
+            assert dispatch.stop(project, "TASK-001", "PO") == [rundir.name]
+        wrapper = int((rundir / "started").read_text(encoding="utf-8"))
+        assert killed == [([], [wrapper]), (["c1", "c1-proxy"], [])], killed
+        deadline = time.monotonic() + 10
+        while dispatch.core.pid_alive(wrapper) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert not dispatch.core.pid_alive(wrapper)
+        assert (rundir / "stopped").read_text(encoding="utf-8") == "PO" and (rundir / "rc").read_text(encoding="utf-8") == "10"
+        assert "stopped TASK-001 omi-agent-engineer" in out.getvalue()
+        assert not dispatch.alive(rundir)
+        text = watch(project)
+        assert "DECIDE: STOPPED by PO" in text, text
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            assert dispatch.stop(project, "TASK-001") == [] and "no running run" in out.getvalue()
+        with patch.dict(os.environ, {"OMI_RUN_DIR": str(rundir)}):
+            assert omi.worker.agent.killed(0), "a stopped run is never resumed by the hook-fix path"
+    with tempfile.TemporaryDirectory() as d:
+        rec = {"tid": "TASK-001", "role": "omi-agent-engineer", "rc": 9, "dir": Path(d)}
+        assert dispatch.next_action(None, rec, "", "").startswith("DECIDE: TIMEOUT")
+        rec["rc"] = 8
+        assert dispatch.next_action(None, rec, "", "").startswith("DECIDE: AUTH:")
+        (Path(d) / "auth").write_text("AUTH: claude login invalid; run claude /login on the host", encoding="utf-8")
+        assert dispatch.next_action(None, rec, "", "") == "DECIDE: AUTH: claude login invalid; run claude /login on the host"
+
+
+def test_foreground_record_and_dispatcher() -> None:
+    """TASK-245: a foreground `omi run` leaves the same record as a detached one; argv.json names the dispatcher."""
+    with tempfile.TemporaryDirectory() as d:
+        root, project = git_project(d)
+        seen = {}
+        def body():
+            seen["dir"] = os.environ.get("OMI_RUN_DIR")
+            return 0
+        with patch.dict(os.environ, {}) as env:
+            env.pop("OMI_RUN_DIR", None)
+            env.pop("OMI_BY", None)
+            assert dispatch.foreground(project, "TASK-001", "omi-agent-reviewer", ["omi", "run"], body) == 0
+            assert "OMI_RUN_DIR" not in os.environ
+            env["OMI_BY"] = "advance"
+            try:
+                dispatch.foreground(project, "TASK-002", "omi-agent-engineer", ["omi", "run"], lambda: sys.exit("no token"))
+                raise AssertionError("SystemExit swallowed")
+            except SystemExit:
+                pass
+        recs = {r["tid"]: r for r in dispatch.records(root)}
+        assert recs["TASK-001"]["rc"] == 0 and not recs["TASK-001"]["running"] and str(recs["TASK-001"]["dir"]) == seen["dir"]
+        assert recs["TASK-002"]["rc"] == 1
+        by = lambda tid: dispatch.json.loads((recs[tid]["dir"] / "argv.json").read_text(encoding="utf-8"))["by"]
+        assert by("TASK-001") == "Coordinator" and by("TASK-002") == "advance"
+        same = [dispatch.new_record(project, "TASK-004", "r", [], "x") for _ in range(2)]  # same second: two records
+        assert same[0] != same[1] and all((d / "argv.json").exists() for d in same)
+        with patch.dict(os.environ, {"OMI_RUN_DIR": "x"}):
+            assert dispatch.foreground(project, "TASK-003", "r", [], lambda: 7) == 7  # inside a wrapper: no second record
+        assert "TASK-003" not in {r["tid"] for r in dispatch.records(root)}
+
+
+def test_drive_loop_resumes_noted_task_first() -> None:
+    """TASK-240: `drive --loop` keeps running idle, resumes an in-progress task with a newer Coordinator note before planned ones."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        project = state.Project(state=root, code=root)
+        rec = finished_rec(root, "TASK-001")  # started 2026-11-08 09:00
+        rec["reported"] = True
+        (rec["dir"] / "driven").write_text("", encoding="utf-8")
+        text = ("---\nid: x\n---\n## Steps\n- build started 2026-11-08 08:00\n\n## Reports\n"
+                "2026-11-08 10:00 Coordinator (build) GO:\n> fixed the host, rerun\n")
+        found = {"TASK-001": {"status": "in-progress", "step": "build", "workflow": "w", "_text": text},
+                 "TASK-002": {"status": "in-progress", "step": "build", "workflow": "w", "_text": text.replace("10:00", "08:30")}}
+        recs = [rec, {**finished_rec(root, "TASK-002"), "reported": True}]
+        (recs[1]["dir"] / "driven").write_text("", encoding="utf-8")
+        calls, sleeps = [], []
+        def sleep(s):
+            sleeps.append(s)
+            if len(sleeps) == 3:
+                raise KeyboardInterrupt
+        def omi_call(_, *args):
+            calls.append(args)
+            if args[1] != "next":  # the resumed run finishes at once; its note is now older than the run
+                recs.append({**rec, "dir": root / f"r{len(calls)}", "started": datetime.datetime(2026, 11, 8, 11, 0)})
+                recs[-1]["dir"].mkdir()
+                (recs[-1]["dir"] / "driven").write_text("", encoding="utf-8")
+            return 0, "ok"
+        with patch.object(dispatch, "records", side_effect=lambda _: list(recs)), patch.object(dispatch, "runs_dir", return_value=root / "runs"), \
+                patch.object(dispatch, "free_slots", return_value=1), patch.object(drive.tasks, "tasks", return_value=found), \
+                patch.object(drive.workflows, "get_workflow", return_value=[{"id": "build", "role": "omi-agent-engineer"}]), \
+                patch.object(drive, "omi", side_effect=omi_call), \
+                patch.object(drive.time, "sleep", side_effect=sleep), contextlib.redirect_stdout(io.StringIO()) as out:
+            try:
+                drive.drive(project, loop=60)
+            except KeyboardInterrupt:
+                pass
+        assert calls[0] == ("dispatch", "omi-agent-engineer", "TASK-001") and calls[1] == ("dispatch", "next", "--max", "1"), calls
+        assert ("dispatch", "omi-agent-engineer", "TASK-002") not in calls, "a note older than the last run is not a resume"
+        assert sleeps[-1] == 60 and "resume TASK-001 omi-agent-engineer (Coordinator note 2026-11-08 10:00)" in out.getvalue()
 
 
 if __name__ == "__main__":

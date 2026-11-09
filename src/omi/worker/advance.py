@@ -2,6 +2,7 @@
 
 import datetime
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -26,6 +27,7 @@ def diagnostic_tail(output: str) -> str:
 def command(cwd: Path, argv: list[str], allowed: tuple[int, ...] = (0,)) -> str:
     """Run argv without a shell or console; never echo gh or push auth output."""
     result = subprocess.run(argv, cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True, encoding="utf-8", errors="replace",
+                            env={**os.environ, "OMI_BY": "advance"},  # run records name advance as the dispatcher
                             **({"creationflags": subprocess.CREATE_NO_WINDOW} if core.WINDOWS else {}))
     if result.returncode not in allowed:
         git_readable = Path(argv[0]).stem.lower() == "git" and "push" not in argv[1:]
@@ -57,6 +59,7 @@ class Context:
     message: str | None = None
     reject: list[int] = field(default_factory=list)
     why: str | None = None
+    hook_fixed: bool = False  # accept a write run whose post-run hook failed, once `omi hook post-run` passes on HEAD
     round: int = 0
     findings: list[str] = field(default_factory=list)
     extra: list[str] = field(default_factory=list)  # reports of the other failing reviewers of a stage
@@ -99,8 +102,8 @@ def eligible(ctx: Context) -> tuple[dict, str, dict, dict]:
     rec = ctx.rec
     text = core.read_task(state.task_file(ctx.project, ctx.tid))
     report = dispatch.last_report(text, rec["role"], rec["started"])
-    if rec["rc"] != 0 or dispatch.verdict(report) != "DONE":
-        raise state.StateError("newest finished run must exit 0 with verdict DONE")
+    if (rec["rc"] != 0 and not (ctx.hook_fixed and rec["rc"] == 6)) or dispatch.verdict(report) != "DONE":
+        raise state.StateError("newest finished run must exit 0 (or 6 with --hook-fixed) with verdict DONE")
     if catalogs.get_role(ctx.project.state, rec["role"])["access"] != "write":
         raise state.StateError("newest finished run is not a write role")
     ctx.subject = commit_message(report, ctx.message, [r for _, r in reversed(dispatch.reports(text, rec["role"])) if dispatch.verdict(r) == "DONE"])
@@ -135,7 +138,7 @@ def eligible(ctx: Context) -> tuple[dict, str, dict, dict]:
     recs = [r for r in dispatch.records(ctx.project.code) if r["tid"] == ctx.tid]
     if any(r["running"] and not (ctx.progress.get("step-next") and r["role"] in {s["role"] for s in ctx.members}) for r in recs):
         raise state.StateError("task has a running worker")
-    if ctx.progress.get("head") and git(ctx, "rev-parse", "HEAD") != ctx.progress["head"]:
+    if ctx.progress.get("head") and not ctx.hook_fixed and git(ctx, "rev-parse", "HEAD") != ctx.progress["head"]:
         raise state.StateError("HEAD changed since advance; finish a fresh write run")
     ctx.progress["step"] = sid
     return rec, report, steps[at], following
@@ -262,12 +265,21 @@ def step_next(ctx: Context) -> None:
         omi(ctx, "step", ctx.tid, "next")
 
 
-def reviewer(ctx: Context) -> None:
+def post_run_passes(ctx: Context) -> str:
+    omi(ctx, "hook", "post-run", ctx.tid)
+    return "post-run hook passed on " + git(ctx, "rev-parse", "--short=7", "HEAD")
+
+
+def reviewer(ctx: Context) -> str | None:
     # Recover a successful launch even if advance died before saving its marker.
     current = dispatch.records(ctx.project.code)
+    skipped = []
     for s in ctx.members or [ctx.following]:  # a stage's reviewers start together
-        if not any(r["tid"] == ctx.tid and r["role"] == s["role"] and r["started"] >= ctx.rec["started"] for r in current):
+        if accept.passed_on_head(ctx, s["role"], command):  # TASK-241: never the same reviewer again on a HEAD it passed
+            skipped.append(s["role"])
+        elif not any(r["tid"] == ctx.tid and r["role"] == s["role"] and r["started"] >= ctx.rec["started"] for r in current):
             omi(ctx, "dispatch", s["role"], ctx.tid)
+    return f"skipped {', '.join(skipped)} (PASS on this HEAD already; omi advance takes that run)" if skipped else None
 
 
 class Stop(SystemExit):
@@ -440,7 +452,8 @@ def auto_dispatch(ctx: Context) -> str:
         return f"FAILED (the merge is done): {exc}"
 
 
-def advance(project: state.Project, tid: str, message: str | None = None, reject: list[int] | None = None, why: str | None = None) -> None:
+def advance(project: state.Project, tid: str, message: str | None = None, reject: list[int] | None = None, why: str | None = None,
+            hook_fixed: bool = False) -> None:
     """Advance only the newest successful run: a DONE write run to its reviewer, a review FAIL back to the engineer, or a review PASS through acceptance; stop at the first failed stage."""
     ctx = None
     try:
@@ -448,7 +461,7 @@ def advance(project: state.Project, tid: str, message: str | None = None, reject
         with core.file_lock(rec["dir"] / "advance.lock", 0):
             path = rec["dir"] / "advance.json"
             progress = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-            ctx = Context(project, tid, rec, progress, message, reject or [], why)
+            ctx = Context(project, tid, rec, progress, message, reject or [], why, hook_fixed)
             if rec["role"] in tasks.REVIEW_ROLES and (found := stage_runs(project, tid, rec)) is not None:
                 return advance_stage(project, tid, found, message, reject, why) if found else None
             if rec["role"] in tasks.REVIEW_ROLES or catalogs.get_role(project.state, rec["role"])["access"] == "read":
@@ -469,6 +482,8 @@ def advance(project: state.Project, tid: str, message: str | None = None, reject
             print("eligibility: DONE write run for " + ctx.step["id"])
             perform(ctx, "scope", check_scope, remember=False)
             perform(ctx, "commit", commit)
+            if hook_fixed:
+                perform(ctx, "hook-fixed", post_run_passes, remember=False)
             ensure_clean(ctx)
             perform(ctx, "rebase", rebase)
             select_remote(ctx)

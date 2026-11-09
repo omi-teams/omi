@@ -168,6 +168,7 @@ def init(target: str | Path = ".", *, detached: bool = False) -> None:
         print(f"stamp  .omi/version ({core.version()})")
     ensure_gitattributes(target)
     ensure_gitignore(target)
+    fill_host_test(target, detached=detached)
     for catalog in (catalogs.skills_catalog, catalogs.agents_catalog, workflows.workflows_catalog, catalogs.rules_catalog, catalogs.references_catalog, catalogs.plans_catalog):
         catalog(target)
     if not detached and not (target / ".git").exists():
@@ -175,6 +176,19 @@ def init(target: str | Path = ".", *, detached: bool = False) -> None:
         print("git init (branch main)")
     print("tools: " + ", ".join(f"{t} {'ok' if shutil.which(t) else 'MISSING'}" for t in TOOLS))
     print("next: open Claude Code or Codex here and type omi-idea")
+
+
+def fill_host_test(target: Path, *, detached: bool = False) -> None:
+    """Set an empty `host_test` to run docker/host-test.sh when the project (or its detached state) holds that script."""
+    cfg, script = target / ".omi" / "config.json", target / "docker" / "host-test.sh"
+    if not script.is_file() or not cfg.is_file() or not upgrade_write_safe(target, ".omi/config.json"):
+        return
+    data = json.loads(cfg.read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or data.get("host_test"):
+        return
+    data["host_test"] = f'sh "{script.as_posix()}"' if detached else "sh docker/host-test.sh"  # host tests run in the task worktree
+    cfg.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8", newline="\n")
+    print(f"host_test: {data['host_test']}")
 
 
 def merge_keys(old: dict, new: dict) -> dict:
@@ -328,6 +342,7 @@ def upgrade_apply(target: str | Path = ".", *, detached: bool = False) -> int:
             catalog(target)
     ensure_gitattributes(target)
     ensure_gitignore(target, detached=detached)
+    fill_host_test(target, detached=detached)
     print(f"upgrade {core.version()}: {counts['created']} created, {counts['updated']} updated, {counts['kept']} kept (see *.omi-new)")
     return 0
 

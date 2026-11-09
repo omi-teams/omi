@@ -17,4 +17,6 @@ You run in a container: only the worktree (`/work`) is writable and `git` does n
 4. Before you finish, or if you must stop early, update `## Checkpoint` in the task file (done / not done / test result / next step).
 5. Report in at most 8 lines: `DONE | BLOCKED | NEEDS SCOPE`, files changed, test result, open issues, and the literal line `Suggested commit: <type>(<area>): <summary>` (one line, English, conventional; no bold, no backticks around it). In a bugfix run that reproduces and fixes, also give the line `Reproduced: <test> failed before the fix` (the test, run before the fix).
 
+Build outputs and caches go to /tmp or /cache, never into the worktree: the post-run hook runs read-only and offline and fails on new or changed binary files over 1 MB.
+
 Don't refactor, rename or "improve" anything the task doesn't ask for.

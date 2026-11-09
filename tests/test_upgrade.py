@@ -690,7 +690,33 @@ def test_status_drift_hints():
             omi.common.core.main_checkout, omi.worker.docker.full_volumes = real
 
 
+def test_host_test_filled_from_state_script():
+    """TASK-244: init/upgrade set an empty `host_test` when the project holds docker/host-test.sh; a set one is kept."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / "docker").mkdir()
+        (root / "docker" / "host-test.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            omi.setup.upgrade.init(root, detached=True)
+        cfg = root / ".omi" / "config.json"
+        assert json.loads(cfg.read_text(encoding="utf-8"))["host_test"] == f'sh "{(root / "docker" / "host-test.sh").as_posix()}"'
+        assert "host_test: sh" in out.getvalue()
+        data = json.loads(cfg.read_text(encoding="utf-8"))
+        data["host_test"] = ""
+        cfg.write_text(json.dumps(data), encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()):
+            omi.setup.upgrade.upgrade_apply(root)
+        assert json.loads(cfg.read_text(encoding="utf-8"))["host_test"] == "sh docker/host-test.sh"
+        data = json.loads(cfg.read_text(encoding="utf-8"))
+        data["host_test"] = "make test"
+        cfg.write_text(json.dumps(data), encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()):
+            omi.setup.upgrade.upgrade_apply(root)
+        assert json.loads(cfg.read_text(encoding="utf-8"))["host_test"] == "make test"
+
+
 def main():
+    test_host_test_filled_from_state_script()
     test_upgrade_gitattributes()
     test_version_stamp_package_hook()
     test_upgrade()

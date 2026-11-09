@@ -3,6 +3,7 @@
 import contextlib
 import datetime
 import json
+import os
 import re
 import statistics
 import sys
@@ -48,8 +49,9 @@ USAGE = """usage: omi <command>
   hook pre-run|post-run|pre-merge <TASK-ID>   run .omi/hooks/<event> (from the main checkout) in Docker against the task worktree; exits with its code
   dispatch next [--max N]   start ready parallel-safe planned tasks with skills picked (default: 1); starts `omi drive` unless it runs or `auto_drive` is false in .omi/config.json
   dispatch <role> <TASK-ID>   start `omi run` detached with a run record; refuses when scope or depends conflict with a running task; starts `omi drive` too
-  drive [--once]   one loop per project (detached by dispatch): `omi advance` every finished run whose next action is NEXT:, `dispatch next` when a slot frees (`auto_dispatch_max` in .omi/config.json, default 1, 0 = off); stops a task only on DECIDE: and lists those; `omi advance` also runs `dispatch next` after a merge
-  advance <TASK-ID> [--message "<msg>"] [--reject <n>[,<n>] --why "<reason>"]   scope-check a DONE write run, commit, rebase, draft PR, host-test and dispatch its reviewer; after a review FAIL: record the findings, step back, PR to draft, rerun the engineer (--reject leaves findings out); after review PASS: accept, pre-merge hook, PR ready, green CI, squash merge, pull, clean and post-merge test
+  stop <TASK-ID>   kill the task's running runs (wrapper process tree and containers), write rc and a `stopped` marker: watch shows DECIDE: STOPPED by <who>; never resumed
+  drive [--once | --loop [--interval N]]   --loop: keep running when idle (poll every N s, default 60), resume idle in-progress tasks with a newer Coordinator note before planned ones; one loop per project (detached by dispatch): `omi advance` every finished run whose next action is NEXT:, `dispatch next` when a slot frees (`auto_dispatch_max` in .omi/config.json, default 1, 0 = off); stops a task only on DECIDE: and lists those; `omi advance` also runs `dispatch next` after a merge
+  advance <TASK-ID> [--message "<msg>"] [--reject <n>[,<n>] --why "<reason>"] [--hook-fixed]   (--hook-fixed: accept a write run whose post-run hook failed once `omi hook post-run` passes on the current HEAD) scope-check a DONE write run, commit, rebase, draft PR, host-test and dispatch its reviewer; after a review FAIL: record the findings, step back, PR to draft, rerun the engineer (--reject leaves findings out); after review PASS: accept, pre-merge hook, PR ready, green CI, squash merge, pull, clean and post-merge test
   watch [--wait] [--all]   list running workers and every finished run not yet shown, with its next action (NEXT: deterministic, DECIDE: Coordinator); --wait blocks until a run finishes; --all: whole history
   parallel <TASK-ID> <TASK-ID> [...]   check that tasks can run in parallel (depends, status, scope overlap)
   worker <wt> <task-file> [--model M] [--effort E]   run the engineer in the Docker worker
@@ -319,7 +321,11 @@ def dispatch(argv: list[str] | None = None) -> None:
             task = Path(rest[1])
             if project.detached and not task.is_absolute():
                 task = project.state / task
-            catalogs.check_skills(project.state, catalogs.task_skill_ids(project.state, core.meta(task)))
+            meta = core.meta(task)
+            catalogs.check_skills(project.state, catalogs.task_skill_ids(project.state, meta))
+            if meta.get("step"):  # the current step's role against the task role
+                steps = workflows.get_workflow(project.state, meta.get("workflow") or workflows.DEFAULT_WORKFLOW)
+                workflows.check_role(project.state, meta, next((s["role"] for s in steps if s["id"] == meta["step"]), workflows.COORDINATOR))
             tasks.warn_sensitive(core.meta(task))
             print("skills ok")
         else:
@@ -358,7 +364,9 @@ def dispatch(argv: list[str] | None = None) -> None:
         why = " ".join(rest[cut + 1:]) if cut < len(rest) else None
         if "--to" in head and (rest[1] != "back" or not to or to.startswith("--")):
             sys.exit(f"usage: omi step {rest[0]} back --to <step> --why <reason>. Nothing changed.")
-        sys.exit(tasks.step(state.resolve(core.main_checkout(".") or Path(".").resolve()), rest[0], rest[1], why, to=to, po=po))
+        project = state.resolve(core.main_checkout(".") or Path(".").resolve())
+        worker_dispatch.claim(project, rest[0])
+        sys.exit(tasks.step(project, rest[0], rest[1], why, to=to, po=po))
     elif cmd == "note" and rest:
         step_id, verdict = core.flag(rest, "--step"), core.flag(rest, "--verdict")
         words = [w for i, w in enumerate(rest[1:]) if w not in ("--step", "--verdict") and rest[i] not in ("--step", "--verdict")]
@@ -368,7 +376,9 @@ def dispatch(argv: list[str] | None = None) -> None:
         tasks.check_runnable(project, rest[1])
         if catalogs.get_role(project.state, rest[0])["access"] == "write":
             tasks.run_gate(project, rest[1], core.flag(rest, "--po"), core.flag(rest, "--why"))
-        sys.exit(run.run_cmd(rest[0], rest[1], rest))
+            structure.require_map(project.state)
+        argv = [sys.executable, "-m", "omi", "run", *rest]
+        sys.exit(worker_dispatch.foreground(project, rest[1], rest[0], argv, lambda: run.run_cmd(rest[0], rest[1], rest)))
     elif cmd == "dispatch" and rest[:1] == ["next"]:
         if len(rest) not in (1, 3) or (len(rest) == 3 and (rest[1] != "--max" or not rest[2].isascii()
                                                                      or not rest[2].isdigit() or int(rest[2]) < 1)):
@@ -379,17 +389,28 @@ def dispatch(argv: list[str] | None = None) -> None:
     elif cmd == "dispatch" and len(rest) == 2 and not rest[1].startswith("--"):
         project = state.resolve(core.main_checkout(".") or Path(".").resolve())
         tasks.check_runnable(project, rest[1])
-        catalogs.get_role(project.state, rest[0])
+        if (task := state.task_file(project, rest[1])).exists():
+            workflows.check_role(project.state, core.meta(task), rest[0])
+        if catalogs.get_role(project.state, rest[0])["access"] == "write":
+            structure.require_map(project.state)
         worker_dispatch.launch(project, rest[1], rest[0])
         worker_dispatch.start_driver(project)
-    elif cmd == "drive" and set(rest) <= {"--once"}:
-        drive.drive(state.resolve(core.main_checkout(".") or Path(".").resolve()), "--once" in rest)
-    elif cmd == "advance" and len(rest) % 2 == 1 and set(rest[1::2]) <= {"--message", "--reject", "--why"}:
-        reject = core.flag(rest, "--reject")
+    elif cmd == "drive" and set(rest) - {core.flag(rest, "--interval")} <= {"--once", "--loop", "--interval"}:
+        interval = core.flag(rest, "--interval") or "60"
+        if not interval.isdigit() or int(interval) < 1 or ("--interval" in rest and "--loop" not in rest):
+            raise state.StateError("usage: omi drive [--once | --loop [--interval N]] (N seconds, positive)")
+        drive.drive(state.resolve(core.main_checkout(".") or Path(".").resolve()), "--once" in rest,
+                    loop=int(interval) if "--loop" in rest else None)
+    elif cmd == "stop" and len(rest) == 1:
+        worker_dispatch.stop(state.resolve(core.main_checkout(".") or Path(".").resolve()), rest[0], os.environ.get("OMI_BY") or "Coordinator")
+    elif cmd == "advance" and (opts := [a for a in rest if a != "--hook-fixed"]) and len(opts) % 2 == 1 and set(opts[1::2]) <= {"--message", "--reject", "--why"}:
+        reject = core.flag(opts, "--reject")
         if reject is not None and not all(n.isdigit() for n in reject.split(",")):
-            sys.exit('usage: omi advance <TASK-ID> [--message "<msg>"] [--reject <n>[,<n>] --why "<reason>"]')
-        advance.advance(state.resolve(core.main_checkout(".") or Path(".").resolve()), rest[0], core.flag(rest, "--message"),
-                        [int(n) for n in reject.split(",")] if reject else None, core.flag(rest, "--why"))
+            sys.exit('usage: omi advance <TASK-ID> [--message "<msg>"] [--reject <n>[,<n>] --why "<reason>"] [--hook-fixed]')
+        project = state.resolve(core.main_checkout(".") or Path(".").resolve())
+        worker_dispatch.claim(project, opts[0])
+        advance.advance(project, opts[0], core.flag(opts, "--message"), [int(n) for n in reject.split(",")] if reject else None,
+                        core.flag(opts, "--why"), hook_fixed="--hook-fixed" in rest)
     elif cmd == "watch" and set(rest) <= {"--wait", "--all"}:
         worker_dispatch.watch(state.resolve(core.main_checkout(".") or Path(".").resolve()), "--wait" in rest, "--all" in rest)
     elif cmd == "host-test" and len(rest) == 1:

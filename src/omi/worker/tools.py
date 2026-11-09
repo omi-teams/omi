@@ -70,6 +70,20 @@ def quota_hit(tool: str, out: str, rc: int, err: str = "") -> bool:
     return bool(rc) and any(re.search(QUOTA_PATTERNS[tool], t, re.I) for t in texts)
 
 
+AUTH_PATTERNS = {  # a revoked, expired or missing login, not a usage limit
+    "claude": r"failed to authenticate|oauth token (?:has )?(?:been )?(?:revoked|expired)|authentication_error|invalid api key|"
+              r"invalid bearer token|please run /login|not logged in",
+    "codex": r"401 unauthorized|token_expired|refresh token (?:was )?(?:already used|expired|revoked)|invalid_api_key|"
+             r"incorrect api key|not logged in|please (?:run `?codex login|log in again)",
+}
+
+
+def auth_failed(tool: str, out: str, rc: int, err: str = "") -> bool:
+    """True when a failed run's errors (CLI events, plain stdout lines or stderr) name a revoked, expired or missing login."""
+    plain = [l for l in (out or "").splitlines() if not l.lstrip().startswith("{")]
+    return bool(rc) and any(re.search(AUTH_PATTERNS[tool], t, re.I) for t in [*error_texts(tool, out), *plain, err or ""])
+
+
 REPORT_LINES = ("End the report with the literal line `Suggested commit: <type>(<area>): <summary>` at the start of a line "
                 "(no bullet), and in a bugfix reproduce run also `Reproduced: <test> failed before the fix`.")
 

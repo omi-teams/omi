@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -292,6 +293,33 @@ def clean(cwd=".", all_images=False, task=None, force=False):
         for i in imgs:
             subprocess.run(["docker", "rmi", i], capture_output=True)
     print(f"removed {len(ids)} container(s), {len(nets)} network(s), {len(imgs)} image(s), {vols} session volume(s)")
+
+
+def task_containers(main, tid):
+    """Ids of this repo's worker containers (agents and proxies) of task `tid`; empty without docker."""
+    try:
+        r = subprocess.run(["docker", "ps", "-q", "--filter", "label=omi-worker=1", "--filter", f"label=omi-repo={repo_key(main)}",
+                            "--filter", f"label=omi-task={tid}"], capture_output=True, encoding="utf-8", errors="replace", timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    return r.stdout.split() if r.returncode == 0 else []
+
+
+def kill(containers=(), pids=()):
+    """The one kill of `omi stop` and run_timeout: each pid with its whole process tree, then the containers (docker kill)."""
+    for pid in pids:
+        try:
+            if core.WINDOWS:
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True)
+            else:
+                os.killpg(pid, signal.SIGKILL)  # the wrapper leads its own session (start_new_session)
+        except (OSError, ProcessLookupError):
+            pass
+    if containers:
+        try:
+            subprocess.run(["docker", "kill", *containers], capture_output=True, timeout=60)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
 
 
 def need_docker():

@@ -7,6 +7,13 @@ if [ -f "${OMI_PROJECT_STATE:-.}/.omi/structure.md" ]; then
   # hook container: git needs the main repo's worktree dir (OMI_GIT_DIR); GIT_DIR is set in a subshell, not for the project tests
   ( [ -z "$OMI_GIT_DIR" ] || export GIT_DIR="$OMI_GIT_DIR" GIT_WORK_TREE="$PWD"; python3 -m omi structure check --changed ) || { echo "post-run: structure check failed"; exit 1; }
 fi
+# new or changed binary files over 1 MB are build outputs: they go to /tmp or /cache, never into the diff
+big=$(command -v git >/dev/null 2>&1 && ( [ -z "$OMI_GIT_DIR" ] || export GIT_DIR="$OMI_GIT_DIR" GIT_WORK_TREE="$PWD"
+  { git diff --name-only development...HEAD; git diff --name-only HEAD; git ls-files --others --exclude-standard; } 2>/dev/null ) |
+  sort -u | while IFS= read -r f; do
+    [ -f "$f" ] && [ "$(wc -c < "$f")" -gt 1048576 ] && ! grep -Iq . "$f" && echo "$f"
+  done )
+[ -z "$big" ] || { echo "post-run: new or changed binary files over 1 MB (build outputs go to /tmp or /cache):"; echo "$big"; exit 1; }
 t=$(cfg_test)
 [ -n "$t" ] && exec sh -c "$t"
 found=
