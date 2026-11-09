@@ -44,7 +44,7 @@ USAGE = """usage: omi <command>
   workflows [--check]   write .omi/workflows/CATALOG.md (one line per workflow); --check validates every workflow
   host-test <TASK-ID>   run `host_test` (.omi/config.json) on the host in the task's worktree; failure prints HOST TEST FAILED and counts as a fix round
   step <TASK-ID> next|done|back|skip|approve|reopen --why <reason>   record the task's workflow step (gates cannot be skipped; back --to <step> --why: return to an earlier agent step, e.g. architect; back and done take --why "<Coordinator reason>" (one round past max_fix_rounds) or --po "<PO's words>"; done --po overrides a review FAIL)
-  note <TASK-ID> --step <step> --verdict <verdict> "<text>"   record a Coordinator decision under the task's ## Reports
+  note <TASK-ID> --step <step> --verdict <verdict> "<text>"   record a Coordinator decision under the task's ## Reports; verdict RESUME asks `omi drive` to resume the current step
   run <role> <TASK-ID> [--model M] [--effort E] [--tool claude|codex] [--fresh] [--why "<Coordinator reason>"|--po "<PO's words>"]   run a role in Docker (--fresh: no engineer session resume; read roles: ro worktree, after the deterministic checks)
   hook pre-run|post-run|pre-merge <TASK-ID>   run .omi/hooks/<event> (from the main checkout) in Docker against the task worktree; exits with its code
   dispatch next [--max N]   start ready parallel-safe planned tasks with skills picked (default: 1); starts `omi drive` unless it runs or `auto_drive` is false in .omi/config.json
