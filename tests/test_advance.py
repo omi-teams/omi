@@ -131,15 +131,30 @@ def architect_handoff():
             yield h
 
 
+def test_architect_copies_file_plan_into_task() -> None:
+    plan = ['- edit src/a.py (worker): x', '- create tests/test_a.py (test)']
+    for older in (False, True):
+        with architect_handoff() as h:
+            h.text = h.text.replace('> TASKS: build it\n', '> TASKS: build it\n> \n> ## File plan\n' + ''.join(f'> {x}\n' for x in plan))
+            if older:
+                h.text = h.text.replace('## Steps', '## File plan\n- edit old.py (x)\n\n## Checkpoint\nDone:\n\n## Steps')
+            h.task.write_text(h.text, encoding='utf-8')
+            error, _ = h.invoke()
+            got = h.task.read_text(encoding='utf-8')
+            assert not error and got.count('\n## File plan\n') == 1 and '\n## File plan\n' + '\n'.join(plan) + '\n\n' in got, (error, got)
+            assert 'old.py' not in got
+
+
 def test_architect_advances_to_build_and_rerun() -> None:
     with architect_handoff() as h:
         error, out = h.invoke()
         assert not error, error
+        assert '## File plan' not in h.task.read_text(encoding='utf-8')
         assert h.calls == [['step', TID, 'done'], ['step', TID, 'next'], ['dispatch', ROLE, TID]], h.calls
         assert '- design done' in h.task.read_text(encoding='utf-8')
         h.calls.clear()
         error, out = h.invoke()
-        assert not error and not h.calls and out.count('already done') == 3, (error, out, h.calls)
+        assert not error and not h.calls and out.count('already done') == 4, (error, out, h.calls)
 
 
 def test_architect_refuses_invalid_run() -> None:
@@ -796,6 +811,7 @@ def test_regenerate_split_and_done_reports_only() -> None:
 
 
 def main():
+    test_architect_copies_file_plan_into_task()
     test_architect_advances_to_build_and_rerun()
     test_architect_refuses_invalid_run()
     test_architect_failure_and_recovery()

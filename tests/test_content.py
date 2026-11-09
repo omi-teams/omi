@@ -787,6 +787,11 @@ def test_status_skill_resumes_orphans() -> None:
         assert words in text, words
 
 
+def test_architect_file_plan_in_report():
+    text = (omi.common.core.TEMPLATE / "dot-omi" / "agents" / "omi-agent-architect.md").read_text(encoding="utf-8")
+    assert "`## File plan` section in your report" in text and "write `## File plan` in the task" not in text
+
+
 def test_architect_claude_only():
     ok = '{"type": "result", "result": "DONE", "usage": {}}'
     quota = '{"type": "result", "is_error": true, "result": "usage limit reached"}'
@@ -1029,6 +1034,7 @@ def main():
     test_reviewer_mockup_evidence_is_qa()
     test_engineer_requires_suggested_commit_line()
     test_reproduce_and_fix_report_requires_reproduced_line()
+    test_architect_file_plan_in_report()
     test_architect_claude_only()
 
 

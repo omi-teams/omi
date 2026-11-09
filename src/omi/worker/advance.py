@@ -452,6 +452,23 @@ def auto_dispatch(ctx: Context) -> str:
         return f"FAILED (the merge is done): {exc}"
 
 
+def copy_file_plan(ctx: Context) -> str:
+    """Copy the report's `## File plan` lines into the task file's section (the architect runs read-only), replacing an older one."""
+    path = state.task_file(ctx.project, ctx.tid)
+    text = core.read_task(path)
+    report = dispatch.last_report(text, ctx.rec["role"], ctx.rec["started"])
+    m = re.search(r"^[ \t#*]*File plan[ \t*:]*\n(.*?)(?=^#|\Z)", report, re.M | re.S)
+    lines = [x.strip() for x in m[1].splitlines() if x.strip().startswith("- ")] if m else []
+    if not lines:
+        return "none in the report"
+    section = "## File plan\n" + "\n".join(lines) + "\n\n"
+    text, n = re.subn(r"^## File plan[ \t]*\n.*?(?=^## |\Z)", lambda _: section, text, count=1, flags=re.M | re.S)
+    if not n:
+        text = text.replace("## Checkpoint", section + "## Checkpoint", 1) if "\n## Checkpoint" in text else text.replace("## Steps", section + "## Steps", 1)
+    core.write_text(path, text)
+    return f"{len(lines)} lines"
+
+
 def advance_architect(ctx: Context) -> None:
     """Complete a reported design run and hand off to the next workflow role."""
     text = core.read_task(state.task_file(ctx.project, ctx.tid))
@@ -479,6 +496,7 @@ def advance_architect(ctx: Context) -> None:
         raise state.StateError("task has a running worker")
     ctx.progress["step"] = sid
     print("eligibility: architect report for " + sid)
+    perform(ctx, "file-plan", copy_file_plan)
     perform(ctx, "step-done", step_done)
     perform(ctx, "step-next", step_next)
     perform(ctx, "dispatch", engineer)
