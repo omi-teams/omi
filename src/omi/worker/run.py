@@ -10,7 +10,6 @@ import re
 import secrets
 import shlex
 import shutil
-import statistics
 import subprocess
 import sys
 import tempfile
@@ -21,7 +20,7 @@ from pathlib import Path
 
 from ..project import catalogs, runs, scope, tasks, workflows
 from ..common import core
-from . import creds, docker, hooks, pr, session, tools
+from . import budget, creds, docker, hooks, pr, session, tools
 from ..state import resolve as state
 
 
@@ -260,34 +259,6 @@ def missing_lines(report, step_id):
     return [k for k in need if not tools.report_values(report, k)]
 
 
-def missing_ac(text, report):
-    """Acceptance criteria a review report covers with neither an `AC:` line nor its `HOST:` line ([] once it has one line per criterion)."""
-    rows = re.findall(r"^- \[[ xX]\] (.+)$", text.partition("\n## Acceptance criteria\n")[2].split("\n## ", 1)[0], re.M)
-    acs = [re.sub(r"^[ \t]*(?:[-*] )?AC: ?", "", l) for l in re.findall(r"^[ \t]*(?:[-*] )?AC: ?.*$", report or "", re.M)]
-    host = " ".join(re.findall(r"^[ \t]*(?:[-*] )?HOST:?[ \t]+(.+)$", report or "", re.M))
-    hosted = [row for row in rows if row in host]
-    gap = [row for row in rows if row not in hosted and not any(a.startswith(row) for a in acs)]
-    return [] if len(acs) + len(hosted) >= len(rows) else gap
-
-
-def token_budget(root, role, found=None):
-    """`token_budget` {role: input tokens} from .omi/config.json, else 3x the median input of the role's last 20 runs
-    (`found`: the tasks, read when None); None without a budget or under 5 runs."""
-    budget = scope.config(root, "token_budget", {})
-    value = budget.get(role) if isinstance(budget, dict) else None
-    if isinstance(value, int) and not isinstance(value, bool):
-        return value if value > 0 else None
-    runs = [int(r[3]) for m in (tasks.tasks(root) if found is None else found).values()
-            for r in tasks.usage_rows(m.get("_text", "")) if r[0] == role and len(r) > 3 and r[3].isdigit()][-20:]
-    return int(3 * statistics.median(runs)) if len(runs) >= 5 else None  # ponytail: a handful of runs is no baseline
-
-
-def over_budget(text, budget_of):
-    """`role input>budget` for each `## Usage` row whose input tokens pass `budget_of(role)`."""
-    return [f"{r[0].removeprefix('omi-agent-')} {r[3]}>{b}" for r in tasks.usage_rows(text)
-            if len(r) > 3 and r[3].isdigit() and (b := budget_of(r[0])) and int(r[3]) > b]
-
-
 def report_note(task: Path, role: str, tool: str, report: str) -> None:
     """Append an agent report to ## Reports in full: the next step reads it from there."""
     tasks.append_note(task, "Reports", f"{datetime.datetime.now():%Y-%m-%d %H:%M} {role} ({tool}):\n" + "\n".join("> " + l for l in report.splitlines()))
@@ -468,7 +439,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             verdict += f" root:{rt}"
         if tools.quota_hit(t, r.stdout, r.returncode, r.stderr):
             verdict = f"QUOTA->{'codex' if t == 'claude' else 'claude'}"
-        elif ac["left"] and verdict[:4] in ("PASS", "FAIL") and (gap := missing_ac(core.read_task(task) if task.exists() else "", result)):
+        elif ac["left"] and verdict[:4] in ("PASS", "FAIL") and (gap := budget.missing_ac(core.read_task(task) if task.exists() else "", result)):
             ac["gap"], verdict = gap, "AC-MISSING"  # not a verdict: the fresh rerun's row counts
         spent["input"] = nums[0]
         if not read and not dropped and (sid := session.session_id(t, r.stdout)) and task.exists():
@@ -540,10 +511,10 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             tool, secret = other, other_secret
             if tools.quota_hit(other, r.stdout, r.returncode, r.stderr):
                 return stop_quota("claude and codex both hit their usage limit")
-        budget = token_budget(project, role)
-        over = bool(budget and (spent.get("input") or 0) > budget)
+        limit = budget.token_budget(project, role)
+        over = bool(limit and (spent.get("input") or 0) > limit)
         if over:
-            line = (f"BUDGET: {role} used {spent['input']} input tokens, over its token_budget {budget}; stopped instead of continuing, "
+            line = (f"BUDGET: {role} used {spent['input']} input tokens, over its token_budget {limit}; stopped instead of continuing, "
                     f"the partial diff stays in {wt}. Resume: omi-task {task.stem}")
             tasks.append_note(task, "Checkpoint", line)
             print(line)

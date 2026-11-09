@@ -696,9 +696,8 @@ def test_size_routing_parallel_reviewers_and_budget() -> None:
         assert "- dispatch omi-agent-engineer: 1 non-test file(s) -> small sonnet/low" in runs("TASK-001")
         found = dispatch.tasks.tasks(project)
         assert dispatch.size_flags(project, "TASK-002", eng, found["TASK-002"]) == []
-        assert "- dispatch omi-agent-engineer: unknown non-test file(s) -> role default sonnet/medium" in runs("TASK-002")
         assert dispatch.size_flags(project, "TASK-003", eng, found["TASK-003"]) == []
-        assert "4 non-test file(s) -> role default sonnet/medium" in runs("TASK-003")
+        assert "dispatch" not in runs("TASK-002") + runs("TASK-003"), "the role default writes nothing"
         assert dispatch.size_flags(project, "TASK-001", eng, {**found["TASK-001"], "model": "opus"}) == []
         assert dispatch.size_flags(project, "TASK-001", "omi-agent-docs-writer", found["TASK-001"]) == [], "no `small:`: role default"
         gate = root / "gate"

@@ -1358,14 +1358,14 @@ def test_token_budget_stop():
                         + row("omi-agent-reviewer", 99)}}
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        assert omi.worker.run.token_budget(root, "omi-agent-engineer", found) == 90
-        assert omi.worker.run.token_budget(root, "omi-agent-reviewer", found) is None
+        assert omi.worker.budget.token_budget(root, "omi-agent-engineer", found) == 90
+        assert omi.worker.budget.token_budget(root, "omi-agent-reviewer", found) is None
         found["TASK-2"] = {"_text": "\n## Usage\n" + "".join(row("omi-agent-engineer", 100) for _ in range(30))}
-        assert omi.worker.run.token_budget(root, "omi-agent-engineer", found) == 300, "only the last 20 runs count"
+        assert omi.worker.budget.token_budget(root, "omi-agent-engineer", found) == 300, "only the last 20 runs count"
         (root / ".omi").mkdir()
         (root / ".omi" / "config.json").write_text(json.dumps({"token_budget": {"omi-agent-engineer": 7}}), encoding="utf-8")
-        assert omi.worker.run.token_budget(root, "omi-agent-engineer", found) == 7
-        assert omi.worker.run.over_budget(found["TASK-1"]["_text"], lambda role: 25 if role == "omi-agent-engineer" else None) == \
+        assert omi.worker.budget.token_budget(root, "omi-agent-engineer", found) == 7
+        assert omi.worker.budget.over_budget(found["TASK-1"]["_text"], lambda role: 25 if role == "omi-agent-engineer" else None) == \
             ["engineer 30>25", "engineer 40>25", "engineer 1000>25"]
 
 
@@ -1406,8 +1406,8 @@ def test_reviewer_ac_lines_rerun():
                     assert verdicts == ["PASS"]
     # HOST-only criteria count; a report with one AC line per criterion is complete even when paraphrased
     text = "\n## Acceptance criteria\n- [ ] parse alpha\n- [ ] run beta on Windows\n- [ ] print gamma\n"
-    assert omi.worker.run.missing_ac(text, "AC: parse alpha ✓\nHOST: run beta on Windows needs the host") == ["print gamma"]
-    assert omi.worker.run.missing_ac(text, "AC: parse alpha ✓\nAC: Beta ✓\nAC: Gamma ✓") == []
+    assert omi.worker.budget.missing_ac(text, "AC: parse alpha ✓\nHOST: run beta on Windows needs the host") == ["print gamma"]
+    assert omi.worker.budget.missing_ac(text, "AC: parse alpha ✓\nAC: Beta ✓\nAC: Gamma ✓") == []
 
 
 def main():

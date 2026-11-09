@@ -13,7 +13,7 @@ from ..board import server
 from ..setup import attach, install, upgrade
 from ..project import catalogs, github, improve, scope, structure, tasks, tree, workflows
 from ..common import core
-from ..worker import advance, creds, dispatch as worker_dispatch, docker, drive, hooks, run
+from ..worker import advance, budget, creds, dispatch as worker_dispatch, docker, drive, hooks, run
 from ..state import resolve as state, sync as state_sync
 
 
@@ -103,11 +103,11 @@ def brief(project) -> None:
     kids = tree.children_map(ts)
     recs, busy = busy_tasks(project)
     budgets = {}
-    budget_of = lambda role: budgets.setdefault(role, run.token_budget(project, role, ts))  # noqa: E731
+    budget_of = lambda role: budgets.setdefault(role, budget.token_budget(project, role, ts))  # noqa: E731
     for st in STATUSES:
         for k, m in ts.items():
             if m.get("status", "planned") == st and k not in kids:
-                over = run.over_budget(m["_text"], budget_of)
+                over = budget.over_budget(m["_text"], budget_of)
                 print(f"{k} {m.get('step') or '-'} {m.get('tool') or '-'} {'running' if k in busy else st}"
                       + (f" · over budget: {', '.join(over)}" if over else ""))
     print(next_line(ts, kids, busy))

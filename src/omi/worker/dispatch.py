@@ -75,13 +75,14 @@ def held_by(project: state.Project, tid: str, others: list[str]) -> list[str]:
 
 def size_flags(project: state.Project, tid: str, role: str, meta: dict) -> list[str]:
     """`--model`/`--effort` from the role's `small:` (model/effort) for a task naming at most 3 non-test files, when the task
-    leaves model, effort and step_settings empty; the choice goes under the task's `## Runs`."""
+    leaves model, effort and step_settings empty; a routed choice goes under the task's `## Runs` (the role default is not written)."""
     if not meta or any(meta.get(k) for k in ("model", "effort", "step_settings")):
         return []
     am, size = catalogs.get_role(project.state, role), workflows.task_size(meta)
     small = am.get("small") if size is not None and size <= workflows.SMALL_FILES else None
-    choice = f"small {small}" if small else f"role default {am.get('model') or '-'}/{am.get('effort') or '-'}"
-    tasks.append_note(state.task_file(project, tid), "Runs", f"- dispatch {role}: {'unknown' if size is None else size} non-test file(s) -> {choice}")
+    if not small:
+        return []
+    tasks.append_note(state.task_file(project, tid), "Runs", f"- dispatch {role}: {size} non-test file(s) -> small {small}")
     model, _, effort = (small or "").partition("/")
     return [*(["--model", model] if model else []), *(["--effort", effort] if effort else [])]
 
