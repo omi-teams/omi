@@ -148,6 +148,28 @@ def test_architect_copies_file_plan_into_task() -> None:
             assert 'old.py' not in got
 
 
+def test_copy_file_plan_missing_section() -> None:
+    section = '## File plan\n- edit src/a.py (worker): x\n- create tests/test_a.py (test)\n\n'
+    for anchor in ('', '## Steps\n- design started\n\n', '## Checkpoint\nDone:\n\n',
+                   '## Checkpoint\nDone:\n\n## Steps\n- design started\n\n'):
+        for ending in ('', '\n', '\n\n'):
+            with architect_handoff() as h:
+                report = '\n'.join('> ' + line for line in section.rstrip().splitlines())
+                original = (h.text.partition('## Steps')[0] + anchor + h.text[h.text.index('## Reports'):]
+                            + '> \n' + report) + ending
+                h.task.write_text(original, encoding='utf-8')
+                ctx = advance.Context(h.project, TID, h.rec, {})
+                result = advance.copy_file_plan(ctx)
+                assert result == '2 lines', result
+                got = h.task.read_text(encoding='utf-8')
+                heading = '## Checkpoint' if '## Checkpoint' in anchor else '## Steps'
+                expected = (original.replace(heading, section + heading, 1) if anchor
+                            else original.rstrip() + '\n\n' + section)
+                assert got == expected, (result, got, expected)
+                assert advance.copy_file_plan(ctx) == '2 lines'
+                assert h.task.read_text(encoding='utf-8') == got
+
+
 def test_architect_advances_to_build_and_rerun() -> None:
     with architect_handoff() as h:
         error, out = h.invoke()
@@ -903,6 +925,7 @@ def test_regenerate_split_and_done_reports_only() -> None:
 
 def main():
     test_architect_copies_file_plan_into_task()
+    test_copy_file_plan_missing_section()
     test_architect_advances_to_build_and_rerun()
     test_architect_refuses_invalid_run()
     test_architect_failure_and_recovery()

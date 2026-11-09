@@ -46,7 +46,13 @@ def sync_scope(wt, task, tid):
         sec = lambda t: (re.search(rf"^## {name}[ \t]*\n.*?(?=^## |\Z)", t, re.S | re.M) or [None])[0]
         want, have = sec(dev), sec(text)
         if want is not None and (have is None or want.strip() != have.strip()):
-            text = text.replace(have or "## Checkpoint", want.rstrip() + "\n\n" + ("" if have else "## Checkpoint"), 1)  # missing: before Checkpoint
+            section = want.rstrip() + "\n\n"
+            if have is not None:
+                text = text.replace(have, section, 1)
+            elif "## Checkpoint" in text:
+                text = text.replace("## Checkpoint", section + "## Checkpoint", 1)
+            else:
+                text = text.rstrip() + "\n\n" + section
             synced.append(name)
     if changed or synced:
         task.write_text(text, encoding="utf-8", newline="\n")

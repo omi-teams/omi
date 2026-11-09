@@ -477,7 +477,12 @@ def copy_file_plan(ctx: Context) -> str:
     section = "## File plan\n" + "\n".join(lines) + "\n\n"
     text, n = re.subn(r"^## File plan[ \t]*\n.*?(?=^## |\Z)", lambda _: section, text, count=1, flags=re.M | re.S)
     if not n:
-        text = text.replace("## Checkpoint", section + "## Checkpoint", 1) if "\n## Checkpoint" in text else text.replace("## Steps", section + "## Steps", 1)
+        if "\n## Checkpoint" in text:
+            text = text.replace("## Checkpoint", section + "## Checkpoint", 1)
+        elif "## Steps" in text:
+            text = text.replace("## Steps", section + "## Steps", 1)
+        else:
+            text = text.rstrip() + "\n\n" + section
     core.write_text(path, text)
     return f"{len(lines)} lines"
 
