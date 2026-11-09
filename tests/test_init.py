@@ -143,6 +143,7 @@ def test_init_fresh_project():
         importlib.util.find_spec = lambda n: None
         try:
             cmd = omi.worker.run.test_command(d, d)
+            line = omi.worker.run.test_prompt_line(d, d)
         finally:
             importlib.util.find_spec = real
         assert "pytest" not in cmd
@@ -152,7 +153,6 @@ def test_init_fresh_project():
         (Path(d) / "tests" / "test_b.py").write_text("import os,signal;os.kill(os.getpid(),signal.SIGKILL)")
         assert subprocess.run(cmd, cwd=d).returncode == 1, "a child killed by a signal must fail the run"
         (Path(d) / "tests" / "test_b.py").unlink()
-        line = omi.worker.run.test_prompt_line(d, d)
         assert shlex.split(line) == [("python3" if a == sys.executable else a) for a in cmd], line
     with tempfile.TemporaryDirectory() as d:
         for existing in ("__pycache__", "/__pycache__/", "__pycache__/"):
