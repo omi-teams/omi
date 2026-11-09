@@ -16,7 +16,7 @@ import time
 import types
 from pathlib import Path
 
-from ..project import catalogs, runs, scope, tasks, workflows
+from ..project import catalogs, runs, scope, structure, tasks, workflows
 from ..common import core
 from . import agent, budget, creds, docker, hooks, pr, session, tools
 from ..state import resolve as state
@@ -268,6 +268,20 @@ MODULE_TESTS = ("Run only the tests of the modules you changed (OMI_QUIET=1 prin
                 "in the post-run hook after you finish, so do not run it yourself.")
 
 
+def regenerate(wt, project):
+    """Run the project's `regenerate` command in the worktree so `generated` files match the engineer's changes."""
+    cmd = scope.config(project, "regenerate", "")
+    if not (scope.generated(project) and cmd):
+        return
+    res = subprocess.run(structure.tool_argv(cmd, posix=not core.WINDOWS), cwd=wt, stdin=subprocess.DEVNULL, capture_output=True,
+                         encoding="utf-8", errors="replace")
+    if res.returncode:
+        print(f"REGENERATE FAILED: {cmd} (exit {res.returncode})")
+        print("\n".join((res.stdout + res.stderr).strip().splitlines()[-20:]))
+    else:
+        print(f"REGENERATED: {cmd}")
+
+
 def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=False):
     wt = Path(wt).resolve()
     main = core.main_checkout(wt)
@@ -517,12 +531,15 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         for sid in ids:
             if sid not in done:
                 print(f"SKILL NOT READ: {sid}")
+        if not rc and not read and not over:
+            regenerate(wt, project)
         res = hooks.run_hook(wt, main, "post-run", task.stem, image) if not rc and not read and not over else None
         if res and res[0] and not agent.killed(res[0]) and (sid := session.recorded(core.read_task(task), tool, role)) \
                 and session.available(repo, task.stem, tool, sid):  # one retry: the engineer fixes what the hook found
             print("post-run hook failed; resuming the engineer once to fix it")
             if (fix := attempt(tool, secret, resume=sid, hook_tail="\n".join(res[1].strip().splitlines()[-20:])))[0].returncode:
                 print(f"hook-fix attempt exited with code {fix[0].returncode}")
+            regenerate(wt, project)
             res = hooks.run_hook(wt, main, "post-run", task.stem, image)
         if res:
             pr.post_hook(wt, task.stem, "post-run", res)
