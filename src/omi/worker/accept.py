@@ -287,6 +287,14 @@ def local_commit(ctx: Any, command: Callable) -> None:
 
 def clean(ctx: Any, command: Callable) -> None:
     omi(ctx, command, 'clean', ctx.tid)
+    wt = Path(ctx.progress['worktree'])
+    if wt.exists():
+        if command(wt, ['git', 'status', '--porcelain']):
+            print(f'clean: worktree kept, it has uncommitted changes: {wt}')
+            return
+        command(ctx.project.code, ['git', 'worktree', 'remove', str(wt)])
+    if command(ctx.project.code, ['git', 'branch', '--list', 'task/' + ctx.tid]):
+        command(ctx.project.code, ['git', 'branch', '-D', 'task/' + ctx.tid])  # the squash merge leaves it unmerged
 
 
 def post_test(ctx: Any, command: Callable) -> str | None:

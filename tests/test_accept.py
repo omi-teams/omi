@@ -88,6 +88,28 @@ def test_pass_merge_and_resume() -> None:
         assert not error and 'already done' in out and not h.calls, (error, out, h.calls)
 
 
+def test_pass_clean_removes_worktree_and_branch() -> None:
+    wt = ['git', 'worktree', 'remove', None]
+    for dirty in (False, True):
+        with accepted() as h:
+            original = advance.subprocess.run
+            def run(argv, **kw):
+                if argv == ['git', 'status', '--porcelain'] and [sys.executable, '-m', 'omi', 'clean', TID] in h.calls:  # the worktree check follows the clean stage
+                    h.calls.append(argv)
+                    return subprocess.CompletedProcess(argv, 0, ' M app.py' if dirty else '', '')
+                return original(argv, **kw)
+            with patch.object(advance.subprocess, 'run', side_effect=run):
+                error, out = h.invoke()
+            assert not error, (error, out)
+            removes = [c for c in h.calls if c[:3] == wt[:3]]
+            deletes = [c for c in h.calls if c[:3] == ['git', 'branch', '-D']]
+            if dirty:
+                assert not removes and not deletes and 'worktree kept' in out and '--force' not in str(h.calls), (h.calls, out)
+            else:
+                assert removes == [wt[:3] + [str(h.project.code)]] and deletes == [['git', 'branch', '-D', 'task/' + TID]], h.calls
+                assert h.calls.index(['git', 'pull']) < h.calls.index(removes[0]) < h.calls.index(deletes[0])
+
+
 def test_pass_merge_starts_next_tasks() -> None:
     next_call = [sys.executable, '-m', 'omi', 'dispatch', 'next', '--max', '1']
     with accepted() as h:
@@ -660,6 +682,7 @@ def test_pass_ci_classifies_check_results() -> None:
 
 
 def main():
+    test_pass_clean_removes_worktree_and_branch()
     test_pass_merge_starts_next_tasks()
     test_pass_merged_pr_resumes_unsaved_merge()
     test_pass_unmerged_pr_keeps_final_ci_guard()
