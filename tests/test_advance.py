@@ -14,7 +14,7 @@ from unittest.mock import patch
 import helpers
 from omi.app import cli
 from omi.state import resolve as state
-from omi.worker import advance
+from omi.worker import advance, hooks
 
 TID = "TASK-218"
 ROLE = "omi-agent-engineer"
@@ -59,7 +59,7 @@ class Handoff:
                 out = (' M app.py\0' if '-z' in args else ' M app.py') if self.dirty else ''
             elif args[0] == 'rev-parse': out = self.head
             elif args[0] == 'commit': self.dirty = False
-            elif args == ['rebase', 'development']: self.head = 'bbb'
+            elif args == ['rebase', '--autostash', 'development']: self.head = 'bbb'
             elif args == ['remote']: out = 'origin' if self.remote else ''
             elif args[:2] == ['remote', 'get-url']: out = self.remote
         elif argv[0] == 'gh':
@@ -436,6 +436,71 @@ def test_real_git_local_origin() -> None:
             assert git('status', '--porcelain') == ''
             assert (repo / 'base.txt').exists()
             assert git('ls-remote', 'origin') == '', 'local bare origin must stay untouched'
+
+
+def test_hook_fixed_in_repo_dirty_task_and_rerun() -> None:
+    """The real hook report is appended after commit; only that task may stay dirty."""
+    real_run, real_command = subprocess.run, advance.command
+    for other in (None, 'app.py', '.omi/tasks/TASK-999.md', 'untracked.txt'):
+        with handoff() as h:
+            repo, wt = h.project.code / 'repo', h.project.code / 'wt'
+            repo.mkdir()
+
+            def git(*args):
+                with patch.object(advance.subprocess, 'run', side_effect=real_run):
+                    return real_command(repo, ['git', *args])
+
+            git('init', '-q', '-b', 'development')
+            task_path = Path('.omi/tasks') / f'{TID}.md'
+            (repo / task_path).parent.mkdir(parents=True)
+            (repo / task_path).write_text(h.text, encoding='utf-8')
+            (repo / 'app.py').write_text('value = 1\n', encoding='utf-8')
+            (repo / '.omi/tasks/TASK-999.md').write_text('other task\n', encoding='utf-8')
+            git('add', '.')
+            git('commit', '-qm', 'chore: base')
+            git('worktree', 'add', '-qb', 'task/' + TID, str(wt))
+            (repo / 'development.txt').write_text('development moved\n', encoding='utf-8')
+            git('add', '.')
+            git('commit', '-qm', 'chore: development change')
+            development = git('rev-parse', 'HEAD')
+            h.project = state.Project(repo, repo)
+            h.task = wt / task_path
+            h.rec['rc'] = 6
+            (wt / 'app.py').write_text('value = 2\n', encoding='utf-8')
+            calls = []
+
+            def command(cwd, argv):
+                calls.append(argv)
+                if argv[0] == 'git':
+                    return real_command(cwd, argv)
+                if argv[3:5] == ['hook', 'post-run']:
+                    assert real_command(wt, ['git', 'show', 'HEAD:app.py']) == 'value = 2'
+                    hooks.hook_note(h.task, 'post-run', (0, 'checked\n'))
+                    if other:
+                        (wt / other).write_text('unexpected edit\n', encoding='utf-8')
+                    return ''
+                return h.run(argv, cwd=cwd, capture_output=True, encoding='utf-8').stdout
+
+            with patch.object(advance.core, 'task_worktrees', return_value={TID: wt}), \
+                    patch.object(advance.state, 'task_file', return_value=h.task), \
+                    patch.object(advance, 'command', side_effect=command), \
+                    patch.object(advance.subprocess, 'run', side_effect=real_run):
+                for attempt in range(2):
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        try:
+                            advance.advance(h.project, TID, hook_fixed=True)
+                            error = ''
+                        except SystemExit as exc:
+                            error = str(exc)
+                    if other:
+                        assert 'worktree changed since commit' in error, (other, error)
+                        assert not any(c[1:2] == ['rebase'] for c in calls), calls
+                        continue
+                    assert not error, (attempt, error)
+                    assert real_command(wt, ['git', 'rev-parse', 'HEAD^']) == development
+                    assert 'hook post-run passed:' in h.task.read_text(encoding='utf-8')
+                    assert real_command(wt, ['git', 'status', '--porcelain']) == f'M {task_path.as_posix()}'
+                    assert real_command(wt, ['git', 'stash', 'list']) == ''
 
 
 def test_commit_stage_reports_clean_and_committed() -> None:
@@ -840,6 +905,7 @@ def main():
     test_review_fail_reject()
     test_review_fail_stops_and_refusals()
     test_hook_fixed_and_no_second_review_on_head()
+    test_hook_fixed_in_repo_dirty_task_and_rerun()
 
 
 def test_hook_fixed_and_no_second_review_on_head() -> None:

@@ -54,19 +54,32 @@ def run_hook(wt, main, event, tid, image):
     env.pop(creds.TOKEN_ENV, None)
     name = docker.container_name(docker.repo_label(main), f"hook-{event}", tid)
     git_mount, git_vars = git_env(wt) or (None, ())
-    argv = docker.worker_argv(wt, image, HOOK_RUNNERS[script.suffix], name, docker.repo_key(main), docker.worker_labels(f"hook-{event}", tid, None, None),
-                       ro=True, env_names=(f"PYTHONPATH={OMI_MOUNT}", *(("OMI_PROJECT_STATE=/state",) if project.detached else ()), *git_vars), offline=True,
-                       mounts=[f"{Path(__file__).parents[1]}:{OMI_MOUNT}/omi", *([f"{project.state}:/state"] if project.detached else []),
-                               *([f"{git_mount}:/gitdir"] if git_mount else [])],
-                       **docker.worker_sizes(main))
-    limit = hook_timeout(main)
-    try:
-        r = subprocess.run(argv, env=env, input=script.read_bytes().replace(b"\r\n", b"\n"), stdout=subprocess.PIPE,
-                           stderr=subprocess.STDOUT, timeout=limit)
-    except subprocess.TimeoutExpired as e:
-        subprocess.run(["docker", "rm", "-f", name], capture_output=True)
-        return 124, (e.stdout or b"").decode("utf-8", "replace") + f"hook {event} timed out after {limit} s\n"
-    return r.returncode, r.stdout.decode("utf-8", "replace")
+    # Overlay the authoritative map only in the hook container: leave the host worktree
+    # and its index unchanged so a fixed map cannot make advance fail its clean check.
+    with tempfile.TemporaryDirectory(prefix="omi-hook-map-") as tmp:
+        map_mount = []
+        if event == "post-run" and not project.detached:
+            mapping = core.git(wt, "show", "development:.omi/structure.md")
+            mapping = mapping.replace("\r\n", "\n") if mapping is not None else None
+            local = Path(wt) / ".omi" / "structure.md"
+            # read_text normalizes the checkout's CRLF to LF as well.
+            if mapping is not None and (not local.is_file() or local.read_text(encoding="utf-8").strip() != mapping):
+                source = Path(tmp) / "structure.md"
+                core.write_text(source, mapping + "\n")
+                map_mount = [f"{source}:/work/.omi/structure.md"]
+        argv = docker.worker_argv(wt, image, HOOK_RUNNERS[script.suffix], name, docker.repo_key(main), docker.worker_labels(f"hook-{event}", tid, None, None),
+                           ro=True, env_names=(f"PYTHONPATH={OMI_MOUNT}", *(("OMI_PROJECT_STATE=/state",) if project.detached else ()), *git_vars), offline=True,
+                           mounts=[f"{Path(__file__).parents[1]}:{OMI_MOUNT}/omi", *([f"{project.state}:/state"] if project.detached else []),
+                                   *([f"{git_mount}:/gitdir"] if git_mount else []), *map_mount],
+                           **docker.worker_sizes(main))
+        limit = hook_timeout(main)
+        try:
+            r = subprocess.run(argv, env=env, input=script.read_bytes().replace(b"\r\n", b"\n"), stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, timeout=limit)
+        except subprocess.TimeoutExpired as e:
+            subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+            return 124, (e.stdout or b"").decode("utf-8", "replace") + f"hook {event} timed out after {limit} s\n"
+        return r.returncode, r.stdout.decode("utf-8", "replace")
 
 
 def run_test(wt, main, cmd, tid, image):

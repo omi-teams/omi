@@ -8,7 +8,61 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 from helpers import omi, assert_download_cache_env, git
+
+
+def test_post_run_uses_development_structure() -> None:
+    """An existing in-repo worktree checks the fixed map without leaving metadata dirty."""
+    hooks = omi.worker.hooks
+    real_run = subprocess.run
+    for autocrlf in ('false', 'true'):
+        with tempfile.TemporaryDirectory() as d:
+            main, wt = Path(d) / 'main', Path(d) / 'wt'
+            (main / '.omi/hooks').mkdir(parents=True)
+            (main / '.omi/hooks/post-run.sh').write_text('echo check\n', encoding='utf-8')
+            (main / '.omi/hooks/pre-run.sh').write_text('echo check\n', encoding='utf-8')
+            original = '---\nid: structure\n---\n- old/** | app | old map | imports: -\n'
+            updated = original.replace('old', 'fixed')
+            mapping = Path('.omi/structure.md')
+            (main / mapping).write_text(original, encoding='utf-8', newline='\n')
+            git(main, 'init', '-q', '-b', 'development')
+            git(main, 'config', 'core.autocrlf', autocrlf)
+            git(main, 'add', '.')
+            git(main, 'commit', '-qm', 'base')
+            git(main, 'worktree', 'add', '-qb', 'task/TASK-001', str(wt))
+            (main / mapping).write_text(updated, encoding='utf-8', newline='\n')
+            git(main, 'commit', '-qam', 'fix structure')
+            # An uncommitted main-checkout edit must not become the authoritative map.
+            (main / mapping).write_text('uncommitted map\n', encoding='utf-8')
+            original_bytes = (wt / mapping).read_bytes()
+            seen = []
+
+            def run(argv, **kwargs):
+                if argv[:2] != ['docker', 'run']:
+                    return real_run(argv, **kwargs)
+                overlay = next((a for a in argv if a.endswith(':/work/.omi/structure.md:ro')), None)
+                source = Path(overlay.removesuffix(':/work/.omi/structure.md:ro')) if overlay else wt / mapping
+                seen.append(source)
+                return subprocess.CompletedProcess(argv, 0, source.read_bytes())
+
+            with patch.object(hooks.docker, 'need_docker'), \
+                    patch.object(hooks.subprocess, 'run', side_effect=run):
+                for event, detached, expected in [('post-run', False, updated), ('pre-run', False, original),
+                                                   ('post-run', True, original)]:
+                    with patch.object(hooks.state, 'resolve', return_value=omi.state.resolve.Project(main, main, detached)):
+                        rc, output = hooks.run_hook(wt, main, event, 'TASK-001', 'test-image')
+                        assert rc == 0 and output.replace('\r\n', '\n') == expected, (autocrlf, event, output)
+                    assert (wt / mapping).read_text(encoding='utf-8') == original
+                assert seen[0] != wt / mapping and not seen[0].exists(), seen
+                # Matching LF/CRLF maps need no overlay; preserve the checkout's bytes.
+                (wt / mapping).write_text(updated, encoding='utf-8', newline='\r\n' if autocrlf == 'true' else '\n')
+                with patch.object(hooks.state, 'resolve', return_value=omi.state.resolve.Project(main, main)):
+                    rc, output = hooks.run_hook(wt, main, 'post-run', 'TASK-001', 'test-image')
+                    assert rc == 0 and output.replace('\r\n', '\n') == updated
+                    assert seen[-1] == wt / mapping, (autocrlf, seen)
+                (wt / mapping).write_bytes(original_bytes)
+                assert omi.common.core.git(wt, 'status', '--porcelain') == ''
 
 
 def test_windows_test_shell():
@@ -603,6 +657,7 @@ def test_ci_structure_skip_notice():
 
 
 def main():
+    test_post_run_uses_development_structure()
     test_ci_structure_fetch()
     test_ci_structure_skip_notice()
     test_host_only_criteria()
