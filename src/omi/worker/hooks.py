@@ -41,7 +41,7 @@ def hook_timeout(main):
 
 def run_hook(wt, main, event, tid, image):
     """Run .omi/hooks/<event>.sh|.py from state or the main checkout in its own one-shot container:
-    worktree ro as cwd, no network, no token. Returns (exit code, output), or None when there is no hook."""
+    worktree ro as cwd (post-run: a writable temporary copy, so `npm ci` or a build can write), no network, no token. Returns (exit code, output), or None when there is no hook."""
     project = state.resolve(wt)
     if project.detached:
         main = project.state
@@ -67,8 +67,12 @@ def run_hook(wt, main, event, tid, image):
                 source = Path(tmp) / "structure.md"
                 core.write_text(source, mapping + "\n")
                 map_mount = [f"{source}:/work/.omi/structure.md"]
-        argv = docker.worker_argv(wt, image, HOOK_RUNNERS[script.suffix], name, docker.repo_key(main), docker.worker_labels(f"hook-{event}", tid, None, None),
-                           ro=True, env_names=(f"PYTHONPATH={OMI_MOUNT}", *(("OMI_PROJECT_STATE=/state",) if project.detached else ()), *git_vars), offline=True,
+        work = wt
+        if event == "post-run":
+            work = Path(tmp) / "work"
+            shutil.copytree(wt, work, symlinks=True)
+        argv = docker.worker_argv(work, image, HOOK_RUNNERS[script.suffix], name, docker.repo_key(main), docker.worker_labels(f"hook-{event}", tid, None, None),
+                           ro=event != "post-run", env_names=(f"PYTHONPATH={OMI_MOUNT}", *(("OMI_PROJECT_STATE=/state",) if project.detached else ()), *git_vars), offline=True,
                            mounts=[f"{Path(__file__).parents[1]}:{OMI_MOUNT}/omi", *([f"{project.state}:/state"] if project.detached else []),
                                    *([f"{git_mount}:/gitdir"] if git_mount else []), *map_mount],
                            **docker.worker_sizes(main))
