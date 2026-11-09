@@ -131,10 +131,6 @@ def hook_note(task, event, res, sha=None):
     return rc
 
 
-def wt_task(wt, tid):
-    return state.task_file(state.resolve(wt), tid)
-
-
 def hook_cmd(event, tid):
     project = state.resolve(core.main_checkout(".") or Path(".").resolve())
     root = project.state

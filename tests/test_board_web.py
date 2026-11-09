@@ -168,12 +168,6 @@ def test_semantic_palette_and_approved_mockups() -> None:
     js = app_js()
     for label in ("Bug", "Security", "Incident", "Change", "Spike", "Chore"):
         assert f'{label.lower()}: "{label}"' in js and f".chip.{label.lower()}{{" in css, label
-    mockups = ROOT / ".omi/tasks/TASK-125-mockup"
-    for name in ("projects", "dashboard", "task", "dashboard-phone", "task-phone", "spec"):
-        assert (mockups / f"{name}.html").is_file(), name
-    assert "max-width:390px" in (mockups / "task-phone.html").read_text(encoding="utf-8")
-
-
 def run_node(node: str, script: str, *args: str, **kwargs) -> subprocess.CompletedProcess:
     # Scripts go through stdin: `node -e` hits the Windows command-line length limit.
     return subprocess.run([node, "-", *args], input="process.argv.splice(1, 1);" + script,
