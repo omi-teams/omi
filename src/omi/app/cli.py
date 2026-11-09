@@ -218,15 +218,22 @@ def status(cwd=".", brief_form=False):
     docker.print_workers(project)
 
 
+def parse_args(argv: list[str] | None = None) -> tuple[str, list[str]]:
+    args = sys.argv[1:] if argv is None else argv
+    cmd, rest = (args[0], args[1:]) if args else ("help", [])
+    if cmd == "init" and (len(rest) > 1 or any(arg.startswith("-") for arg in rest)):
+        raise state.StateError("usage: omi init [dir]")
+    return cmd, rest
+
+
 def main(argv: list[str] | None = None) -> None:
     try:
-        args = sys.argv[1:] if argv is None else argv
-        cmd = args[0] if args else "help"
+        cmd, rest = parse_args(argv)
         if cmd != "guard":  # guard handles StateError itself and must exit 2 (blocking), not 1
             state.registry()
         mutates = cmd in {"init", "upgrade", "skills", "rules", "plans", "references", "agents", "dockerfile",
                           "workflows", "step", "note", "host-test", "run", "hook", "worker", "dispatch"}
-        target = args[1] if cmd == "init" and len(args) > 1 else "."
+        target = rest[0] if cmd == "init" and rest else "."
         project = state.resolve(target) if mutates else None
         if project and project.detached:
             state_sync.conflicts(state_sync.repo(project))
@@ -247,8 +254,7 @@ def main(argv: list[str] | None = None) -> None:
 
 def dispatch(argv: list[str] | None = None) -> None:
     sys.stdout.reconfigure(encoding="utf-8")
-    args = sys.argv[1:] if argv is None else argv
-    cmd, rest = (args[0], args[1:]) if args else ("help", [])
+    cmd, rest = parse_args(argv)
     if cmd in ("upgrade", "skills", "rules", "plans", "references", "agents", "workflows"):
         project = state.resolve()
         root = state.catalog_root(project, ".")

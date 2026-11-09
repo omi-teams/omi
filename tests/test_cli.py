@@ -16,6 +16,52 @@ from omi.project import improve
 from omi.state import resolve as state
 
 
+def test_init_rejects_invalid_arguments() -> None:
+    src = str(Path(__file__).resolve().parents[1] / "src")
+    for args in (["--help"], ["-h"], ["-x"], ["a", "b"], ["--"], ["a", "--help"]):
+        with tempfile.TemporaryDirectory() as d:
+            base = Path(d)
+            root, home = base / "code", base / "state"
+            root.mkdir()
+            env = {**os.environ, "PYTHONPATH": src, "OMI_STATE": str(home)}
+            result = subprocess.run([sys.executable, "-m", "omi", "init", *args], cwd=root, env=env,
+                                    capture_output=True, encoding="utf-8")
+            assert not list(root.iterdir()), f"init {args} created {list(root.iterdir())}"
+            assert not home.exists(), f"init {args} created state"
+            assert result.returncode != 0 and "usage: omi init [dir]" in result.stderr, result
+
+
+def test_init_valid_arguments() -> None:
+    src = str(Path(__file__).resolve().parents[1] / "src")
+    for args in ([], ["project"], ["./-project"]):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            env = {**os.environ, "PYTHONPATH": src, "OMI_STATE": str(root / "state")}
+            result = subprocess.run([sys.executable, "-m", "omi", "init", *args], cwd=root, env=env,
+                                    capture_output=True, encoding="utf-8")
+            target = root / args[0] if args else root
+            assert result.returncode == 0, result.stderr
+            for path in (".git", "AGENTS.md", "docker", ".omi/version"):
+                assert (target / path).exists(), (args, path)
+
+
+def test_init_validation_precedes_resolve() -> None:
+    output = io.StringIO()
+    output.reconfigure = lambda **kw: None
+    with contextlib.redirect_stdout(output), patch.object(state, "resolve") as resolve, \
+            patch.object(state, "registry") as registry:
+        for entry in (omi.app.cli.main, omi.app.cli.dispatch):
+            for args in (["--help"], ["-h"], ["-x"], ["a", "b"]):
+                try:
+                    entry(["init", *args])
+                except (SystemExit, state.StateError) as exc:
+                    assert "usage: omi init [dir]" in str(exc), exc
+                else:
+                    raise AssertionError(f"init {args} accepted")
+        resolve.assert_not_called()
+        registry.assert_not_called()
+
+
 def test_cli_correctness():
     for base, dot in ((omi.common.core.TEMPLATE, "dot-"),):
         template = (base / f"{dot}omi/tasks/_template.md").read_text(encoding="utf-8")
@@ -658,6 +704,9 @@ def test_status_brief_tool_budgets() -> None:
 
 
 def main():
+    test_init_rejects_invalid_arguments()
+    test_init_valid_arguments()
+    test_init_validation_precedes_resolve()
     test_dispatch_next_args()
     test_block_list_scope_and_bom_writers()
     test_parse_block_list_and_bom()
