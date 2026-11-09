@@ -128,8 +128,14 @@ def release(project: state.Project, tid: str, sid: str | None = None) -> None:
 
 def new_record(project: state.Project, tid: str, role: str, argv: list[str], by: str) -> Path:
     """A run directory with argv.json naming who dispatched it (advance, drive, dispatch next, Coordinator)."""
-    rundir = runs_dir(project.code) / f"{tid}-{role}-{datetime.datetime.now():{STAMP}}"
-    rundir.mkdir(parents=True)
+    runs_dir(project.code).mkdir(parents=True, exist_ok=True)
+    while True:  # one record per second per task and role: a second run in the same second waits for the next one
+        rundir = runs_dir(project.code) / f"{tid}-{role}-{datetime.datetime.now():{STAMP}}"
+        try:
+            rundir.mkdir()
+            break
+        except FileExistsError:
+            time.sleep(0.2)
     core.write_text(rundir / "argv.json", json.dumps({"tid": tid, "role": role, "argv": argv, "by": by}))
     return rundir
 

@@ -879,6 +879,8 @@ def test_foreground_record_and_dispatcher() -> None:
         assert recs["TASK-002"]["rc"] == 1
         by = lambda tid: dispatch.json.loads((recs[tid]["dir"] / "argv.json").read_text(encoding="utf-8"))["by"]
         assert by("TASK-001") == "Coordinator" and by("TASK-002") == "advance"
+        same = [dispatch.new_record(project, "TASK-004", "r", [], "x") for _ in range(2)]  # same second: two records
+        assert same[0] != same[1] and all((d / "argv.json").exists() for d in same)
         with patch.dict(os.environ, {"OMI_RUN_DIR": "x"}):
             assert dispatch.foreground(project, "TASK-003", "r", [], lambda: 7) == 7  # inside a wrapper: no second record
         assert "TASK-003" not in {r["tid"] for r in dispatch.records(root)}
