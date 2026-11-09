@@ -136,7 +136,7 @@ def set_front(text, key, value):
     return f"---{chr(10).join(lines)}---{body}"
 
 
-FRONT_OWNED = ("step", "status", "workflow", "scope", "role", "skills", "refs", "plan", "model", "effort", "tool", "step_settings")  # Coordinator-owned task frontmatter
+FRONT_OWNED = ("step", "status", "workflow", "scope", "role", "skills", "refs", "plan", "model", "effort", "tool", "step_settings", "depends")  # Coordinator-owned task frontmatter
 
 
 def front_of(text):
@@ -318,7 +318,7 @@ def step(root, tid, action, why=None, now=None, to=None, po=None):
             return 0
         new = steps[at + 1]
         if new["role"] != workflows.COORDINATOR:
-            catalogs.get_role(root, m.get("role") or "omi-agent-engineer")  # unknown task role fails too
+            workflows.check_role(root, m, new["role"])  # unknown task role fails too
             if catalogs.get_role(root, new["role"])["access"] == "write":
                 scope.require_scope(tid, text)
         catalogs.check_skills(root, workflows.step_skill_ids(root, new, m))

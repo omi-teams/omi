@@ -343,7 +343,7 @@ def test_detached_run_and_hooks():
     from unittest.mock import patch
     real_run = subprocess.run
     with detached_project() as (code, project, wt, task):
-        calls = []
+        calls, mid_run = [], ["status: in-progress\nstep_settings: build=claude/opus/high\ndepends: TASK-001"]
         def execute(argv, **kw):
             if argv[0] != "docker":
                 return real_run(argv, **kw)
@@ -351,6 +351,8 @@ def test_detached_run_and_hooks():
             if argv[:2] == ["docker", "run"]:
                 if argv[-2:] == ["sh", "-s"]:
                     return subprocess.CompletedProcess(argv, 0, b"state hook\n", b"")
+                if mid_run:  # the Coordinator edits the state task while the agent runs
+                    task.write_text(task.read_text(encoding="utf-8").replace("status: in-progress", mid_run.pop()), encoding="utf-8")
                 result = ({"result": "DONE detached", "usage": {}} if "claude" in argv else
                           {"type": "item.completed", "item": {"type": "agent_message", "text": "DONE detached"}})
                 return subprocess.CompletedProcess(argv, 0, json.dumps(result), "")
@@ -374,6 +376,10 @@ def test_detached_run_and_hooks():
                 assert "replace instructions to edit the task" in system
                 assert "Tests: python3 -c 'print(123)'" in prompt
                 assert str(project) not in prompt
+            meta = omi.common.core.meta(task)  # TASK-245: Coordinator-owned fields keep the state value after a run
+            assert meta.get("step_settings") == "build=claude/opus/high" and meta.get("depends") == "TASK-001", meta
+            recs = [r for r in omi.worker.dispatch.records(code) if r["tid"] == task.stem]
+            assert len(recs) == 2 and all(r["rc"] == 0 for r in recs), recs  # foreground runs leave a record advance accepts
             # The shared repo stores the project prefix.
             committed = omi.common.core.git(project, "show", f"HEAD:projects/sample/.omi/tasks/{task.name}")
             assert "DONE detached" in committed and "## Usage" in committed

@@ -22,7 +22,7 @@ def accepted():
                    dict(id='accept', role='coordinator', gate='auto')]
         h.text = ('---\nid: TASK-218\ntitle: feat: accept\nstatus: in-progress\nstep: review\nworkflow: flow\n---\n'
                   '## Acceptance criteria\n- [ ] handles input\n- [ ] rejects invalid input\n\n'
-                  '## Checkpoint\nHost: python check.py -> PASS\n\n## Steps\n'
+                  '## Checkpoint\nHost: python check.py [host] -> PASS\n\n## Steps\n'
                   '- review started 2026-11-06 11:18\n\n## Reports\n'
                   '2026-11-06 11:21 omi-agent-reviewer (codex):\n> VERDICT: PASS\n'
                   '> ✓ handles input\n> ✓ rejects invalid input\n> HOST: python check.py\n\n'
@@ -74,7 +74,7 @@ def test_pass_merge_and_resume() -> None:
         assert 'status: done' in h.task.read_text(encoding='utf-8')
         calls = h.calls
         body = (h.run_dir / 'pr-body.md').read_text(encoding='utf-8')
-        for needle in ['## Summary', '## Changes', '## Not in this PR', '## Verification', '## Known issues', 'Host: python check.py -> PASS', 'PASS abc1234', 'VERDICT: PASS', '- accept done']:
+        for needle in ['## Summary', '## Changes', '## Not in this PR', '## Verification', '## Known issues', 'Host: python check.py [host] -> PASS', 'PASS abc1234', 'VERDICT: PASS', '- accept done']:
             assert needle in body, (needle, body)
         edit = next(c for c in calls if c[:3] == ['gh', 'pr', 'edit'])
         assert '--body-file' in edit
@@ -182,8 +182,8 @@ def test_pass_unmerged_pr_keeps_final_ci_guard() -> None:
 
 
 def test_pass_refusals_do_not_change_task() -> None:
-    for old, new, expected in [('Host: python check.py -> PASS', '', 'HOST'),
-                               ('Host: python check.py -> PASS', 'Host: python check.py -> FAIL', 'HOST'),
+    for old, new, expected in [('Host: python check.py [host] -> PASS', '', 'HOST'),
+                               ('Host: python check.py [host] -> PASS', 'Host: python check.py [host] -> FAIL', 'HOST'),
                                ('✓ handles input', 'handles input', 'handles input'),
                                ('✓ rejects invalid input', '✓ unrelated', 'rejects invalid input'),
                                ('- review started', '- review done', 'current'),
@@ -293,7 +293,7 @@ def test_pass_review_guards_and_windows() -> None:
             elif mode == 'po': h.steps[1]['gate'] = 'po'
             elif mode == 'host-next':
                 h.steps.insert(1, dict(id='security', role='omi-agent-security-reviewer', gate='review'))
-                h.task.write_text(h.text.replace('Host: python check.py -> PASS', ''), encoding='utf-8')
+                h.task.write_text(h.text.replace('Host: python check.py [host] -> PASS', ''), encoding='utf-8')
             before = h.task.read_text(encoding='utf-8')
             error, _ = h.invoke(reject=[1] if mode == 'reject' else None)
             assert 'eligibility FAILED' in error and not h.calls, (mode, error)
@@ -540,9 +540,9 @@ def test_pass_host_error_prints_recordable_line() -> None:
         text = h.text.replace('HOST: python check.py', 'HOST: ' + request)
         h.task.write_text(text, encoding='utf-8')
         error, _ = h.invoke()
-        assert f'Host: {request} -> PASS' in error, error
+        assert f'Host: {request} [host] -> PASS' in error, error
         assert not h.calls and h.task.read_text(encoding='utf-8') == text
-        h.task.write_text(text.replace('Host: python check.py -> PASS', f'Host: {request} -> PASS'), encoding='utf-8')
+        h.task.write_text(text.replace('Host: python check.py [host] -> PASS', f'Host: {request} [host] -> PASS'), encoding='utf-8')
         assert not h.invoke()[0]
 
 
@@ -550,7 +550,7 @@ def test_pass_host_quoted_item() -> None:
     with accepted() as h:
         request = 'Windows evidence `Host: native check -> PASS` and `Host: CI -> PASS`'
         text = h.text.replace('HOST: python check.py', 'HOST: ' + request)
-        text = text.replace('Host: python check.py -> PASS', f'Host: {request} -> PASS')
+        text = text.replace('Host: python check.py [host] -> PASS', f'Host: {request} [host] -> PASS')
         h.task.write_text(text, encoding='utf-8')
         error, _ = h.invoke()
         assert not error, error
@@ -560,7 +560,7 @@ def test_pass_host_none_with_reason() -> None:
     """TASK-261 (was TASK-260): `HOST: none; <reason>` asks for no Host: line."""
     with accepted() as h:
         text = h.text.replace('HOST: python check.py', 'HOST: none; no host-only criterion needs a separate host check.')
-        h.task.write_text(text.replace('Host: python check.py -> PASS', ''), encoding='utf-8')
+        h.task.write_text(text.replace('Host: python check.py [host] -> PASS', ''), encoding='utf-8')
         error, _ = h.invoke()
         assert not error, error
 
@@ -573,7 +573,7 @@ def test_pass_host_test_prose_current_head() -> None:
             h.steps[0]['role'] = role
             request = 'Host test: the Coordinator already recorded host-test PASS abc1234 for this commit'
             text = h.text.replace(REVIEWER, role).replace('HOST: python check.py', 'HOST: ' + request)
-            text = text.replace('Host: python check.py -> PASS', '')
+            text = text.replace('Host: python check.py [host] -> PASS', '')
             h.task.write_text(text, encoding='utf-8')
             with patch.object(advance.accept.core, 'git', return_value=h.head) as git:
                 error, _ = h.invoke()
@@ -662,6 +662,42 @@ def main():
     test_reviewer_host_test_guidance()
     test_pass_ci_classifies_check_results()
     test_pass_local_and_post_merge_failure()
+    test_pass_task012_sequence_goes_to_security()
+    test_pass_host_line_needs_command_and_environment()
+
+
+def test_pass_task012_sequence_goes_to_security() -> None:
+    """TASK-241 regression (omi-board TASK-012): after a review PASS advance moves to security, never the reviewer again on that HEAD."""
+    for security_passed in (False, True):
+        with accepted() as h:
+            h.steps = [dict(id='review', role=REVIEWER, gate='review'),
+                       dict(id='security', role='omi-agent-security-reviewer', gate='review'),
+                       dict(id='accept', role='coordinator', gate='auto')]
+            h.head = 'abc1234'
+            if security_passed:
+                h.task.write_text(h.text + '| omi-agent-security-reviewer | PASS abc1234 |\n', encoding='utf-8')
+            error, out = h.invoke()
+            assert not error, (error, out)
+            dispatched = [c[4] for c in h.calls if c[3:4] == ['dispatch']]
+            assert REVIEWER not in dispatched, dispatched
+            if security_passed:
+                assert dispatched == [] and 'dispatch: skipped (omi-agent-security-reviewer PASS on this HEAD already)' in out, out
+            else:
+                assert dispatched == ['omi-agent-security-reviewer'], dispatched
+
+
+def test_pass_host_line_needs_command_and_environment() -> None:
+    """TASK-246: `Host: <command> [host|container|ci] -> PASS|FAIL`; a line without the environment is rejected."""
+    for line in ('Host: python check.py -> PASS', 'Host: [host] -> PASS', 'Host: python check.py [laptop] -> PASS'):
+        with accepted() as h:
+            h.task.write_text(h.text.replace('Host: python check.py [host] -> PASS', line), encoding='utf-8')
+            error, _ = h.invoke()
+            assert 'need a command and an environment' in error and line in error, error
+            assert not h.calls
+    for env in ('container', 'ci'):
+        with accepted() as h:
+            h.task.write_text(h.text.replace('[host]', f'[{env}]'), encoding='utf-8')
+            assert not h.invoke()[0]
 
 
 if __name__ == '__main__':

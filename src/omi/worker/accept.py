@@ -41,13 +41,21 @@ def marked_criteria(text: str, report: str, worktree: Path | None = None) -> str
                         '\n## Acceptance criteria\n' + re.sub(r'^- \[ \]', '- [x]', criteria, flags=re.M), 1)
 
 
+HOST_LINE = re.compile(r'^Host: (.+?) \[(host|container|ci)\] -> (PASS|FAIL)\b')  # command, environment, result
+
+
 def check_hosts(text: str, report: str, worktree: Path | None = None) -> None:
-    """Accept explicit host results or the latest host-test PASS on current HEAD."""
+    """Accept explicit host results (`Host: <command> [host|container|ci] -> PASS`) or the latest host-test PASS on current HEAD."""
     checkpoint = section(text, 'Checkpoint')
     hosts = [h for h in re.findall(r'^\s*(?:[-*] )?HOST:?[ \t]+(.+)$', report, re.M)
              if not re.match(r'(?:none|n/a|-)(?:[\s;:,.(]|$)', h.strip(), re.I)]  # `HOST: none; <why>` is no host check
-    passed = set(re.findall(r'^Host: (.+) -> (?:PASS(?:\b.*)?|passed(?:\b.*)?|0|exit 0)$', checkpoint, re.M))
-    pending = [h for h in hosts if h not in passed]
+    lines = re.findall(r'^Host:.*$', checkpoint, re.M)
+    bad = [line for line in lines if not HOST_LINE.match(line)]
+    if bad:
+        raise state.StateError('Host lines need a command and an environment, `Host: <command> [host|container|ci] -> PASS|FAIL`: '
+                               + '; '.join(bad))
+    passed = [m[1].strip('` ') for m in map(HOST_LINE.match, lines) if m[3] == 'PASS']
+    pending = [h for h in hosts if h.strip('` ') not in passed and h not in passed]
     host_tests = [h for h in pending if re.match(r'host[- ]test\b', h, re.I)]
     if host_tests and worktree is not None:
         head = core.git(worktree, 'rev-parse', '--short=7', 'HEAD')
@@ -56,7 +64,18 @@ def check_hosts(text: str, report: str, worktree: Path | None = None) -> None:
             pending = [h for h in pending if h not in host_tests]
     if pending:
         raise state.StateError('HOST checks need a passing Host: line under ## Checkpoint; after running each check, record: '
-                               + '; '.join(f'Host: {item} -> PASS' for item in pending))
+                               + '; '.join(f'Host: {item} [host] -> PASS' for item in pending))
+
+
+def passed_on_head(ctx: Any, role: str, command: Callable) -> bool:
+    """True when `role`'s newest Usage verdict is PASS on the task worktree's current HEAD (TASK-241: no second review of it)."""
+    wt = core.task_worktrees(ctx.project.code).get(ctx.tid)
+    try:
+        head = command(Path(wt), ['git', 'rev-parse', '--short=7', 'HEAD']) if wt else ''
+    except state.StateError:
+        head = ''
+    rows = [r[-1] for r in tasks.usage_rows(core.read_task(task_file(ctx))) if r[0] == role]
+    return bool(head and rows and rows[-1].split()[:2] == ['PASS', head])
 
 
 def eligible(ctx: Any) -> bool:
@@ -136,6 +155,8 @@ def step_next(ctx: Any, command: Callable) -> None:
 def reviewer(ctx: Any, command: Callable) -> str | None:
     if ctx.following.get('stage') and ctx.following.get('stage') == ctx.step.get('stage'):
         return 'skipped (ran with its stage)'
+    if ctx.following['role'] == ctx.rec['role'] or passed_on_head(ctx, ctx.following['role'], command):
+        return f"skipped ({ctx.following['role']} PASS on this HEAD already)"
     if not any(r['tid'] == ctx.tid and r['role'] == ctx.following['role'] and r['started'] >= ctx.rec['started']
                for r in dispatch.records(ctx.project.code)):
         omi(ctx, command, 'dispatch', ctx.following['role'], ctx.tid)

@@ -312,3 +312,39 @@ def main():
     test_baseline_and_changed()
     test_tool_command()
     test_init_and_non_ascii()
+    test_root_entries_self_import_empty_map()
+
+
+def test_root_entries_self_import_empty_map():
+    """TASK-242: unmapped root folders are one line each, a layer may import itself, an empty map says so,
+    `structure init` prints to stdout, and a write step refuses a project without a map."""
+    for text in ("", "# no frontmatter\n- a/** | domain | x | imports: -\n", HEAD):
+        assert "structure map is empty" in err(text), err(text)
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / ".omi").mkdir()
+        (root / ".omi/structure.md").write_text(HEAD + "- app/** | domain | core | imports: -\n- .omi/** | config | cfg | imports: -\n",
+                                                encoding="utf-8")
+        (root / "app").mkdir()
+        (root / "app/a.py").write_text("import app.b\n", encoding="utf-8")  # same layer, imports: -
+        (root / "app/b.py").write_text("", encoding="utf-8")
+        (root / "stray").mkdir()
+        (root / "stray/x.py").write_text("", encoding="utf-8")
+        (root / "stray/y.py").write_text("", encoding="utf-8")
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        out = StringIO()
+        with redirect_stdout(out):
+            code = structure.check(root)
+        assert (code, out.getvalue()) == (1, "stray/: root entry not in the map: -\n"), out.getvalue()
+        try:
+            structure.require_map(root / "nowhere")
+            raise AssertionError("missing map allowed")
+        except SystemExit as exc:
+            assert "omi-idea layout step" in str(exc)
+        structure.require_map(root)
+        (root / ".omi/structure.md").unlink()
+        out = StringIO()
+        with redirect_stdout(out):
+            assert structure.init(root) == 0
+        assert out.getvalue().startswith("---\nid: structure") and not (root / ".omi/structure.md").exists()

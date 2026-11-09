@@ -12,6 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 if os.name == "nt":
+    import ctypes
     import msvcrt
 else:
     import fcntl
@@ -102,6 +103,29 @@ def main_checkout(wt):
 
 def flag(rest, name):
     return rest[rest.index(name) + 1] if name in rest[:-1] else None
+
+
+def pid_alive(pid: object) -> bool:
+    """True while process `pid` runs (never signals it: os.kill(pid, 0) would terminate it on Windows)."""
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return False
+    if os.name == "nt":
+        kernel = ctypes.windll.kernel32
+        handle = kernel.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        code = ctypes.c_ulong()
+        try:
+            return bool(kernel.GetExitCodeProcess(handle, ctypes.byref(code))) and code.value == 259  # STILL_ACTIVE
+        finally:
+            kernel.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 @contextmanager

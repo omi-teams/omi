@@ -286,6 +286,20 @@ def test_hooks():
                 assert want in r.stdout and "test GIT_DIR=unset" in r.stdout, r
                 if extra:  # Git-bash spells $PWD /tmp/..., so compare the dir name only
                     assert re.search(r"omi /gitdir/worktrees/T \S*/fake \[", r.stdout), r
+    # TASK-247: a new or changed binary over 1 MB fails the hook and is named; a big text file does not
+    with tempfile.TemporaryDirectory() as d:
+        sh = shutil.which("sh")
+        if sh and shutil.which("git"):
+            w = Path(d)
+            git(w, "init", "-q", "-b", "development")
+            (w / "big.txt").write_text("x\n" * 600000, encoding="utf-8")
+            env = {k: v for k, v in os.environ.items() if k not in ("OMI_PROJECT_STATE", "OMI_GIT_DIR")}
+            hook = [sh, str(omi.common.core.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh")]
+            r = subprocess.run(hook, cwd=w, capture_output=True, text=True, env=env)
+            assert r.returncode == 0 and "no tests found" in r.stdout, r
+            (w / "app.bin").write_bytes(b"\0\1\2" * 400000)
+            r = subprocess.run(hook, cwd=w, capture_output=True, text=True, env=env)
+            assert r.returncode == 1 and "binary files over 1 MB" in r.stdout and "app.bin" in r.stdout and "big.txt" not in r.stdout, r
     text = (omi.common.core.TEMPLATE / "dot-omi" / "hooks" / "post-run.sh").read_text()
     assert all(w in text for w in ("pytest", "go test", "npm test"))
     for f in (omi.common.core.TEMPLATE / "AGENTS.md",
@@ -546,7 +560,7 @@ def test_host_only_criteria():
         if "reviewer" in template_copy:
             assert "`HOST <criterion>`" in text and "Host items go only on the single `HOST:` line" in text and "is `UNVERIFIED`" in text
         else:
-            assert "Host: <command> -> <result>" in text and "no merge without one `Host:` line" in text
+            assert "Host: <command> [host|container|ci] -> PASS|FAIL" in text and "No merge without one passing `Host:` line" in text
 
 
 def test_ci_structure_fetch():

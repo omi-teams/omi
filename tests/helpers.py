@@ -111,6 +111,8 @@ def detached_project():
             data = json.loads(cfg.read_text(encoding="utf-8"))
             data["test"] = "python3 -c 'print(123)'"
             cfg.write_text(json.dumps(data), encoding="utf-8")
+            (project / ".omi" / "structure.md").write_text(  # write steps need an approved map (omi-idea layout step)
+                "---\nid: structure\n---\n- ** | platform | everything | imports: -\n", encoding="utf-8")
             task = project / ".omi" / "tasks" / "TASK-097.md"
             task.write_text("---\nid: TASK-097\ntitle: Detached test\nstatus: in-progress\n"
                             "scope: app.py\nrole: omi-agent-engineer\nworkflow: omi-flow-feature\n"

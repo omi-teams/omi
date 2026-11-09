@@ -82,11 +82,15 @@ def run_test(wt, main, cmd, tid, image):
         shutil.copytree(wt, copy, symlinks=True)
         argv = docker.worker_argv(copy, image, ["bash", "-c", cmd], name, docker.repo_key(main), docker.worker_labels("test", tid, None, None),
                                   env_names=(), offline=True, **docker.worker_sizes(main))
+        ended = False
         try:
             r = subprocess.run(argv, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=hook_timeout(main))
+            ended = True
         except subprocess.TimeoutExpired as e:
-            subprocess.run(["docker", "rm", "-f", name], capture_output=True)
             return 124, (e.stdout or b"").decode("utf-8", "replace") + "test timed out\n"
+        finally:  # the per-task test container goes on a timeout, Ctrl-C or kill too (--rm covers a normal exit)
+            if not ended:
+                subprocess.run(["docker", "rm", "-f", name], capture_output=True)
     return r.returncode, r.stdout.decode("utf-8", "replace")
 
 

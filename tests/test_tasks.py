@@ -1309,7 +1309,27 @@ def test_review_stage_steps_and_lanes():
         assert "WARN: bug touching 1 non-test file(s) - consider the fast lane omi-flow-bugfix-fast" in out.getvalue(), out.getvalue()
 
 
+def test_write_step_role_must_match_task_role():
+    """TASK-246: step next, dispatch and skills check refuse a write step whose role differs from the task `role:`."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        with contextlib.redirect_stdout(io.StringIO()):
+            omi.setup.upgrade.init(root)
+        wf = omi.project.workflows
+        wf.check_role(root, {"id": "TASK-1", "role": "omi-agent-engineer"}, "omi-agent-engineer")
+        wf.check_role(root, {"id": "TASK-1", "role": "omi-agent-designer-ui"}, "omi-agent-reviewer")  # read role: fine
+        wf.check_role(root, {"id": "TASK-1"}, "omi-agent-devops")  # no task role: the step decides
+        for bad in ({"id": "TASK-1", "role": "omi-agent-designer-ui"}, {"id": "TASK-1", "role": "omi-agent-nobody"}):
+            try:
+                wf.check_role(root, bad, "omi-agent-engineer")
+                raise AssertionError(f"mismatch allowed: {bad}")
+            except SystemExit as exc:
+                assert "TASK-1" in str(exc) or "omi-agent-nobody" in str(exc), exc
+    assert "depends" in tasks.FRONT_OWNED  # Coordinator-owned: a run never changes it
+
+
 def main():
+    test_write_step_role_must_match_task_role()
     test_review_stage_steps_and_lanes()
     test_file_plan_lines()
     test_pattern_line_shape()

@@ -7,20 +7,18 @@ import json
 import os
 import posixpath
 import re
-import secrets
 import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 import types
 from pathlib import Path
 
 from ..project import catalogs, runs, scope, tasks, workflows
 from ..common import core
-from . import budget, creds, docker, hooks, pr, session, tools
+from . import agent, budget, creds, docker, hooks, pr, session, tools
 from ..state import resolve as state
 
 
@@ -266,7 +264,6 @@ def report_note(task: Path, role: str, tool: str, report: str) -> None:
 
 MODULE_TESTS = ("Run only the tests of the modules you changed (OMI_QUIET=1 prints only failures); the full suite above runs once "
                 "in the post-run hook after you finish, so do not run it yourself.")
-CLAUDE_ONLY = ("omi-agent-architect",)  # PO rule: the architect never runs on Codex
 
 
 def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=False):
@@ -300,7 +297,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
     tool = tool or step_settings.get("tool") or (tm.get("tool") if task_settings else None) or am.get("tool") or "claude"
     if tool not in ("claude", "codex"):
         sys.exit(f"unknown tool `{tool}`: claude or codex. Nothing changed.")
-    if tool == "codex" and role in CLAUDE_ONLY:
+    if tool == "codex" and role in agent.CLAUDE_ONLY:
         sys.exit(f"{role} runs on Claude only (PO rule: the architect is never given to Codex). Nothing started.")
     other = "codex" if tool == "claude" else "claude"
     docker.need_docker()  # read roles too: no host fallback
@@ -359,6 +356,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
         text += ("\nFor this detached run, replace instructions to edit the task or its Checkpoint "
                  "with reporting those updates in your final response. /state is read-only.")
     tmp = tempfile.TemporaryDirectory() if read else None
+    timeout = agent.run_timeout(project, am["access"])
 
     repo = docker.repo_key(main)
     spent, ac = {}, {"left": role in tasks.REVIEW_ROLES}  # last attempt's input tokens; one fresh rerun for missing AC lines
@@ -386,39 +384,14 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
 
         def run_once(name):
             with docker.egress(main, name, image, docker.allow_for(main, t, chatgpt=chatgpt), task.stem) as (net, proxy):
-                with subprocess.Popen(docker.worker_argv(wt, image, cmd, name, repo,
-                                                  {**docker.worker_labels(role, task.stem, mdl, eff), **docker.compose_labels(name, "agent")}, ro=read,
-                                                  mounts=mounts, extra=sess, env_names=(env_name,), network=net, proxy=proxy,
-                                                  **docker.worker_sizes(main)),
-                                      env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                      encoding="utf-8", errors="replace") as p:
-                    err = []
-
-                    def pump():  # echo the agent's stderr live, keep a copy for the name-conflict check
-                        for line in p.stderr:
-                            err.append(line)
-                            sys.stderr.write(line)
-                            sys.stderr.flush()
-
-                    th = threading.Thread(target=pump, daemon=True)
-                    th.start()
-                    out = p.stdout.read()
-                    p.wait()
-                    th.join()
-                r = types.SimpleNamespace(stdout=out, stderr="".join(err), returncode=p.returncode)
-            if r.returncode and docker.name_taken(r.stderr, name):
-                raise docker.NameTaken(name)
-            return r
+                return agent.run_container(docker.worker_argv(
+                    wt, image, cmd, name, repo, {**docker.worker_labels(role, task.stem, mdl, eff), **docker.compose_labels(name, "agent")},
+                    ro=read, mounts=mounts, extra=sess, env_names=(env_name,), network=net, proxy=proxy, **docker.worker_sizes(main)),
+                    env, name, timeout)
 
         try:
-            for salt in ("", secrets.token_hex(1)):  # a name in use: one retry with a random 2-char suffix
-                try:
-                    r = run_once(docker.container_name(docker.repo_label(main), role, task.stem, t, mdl, eff, salt=salt))
-                    break
-                except docker.NameTaken:
-                    continue
-            else:
-                sys.exit(f"container name in use again for {role} ({t}). Nothing changed.")
+            r = agent.run_named(lambda salt: docker.container_name(docker.repo_label(main), role, task.stem, t, mdl, eff, salt=salt),
+                                run_once, f"{role} ({t})")
         finally:  # Ctrl-C, a container error and the exit above included: no token may stay in the session volume
             dropped = not read and session.scrub(repo, task.stem, t, image, value)
             if dropped and task.exists():  # token in a transcript: forget the session, next run is fresh
@@ -437,8 +410,10 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             verdict += " " + head
         if verdict.startswith("FAIL") and (rt := tasks.root_of(result)):
             verdict += f" root:{rt}"
-        if tools.quota_hit(t, r.stdout, r.returncode, r.stderr):
+        if (why := agent.failure(t, r)) == "quota":
             verdict = f"QUOTA->{'codex' if t == 'claude' else 'claude'}"
+        elif why:
+            verdict = "AUTH"
         elif ac["left"] and verdict[:4] in ("PASS", "FAIL") and (gap := budget.missing_ac(core.read_task(task) if task.exists() else "", result)):
             ac["gap"], verdict = gap, "AC-MISSING"  # not a verdict: the fresh rerun's row counts
         spent["input"] = nums[0]
@@ -451,11 +426,18 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
                         [Path(f).stem for f in rule_files], runs.ref_ids(catalog, ref_files))
         return r, result, done
 
-    def stop_quota(why):
-        line = f"QUOTA: {why}; nothing discarded, the partial diff stays in {wt}. Resume: omi-task {task.stem}"
-        tasks.append_note(task, "Checkpoint", line)
+    def stop(kind, t, why):
+        """QUOTA (rc 5) or AUTH (rc 8) stop with one line under ## Checkpoint; AUTH also leaves an `auth` marker for watch."""
+        if kind == "auth":
+            line, rc = agent.auth_line(t), agent.AUTH_RC
+            if os.environ.get("OMI_RUN_DIR"):
+                core.write_text(Path(os.environ["OMI_RUN_DIR"]) / "auth", line)
+            tasks.append_note(task, "Checkpoint", f"{line} ({why}); nothing discarded, the partial diff stays in {wt}")
+        else:
+            line, rc = f"QUOTA: {why}; nothing discarded, the partial diff stays in {wt}. Resume: omi-task {task.stem}", 5
+            tasks.append_note(task, "Checkpoint", line)
         print(line)
-        return 5
+        return rc
 
     hook_failed = False
     try:
@@ -481,36 +463,27 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             print(f"RESUME FAILED: session {sid} has no session volume; starting a fresh session")
             sid = None
         r, result, done = attempt(tool, secret, resume=sid)
-        if sid and r.returncode and result is None and not tools.quota_hit(tool, r.stdout, r.returncode, r.stderr):
+        if sid and r.returncode and result is None and not agent.failure(tool, r):
             print(f"RESUME FAILED: session {sid} could not be resumed; starting a fresh session")
             r, result, done = attempt(tool, secret)
-        if tools.quota_hit(tool, r.stdout, r.returncode, r.stderr):
-            if role in CLAUDE_ONLY:
-                return stop_quota(f"{tool} hit its usage limit and {role} runs on Claude only, no fallback to {other}")
-            other_secret, problem = (creds.claude_auth() if other == "claude" else creds.tool_secret(other)), None
-            try:
-                efforts[other] = tools.resolve_effort(want, other)
-                try:
-                    models[other] = tools.resolve_model(main, want_model, other)
-                except SystemExit:
-                    # A full ID is specific to one tool; use the role alias on a switch.
-                    if not re.fullmatch(tools.CODEX_ID if tool == "codex" else r"claude-[a-zA-Z0-9_.-]+", want_model):
-                        raise
-                    models[other] = tools.resolve_model(main, am.get("model"), other)
-            except SystemExit as exc:
-                problem = str(exc)
-            if not problem and not other_secret[1]:
-                problem = other_secret[2] or f"no {other} token"
-            if problem:
-                return stop_quota(f"{tool} hit its usage limit and {other} cannot continue ({problem})")
-            tasks.append_note(task, "Checkpoint", f"QUOTA: {tool} hit its usage limit; {role} continued with {other} on the partial diff.")
-            print(f"QUOTA: {tool} hit its usage limit; rerunning {role} with {other} ({models[other]})")
+        if agent.failure(tool, r) == "auth" and (again := agent.fresh_secret(tool))[1]:
+            print(f"AUTH: {tool} rejected the login; retrying {role} once with host credentials read fresh")
+            secret = again
+            r, result, done = attempt(tool, secret)
+        if why := agent.failure(tool, r):
+            what = "hit its usage limit" if why == "quota" else "login is invalid"
+            other, other_secret = agent.other_tool(tool, role, main, want, want_model, am.get("model"), efforts, models)
+            if other is None:
+                return stop(why, tool, f"{tool} {what} and {other_secret}")
+            tasks.append_note(task, "Checkpoint", f"{why.upper()}: {tool} {what}; {role} continued with {other} on the partial diff.")
+            print(f"{why.upper()}: {tool} {what}; rerunning {role} with {other} ({models[other]})")
             r, result, done = attempt(other, other_secret,
-                                      f"\nNote: a previous run with {tool} stopped on its usage limit; "
+                                      f"\nNote: a previous run with {tool} stopped on its {'usage limit' if why == 'quota' else 'login'}; "
                                       "a partial diff already exists in /work. Inspect it and continue, do not start over.")
-            tool, secret = other, other_secret
-            if tools.quota_hit(other, r.stdout, r.returncode, r.stderr):
-                return stop_quota("claude and codex both hit their usage limit")
+            first, tool, secret = tool, other, other_secret
+            if again := agent.failure(tool, r):
+                return stop(again, tool, "claude and codex both hit their usage limit" if why == again == "quota"
+                            else f"{first} {what}, then {tool} failed too")
         limit = budget.token_budget(project, role)
         over = bool(limit and (spent.get("input") or 0) > limit)
         if over:
@@ -543,7 +516,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             if sid not in done:
                 print(f"SKILL NOT READ: {sid}")
         res = hooks.run_hook(wt, main, "post-run", task.stem, image) if not rc and not read and not over else None
-        if res and res[0] and (sid := session.recorded(core.read_task(task), tool, role)) \
+        if res and res[0] and not agent.killed(res[0]) and (sid := session.recorded(core.read_task(task), tool, role)) \
                 and session.available(repo, task.stem, tool, sid):  # one retry: the engineer fixes what the hook found
             print("post-run hook failed; resuming the engineer once to fix it")
             if (fix := attempt(tool, secret, resume=sid, hook_tail="\n".join(res[1].strip().splitlines()[-20:])))[0].returncode:
@@ -553,10 +526,15 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             pr.post_hook(wt, task.stem, "post-run", res)
             if hooks.hook_note(task, "post-run", res, clean_head(wt, task.stem)):
                 hook_failed = True
+    except agent.Timeout as exc:  # the container is gone; never resumed by the hook-fix path
+        line = f"TIMEOUT: {role} {exc}; the partial diff stays in {wt}. Resume: omi-task {task.stem}"
+        tasks.append_note(task, "Checkpoint", line)
+        print(line)
+        return agent.TIMEOUT_RC
     finally:
         if tmp:
             tmp.cleanup()
-        if not read:
+        if not read and not project.detached:  # read-only /state: the agent cannot touch it, keep Coordinator edits made meanwhile
             for key in tasks.revert_front(task, before):
                 print(f"REVERTED: {key}")
     if hook_failed:
@@ -593,24 +571,19 @@ def worker(wt, task_file=None, model=None, effort=None, prove=False):
     am = catalogs.get_role(main, "omi-agent-engineer")  # named like a real run: real role, tool, model, effort
     tm_tool = am.get("tool") or "claude"
     model, effort = tools.resolve_model(main, am.get("model"), tm_tool), tools.resolve_effort(am.get("effort"), tm_tool)
-    for salt in ("", secrets.token_hex(1)):  # a name in use: one retry with a random 2-char suffix
-        name = docker.container_name(docker.repo_label(main), "omi-agent-engineer", "prove", tm_tool, model, effort, salt=salt)
-        try:
-            with docker.egress(main, name, image, allow) as (net, proxy):
-                r = subprocess.run(docker.worker_argv(wt, image, ["sh", "-s"], name, docker.repo_key(main),
-                                               {**docker.worker_labels("prove", None, None, None), **docker.compose_labels(name, "agent")},
-                                               network=net, proxy=proxy,
-                                               mounts=[f"{project.state}:/state"] if project.detached else (),
-                                               **docker.worker_sizes(main)), env=env,
-                                   input=script.read_bytes().replace(b"\r\n", b"\n"), stdout=subprocess.PIPE,
-                                   stderr=subprocess.STDOUT)
-            if r.returncode and docker.name_taken(r.stdout.decode("utf-8", "replace"), name):
-                raise docker.NameTaken(name)
-            break
-        except docker.NameTaken:
-            continue
-    else:
-        sys.exit("container name in use again for --prove. Nothing changed.")
+    def run_once(name):
+        with docker.egress(main, name, image, allow) as (net, proxy):
+            r = subprocess.run(docker.worker_argv(wt, image, ["sh", "-s"], name, docker.repo_key(main),
+                                                  {**docker.worker_labels("prove", None, None, None), **docker.compose_labels(name, "agent")},
+                                                  network=net, proxy=proxy, mounts=[f"{project.state}:/state"] if project.detached else (),
+                                                  **docker.worker_sizes(main)), env=env,
+                               input=script.read_bytes().replace(b"\r\n", b"\n"), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        if r.returncode and docker.name_taken(r.stdout.decode("utf-8", "replace"), name):
+            raise docker.NameTaken(name)
+        return r
+
+    r = agent.run_named(lambda salt: docker.container_name(docker.repo_label(main), "omi-agent-engineer", "prove", tm_tool, model, effort,
+                                                           salt=salt), run_once, "--prove")
     out = r.stdout.decode("utf-8", "replace")
     print(out, end="")
     return docker.prove_rc(out, r.returncode)

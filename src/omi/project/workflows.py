@@ -165,3 +165,12 @@ def check_all_workflows(root):
     if bad:
         sys.exit("workflows check failed:\n" + "\n".join(bad))
     print(f"workflows ok ({len(files)} checked)")
+
+
+def check_role(root, meta, role):
+    """Exit on an unknown task role, or when `role` is a write role and the task's `role:` names another one (the wrong implementer)."""
+    want = meta.get("role")
+    catalogs.get_role(root, want or "omi-agent-engineer")
+    if want and role != want and role != COORDINATOR and catalogs.get_role(root, role)["access"] == "write":
+        sys.exit(f"{meta.get('id') or 'task'}: the write step runs {role} but the task role is {want}; "
+                 "set the task role or pick a workflow whose write step matches. Nothing changed.")

@@ -235,7 +235,7 @@ def test_cli_characterization():
         assert rc == 0 and usage.startswith("usage: omi <command>\n") and not err
         assert [l.split()[0] for l in usage.splitlines()[1:]] == [
             "attach", "install-user", "init", "upgrade", "version", "status", "dockerfile", "improve", "sync", "board", "guard", "github", "clean", "skills", "skills", "token", "structure", "plans",
-            "references", "rules", "agents", "workflows", "host-test", "step", "note", "run", "hook", "dispatch", "dispatch", "drive", "advance", "watch", "parallel", "worker", "worker"]
+            "references", "rules", "agents", "workflows", "host-test", "step", "note", "run", "hook", "dispatch", "dispatch", "stop", "drive", "advance", "watch", "parallel", "worker", "worker"]
         # unknown commands and incomplete arguments fall through to the usage text
         for args in (["help"], ["bogus"], ["step", "TASK-001"], ["run", "omi-agent-engineer", "--model"], ["parallel", "X"],
                      ["hook", "pre-run"], ["token"], ["worker"]):
@@ -274,8 +274,9 @@ def test_cli_characterization():
             assert cli(root, "token", "set", "--tool", "codex")[1] == "no credential store support here; export OPENAI_API_KEY in the shell that runs omi.\n"
         hook = (1, "", "usage: omi hook pre-run|post-run|pre-merge <TASK-ID> (the task needs a worktree). Nothing changed.\n")
         assert cli(root, "hook", "pre-run", "TASK-001") == hook and cli(root, "hook", "bogus", "TASK-001") == hook
-        assert cli(root, "run", "omi-agent-engineer", "TASK-001") == (
-            1, "", "no worktree for TASK-001: create it first (git worktree add). Nothing changed.\n")
+        assert cli(root, "run", "omi-agent-engineer", "TASK-001") == (  # TASK-242: no write step before the approved map
+            1, "", "no .omi/structure.md: run the omi-idea layout step (root layout and full structure map, approved by the PO) "
+                   "before any write step. Nothing started.\n")
         assert cli(root, "worker", "x") == (1, "", "usage: omi worker <wt> <task-file> [--model M] [--effort E]\n")
         rc, out, err = cli(root, "worker", "x", "--prove")
         assert rc == 1 and not out and err.endswith(" is not a git worktree. Nothing changed.\n"), err

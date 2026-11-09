@@ -515,7 +515,7 @@ def test_reviewers_accept_host_evidence() -> None:
                         "passing `Host:` lines recorded by the Coordinator count as evidence",
                         "cite the matching line", "verify the worker part"):
             assert wording in text, (role, wording)
-        assert "HOST: <criterion> <evidence or required host check>" in text
+        assert "HOST: <exact command that checks it on the host>" in text and "need a build or file writes" in text  # TASK-246
 
 
 def test_reviewer_mockup_rule_depends_on_workflow() -> None:

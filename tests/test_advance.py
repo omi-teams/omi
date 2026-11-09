@@ -286,10 +286,13 @@ def test_cli_and_windows_no_console() -> None:
             patch.object(cli.core, 'main_checkout', return_value=h.project.code), \
             patch.object(cli.advance, 'advance') as call:
         cli.dispatch(['advance', TID, '--message', 'fix: task'])
-        call.assert_called_once_with(h.project, TID, 'fix: task', None, None)
+        call.assert_called_once_with(h.project, TID, 'fix: task', None, None, hook_fixed=False)
         call.reset_mock()
         cli.dispatch(['advance', TID, '--reject', '1,3', '--why', 'not a bug'])
-        call.assert_called_once_with(h.project, TID, None, [1, 3], 'not a bug')
+        call.assert_called_once_with(h.project, TID, None, [1, 3], 'not a bug', hook_fixed=False)
+        call.reset_mock()
+        cli.dispatch(['advance', TID, '--hook-fixed'])
+        call.assert_called_once_with(h.project, TID, None, None, None, hook_fixed=True)
     with handoff() as h, patch.object(advance.core, 'WINDOWS', True), \
             patch.object(advance.subprocess, 'CREATE_NO_WINDOW', 0x08000000, create=True):
         with patch.object(advance.subprocess, 'run', wraps=h.run) as run:
@@ -744,6 +747,33 @@ def main():
     test_review_fail_resume_does_not_duplicate()
     test_review_fail_reject()
     test_review_fail_stops_and_refusals()
+    test_hook_fixed_and_no_second_review_on_head()
+
+
+def test_hook_fixed_and_no_second_review_on_head() -> None:
+    """TASK-246: `--hook-fixed` accepts a DONE run that ended rc 6 once `omi hook post-run` passes on HEAD, without a new run.
+    TASK-241: advance never dispatches a reviewer that already passed the current HEAD."""
+    with handoff() as h:
+        h.rec['rc'] = 6
+        error, _ = h.invoke()
+        assert 'exit 0 (or 6 with --hook-fixed)' in error and not any(c[0] == 'git' and c[1] == 'commit' for c in h.calls), error
+        h.fail = 'hook'
+        with contextlib.redirect_stdout(io.StringIO()):
+            try:
+                advance.advance(h.project, TID, hook_fixed=True)
+                raise AssertionError('a failing post-run hook was accepted')
+            except SystemExit as exc:
+                assert 'advance hook-fixed FAILED' in str(exc), exc
+        h.fail = None
+        h.text = h.task.read_text(encoding='utf-8') + '\n## Usage\n| omi-agent-security-reviewer | m | PASS bbb |\n'
+        h.task.write_text(h.text, encoding='utf-8')
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            advance.advance(h.project, TID, hook_fixed=True)
+        assert any(c[3:] == ['hook', 'post-run', TID] for c in h.calls)
+        assert 'hook-fixed: post-run hook passed on aaa' in out.getvalue(), out.getvalue()  # the committed HEAD, before the rebase
+        assert not any(c[3:4] == ['dispatch'] for c in h.calls), 'the reviewer passed HEAD bbb already'
+        assert 'dispatch: skipped omi-agent-security-reviewer (PASS on this HEAD already' in out.getvalue(), out.getvalue()
 
 
 if __name__ == '__main__':

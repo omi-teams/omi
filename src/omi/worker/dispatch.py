@@ -22,6 +22,7 @@ STAMP = "%Y%m%d-%H%M%S"
 WRITE_DONE = "NEXT: python -m omi advance {tid}"
 READ_PASS = "NEXT: python -m omi advance {tid}"
 READ_FAIL = "NEXT: python -m omi advance {tid}"
+STOPPED_RC = 10  # rc written by `omi stop`; the `stopped` marker names who
 
 
 def runs_dir(code: Path) -> Path:
@@ -87,7 +88,100 @@ def size_flags(project: state.Project, tid: str, role: str, meta: dict) -> list[
     return [*(["--model", model] if model else []), *(["--effort", effort] if effort else [])]
 
 
-def launch(project: state.Project, tid: str, role: str, argv: list[str] | None = None) -> Path:
+def session() -> tuple[str, int]:
+    """(Coordinator session id, pid whose life holds the lock): OMI_SESSION (`drive:<pid>`), else the Claude Code session, else the parent."""
+    sid = os.environ.get("OMI_SESSION") or os.environ.get("CLAUDE_CODE_SESSION_ID") or f"pid:{os.getppid()}"
+    tail = sid.rsplit(":", 1)[-1]
+    pid = os.environ.get("CLAUDE_PID", "") if sid == os.environ.get("CLAUDE_CODE_SESSION_ID") and not os.environ.get("OMI_SESSION") else tail
+    return sid, int(pid) if pid.isdigit() else os.getppid()
+
+
+def claim(project: state.Project, tid: str, release: bool = False) -> None:
+    """Take the per-task Coordinator lock (`<runs>/<ID>.coordinator`) for this session; a live other holder refuses in one line,
+    a holder whose process is gone is taken over. `release`: drop it after the check (a dispatch hands the task to its run)."""
+    try:
+        runs = runs_dir(project.code)
+    except state.StateError:
+        return  # not a git checkout: no runs to coordinate
+    runs.mkdir(parents=True, exist_ok=True)
+    path, (sid, pid) = runs / f"{tid}.coordinator", session()
+    with core.file_lock(runs / "coordinator.lock", 10):
+        try:
+            held = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            held = {}
+        if held.get("session") not in (None, sid) and core.pid_alive(held.get("pid")):
+            raise state.StateError(f"{tid} is driven by Coordinator session {held['session']} (pid {held['pid']}); nothing changed")
+        if release:
+            path.unlink(missing_ok=True)
+        elif held.get("session") != sid or not core.pid_alive(held.get("pid")):
+            core.write_text(path, json.dumps({"session": sid, "pid": pid}))
+
+
+def release(project: state.Project, tid: str, sid: str | None = None) -> None:
+    """Drop the task's Coordinator lock when this session holds it (the driver stops at a DECIDE)."""
+    with contextlib.suppress(OSError, ValueError, state.StateError):
+        path = runs_dir(project.code) / f"{tid}.coordinator"
+        if json.loads(path.read_text(encoding="utf-8")).get("session") == (sid or session()[0]):
+            path.unlink()
+
+
+def new_record(project: state.Project, tid: str, role: str, argv: list[str], by: str) -> Path:
+    """A run directory with argv.json naming who dispatched it (advance, drive, dispatch next, Coordinator)."""
+    rundir = runs_dir(project.code) / f"{tid}-{role}-{datetime.datetime.now():{STAMP}}"
+    rundir.mkdir(parents=True)
+    core.write_text(rundir / "argv.json", json.dumps({"tid": tid, "role": role, "argv": argv, "by": by}))
+    return rundir
+
+
+def foreground(project: state.Project, tid: str, role: str, argv: list[str], fn) -> int:
+    """Foreground `omi run`: the same record as a detached run (argv.json, started, run.lock, rc) around fn(); inside a wrapper, just fn()."""
+    try:
+        runs_dir(project.code)
+    except state.StateError:
+        return fn()
+    if os.environ.get("OMI_RUN_DIR"):
+        return fn()
+    rundir = new_record(project, tid, role, argv, os.environ.get("OMI_BY") or "Coordinator")
+    rc = 1
+    with core.file_lock(rundir / "run.lock", 10):
+        core.write_text(rundir / "started", str(os.getpid()))
+        os.environ["OMI_RUN_DIR"] = str(rundir)
+        try:
+            rc = fn()
+        except SystemExit as exc:
+            rc = exc.code if isinstance(exc.code, int) else 1
+            raise
+        finally:
+            os.environ.pop("OMI_RUN_DIR", None)
+            core.write_text(rundir / "rc", str(rc))
+    return rc
+
+
+def stop(project: state.Project, tid: str, who: str = "Coordinator") -> list[str]:
+    """`omi stop <ID>`: mark each running run `stopped`, kill its wrapper tree and every container of the task, write rc."""
+    stopped = []
+    for r in records(project.code):
+        if r["tid"] != tid or not r["running"]:
+            continue
+        core.write_text(r["dir"] / "stopped", who)  # first: a dying run must not resume through the hook-fix path
+        pid = (r["dir"] / "started").read_text(encoding="utf-8").strip() if (r["dir"] / "started").exists() else ""
+        docker.kill(pids=[int(pid)] if pid.isdigit() and int(pid) != os.getpid() else [])
+        stopped.append(r)
+    if stopped:
+        docker.kill(containers=docker.task_containers(project.state if project.detached else project.code, tid))
+    for r in stopped:
+        with contextlib.suppress(TimeoutError):  # the killed wrapper released run.lock
+            with core.file_lock(r["dir"] / "run.lock", 10):
+                if not (r["dir"] / "rc").exists():
+                    core.write_text(r["dir"] / "rc", str(STOPPED_RC))
+        print(f"stopped {tid} {r['role']} ({r['dir'].name}) by {who}")
+    if not stopped:
+        print(f"{tid}: no running run")
+    return [r["dir"].name for r in stopped]
+
+
+def launch(project: state.Project, tid: str, role: str, argv: list[str] | None = None, by: str | None = None) -> Path:
     """Start the run detached; refuse when it conflicts with a running task, and a not yet started task also with idle in-progress ones.
     Reviewers of one task may run together (a workflow `stage:`)."""
     running = {r["role"] for r in records(project.code) if r["running"] and r["tid"] == tid}
@@ -97,12 +191,11 @@ def launch(project: state.Project, tid: str, role: str, argv: list[str] | None =
     bad = held_by(project, tid, holders(project, found, idle=found.get(tid, {}).get("status", "planned") == "planned"))
     if bad:
         raise state.StateError("not parallel-safe with in-progress tasks:\n" + "\n".join(bad) + "\nNothing started.")
-    rundir = runs_dir(project.code) / f"{tid}-{role}-{datetime.datetime.now():{STAMP}}"
-    rundir.mkdir(parents=True)
+    claim(project, tid, release=True)  # the run now drives the task; a live other Coordinator refuses
     argv = argv or [sys.executable, "-m", "omi", "run", role, tid]
     if "--model" not in argv and "--effort" not in argv:
         argv = [*argv, *size_flags(project, tid, role, found.get(tid, {}))]
-    core.write_text(rundir / "argv.json", json.dumps({"tid": tid, "role": role, "argv": argv}))
+    rundir = new_record(project, tid, role, argv, by or os.environ.get("OMI_BY") or "Coordinator")
     command = [sys.executable, "-W", "ignore::RuntimeWarning", "-m", "omi.worker.dispatch"]
     with (rundir / "log").open("a", encoding="utf-8", newline="\n") as log:
         if core.WINDOWS:
@@ -242,7 +335,7 @@ def dispatch_next(project: state.Project, maximum: int = 1) -> None:
         for key in ("tool", "model", "effort"):
             if meta.get(key):
                 argv.extend([f"--{key}", meta[key]])
-        launch(project, tid, first["role"], argv)
+        launch(project, tid, first["role"], argv, by="dispatch next")
         picked.append(tid)
     if not picked:
         print("dispatch next: nothing ready")
@@ -305,6 +398,13 @@ def next_action(project: state.Project, rec: dict, text: str, report: str) -> st
     tid, rc, v = rec["tid"], rec["rc"], verdict(report)
     if rc is None:
         return f"DECIDE: LOST, the wrapper died without an exit code; check docker and {rec['dir'] / 'log'}, then rerun"
+    if (rec["dir"] / "stopped").exists():
+        return f"DECIDE: STOPPED by {(rec['dir'] / 'stopped').read_text(encoding='utf-8').strip() or 'Coordinator'}; rerun when ready"
+    if rc == 9:
+        return "DECIDE: TIMEOUT, the run passed its run_timeout and was killed (see Checkpoint); rescope, raise run_timeout or rerun"
+    if rc == 8:
+        auth = rec["dir"] / "auth"
+        return "DECIDE: " + (auth.read_text(encoding="utf-8").strip() if auth.exists() else "AUTH: login invalid; log in on the host")
     if killed(rc):
         return f"DECIDE: LOST, killed: rerun; check docker and {rec['dir'] / 'log'}"
     if v == "NEEDS SCOPE":
