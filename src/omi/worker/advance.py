@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 from ..common import core
-from ..project import catalogs, scope, tasks, workflows
+from ..project import catalogs, scope, structure, tasks, workflows
 from ..state import resolve as state
 from . import accept, dispatch, tools
 
@@ -209,7 +209,7 @@ def resolve_generated(ctx: Context) -> None:
         if not conflicted or other or not cmd:  # no conflict: the rebase failed for another reason
             raise state.StateError("" if not conflicted or other else "only generated files conflict, but .omi/config.json has no `regenerate` command")
         git(ctx, "checkout", "--ours", "--", *conflicted)  # in a rebase, ours is development
-        command(ctx.wt, shlex.split(cmd, posix=not core.WINDOWS))
+        command(ctx.wt, structure.tool_argv(cmd, posix=not core.WINDOWS))
         git(ctx, "add", "--", *conflicted)
         try:
             git(ctx, "-c", "core.editor=true", "rebase", "--continue")
