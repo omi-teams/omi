@@ -461,7 +461,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             mounts.append(f"{tmp.name}:/review")
             prompt_skills += note
         print(f"tool: {tool} ({models[tool]})")
-        sid = None if read or fresh else session.recorded(before, tool, role)  # another tool or role starts fresh
+        sid = None if read or fresh or tool == "codex" else session.recorded(before, tool, role)  # Codex fix rounds avoid replaying the full cache
         if sid and not session.available(repo, task.stem, tool, sid):
             print(f"RESUME FAILED: session {sid} has no session volume; starting a fresh session")
             sid = None
@@ -486,7 +486,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             if again := agent.failure(tool, r):
                 return stop(again, tool, "claude and codex both hit their usage limit" if why == again == "quota"
                             else f"{first} {what}, then {tool} failed too")
-        limit = budget.token_budget(project, role)
+        limit = budget.token_budget(project, role, tool=tool)
         over = bool(limit and (spent.get("input") or 0) > limit)
         if over:
             line = (f"BUDGET: {role} used {spent['input']} input-equivalent tokens (cache reads at {budget.CACHE_WEIGHT:.0%}), over its token_budget {limit}; stopped instead of continuing, "

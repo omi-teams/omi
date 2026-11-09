@@ -105,7 +105,11 @@ def brief(project) -> None:
     kids = tree.children_map(ts)
     recs, busy = busy_tasks(project)
     budgets = {}
-    budget_of = lambda role: budgets.setdefault(role, budget.token_budget(project, role, ts))  # noqa: E731
+
+    def budget_of(role: str, tool: str) -> int | None:
+        if (role, tool) not in budgets:
+            budgets[role, tool] = budget.token_budget(project, role, ts, tool)
+        return budgets[role, tool]
     for st in STATUSES:
         for k, m in ts.items():
             if m.get("status", "planned") == st and k not in kids:

@@ -641,6 +641,22 @@ def test_status_brief_and_metrics() -> None:
     assert omi.app.cli.metrics({"TASK-9": {"status": "in-progress", "_text": ""}}) == ""
 
 
+def test_status_brief_tool_budgets() -> None:
+    """TASK-283: status uses and caches a distinct baseline for each role/tool."""
+    role = "omi-agent-engineer"
+    row = lambda model, n: f"| {role} | {model} | low | {n} | 1 | 0 | 1s | - | - |\n"
+    history = "\n## Usage\n" + row("sonnet", 10) * 5 + row("gpt (codex)", 1000) * 5
+    found = {"TASK-283": {"status": "in-progress", "tool": "codex", "_text": history + row("gpt (codex)", 2000) + row("sonnet", 40)}}
+    with tempfile.TemporaryDirectory() as d, patch("omi.project.tasks.tasks", return_value=found), \
+            patch("omi.app.cli.busy_tasks", return_value=([], set())), \
+            patch("omi.worker.budget.token_budget", wraps=omi.worker.budget.token_budget) as limits, \
+            contextlib.redirect_stdout(io.StringIO()) as out:
+        omi.app.cli.brief(Path(d))
+        assert out.getvalue().splitlines()[0] == "TASK-283 - codex in-progress · over budget: engineer 40>30", out.getvalue()
+        assert limits.call_count == 2, limits.call_args_list
+        assert {call.args[3] for call in limits.call_args_list} == {"claude", "codex"}
+
+
 def main():
     test_dispatch_next_args()
     test_block_list_scope_and_bom_writers()
@@ -652,6 +668,7 @@ def main():
     test_status_phase_and_step_lines()
     test_status_next_resumes_orphaned_and_flags_unhandled()
     test_status_brief_and_metrics()
+    test_status_brief_tool_budgets()
     test_step_po_flag()
     test_clean_args()
     test_step_records_behind()
