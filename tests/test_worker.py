@@ -1447,12 +1447,12 @@ def test_token_budget_stop():
 
 
 def test_token_budget_mixed_tools():
-    """TASK-264: history, live reviews and status count Usage input plus cache."""
+    """TASK-264: history, live reviews and status count cached input once."""
     role = "omi-agent-reviewer"
     history = "\n## Usage\n" + "".join(
-        f"| {role} | sonnet | low | {n} | 1 | 600000 | 1s | - | PASS |\n"
-        for n in (8, 10, 12, 12, 40))
-    codex_row = f"| {role} | gpt (codex) | low | 709703 | 1 | 600000 | 1s | - | PASS |\n"
+        f"| {role} | sonnet | low | {n} | 1 | {cache} | 1s | - | PASS |\n"
+        for n, cache in ((8, 100000), (10, 150000), (12, 250000), (12, 275000), (40, 300000)))
+    codex_row = f"| {role} | gpt (codex) | low | 709703 | 1 | 651392 | 1s | - | PASS |\n"
     report = "VERDICT: PASS\nAC: review the change ✓ checked\nHOST: none\nROOT: n/a"
     with tempfile.TemporaryDirectory() as d:
         wt = Path(d).resolve()
@@ -1470,11 +1470,11 @@ def test_token_budget_mixed_tools():
                 patch.dict(os.environ, {omi.worker.creds.TOKEN_ENV: "tok", omi.worker.creds.CODEX_ENV: "key"}), \
                 contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()):
             for tool, used, cache, configured, want in (
-                    ("codex", 709703, 600000, None, 0),
-                    ("claude", 40, 600000, None, 0),
-                    ("claude", 40, 600000, 600039, 7),
-                    ("codex", 709703, 600000, 1309702, 7),
-                    ("codex", 709703, 600000, 1309703, 0)):
+                    ("codex", 709703, 651392, None, 0),
+                    ("claude", 40, 100000, None, 0),
+                    ("claude", 40, 100000, 100039, 7),
+                    ("codex", 709703, 651392, 709702, 7),
+                    ("codex", 709703, 651392, 709703, 0)):
                 text = ("---\nid: TASK-264\nscope: src/**\n---\n## Acceptance criteria\n"
                         "- [ ] review the change\n\n## Checkpoint\nDone:\n" + history)
                 task.write_text(text, encoding="utf-8")
@@ -1493,17 +1493,29 @@ def test_token_budget_mixed_tools():
                 assert len(calls) == 1
                 checkpoint = task.read_text(encoding="utf-8")
                 if want:
-                    assert f"used {used + cache} input+cache tokens" in checkpoint, checkpoint
+                    total = used if tool == "codex" else used + cache
+                    assert f"used {total} input+cache tokens" in checkpoint, checkpoint
                 else:
                     assert "BUDGET:" not in checkpoint, checkpoint
         found = {"TASK-264": {"_text": history + codex_row}}
         (wt / ".omi" / "config.json").write_text("{}", encoding="utf-8")
         limit = omi.worker.budget.token_budget(wt, role, found)
-        assert limit == 1800036, limit
+        assert limit == 787536, limit
         assert omi.worker.budget.over_budget(history + codex_row, lambda _: limit) == []
         excessive = f"| {role} | sonnet | low | 8 | 1 | 2000000 | 1s | - | PASS |\n"
         assert omi.worker.budget.over_budget(history + codex_row + excessive, lambda _: limit) == [
-            "reviewer 2000008>1800036"]
+            "reviewer 2000008>787536"]
+
+        # A genuinely smaller history still limits a larger run, using Codex input once.
+        small = "\n## Usage\n" + "".join(
+            f"| {role} | sonnet | low | {n} | 1 | 100000 | 1s | - | PASS |\n"
+            for n in (8, 10, 12, 12, 40))
+        found["TASK-264"]["_text"] = small + codex_row
+        limit = omi.worker.budget.token_budget(wt, role, found)
+        assert limit == 300036, limit
+        assert omi.worker.budget.over_budget(small + codex_row, lambda _: limit) == ["reviewer 709703>300036"]
+        found["TASK-264"]["_text"] = small + codex_row * 6
+        assert omi.worker.budget.token_budget(wt, role, found) == 2129109
 
 
 def test_reviewer_ac_lines_rerun():

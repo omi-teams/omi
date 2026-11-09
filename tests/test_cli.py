@@ -634,7 +634,7 @@ def test_status_brief_and_metrics() -> None:
                 out.reconfigure = lambda **kw: None
                 omi.app.cli.dispatch(["dockerfile", "reviewed"])
         assert "dockerfile_reviewed" in json.loads((root / ".omi" / "project.json").read_text(encoding="utf-8"))
-        assert brief.splitlines() == ["TASK-001 build codex running · over budget: engineer 900>500, engineer 1000>500", "TASK-002 - - planned", "next: TASK-002"], brief
+        assert brief.splitlines() == ["TASK-001 build codex running · over budget: engineer 900>500, engineer 900>500", "TASK-002 - - planned", "next: TASK-002"], brief
         full = run()
         assert "last 2 done: lead time median 2.0 h, engineer runs/task 2.0, review FAIL rate 2/4 (50%), NEEDS SCOPE 1" in full, full
         assert "branch:" in full and "Done: x" not in brief

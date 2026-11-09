@@ -418,7 +418,7 @@ def run_role(role, wt, task_file, model=None, effort=None, tool=None, fresh=Fals
             verdict = "AUTH"
         elif ac["left"] and verdict[:4] in ("PASS", "FAIL") and (gap := budget.missing_ac(core.read_task(task) if task.exists() else "", result)):
             ac["gap"], verdict = gap, "AC-MISSING"  # not a verdict: the fresh rerun's row counts
-        spent["input"] = budget.token_count(nums[0], nums[2])
+        spent["input"] = budget.token_count(nums[0], nums[2], t == "codex")
         if not read and not dropped and (sid := session.session_id(t, r.stdout)) and task.exists():
             task.write_text(session.with_session(core.read_task(task), t, sid, role, seen), encoding="utf-8", newline="\n")
             record_scope(task, now_scope)
